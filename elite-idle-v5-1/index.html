@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#111713">
+  <title>EliteRoof Construction V5.1</title>
+  <link rel="stylesheet" href="../elite-idle-v5/style.css?v=5102">
+</head>
+<body>
+  <div id="boot">
+    <div class="bootLogo">Elite<span>Roof</span></div>
+    <div id="bootText">Проверка V5.1…</div>
+    <div class="bootBar"><i id="bootFill"></i></div>
+    <small id="bootDetail">Подготовка локальной сцены</small>
+  </div>
+  <canvas id="game"></canvas>
+  <div id="hud" class="hud">
+    <header class="topbar">
+      <div class="brand"><b>Elite<span>Roof</span></b><small>CONSTRUCTION</small></div>
+      <div class="resources">
+        <div><em>◒</em><small>ПЕСОК</small><b id="sand">2 450</b></div><div><em>▦</em><small>КИРПИЧ</small><b id="brick">1 860</b></div><div><em>▰</em><small>ЦЕМЕНТ</small><b id="cement">980</b></div><div><em>▤</em><small>ДОСКИ</small><b id="wood">1 540</b></div><div><em>▣</em><small>ДЕНЬГИ</small><b id="money">$ 12 450</b></div>
+      </div>
+      <div class="level"><span>УРОВЕНЬ <b id="level">12</b></span><div><i id="xp"></i></div><small id="xpText">2350 / 3500 XP</small></div>
+    </header>
+    <section class="mission"><small>ТЕКУЩАЯ ЦЕЛЬ</small><b id="stage">Постройте стены 1 этажа</b><div class="progress"><i id="progressFill"></i></div><span id="progressText">35%</span></section>
+    <button id="diagnostics" class="diagnostics" type="button">3D: ЗАГРУЗКА</button>
+    <div class="pads">
+      <button class="pad green" data-key="warehouse" type="button"><span>СКЛАД</span><small>Уровень <b id="warehouseLevel">5</b></small><em>▣ <b id="warehouseCost">3 200</b></em></button>
+      <button class="pad yellow" data-key="income" type="button"><span>ДОХОД</span><small>Уровень <b id="incomeLevel">7</b></small><em>▣ <b id="incomeCost">4 800</b></em></button>
+      <button class="pad blue" data-key="speed" type="button"><span>СКОРОСТЬ</span><small>Уровень <b id="speedLevel">6</b></small><em>▣ <b id="speedCost">3 400</b></em></button>
+      <button class="pad purple" data-key="cargo" type="button"><span>ГРУЗ</span><small>Уровень <b id="cargoLevel">4</b></small><em>▣ <b id="cargoCost">2 100</b></em></button>
+      <button class="pad orange" data-key="delivery" type="button"><span>ДОСТАВКА</span><small>Уровень <b id="deliveryLevel">3</b></small><em>▣ <b id="deliveryCost">1 500</b></em></button>
+    </div>
+    <div class="bottom"><div id="joystick" class="joystick"><div id="knob" class="knob"></div></div><div id="cargoPanel" class="cargoPanel"><span>▦</span><div><b>Кирпичи</b><div><i id="cargoFill"></i><small id="cargoText">0/20</small></div></div></div><div class="actions"><button id="auto" type="button">АВТО: ВКЛ</button><button id="run" class="run" type="button"><span id="runIcon">🏃</span><b id="runText">БЕГ</b></button></div></div>
+    <div id="toast" class="toast"></div><div id="modal" class="modal hidden"><div><button id="modalClose" type="button">×</button><h2>Диагностика V5.1</h2><pre id="diagnosticText"></pre></div></div>
+  </div>
+  <script src="../elite-idle-v4-3/vendor/three.min.js?v=1281"></script>
+  <script src="launcher.js?v=5102"></script>
+</body>
+</html>
