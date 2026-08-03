@@ -1,0 +1,39 @@
+name: Vendor Three.js locally
+
+on:
+  push:
+    paths:
+      - '.github/workflows/vendor-three.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download official Three.js build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p elite-idle-v4-3/vendor
+          curl -fL --retry 4 --retry-delay 2 \
+            https://raw.githubusercontent.com/mrdoob/three.js/r128/build/three.min.js \
+            -o elite-idle-v4-3/vendor/three.min.js
+          test "$(wc -c < elite-idle-v4-3/vendor/three.min.js)" -gt 400000
+
+      - name: Commit vendored engine
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add elite-idle-v4-3/vendor/three.min.js
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Vendor Three.js locally for iPhone Safari"
+          git push
