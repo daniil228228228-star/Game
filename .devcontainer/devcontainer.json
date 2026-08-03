@@ -1,0 +1,21 @@
+{
+  "name": "EliteRoof 3D",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "forwardPorts": [5173],
+  "portsAttributes": {
+    "5173": {
+      "label": "EliteRoof Preview",
+      "onAutoForward": "openPreview"
+    }
+  },
+  "postCreateCommand": "cd app && npm install",
+  "postStartCommand": "cd app && npm run dev -- --host 0.0.0.0",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  }
+}
