@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#090d12">
+<title>EliteRoof Idle v6 Fixed</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#090d12;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+#loader{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:30px;font-weight:700;background:#090d12;z-index:9999}
+</style>
+</head>
+<body>
+<div id="loader">Загрузка движка…</div>
+<script>
+(function(){
+  const loader=document.getElementById('loader');
+  let finished=false;
+  const fail=(message)=>{
+    if(finished)return;
+    loader.innerHTML='Не удалось запустить 3D-сцену.<br><small style="font-weight:500;opacity:.75">'+message+'</small>';
+  };
+  const timeout=setTimeout(()=>fail('Движок загружается слишком долго. Открой ссылку в обычном Safari и обнови страницу.'),12000);
+
+  const engine=document.createElement('script');
+  engine.src='https://cdnjs.cloudflare.com/ajax/libs/three.js/0.167.1/three.min.js';
+  engine.onload=async()=>{
+    try{
+      loader.textContent='Загрузка стройплощадки…';
+      const response=await fetch('./v6.html?fixed=1',{cache:'no-store'});
+      if(!response.ok)throw new Error('Не удалось получить файл игры: '+response.status);
+      let html=await response.text();
+      html=html.replace('<script type="module">','<script>');
+      html=html.replace("import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.167.1/three.module.min.js';",'');
+      html=html.replace('<title>EliteRoof Idle v6</title>','<title>EliteRoof Idle v6 Fixed</title>');
+      clearTimeout(timeout);
+      finished=true;
+      document.open();
+      document.write(html);
+      document.close();
+    }catch(error){
+      clearTimeout(timeout);
+      fail(error.message);
+    }
+  };
+  engine.onerror=()=>{
+    clearTimeout(timeout);
+    fail('Safari не смог загрузить Three.js. Проверь интернет или открой страницу вне встроенного браузера приложения.');
+  };
+  document.head.appendChild(engine);
+})();
+</script>
+</body>
+</html>
