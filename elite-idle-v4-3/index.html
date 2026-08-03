@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#87b8d0">
+  <title>EliteRoof Idle V4.3</title>
+  <link rel="stylesheet" href="../elite-idle-v4-2/style.css?v=43">
+  <style>
+    #engineStatus{position:fixed;left:50%;top:58%;transform:translateX(-50%);z-index:40;max-width:86vw;padding:10px 14px;border-radius:14px;background:rgba(7,11,16,.86);font:700 12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#dce8ef;text-align:center}
+  </style>
+</head>
+<body>
+  <div id="loading">Запуск локального 3D-движка…</div>
+  <div id="engineStatus">Движок загружается прямо из твоего GitHub</div>
+  <div id="error"></div>
+  <canvas id="game"></canvas>
+  <div class="ui">
+    <header class="top">
+      <div class="brand">Elite<span>Roof</span><small>CONSTRUCTION</small></div>
+      <div class="stats"><div><b id="money">12 450</b><small>ДЕНЬГИ</small></div><div><b id="progress">0%</b><small>ПРОГРЕСС</small></div></div>
+    </header>
+    <section class="mission"><small>ТЕКУЩАЯ ЦЕЛЬ</small><b id="stage">Расчистка</b><div class="bar"><i id="fill"></i></div></section>
+    <button id="quality" class="quality">КАЧЕСТВО: АВТО</button>
+    <div class="bottom"><div id="joy" class="joy"><div id="knob" class="knob"></div></div><div class="buttons"><button id="auto">АВТО: ВКЛ</button><button id="run" class="run">🏃</button></div></div>
+  </div>
+  <script>
+    window.__engineFailed=false;
+    function engineFail(){
+      window.__engineFailed=true;
+      var l=document.getElementById('loading');
+      var s=document.getElementById('engineStatus');
+      if(l)l.style.display='none';
+      if(s){s.textContent='Локальный движок ещё публикуется. Обнови страницу через минуту.';s.style.color='#ffd36a';}
+    }
+    setTimeout(function(){
+      if(!window.THREE) engineFail();
+    },7000);
+  </script>
+  <script src="./vendor/three.min.js?v=128" onerror="engineFail()"></script>
+  <script>
+    if(window.THREE){
+      var s=document.getElementById('engineStatus');
+      if(s)s.textContent='Движок загружен. Запускаю сцену…';
+    }
+  </script>
+  <script src="../elite-idle-v4-2/app.js?v=43"></script>
+  <script>
+    setTimeout(function(){var s=document.getElementById('engineStatus');if(s&&window.THREE)s.remove();},1200);
+  </script>
+</body>
+</html>
