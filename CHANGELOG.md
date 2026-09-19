@@ -60,6 +60,17 @@ All notable changes to Tycoon 3D. Each session appends an entry here — see
   though that item itself is still open (this only adds one test, not the
   full harness/runner).
 
+### 2026-09-19 — Prestige pacing verification (VISION.md Phase 1, item 2)
+- Extended the balance simulation to model the prestige income multiplier
+  (`1 + prestige * 0.5`) and verified every additional prestige strictly
+  shortens a full playthrough: x1.5 (prestige 1) already cuts the run from
+  28.0 to 18.7 minutes (-33%), and returns stay non-trivial even at
+  prestige 10 (still >3% faster than prestige 9) rather than flattening to
+  zero. No tuning needed — see the table in `VISION.md`.
+- Refactored the STAGES-extraction + curve simulation out of
+  `tests/balance.test.mjs` into `tests/lib/stages.mjs` so this test and the
+  new `tests/prestige.test.mjs` share one model instead of duplicating it.
+
 ---
 
 ## Format for new entries

@@ -7,43 +7,10 @@
 //   - stage 2 onward ramps up smoothly, roughly 1.5-7 minutes per stage
 //   - a full, no-upgrade playthrough takes roughly 20-40 minutes
 //
-// Run with: node --test tests/
+// Run with: node --test
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const html = readFileSync(path.join(ROOT, 'tycoon.html'), 'utf8');
-
-function loadStages() {
-  const m = html.match(/const STAGES = (\[[\s\S]*?\n\]);/);
-  assert.ok(m, 'Could not find STAGES array in tycoon.html — has it been renamed/restructured?');
-  // eslint-disable-next-line no-new-func — trusted local file, plain array literal
-  return new Function(`return ${m[1]};`)();
-}
-
-const STARTING_MONEY = 300;
-
-function simulateBuildCurve(stages) {
-  let money = STARTING_MONEY;
-  let income = 0;
-  const seconds = [];
-  for (const stage of stages) {
-    if (money < stage.cost) {
-      const shortfall = stage.cost - money;
-      assert.ok(income > 0, `stage "${stage.name}" is unaffordable at zero income — a balance bug`);
-      seconds.push(shortfall / income);
-      money += shortfall;
-    } else {
-      seconds.push(0);
-    }
-    money -= stage.cost;
-    income += stage.incomeAdd;
-  }
-  return seconds;
-}
+import { loadStages, simulateBuildCurve } from './lib/stages.mjs';
 
 test('STAGES has the expected 10-building progression', () => {
   assert.equal(loadStages().length, 10);

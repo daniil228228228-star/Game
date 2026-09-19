@@ -72,8 +72,26 @@ browser or publish as a static page.
       cost/income numbers needed to change; the existing curve already hits the
       target, so this pass's deliverable is the verified table above plus the
       regression test that keeps it true.
-- [ ] Verify each prestige tier meaningfully shortens the return-to-completion time;
-      tune the +50%/prestige multiplier if it doesn't.
+- [x] Verify each prestige tier meaningfully shortens the return-to-completion time;
+      tune the +50%/prestige multiplier if it doesn't. **Verified, no tuning needed**
+      (see `tests/prestige.test.mjs`, which locks this in as a regression check):
+
+      | Prestige | Multiplier | Full playthrough |
+      |---|---|---|
+      | 0 | x1.0 | 28.0 min |
+      | 1 | x1.5 | 18.7 min |
+      | 2 | x2.0 | 14.0 min |
+      | 3 | x2.5 | 11.2 min |
+      | 4 | x3.0 | 9.3 min |
+      | 5 | x3.5 | 8.0 min |
+      | 6 | x4.0 | 7.0 min |
+
+      Every additional prestige is strictly faster; the first one alone cuts the
+      run by a third. Returns diminish with each further prestige (as they should
+      — it's `1/multiplier` scaling), but stay non-trivial even at prestige 10
+      (still >3% faster than prestige 9). If deeper-late-game reward is wanted
+      later, that's the "proper permanent skill tree" in Phase 3, item 13 — not a
+      fix needed here.
 - [ ] Minimal i18n layer (ru/en at least) — the game is shared as a public link and
       may reach non-Russian players. Keep it data-driven (a strings table), not a
       rewrite.
