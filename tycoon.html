@@ -35,6 +35,20 @@
               padding: 7px 14px; color: #ffe6a8; font-size: 13px; font-weight: 600; backdrop-filter: blur(6px);
               text-align: center; max-width: 90vw; }
 
+  #prestigeBtn { position: fixed; top: 96px; left: 50%; transform: translateX(-50%); z-index: 9; cursor: pointer;
+                 border: none; border-radius: 12px; padding: 9px 18px; font-weight: 700; font-size: 13px;
+                 background: linear-gradient(135deg,#ffd479,#ff9d4d); color: #2a1a00;
+                 box-shadow: 0 0 18px rgba(255,180,80,.5); }
+
+  #compass { position: fixed; z-index: 12; pointer-events: none; display: none; }
+  #compass .arrow { width: 0; height: 0; border-left: 13px solid transparent; border-right: 13px solid transparent;
+                     border-bottom: 24px solid #ffd479; filter: drop-shadow(0 0 5px rgba(255,212,121,.85)); }
+
+  #staminaWrap { position: fixed; left: 26px; bottom: 152px; width: 118px; height: 9px; border-radius: 5px;
+                 background: rgba(20,28,40,.55); border: 1px solid rgba(120,170,255,.25); z-index: 15;
+                 overflow: hidden; opacity: 0; transition: opacity .25s; }
+  #staminaFill { height: 100%; width: 100%; background: linear-gradient(90deg,#ffd479,#ff9d4d); transition: width .1s linear; }
+
   #toast { position: fixed; top: 106px; left: 50%; transform: translateX(-50%); z-index: 30; color: #fff;
            background: rgba(20,28,40,.92); border: 1px solid rgba(120,170,255,.3); padding: 8px 16px; border-radius: 10px;
            font-size: 13px; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; text-align: center;
@@ -105,7 +119,10 @@
 </div>
 
 <div id="nextCard"></div>
+<button id="prestigeBtn" hidden></button>
 <div id="toast"></div>
+<div id="compass"><div class="arrow"></div></div>
+<div id="staminaWrap"><div id="staminaFill"></div></div>
 
 <div id="achOverlay">
   <div id="achPanel">
@@ -121,8 +138,9 @@
     <ul>
       <li><b>WASD / стрелки</b> — бегать (на телефоне — джойстик слева внизу)</li>
       <li>Тяните экран, чтобы <b>смотреть по сторонам</b>; колесо/щипок — зум</li>
-      <li><b>Добегите до светящейся площадки</b> — здание построится само, если хватает денег</li>
-      <li>Следите за достижениями 🏆 — за них дают деньги</li>
+      <li>Держите <b>Shift</b> (или толкайте джойстик до упора) — спринт, следите за шкалой выносливости</li>
+      <li><b>Добегите до светящейся площадки</b> — здание построится само, если хватает денег. Стрелка сверху подскажет направление</li>
+      <li>Следите за достижениями 🏆 — за них дают деньги. Построите весь тайкон — откроется <b>престиж</b> ✨</li>
     </ul>
     <button id="hintCloseBtn">Понятно, начнём!</button>
   </div>
@@ -150,10 +168,14 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 /* ---------------------------------------------------------------------- */
 const SAVE_KEY = 'tycoon3d_save_v3';
 const MUTE_KEY = 'tycoon3d_muted';
-const HINT_KEY = 'tycoon3d_seen_hint_v2';
+const HINT_KEY = 'tycoon3d_seen_hint_v3';
 
 const GROUND_HALF = 70;
 const PLAYER_SPEED = 7.2;       // units / sec
+const SPRINT_MULT = 1.7;
+const STAMINA_MAX = 100;
+const STAMINA_DRAIN = 40;       // per second while sprinting
+const STAMINA_REGEN = 18;       // per second while not sprinting
 const PLAYER_EYE_HEIGHT = 1.5;
 const PAD_TRIGGER_RADIUS = 2.0;
 const CAM_MIN_DIST = 3.5;
@@ -195,21 +217,37 @@ const ACHIEVEMENTS = [
     check: (s, stage, income) => income >= 100 },
   { id: 'marathon', name: 'Марафонец', desc: 'Пробегите 2000 м по своему тайкону', reward: 300, emoji: '🏃',
     check: s => s.distanceRun >= 2000 },
+  { id: 'first_prestige', name: 'Возрождение', desc: 'Совершите престиж', reward: 1000, emoji: '✨',
+    check: s => s.prestige >= 1 },
 ];
 
 /* ---------------------------------------------------------------------- */
 /*  STATE                                                                  */
 /* ---------------------------------------------------------------------- */
 let money = 300;
+let displayedMoney = money; // eased toward `money` each frame for a count-up feel
 let stageIndex = 0; // number of stages already built
-const stats = { totalEarned: 0, distanceRun: 0 };
+let stamina = STAMINA_MAX;
+const stats = { totalEarned: 0, distanceRun: 0, prestige: 0 };
 const unlockedAch = new Set();
 let currentPad = null; // { index, group, pos: THREE.Vector3 }
 const growingMeshes = []; // pop-in scale animation queue
+const ownedBuildingMeshes = []; // so a prestige reset can clear them all
 
 function earn(amount) {
   money += amount;
   if (amount > 0) stats.totalEarned += amount;
+}
+
+function incomeMultiplier() {
+  return 1 + stats.prestige * 0.5;
+}
+
+function fmt(n) {
+  n = Math.floor(n);
+  if (n >= 1000000) return (n / 1000000).toFixed(2).replace(/\.?0+$/, '') + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return n.toLocaleString('ru-RU');
 }
 
 function stagePosition(i) {
@@ -254,16 +292,76 @@ const sfx = {
   build: () => { beep(520, 0, 0.12, 'triangle'); beep(780, 0.05, 0.12, 'triangle'); beep(1040, 0.1, 0.16, 'triangle'); },
   achievement: () => { beep(660, 0, 0.1, 'sine', 0.1); beep(880, 0.1, 0.1, 'sine', 0.1); beep(1100, 0.2, 0.22, 'sine', 0.12); },
   error: () => { beep(160, 0, 0.18, 'sawtooth', 0.09); },
+  footstep: (alt) => beep(alt ? 190 : 150, 0, 0.045, 'sine', 0.035),
+  prestige: () => { beep(440, 0, 0.12, 'sine', 0.1); beep(660, 0.1, 0.12, 'sine', 0.1); beep(880, 0.2, 0.12, 'sine', 0.1); beep(1320, 0.3, 0.3, 'sine', 0.13); },
 };
 
 /* ---------------------------------------------------------------------- */
 /*  THREE SETUP                                                            */
 /* ---------------------------------------------------------------------- */
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87b7e0);
-scene.fog = new THREE.Fog(0x87b7e0, 40, 170);
+scene.fog = new THREE.Fog(0xcfe9ff, 40, 175);
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 500);
+
+// Gradient sky dome (cheap vertex-height gradient) instead of a flat background color.
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(400, 24, 16),
+  new THREE.ShaderMaterial({
+    uniforms: {
+      topColor: { value: new THREE.Color(0x4a90d9) },
+      bottomColor: { value: new THREE.Color(0xcfe9ff) },
+      offset: { value: 18 },
+      exponent: { value: 0.65 },
+    },
+    vertexShader: `
+      varying vec3 vWorldPosition;
+      void main() {
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 topColor;
+      uniform vec3 bottomColor;
+      uniform float offset;
+      uniform float exponent;
+      varying vec3 vWorldPosition;
+      void main() {
+        float h = normalize(vWorldPosition + vec3(0.0, offset, 0.0)).y;
+        gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+      }
+    `,
+    side: THREE.BackSide,
+  })
+);
+scene.add(sky);
+
+// Drifting low-poly clouds.
+const clouds = [];
+function makeCloud() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true });
+  const puffs = 4 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < puffs; i++) {
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(1.8 + Math.random() * 1.6, 7, 6), mat);
+    puff.position.set((Math.random() - 0.5) * 5.5, (Math.random() - 0.5) * 1.1, (Math.random() - 0.5) * 3.2);
+    group.add(puff);
+  }
+  return group;
+}
+for (let i = 0; i < 9; i++) {
+  const cloud = makeCloud();
+  cloud.position.set(
+    (Math.random() - 0.5) * GROUND_HALF * 2.3,
+    30 + Math.random() * 16,
+    (Math.random() - 0.5) * GROUND_HALF * 2.3
+  );
+  cloud.userData.speed = 0.5 + Math.random() * 0.9;
+  scene.add(cloud);
+  clouds.push(cloud);
+}
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -307,6 +405,65 @@ scene.add(ground);
 const gridHelper = new THREE.GridHelper(GROUND_HALF * 2, GROUND_HALF / 2, 0x1c5e2a, 0x2d7a3d);
 gridHelper.position.y = 0.01;
 scene.add(gridHelper);
+
+/* ---------------------------------------------------------------------- */
+/*  SCENERY — trees & rocks scattered around the plot, kept off the path   */
+/* ---------------------------------------------------------------------- */
+function makeTree() {
+  const group = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.16, 0.24, 1.6, 6),
+    new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.9 })
+  );
+  trunk.position.y = 0.8;
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  const leafColors = [0x2f7d4a, 0x3a8f55, 0x276b3e];
+  const leaves = new THREE.Mesh(
+    new THREE.ConeGeometry(1.05, 2.3, 7),
+    new THREE.MeshStandardMaterial({ color: leafColors[Math.floor(Math.random() * leafColors.length)], roughness: 0.85 })
+  );
+  leaves.position.y = 2.3;
+  leaves.castShadow = true;
+  group.add(leaves);
+  return group;
+}
+
+function makeRock() {
+  const rock = new THREE.Mesh(
+    new THREE.DodecahedronGeometry(0.35 + Math.random() * 0.4, 0),
+    new THREE.MeshStandardMaterial({ color: 0x8b8f97, roughness: 0.95, flatShading: true })
+  );
+  rock.castShadow = true;
+  rock.receiveShadow = true;
+  rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+  return rock;
+}
+
+(function scatterScenery() {
+  const stagePositions = STAGES.map((_, i) => stagePosition(i));
+  const MIN_CLEAR = 3.6;
+  let placed = 0, attempts = 0;
+  while (placed < 60 && attempts < 500) {
+    attempts++;
+    const x = (Math.random() - 0.5) * GROUND_HALF * 1.9;
+    const z = (Math.random() - 0.5) * GROUND_HALF * 1.9;
+    if (Math.hypot(x, z) < 5) continue; // keep the spawn area clear
+    let tooClose = false;
+    for (const p of stagePositions) {
+      if (Math.hypot(x - p.x, z - p.z) < MIN_CLEAR) { tooClose = true; break; }
+    }
+    if (tooClose) continue;
+    const deco = Math.random() < 0.6 ? makeTree() : makeRock();
+    deco.position.set(x, 0, z);
+    const scale = 0.8 + Math.random() * 0.6;
+    deco.scale.set(scale, scale, scale);
+    deco.rotation.y = Math.random() * Math.PI * 2;
+    scene.add(deco);
+    placed++;
+  }
+})();
 
 /* ---------------------------------------------------------------------- */
 /*  PLAYER CHARACTER                                                       */
@@ -386,6 +543,34 @@ function spawnBuilding(index, { grow = true } = {}) {
     growingMeshes.push(mesh);
   }
   scene.add(mesh);
+  ownedBuildingMeshes.push(mesh);
+}
+
+/* ---------------------------------------------------------------------- */
+/*  PARTICLE BURST — purchase "juice"                                      */
+/* ---------------------------------------------------------------------- */
+const particleBursts = [];
+function spawnBurst(pos, color) {
+  const count = 36;
+  const positions = new Float32Array(count * 3);
+  const velocities = [];
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = pos.x;
+    positions[i * 3 + 1] = pos.y + 1;
+    positions[i * 3 + 2] = pos.z;
+    const a = Math.random() * Math.PI * 2;
+    const speed = 3 + Math.random() * 4;
+    velocities.push(new THREE.Vector3(Math.cos(a) * speed, 3 + Math.random() * 3, Math.sin(a) * speed));
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color, size: 0.35, transparent: true, opacity: 1,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const points = new THREE.Points(geo, mat);
+  scene.add(points);
+  particleBursts.push({ points, velocities, life: 0.9, maxLife: 0.9 });
 }
 
 function makeLabelSprite(lines) {
@@ -437,7 +622,7 @@ function spawnPad(index) {
   beacon.position.y = 3.5;
   group.add(beacon);
 
-  const sprite = makeLabelSprite([`${stage.emoji} ${stage.name}`, `${stage.cost.toLocaleString('ru-RU')} 💰`]);
+  const sprite = makeLabelSprite([`${stage.emoji} ${stage.name}`, `${fmt(stage.cost)} 💰`]);
   sprite.position.y = 8.6;
   group.add(sprite);
 
@@ -448,13 +633,15 @@ function spawnPad(index) {
 
 function purchaseCurrentPad() {
   if (!currentPad) return;
-  const { index, group } = currentPad;
+  const { index, group, pos } = currentPad;
   const stage = STAGES[index];
   money -= stage.cost;
   scene.remove(group);
   spawnBuilding(index);
   stageIndex = index + 1;
   sfx.build();
+  spawnBurst(pos, 0xffd479);
+  triggerShake(0.16, 0.26);
   toast(`Построено: ${stage.emoji} ${stage.name}!`);
   currentPad = null;
   if (stageIndex < STAGES.length) spawnPad(stageIndex);
@@ -463,26 +650,49 @@ function purchaseCurrentPad() {
   save();
 }
 
+function doPrestige() {
+  if (stageIndex < STAGES.length) return;
+  const nextMult = 1 + (stats.prestige + 1) * 0.5;
+  if (!confirm(`Начать тайкон заново? Все здания и деньги обнулятся, но доход навсегда умножится на x${nextMult.toFixed(1)}.`)) return;
+  stats.prestige += 1;
+  ownedBuildingMeshes.forEach(m => scene.remove(m));
+  ownedBuildingMeshes.length = 0;
+  stageIndex = 0;
+  money = 300;
+  displayedMoney = money;
+  spawnPad(0);
+  sfx.prestige();
+  toast(`✨ Престиж! Доход теперь x${incomeMultiplier().toFixed(1)}`);
+  updateHUD();
+  checkAchievements();
+  save();
+}
+document.getElementById('prestigeBtn').addEventListener('click', doPrestige);
+
 /* ---------------------------------------------------------------------- */
 /*  ECONOMY                                                                 */
 /* ---------------------------------------------------------------------- */
 function totalIncomePerSec() {
   let sum = 0;
   for (let i = 0; i < stageIndex; i++) sum += STAGES[i].incomeAdd;
-  return sum;
+  return sum * incomeMultiplier();
 }
 
 function updateHUD() {
-  document.getElementById('money').textContent = Math.floor(money).toLocaleString('ru-RU');
-  document.getElementById('income').textContent = `+${totalIncomePerSec().toLocaleString('ru-RU')}/с`;
+  document.getElementById('income').textContent =
+    `+${fmt(totalIncomePerSec())}/с${stats.prestige > 0 ? ` (x${incomeMultiplier().toFixed(1)})` : ''}`;
   document.getElementById('progress').textContent = `🏗️ ${stageIndex}/${STAGES.length}`;
 
   const nextCard = document.getElementById('nextCard');
+  const prestigeBtn = document.getElementById('prestigeBtn');
   if (stageIndex < STAGES.length) {
     const s = STAGES[stageIndex];
-    nextCard.textContent = `Далее: ${s.emoji} ${s.name} — ${s.cost.toLocaleString('ru-RU')} 💰 (добегите до площадки)`;
+    nextCard.textContent = `Далее: ${s.emoji} ${s.name} — ${fmt(s.cost)} 💰 (добегите до площадки)`;
+    prestigeBtn.hidden = true;
   } else {
-    nextCard.textContent = '🎉 Тайкон полностью построен!';
+    nextCard.textContent = `🎉 Тайкон полностью построен!${stats.prestige > 0 ? ` (престижей: ${stats.prestige})` : ''}`;
+    prestigeBtn.hidden = false;
+    prestigeBtn.textContent = `✨ Престиж — доход x${(1 + (stats.prestige + 1) * 0.5).toFixed(1)}`;
   }
 }
 
@@ -599,12 +809,54 @@ document.getElementById('hintCloseBtn').addEventListener('click', () => {
 });
 
 /* ---------------------------------------------------------------------- */
+/*  COMPASS — points at the next pad when it's off-screen                  */
+/* ---------------------------------------------------------------------- */
+const compassEl = document.getElementById('compass');
+const _padNdc = new THREE.Vector3();
+function updateCompass() {
+  if (!currentPad) { compassEl.style.display = 'none'; return; }
+  _padNdc.set(currentPad.pos.x, 1.2, currentPad.pos.z).project(camera);
+  const behind = _padNdc.z > 1;
+  const onScreen = !behind && Math.abs(_padNdc.x) < 0.85 && Math.abs(_padNdc.y) < 0.8;
+  if (onScreen) { compassEl.style.display = 'none'; return; }
+  let x = _padNdc.x, y = _padNdc.y;
+  if (behind) { x = -x; y = -y; }
+  const angle = Math.atan2(y, x); // math convention: 0 = right, 90deg = up
+  const margin = 0.42;
+  compassEl.style.left = `${50 + Math.cos(angle) * margin * 100}%`;
+  compassEl.style.top = `${50 - Math.sin(angle) * margin * 100}%`;
+  compassEl.style.transform = `translate(-50%, -50%) rotate(${90 - angle * 180 / Math.PI}deg)`;
+  compassEl.style.display = 'block';
+}
+
+/* ---------------------------------------------------------------------- */
+/*  STAMINA BAR                                                            */
+/* ---------------------------------------------------------------------- */
+const staminaWrap = document.getElementById('staminaWrap');
+const staminaFill = document.getElementById('staminaFill');
+function updateStaminaBar() {
+  const pct = Math.max(0, Math.min(100, (stamina / STAMINA_MAX) * 100));
+  staminaFill.style.width = pct + '%';
+  staminaWrap.style.opacity = pct < 99.5 ? '1' : '0';
+}
+
+/* ---------------------------------------------------------------------- */
+/*  CAMERA SHAKE — purchase juice                                          */
+/* ---------------------------------------------------------------------- */
+let shakeTime = 0;
+let shakeStrength = 0;
+const shakeOffset = new THREE.Vector3();
+function triggerShake(strength, duration) {
+  shakeTime = duration;
+  shakeStrength = strength;
+}
+
+/* ---------------------------------------------------------------------- */
 /*  INPUT — keyboard + virtual joystick                                    */
 /* ---------------------------------------------------------------------- */
 const keys = new Set();
-const MOVE_CODES = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
-addEventListener('keydown', (e) => { if (MOVE_CODES.has(e.code)) keys.add(e.code); });
-addEventListener('keyup', (e) => { if (MOVE_CODES.has(e.code)) keys.delete(e.code); });
+addEventListener('keydown', (e) => keys.add(e.code));
+addEventListener('keyup', (e) => keys.delete(e.code));
 
 const joyBase = document.getElementById('joyBase');
 const joyKnob = document.getElementById('joyKnob');
@@ -698,6 +950,7 @@ const camForward = new THREE.Vector3();
 const camRight = new THREE.Vector3();
 const moveDir = new THREE.Vector3();
 let runCycle = 0;
+let lastFootstepPhase = 0;
 
 function updatePlayer(dt) {
   const prevX = player.position.x;
@@ -714,6 +967,10 @@ function updatePlayer(dt) {
   inX = THREE.MathUtils.clamp(inX, -1, 1);
 
   const moving = Math.abs(inZ) > 0.05 || Math.abs(inX) > 0.05;
+  const sprintRequested = moving && (keys.has('ShiftLeft') || keys.has('ShiftRight') || Math.hypot(joyVec.x, joyVec.z) > 0.92);
+  const sprinting = sprintRequested && stamina > 0.5;
+  stamina = THREE.MathUtils.clamp(stamina + (sprinting ? -STAMINA_DRAIN : STAMINA_REGEN) * dt, 0, STAMINA_MAX);
+  updateStaminaBar();
 
   if (moving) {
     camera.getWorldDirection(camForward);
@@ -726,7 +983,8 @@ function updatePlayer(dt) {
       .addScaledVector(camRight, inX);
     if (moveDir.lengthSq() > 1) moveDir.normalize();
 
-    const step = PLAYER_SPEED * dt;
+    const speed = PLAYER_SPEED * (sprinting ? SPRINT_MULT : 1);
+    const step = speed * dt;
     const nx = THREE.MathUtils.clamp(player.position.x + moveDir.x * step, -GROUND_HALF + 1, GROUND_HALF - 1);
     const nz = THREE.MathUtils.clamp(player.position.z + moveDir.z * step, -GROUND_HALF + 1, GROUND_HALF - 1);
     stats.distanceRun += Math.hypot(nx - player.position.x, nz - player.position.z);
@@ -738,12 +996,18 @@ function updatePlayer(dt) {
     delta = Math.atan2(Math.sin(delta), Math.cos(delta));
     player.rotation.y += delta * Math.min(1, dt * 10);
 
-    runCycle += dt * 9;
+    runCycle += dt * (sprinting ? 14 : 9);
     const swing = Math.sin(runCycle) * 0.55;
     legL.rotation.x = swing;
     legR.rotation.x = -swing;
     armL.rotation.x = -swing;
     armR.rotation.x = swing;
+
+    const footPhase = Math.floor(runCycle / Math.PI);
+    if (footPhase !== lastFootstepPhase) {
+      lastFootstepPhase = footPhase;
+      sfx.footstep(footPhase % 2 === 0);
+    }
   } else {
     legL.rotation.x = THREE.MathUtils.lerp(legL.rotation.x, 0, dt * 8);
     legR.rotation.x = THREE.MathUtils.lerp(legR.rotation.x, 0, dt * 8);
@@ -761,7 +1025,7 @@ function updatePlayer(dt) {
       } else if (!currentPad.insufficientShown) {
         currentPad.insufficientShown = true;
         sfx.error();
-        toast(`Нужно ещё ${(stage.cost - money).toLocaleString('ru-RU')} 💰`);
+        toast(`Нужно ещё ${fmt(stage.cost - money)} 💰`);
       }
     } else if (dist > PAD_TRIGGER_RADIUS * 1.6) {
       currentPad.insufficientShown = false;
@@ -797,7 +1061,53 @@ function animate() {
     currentPad.group.rotation.y += dt * 0.6;
   }
 
+  clouds.forEach(c => {
+    c.position.x += c.userData.speed * dt;
+    if (c.position.x > GROUND_HALF * 1.35) c.position.x = -GROUND_HALF * 1.35;
+  });
+
+  for (let i = particleBursts.length - 1; i >= 0; i--) {
+    const p = particleBursts[i];
+    p.life -= dt;
+    if (p.life <= 0) {
+      scene.remove(p.points);
+      p.points.geometry.dispose();
+      p.points.material.dispose();
+      particleBursts.splice(i, 1);
+      continue;
+    }
+    const pos = p.points.geometry.attributes.position;
+    for (let j = 0; j < p.velocities.length; j++) {
+      const v = p.velocities[j];
+      v.y -= 9 * dt;
+      pos.array[j * 3] += v.x * dt;
+      pos.array[j * 3 + 1] += v.y * dt;
+      pos.array[j * 3 + 2] += v.z * dt;
+    }
+    pos.needsUpdate = true;
+    p.points.material.opacity = Math.max(0, p.life / p.maxLife);
+  }
+
+  updateCompass();
+
+  displayedMoney += (money - displayedMoney) * Math.min(1, dt * 8);
+  if (Math.abs(money - displayedMoney) < 0.5) displayedMoney = money;
+  document.getElementById('money').textContent = fmt(displayedMoney);
+
   controls.update();
+
+  // Camera shake is a purely visual jitter applied to the already-resolved camera position;
+  // it's undone before the next frame so it never pollutes the follow-cam's base position.
+  camera.position.sub(shakeOffset);
+  if (shakeTime > 0) {
+    shakeTime -= dt;
+    const s = shakeStrength * Math.max(0, shakeTime);
+    shakeOffset.set((Math.random() - 0.5) * s, (Math.random() - 0.5) * s, (Math.random() - 0.5) * s);
+    camera.position.add(shakeOffset);
+  } else {
+    shakeOffset.set(0, 0, 0);
+  }
+
   renderer.render(scene, camera);
 }
 
