@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Tycoon 3D — Строительный тайкон</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0f14'/%3E%3Crect x='7' y='14' width='8' height='13' fill='%236fcf6f'/%3E%3Cpolygon points='6,14 11,9 16,14' fill='%238a3b2b'/%3E%3Crect x='17' y='8' width='8' height='19' fill='%235ab0ff'/%3E%3C/svg%3E">
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0f14; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -84,6 +85,18 @@
   .achItem .desc { font-size: 12px; color: #9fb0c4; margin-top: 2px; }
   .achItem .reward { font-size: 11px; color: #ffd479; margin-top: 3px; }
 
+  /* Onboarding hint */
+  #hintOverlay { position: fixed; inset: 0; background: rgba(5,8,12,.7); z-index: 50; display: none;
+                 align-items: center; justify-content: center; padding: 20px; }
+  #hintOverlay.show { display: flex; }
+  #hintCard { width: min(360px, 100%); background: rgba(16,22,32,.97); border: 1px solid rgba(120,170,255,.35);
+              border-radius: 18px; padding: 20px; color: #eaf2ff; text-align: center; }
+  #hintCard .emoji { font-size: 40px; margin-bottom: 8px; }
+  #hintCard h2 { margin: 0 0 10px; font-size: 18px; }
+  #hintCard ul { text-align: left; font-size: 13px; color: #c3d0e2; line-height: 1.7; margin: 0 0 16px; padding-left: 20px; }
+  #hintCard button { width: 100%; cursor: pointer; border: none; border-radius: 12px; padding: 12px; font-weight: 700;
+                      font-size: 14px; background: linear-gradient(135deg,#3fae5c,#2c8c47); color: #fff; }
+
   @media (max-width: 420px) {
     #hud .stat { font-size: 13px; padding: 7px 10px; }
     .btn { min-width: 66px; padding: 8px 8px; }
@@ -124,6 +137,20 @@
   <div id="achPanel">
     <h2>Достижения <span class="close" id="achClose">✕</span></h2>
     <div id="achList"></div>
+  </div>
+</div>
+
+<div id="hintOverlay">
+  <div id="hintCard">
+    <div class="emoji">🏗️</div>
+    <h2>Добро пожаловать в Tycoon 3D!</h2>
+    <ul>
+      <li>Выберите здание внизу и <b>нажмите на клетку</b>, чтобы построить</li>
+      <li><b>Нажмите на своё здание</b>, чтобы улучшить его или продать</li>
+      <li>Один палец / ЛКМ — вращение камеры, два пальца / колесо — зум</li>
+      <li>Следите за достижениями 🏆 — за них дают деньги</li>
+    </ul>
+    <button id="hintCloseBtn">Понятно, начнём!</button>
   </div>
 </div>
 
@@ -188,12 +215,12 @@ const ACHIEVEMENTS = [
     check: s => s.totalBuilt >= 50 },
   { id: 'first_road', name: 'Дорожник', desc: 'Постройте первую дорогу', reward: 15, emoji: '🛣️',
     check: s => s.roadsBuilt >= 1 },
-  { id: 'rich_1000', name: 'Первая тысяча', desc: 'Накопите 1 000 💰', reward: 100, emoji: '💵',
-    check: (s, money) => money >= 1000 },
-  { id: 'rich_10000', name: 'Капиталист', desc: 'Накопите 10 000 💰', reward: 500, emoji: '💰',
-    check: (s, money) => money >= 10000 },
-  { id: 'rich_100000', name: 'Магнат', desc: 'Накопите 100 000 💰', reward: 2000, emoji: '👑',
-    check: (s, money) => money >= 100000 },
+  { id: 'rich_1000', name: 'Первая тысяча', desc: 'Заработайте 1 000 💰 за игру', reward: 100, emoji: '💵',
+    check: s => s.totalEarned >= 1000 },
+  { id: 'rich_10000', name: 'Капиталист', desc: 'Заработайте 10 000 💰 за игру', reward: 500, emoji: '💰',
+    check: s => s.totalEarned >= 10000 },
+  { id: 'rich_100000', name: 'Магнат', desc: 'Заработайте 100 000 💰 за игру', reward: 2000, emoji: '👑',
+    check: s => s.totalEarned >= 100000 },
   { id: 'first_upgrade', name: 'Модернизация', desc: 'Улучшите здание', reward: 50, emoji: '⬆️',
     check: s => s.totalUpgrades >= 1 },
   { id: 'max_level', name: 'На пределе', desc: 'Прокачайте здание до максимума', reward: 300, emoji: '⭐',
@@ -216,8 +243,15 @@ let upgradeTarget = null; // {gx, gz} of tile shown in upgrade panel
 /** grid[x][z] = { type, level, mesh, income } | null */
 const grid = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null));
 
-const stats = { totalBuilt: 0, totalUpgrades: 0, factories: 0, towers: 0, roadsBuilt: 0, maxLevelHit: false };
+const stats = { totalBuilt: 0, totalUpgrades: 0, factories: 0, towers: 0, roadsBuilt: 0, maxLevelHit: false, totalEarned: 0 };
 const unlockedAch = new Set();
+
+// Adds to the money balance and tracks lifetime earnings (used by the rich_* achievements,
+// so spending on buildings never un-earns progress toward them).
+function earn(amount) {
+  money += amount;
+  if (amount > 0) stats.totalEarned += amount;
+}
 
 /* ---------------------------------------------------------------------- */
 /*  SOUND (synthesized, no external assets)                                */
@@ -476,7 +510,7 @@ function updateHUD() {
 }
 
 setInterval(() => {
-  money += totalIncomePerSec();
+  earn(totalIncomePerSec());
   updateHUD();
   checkAchievements();
   refreshBuildbar();
@@ -519,7 +553,7 @@ function checkAchievements() {
     if (unlockedAch.has(a.id)) return;
     if (a.check(stats, money, income)) {
       unlockedAch.add(a.id);
-      money += a.reward;
+      earn(a.reward);
       toast(`🏆 Достижение: ${a.name} (+${a.reward} 💰)`);
       sfx.achievement();
       unlockedAny = true;
@@ -677,7 +711,7 @@ upSellBtn.addEventListener('click', () => {
   const cell = grid[gx][gz];
   if (!cell) return;
   const refund = Math.floor(BUILDING_TYPES[cell.type].cost * SELL_REFUND_RATIO * cell.level);
-  money += refund;
+  earn(refund);
   removeBuilding(gx, gz);
   sfx.sell();
   toast(`Продано +${refund} 💰`);
@@ -728,7 +762,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     const cell = grid[gx][gz];
     if (cell) {
       const refund = Math.floor(BUILDING_TYPES[cell.type].cost * SELL_REFUND_RATIO * cell.level);
-      money += refund;
+      earn(refund);
       removeBuilding(gx, gz);
       sfx.sell();
       toast(`Продано +${refund} 💰`);
@@ -841,6 +875,16 @@ function animate() {
 }
 
 /* ---------------------------------------------------------------------- */
+/*  ONBOARDING HINT (shown once, first visit)                              */
+/* ---------------------------------------------------------------------- */
+const HINT_KEY = 'tycoon3d_seen_hint_v1';
+const hintOverlay = document.getElementById('hintOverlay');
+document.getElementById('hintCloseBtn').addEventListener('click', () => {
+  localStorage.setItem(HINT_KEY, '1');
+  hintOverlay.classList.remove('show');
+});
+
+/* ---------------------------------------------------------------------- */
 /*  INIT                                                                   */
 /* ---------------------------------------------------------------------- */
 load();
@@ -848,6 +892,7 @@ updateHUD();
 refreshBuildbar();
 updateAchBadge();
 checkAchievements();
+if (!localStorage.getItem(HINT_KEY)) hintOverlay.classList.add('show');
 animate();
 </script>
 </body>
