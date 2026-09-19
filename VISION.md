@@ -114,13 +114,50 @@ browser or publish as a static page.
 
 ## Phase 2 — Content depth 🔷 (multi-session)
 
+> Note: item 2 (sawmill/planks) was pulled forward and started ahead of Phase 1
+> items 4–5 (mobile pass, accessibility pass) at the user's explicit request in
+> session "2026-09-19 — Sawmill". The default process (earliest incomplete
+> phase, in order) resumes at Phase 1 item 4 once this item's current slice is
+> done, unless the user directs otherwise again.
+
 - [ ] Branching tycoon tree: after stage 5, offer a choice of 2–3 specializations
       (Residential / Commercial / Industrial), each with its own remaining stages
       and distinct building visuals. Design the data structure first, land it in
       one session; add the actual branch content over following sessions.
-- [ ] Secondary resource ("materials") collected by proximity to specific
-      buildings, gating a subset of upgrades — adds resource management beyond
-      pure money.
+- [ ] Secondary resource: a sawmill/conveyor system producing "planks" 🪵
+      (user-suggested concrete design for this item). Slices:
+      - [x] **Resource generation + tracking.** A standalone generator shed +
+            conveyor belt + sawmill, always present off to the side of the main
+            spiral path (not gated behind any stage). A log spawns every
+            `WOOD_SPAWN_INTERVAL` (4s), rides the belt for `WOOD_TRAVEL_TIME`
+            (3.5s), and becomes `PLANKS_PER_LOG` (1) plank on arrival, with a
+            particle burst + sound. Planks show in the HUD, persist across
+            saves and prestige (the sawmill itself is untouched by a prestige
+            reset), and two achievements (`first_plank`, `plank_baron`) track
+            them. The sawmill and generator buildings are solid, using the same
+            collision system as the spiral's buildings. Verified with a
+            headless-browser pass: production timing traced precisely against
+            wall-clock time (see session notes — an earlier screenshot-based
+            test run appeared to produce planks "too fast," which turned out to
+            be `page.screenshot()`'s slow software-rendering capture letting
+            the page's own animation loop keep running in the background, not
+            a game bug), and collision confirmed by spawning the player inside
+            the sawmill's collider and checking it's pushed out on the very
+            next frame.
+      - [ ] **Give planks a purpose.** Right now they accumulate with no sink.
+            Spend them on: a discount on the next main-path pad's money cost,
+            and/or gate a subset of building upgrades behind a plank cost
+            alongside money (needs its own UI affordance on the upgrade pad's
+            sprite label showing both costs).
+      - [ ] **Make the generator feel alive.** Currently always-on and
+            production is unconditional. Consider: unlock it at a stage
+            milestone (e.g. after Склад/Warehouse) as a discovered mid-game
+            system rather than visible from the very first second; a small
+            visual/audio cue when a log spawns, not just on arrival.
+      - [ ] **Second material** (stretch): once planks have a real sink, a
+            second raw resource (e.g. ore/stone) from a different generator
+            elsewhere on the map, so the "which resource do I need" decision
+            has more than one axis.
 - [ ] Random world events: a timed "double income" pad, a short delivery-run
       mini-objective — rewards continued exploring, not just standing still.
 - [ ] Cosmetic unlocks: character outfits / building color themes, purchasable

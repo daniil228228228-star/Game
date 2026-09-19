@@ -109,6 +109,7 @@
     <div class="stat"><span class="icon">💰</span><span id="money">0</span></div>
     <div class="stat"><span id="income">+0/с</span></div>
     <div class="stat"><span id="progress">0/0</span></div>
+    <div class="stat"><span id="planks">🪵 0</span></div>
   </div>
   <div id="topRightBtns">
     <div class="iconBtn hasBadge" id="achBtn">🏆<span class="badge" id="achBadge"></span></div>
@@ -226,6 +227,10 @@ const ACHIEVEMENTS = [
     check: s => s.prestige >= 1 },
   { id: 'max_level', name: 'На пределе', nameEn: 'Maxed Out', desc: 'Прокачайте любое здание до максимума', descEn: 'Upgrade any building to max level', reward: 400, emoji: '⭐',
     check: s => s.maxLevelHit },
+  { id: 'first_plank', name: 'Первые доски', nameEn: 'First Planks', desc: 'Дождитесь первой доски с лесопилки', descEn: 'Wait for the sawmill to produce your first plank', reward: 15, emoji: '🪵',
+    check: s => s.planksEarned >= 1 },
+  { id: 'plank_baron', name: 'Лесной барон', nameEn: 'Plank Baron', desc: 'Накопите 50 досок с лесопилки', descEn: 'Collect 50 planks from the sawmill', reward: 200, emoji: '🌲',
+    check: s => s.planksEarned >= 50 },
 ];
 
 function achName(a) { return lang === 'ru' ? a.name : a.nameEn; }
@@ -313,7 +318,8 @@ let money = 300;
 let displayedMoney = money; // eased toward `money` each frame for a count-up feel
 let stageIndex = 0; // number of stages already built
 let stamina = STAMINA_MAX;
-const stats = { totalEarned: 0, distanceRun: 0, prestige: 0, maxLevelHit: false };
+let planks = 0; // secondary resource produced by the sawmill (see SAWMILL below)
+const stats = { totalEarned: 0, distanceRun: 0, prestige: 0, maxLevelHit: false, planksEarned: 0 };
 const unlockedAch = new Set();
 let currentPad = null; // { index, group, pos: THREE.Vector3 }
 const growingMeshes = []; // pop-in scale animation queue
@@ -404,6 +410,7 @@ const sfx = {
   error: () => { beep(160, 0, 0.18, 'sawtooth', 0.09); },
   footstep: (alt) => beep(alt ? 190 : 150, 0, 0.045, 'sine', 0.035),
   prestige: () => { beep(440, 0, 0.12, 'sine', 0.1); beep(660, 0.1, 0.12, 'sine', 0.1); beep(880, 0.2, 0.12, 'sine', 0.1); beep(1320, 0.3, 0.3, 'sine', 0.13); },
+  plank: () => { beep(300, 0, 0.08, 'triangle', 0.05); beep(450, 0.05, 0.1, 'triangle', 0.05); },
 };
 
 /* ---------------------------------------------------------------------- */
@@ -574,6 +581,161 @@ function makeRock() {
     placed++;
   }
 })();
+
+/* ---------------------------------------------------------------------- */
+/*  SAWMILL — a standalone wood generator + conveyor + mill, always        */
+/*  present off to the side of the main spiral path. Produces "planks", a  */
+/*  secondary resource (VISION.md Phase 2, item 7 — first slice: resource  */
+/*  generation + tracking; spending planks on upgrades is a follow-up).    */
+/* ---------------------------------------------------------------------- */
+const WOOD_SPAWN_INTERVAL = 4;   // seconds between logs leaving the generator
+const WOOD_TRAVEL_TIME = 3.5;    // seconds for a log to ride the belt
+const PLANKS_PER_LOG = 1;
+
+// Picked to sit well clear of every spiral stage (nearest is >9 units away) at any prestige.
+const GENERATOR_POS = new THREE.Vector3(-10.3, 0, -3.8);
+const SAWMILL_POS = new THREE.Vector3(-17.9, 0, -6.5);
+
+// Static colliders for the sawmill's two buildings, so they're as solid as any spiral
+// building (checked in updatePlayer() alongside the `buildings` array).
+const STATIC_COLLIDERS = [
+  { pos: GENERATOR_POS, radius: 1.6 },
+  { pos: SAWMILL_POS, radius: 1.9 },
+];
+
+const logsInTransit = []; // { mesh, t: 0..1 }
+let woodSpawnTimer = 0;
+
+function buildSawmillScenery() {
+  // Generator: a small woodcutter's shed among a tight cluster of trees.
+  const shed = new THREE.Group();
+  const shedBody = new THREE.Mesh(
+    new THREE.BoxGeometry(2.2, 1.8, 2.2),
+    new THREE.MeshStandardMaterial({ color: 0x8a5a34, roughness: 0.85 })
+  );
+  shedBody.position.y = 0.9;
+  shedBody.castShadow = true;
+  shedBody.receiveShadow = true;
+  shed.add(shedBody);
+  const shedRoof = new THREE.Mesh(
+    new THREE.ConeGeometry(1.8, 1.1, 4),
+    new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.9 })
+  );
+  shedRoof.rotation.y = Math.PI / 4;
+  shedRoof.position.y = 2.35;
+  shedRoof.castShadow = true;
+  shed.add(shedRoof);
+  shed.position.copy(GENERATOR_POS);
+  scene.add(shed);
+  for (let i = 0; i < 5; i++) {
+    const tree = makeTree();
+    const a = (i / 5) * Math.PI * 2;
+    tree.position.set(GENERATOR_POS.x + Math.cos(a) * 2.6, 0, GENERATOR_POS.z + Math.sin(a) * 2.6);
+    tree.scale.setScalar(0.85 + Math.random() * 0.3);
+    scene.add(tree);
+  }
+
+  // Sawmill building, with a small spinning saw blade for flavor.
+  const mill = new THREE.Group();
+  const millBody = new THREE.Mesh(
+    new THREE.BoxGeometry(2.8, 2.4, 2.4),
+    new THREE.MeshStandardMaterial({ color: 0xb08a5a, roughness: 0.8 })
+  );
+  millBody.position.y = 1.2;
+  millBody.castShadow = true;
+  millBody.receiveShadow = true;
+  mill.add(millBody);
+  const millRoof = new THREE.Mesh(
+    new THREE.ConeGeometry(2.2, 1.2, 4),
+    new THREE.MeshStandardMaterial({ color: 0x6b3f22, roughness: 0.9 })
+  );
+  millRoof.rotation.y = Math.PI / 4;
+  millRoof.position.y = 3.0;
+  millRoof.castShadow = true;
+  mill.add(millRoof);
+  const blade = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5, 0.5, 0.08, 16),
+    new THREE.MeshStandardMaterial({ color: 0xd8d8e0, metalness: 0.6, roughness: 0.3, emissive: 0x222233, emissiveIntensity: 0.3 })
+  );
+  blade.rotation.x = Math.PI / 2;
+  blade.position.set(1.6, 1.0, 0);
+  mill.add(blade);
+  mill.userData.blade = blade;
+  mill.position.copy(SAWMILL_POS);
+  scene.add(mill);
+  sawmillBlade = blade;
+
+  // Conveyor belt: a flat dark strip with side rails running between generator and mill.
+  const beltDir = new THREE.Vector3().subVectors(SAWMILL_POS, GENERATOR_POS);
+  const beltLen = beltDir.length();
+  const beltAngle = Math.atan2(beltDir.x, beltDir.z);
+  const beltMid = new THREE.Vector3().addVectors(GENERATOR_POS, SAWMILL_POS).multiplyScalar(0.5);
+
+  const belt = new THREE.Mesh(
+    new THREE.BoxGeometry(1.1, 0.15, beltLen),
+    new THREE.MeshStandardMaterial({ color: 0x2b2f38, roughness: 0.9 })
+  );
+  belt.position.set(beltMid.x, 0.08, beltMid.z);
+  belt.rotation.y = beltAngle;
+  belt.receiveShadow = true;
+  scene.add(belt);
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x4a4f5c, roughness: 0.8 });
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.3, beltLen), railMat);
+    rail.position.set(
+      beltMid.x + Math.cos(beltAngle) * 0.58 * side,
+      0.18,
+      beltMid.z - Math.sin(beltAngle) * 0.58 * side
+    );
+    rail.rotation.y = beltAngle;
+    scene.add(rail);
+  }
+}
+let sawmillBlade = null;
+buildSawmillScenery();
+
+function spawnLog() {
+  const log = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22, 0.22, 0.9, 10),
+    new THREE.MeshStandardMaterial({ color: 0x8a5a34, roughness: 0.85 })
+  );
+  log.rotation.z = Math.PI / 2;
+  log.position.copy(GENERATOR_POS);
+  log.position.y = 0.3;
+  log.castShadow = true;
+  scene.add(log);
+  logsInTransit.push({ mesh: log, t: 0 });
+}
+
+function updateSawmill(dt) {
+  if (sawmillBlade) sawmillBlade.rotation.y += dt * 12;
+
+  woodSpawnTimer += dt;
+  if (woodSpawnTimer >= WOOD_SPAWN_INTERVAL) {
+    woodSpawnTimer = 0;
+    spawnLog();
+  }
+
+  for (let i = logsInTransit.length - 1; i >= 0; i--) {
+    const log = logsInTransit[i];
+    log.t += dt / WOOD_TRAVEL_TIME;
+    if (log.t >= 1) {
+      scene.remove(log.mesh);
+      logsInTransit.splice(i, 1);
+      planks += PLANKS_PER_LOG;
+      stats.planksEarned += PLANKS_PER_LOG;
+      spawnBurst(SAWMILL_POS, 0xc9a06a);
+      sfx.plank();
+      updateHUD();
+      checkAchievements();
+      save();
+    } else {
+      log.mesh.position.lerpVectors(GENERATOR_POS, SAWMILL_POS, log.t);
+      log.mesh.position.y = 0.3;
+      log.mesh.rotation.x += dt * 3;
+    }
+  }
+}
 
 /* ---------------------------------------------------------------------- */
 /*  PLAYER CHARACTER                                                       */
@@ -865,6 +1027,7 @@ function updateHUD() {
   document.getElementById('income').textContent =
     `+${fmt(totalIncomePerSec())}/с${stats.prestige > 0 ? ` (x${incomeMultiplier().toFixed(1)})` : ''}`;
   document.getElementById('progress').textContent = `🏗️ ${stageIndex}/${STAGES.length}`;
+  document.getElementById('planks').textContent = `🪵 ${fmt(planks)}`;
 
   const nextCard = document.getElementById('nextCard');
   const prestigeBtn = document.getElementById('prestigeBtn');
@@ -1142,7 +1305,7 @@ function updateJoy(e) {
 /* ---------------------------------------------------------------------- */
 function save() {
   localStorage.setItem(SAVE_KEY, JSON.stringify({
-    money, stageIndex, stats, unlocked: [...unlockedAch],
+    money, stageIndex, stats, unlocked: [...unlockedAch], planks,
     buildings: buildings.map(b => ({ index: b.index, level: b.level })),
     player: { x: player.position.x, z: player.position.z },
   }));
@@ -1154,6 +1317,7 @@ function load() {
     if (!raw) return;
     const data = JSON.parse(raw);
     money = typeof data.money === 'number' ? data.money : money;
+    planks = typeof data.planks === 'number' ? data.planks : planks;
     stageIndex = Math.min(typeof data.stageIndex === 'number' ? data.stageIndex : 0, STAGES.length);
     if (data.stats) Object.assign(stats, data.stats);
     (data.unlocked || []).forEach(id => unlockedAch.add(id));
@@ -1232,18 +1396,21 @@ function updatePlayer(dt) {
     let nx = THREE.MathUtils.clamp(player.position.x + moveDir.x * step, -GROUND_HALF + 1, GROUND_HALF - 1);
     let nz = THREE.MathUtils.clamp(player.position.z + moveDir.z * step, -GROUND_HALF + 1, GROUND_HALF - 1);
 
-    // Push the player out of any building it would otherwise walk into, sliding along its edge.
-    const collideDist = BUILDING_RADIUS + PLAYER_RADIUS;
-    for (const b of buildings) {
-      const dx = nx - b.pos.x;
-      const dz = nz - b.pos.z;
+    // Push the player out of any building it would otherwise walk into, sliding along its edge
+    // (both the spiral's buildings and the sawmill's two static buildings).
+    const pushOut = (pos, radius) => {
+      const cd = radius + PLAYER_RADIUS;
+      const dx = nx - pos.x;
+      const dz = nz - pos.z;
       const dist = Math.hypot(dx, dz);
-      if (dist < collideDist && dist > 0.0001) {
-        const push = collideDist - dist;
+      if (dist < cd && dist > 0.0001) {
+        const push = cd - dist;
         nx += (dx / dist) * push;
         nz += (dz / dist) * push;
       }
-    }
+    };
+    for (const b of buildings) pushOut(b.pos, BUILDING_RADIUS);
+    for (const c of STATIC_COLLIDERS) pushOut(c.pos, c.radius);
 
     stats.distanceRun += Math.hypot(nx - player.position.x, nz - player.position.z);
     player.position.x = nx;
@@ -1324,6 +1491,7 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.1);
 
   updatePlayer(dt);
+  updateSawmill(dt);
 
   for (let i = growingMeshes.length - 1; i >= 0; i--) {
     const m = growingMeshes[i];

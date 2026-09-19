@@ -94,6 +94,31 @@ All notable changes to Tycoon 3D. Each session appends an entry here — see
   adding a string in only one language now fails the suite instead of
   shipping silently broken.
 
+### 2026-09-19 — Sawmill: a conveyor-belt secondary resource (VISION.md Phase 2, item 2, slice 1)
+- User-directed session, pulled forward ahead of the default Phase 1 order
+  at explicit request (see the note added atop Phase 2 in `VISION.md`).
+- Added a standalone sawmill complex (generator shed + conveyor belt +
+  mill, with a spinning saw blade for flavor) placed off to the side of
+  the main spiral path, verified programmatically to sit >9 units clear
+  of every stage at any prestige. A log spawns every 4s, rides the belt
+  for 3.5s, and becomes 1 plank on arrival — with its own particle burst
+  and sound, a new HUD counter, and two achievements (`first_plank`,
+  `plank_baron`). Planks persist across saves and survive a prestige
+  reset (the sawmill itself isn't part of the resettable spiral).
+- Extended the existing player-building collision system to also treat
+  the generator and mill as solid, matching every other building.
+- Verified with a headless-browser pass: a precise wall-clock trace
+  confirmed the production timing is exactly on schedule (an earlier,
+  screenshot-heavy test run had appeared to produce planks much faster
+  than expected — turned out to be `page.screenshot()`'s slow
+  software-rendering capture letting the page's animation loop keep
+  running in the background for many extra seconds, not a game bug);
+  collision was confirmed by spawning the player inside the mill's
+  collider and checking it's pushed out on the very next frame.
+- This is the first of several planned slices (see `VISION.md`) — planks
+  don't have a spend yet, and the sawmill is always-on rather than
+  unlocked at a milestone. Both are noted as explicit follow-ups.
+
 ---
 
 ## Format for new entries
