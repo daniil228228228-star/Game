@@ -114,7 +114,8 @@
     <div class="iconBtn hasBadge" id="achBtn">🏆<span class="badge" id="achBadge"></span></div>
     <div class="iconBtn" id="camBtn">🎥</div>
     <div class="iconBtn" id="muteBtn">🔊</div>
-    <div class="iconBtn danger" id="resetBtn">Сброс</div>
+    <div class="iconBtn" id="langBtn"></div>
+    <div class="iconBtn danger" id="resetBtn"></div>
   </div>
 </div>
 
@@ -126,7 +127,7 @@
 
 <div id="achOverlay">
   <div id="achPanel">
-    <h2>Достижения <span class="close" id="achClose">✕</span></h2>
+    <h2><span id="achTitleText"></span><span class="close" id="achClose">✕</span></h2>
     <div id="achList"></div>
   </div>
 </div>
@@ -134,16 +135,9 @@
 <div id="hintOverlay">
   <div id="hintCard">
     <div class="emoji">🏃</div>
-    <h2>Добро пожаловать в Tycoon 3D!</h2>
-    <ul>
-      <li><b>WASD / стрелки</b> — бегать (на телефоне — джойстик слева внизу)</li>
-      <li>Тяните экран, чтобы <b>смотреть по сторонам</b>; колесо/щипок — зум</li>
-      <li>Держите <b>Shift</b> (или толкайте джойстик до упора) — спринт, следите за шкалой выносливости</li>
-      <li><b>Золотая площадка</b> — добегите до неё, чтобы построить здание рядом (если хватает денег). Стрелка сверху подскажет направление</li>
-      <li><b>Синяя площадка</b> у здания — прокачивает его до 3 уровней и повышает доход. Сами здания теперь твёрдые — сквозь них не пройти</li>
-      <li>Следите за достижениями 🏆 — за них дают деньги. Построите весь тайкон — откроется <b>престиж</b> ✨</li>
-    </ul>
-    <button id="hintCloseBtn">Понятно, начнём!</button>
+    <h2 id="hintTitle"></h2>
+    <ul id="hintBullets"></ul>
+    <button id="hintCloseBtn"></button>
   </div>
 </div>
 
@@ -195,40 +189,122 @@ const SPIRAL_RADIUS_STEP = 4.6;
 const SPIRAL_ANGLE_STEP = 0.95; // radians per stage
 
 const STAGES = [
-  { name: 'Дом',            cost: 50,     incomeAdd: 1,   emoji: '🏠', color: 0x6fcf6f, height: 2.4 },
-  { name: 'Второй дом',     cost: 150,    incomeAdd: 2,   emoji: '🏡', color: 0x7fd97f, height: 2.8 },
-  { name: 'Магазин',        cost: 400,    incomeAdd: 5,   emoji: '🏪', color: 0x5ab0ff, height: 3.4 },
-  { name: 'Склад',          cost: 900,    incomeAdd: 8,   emoji: '📦', color: 0x9aa5b1, height: 3.0 },
-  { name: 'Мини-завод',     cost: 2000,   incomeAdd: 15,  emoji: '🏭', color: 0xff9d4d, height: 4.2 },
-  { name: 'Завод',          cost: 5000,   incomeAdd: 30,  emoji: '🏭', color: 0xff7d4d, height: 5.2 },
-  { name: 'Офис',           cost: 12000,  incomeAdd: 60,  emoji: '🏢', color: 0xd282ff, height: 6.5 },
-  { name: 'Бизнес-центр',   cost: 30000,  incomeAdd: 120, emoji: '🏬', color: 0xb96cff, height: 8 },
-  { name: 'Небоскрёб',      cost: 80000,  incomeAdd: 250, emoji: '🏙️', color: 0x8a5cff, height: 11 },
-  { name: 'Империя',        cost: 200000, incomeAdd: 500, emoji: '👑', color: 0xffd479, height: 14 },
+  { name: 'Дом',            nameEn: 'House',           cost: 50,     incomeAdd: 1,   emoji: '🏠', color: 0x6fcf6f, height: 2.4 },
+  { name: 'Второй дом',     nameEn: 'Second House',    cost: 150,    incomeAdd: 2,   emoji: '🏡', color: 0x7fd97f, height: 2.8 },
+  { name: 'Магазин',        nameEn: 'Shop',            cost: 400,    incomeAdd: 5,   emoji: '🏪', color: 0x5ab0ff, height: 3.4 },
+  { name: 'Склад',          nameEn: 'Warehouse',       cost: 900,    incomeAdd: 8,   emoji: '📦', color: 0x9aa5b1, height: 3.0 },
+  { name: 'Мини-завод',     nameEn: 'Mini Factory',    cost: 2000,   incomeAdd: 15,  emoji: '🏭', color: 0xff9d4d, height: 4.2 },
+  { name: 'Завод',          nameEn: 'Factory',         cost: 5000,   incomeAdd: 30,  emoji: '🏭', color: 0xff7d4d, height: 5.2 },
+  { name: 'Офис',           nameEn: 'Office',          cost: 12000,  incomeAdd: 60,  emoji: '🏢', color: 0xd282ff, height: 6.5 },
+  { name: 'Бизнес-центр',   nameEn: 'Business Center', cost: 30000,  incomeAdd: 120, emoji: '🏬', color: 0xb96cff, height: 8 },
+  { name: 'Небоскрёб',      nameEn: 'Skyscraper',      cost: 80000,  incomeAdd: 250, emoji: '🏙️', color: 0x8a5cff, height: 11 },
+  { name: 'Империя',        nameEn: 'Empire',          cost: 200000, incomeAdd: 500, emoji: '👑', color: 0xffd479, height: 14 },
 ];
 
+function stageName(stage) {
+  return lang === 'ru' ? stage.name : stage.nameEn;
+}
+
 const ACHIEVEMENTS = [
-  { id: 'first_building', name: 'Первая стройка', desc: 'Постройте первое здание', reward: 20, emoji: '🧱',
+  { id: 'first_building', name: 'Первая стройка', nameEn: 'First Build', desc: 'Постройте первое здание', descEn: 'Build your first building', reward: 20, emoji: '🧱',
     check: (s, stage) => stage >= 1 },
-  { id: 'five_buildings', name: 'Растём!', desc: 'Постройте 5 зданий', reward: 500, emoji: '🏘️',
+  { id: 'five_buildings', name: 'Растём!', nameEn: 'Growing!', desc: 'Постройте 5 зданий', descEn: 'Build 5 buildings', reward: 500, emoji: '🏘️',
     check: (s, stage) => stage >= 5 },
-  { id: 'tycoon_complete', name: 'Тайкон построен!', desc: 'Постройте все здания', reward: 5000, emoji: '👑',
+  { id: 'tycoon_complete', name: 'Тайкон построен!', nameEn: 'Tycoon Complete!', desc: 'Постройте все здания', descEn: 'Build every building', reward: 5000, emoji: '👑',
     check: (s, stage) => stage >= STAGES.length },
-  { id: 'rich_1000', name: 'Первая тысяча', desc: 'Заработайте 1 000 💰 за игру', reward: 100, emoji: '💵',
+  { id: 'rich_1000', name: 'Первая тысяча', nameEn: 'First Thousand', desc: 'Заработайте 1 000 💰 за игру', descEn: 'Earn 1,000 💰 in total', reward: 100, emoji: '💵',
     check: s => s.totalEarned >= 1000 },
-  { id: 'rich_10000', name: 'Капиталист', desc: 'Заработайте 10 000 💰 за игру', reward: 500, emoji: '💰',
+  { id: 'rich_10000', name: 'Капиталист', nameEn: 'Capitalist', desc: 'Заработайте 10 000 💰 за игру', descEn: 'Earn 10,000 💰 in total', reward: 500, emoji: '💰',
     check: s => s.totalEarned >= 10000 },
-  { id: 'rich_100000', name: 'Магнат', desc: 'Заработайте 100 000 💰 за игру', reward: 2000, emoji: '💎',
+  { id: 'rich_100000', name: 'Магнат', nameEn: 'Tycoon Magnate', desc: 'Заработайте 100 000 💰 за игру', descEn: 'Earn 100,000 💰 in total', reward: 2000, emoji: '💎',
     check: s => s.totalEarned >= 100000 },
-  { id: 'income_100', name: 'Пассивный доход', desc: 'Доход 100/с', reward: 500, emoji: '📈',
+  { id: 'income_100', name: 'Пассивный доход', nameEn: 'Passive Income', desc: 'Доход 100/с', descEn: 'Reach 100/s income', reward: 500, emoji: '📈',
     check: (s, stage, income) => income >= 100 },
-  { id: 'marathon', name: 'Марафонец', desc: 'Пробегите 2000 м по своему тайкону', reward: 300, emoji: '🏃',
+  { id: 'marathon', name: 'Марафонец', nameEn: 'Marathoner', desc: 'Пробегите 2000 м по своему тайкону', descEn: 'Run 2,000m around your tycoon', reward: 300, emoji: '🏃',
     check: s => s.distanceRun >= 2000 },
-  { id: 'first_prestige', name: 'Возрождение', desc: 'Совершите престиж', reward: 1000, emoji: '✨',
+  { id: 'first_prestige', name: 'Возрождение', nameEn: 'Rebirth', desc: 'Совершите престиж', descEn: 'Perform a prestige', reward: 1000, emoji: '✨',
     check: s => s.prestige >= 1 },
-  { id: 'max_level', name: 'На пределе', desc: 'Прокачайте любое здание до максимума', reward: 400, emoji: '⭐',
+  { id: 'max_level', name: 'На пределе', nameEn: 'Maxed Out', desc: 'Прокачайте любое здание до максимума', descEn: 'Upgrade any building to max level', reward: 400, emoji: '⭐',
     check: s => s.maxLevelHit },
 ];
+
+function achName(a) { return lang === 'ru' ? a.name : a.nameEn; }
+function achDesc(a) { return lang === 'ru' ? a.desc : a.descEn; }
+
+/* ---------------------------------------------------------------------- */
+/*  I18N — minimal data-driven ru/en strings table                         */
+/* ---------------------------------------------------------------------- */
+const LANG_KEY = 'tycoon3d_lang';
+let lang = localStorage.getItem(LANG_KEY) || (navigator.language?.startsWith('ru') ? 'ru' : 'en');
+
+const STRINGS = {
+  ru: {
+    reset: 'Сброс',
+    hint_title: 'Добро пожаловать в Tycoon 3D!',
+    hint_button: 'Понятно, начнём!',
+    hint_bullets: [
+      '<b>WASD / стрелки</b> — бегать (на телефоне — джойстик слева внизу)',
+      'Тяните экран, чтобы <b>смотреть по сторонам</b>; колесо/щипок — зум',
+      'Держите <b>Shift</b> (или толкайте джойстик до упора) — спринт, следите за шкалой выносливости',
+      '<b>Золотая площадка</b> — добегите до неё, чтобы построить здание рядом (если хватает денег). Стрелка сверху подскажет направление',
+      '<b>Синяя площадка</b> у здания — прокачивает его до 3 уровней и повышает доход. Сами здания теперь твёрдые — сквозь них не пройти',
+      'Следите за достижениями 🏆 — за них дают деньги. Построите весь тайкон — откроется <b>престиж</b> ✨',
+    ],
+    ach_title: 'Достижения',
+    ach_unlocked: 'Получено',
+    ach_reward: 'Награда',
+    reset_confirm: 'Сбросить весь прогресс?',
+    prestige_confirm: 'Начать тайкон заново? Все здания и деньги обнулятся, но доход навсегда умножится на x{mult}.',
+    prestige_btn: '✨ Престиж — доход x{mult}',
+    next_building: 'Далее: {emoji} {name} — {cost} 💰 (добегите до площадки)',
+    next_complete: '🎉 Тайкон полностью построен!',
+    next_prestige_suffix: ' (престижей: {n})',
+    toast_built: 'Построено: {emoji} {name}!',
+    toast_upgraded: 'Улучшено: {name} → ур. {level}',
+    toast_prestige: '✨ Престиж! Доход теперь x{mult}',
+    toast_achievement: '🏆 Достижение: {name} (+{reward} 💰)',
+    toast_need_more: 'Нужно ещё {amount} 💰',
+    toast_need_more_upgrade: 'Нужно ещё {amount} 💰 на улучшение',
+    upgrade_level_line: '⬆️ Ур. {level}',
+    doc_title: 'Tycoon 3D — Строительный тайкон',
+  },
+  en: {
+    reset: 'Reset',
+    hint_title: 'Welcome to Tycoon 3D!',
+    hint_button: "Got it, let's go!",
+    hint_bullets: [
+      "<b>WASD / arrow keys</b> to run (joystick bottom-left on phone)",
+      'Drag the screen to <b>look around</b>; wheel/pinch to zoom',
+      'Hold <b>Shift</b> (or push the joystick to its edge) to sprint — watch the stamina bar',
+      "<b>Gold pad</b> — run onto it to build a building nearby (if you can afford it). The arrow at the top points the way",
+      "<b>Blue pad</b> next to a building — upgrades it up to level 3 and raises its income. Buildings are now solid — you can't walk through them",
+      'Watch for achievements 🏆 — they pay out cash. Build the whole tycoon and <b>prestige</b> ✨ unlocks',
+    ],
+    ach_title: 'Achievements',
+    ach_unlocked: 'Unlocked',
+    ach_reward: 'Reward',
+    reset_confirm: 'Reset all progress?',
+    prestige_confirm: 'Start the tycoon over? All buildings and money reset, but income permanently multiplies by x{mult}.',
+    prestige_btn: '✨ Prestige — income x{mult}',
+    next_building: 'Next: {emoji} {name} — {cost} 💰 (run to the pad)',
+    next_complete: '🎉 Tycoon fully built!',
+    next_prestige_suffix: ' (prestiges: {n})',
+    toast_built: 'Built: {emoji} {name}!',
+    toast_upgraded: 'Upgraded: {name} → lv. {level}',
+    toast_prestige: '✨ Prestige! Income is now x{mult}',
+    toast_achievement: '🏆 Achievement: {name} (+{reward} 💰)',
+    toast_need_more: 'Need {amount} 💰 more',
+    toast_need_more_upgrade: 'Need {amount} 💰 more to upgrade',
+    upgrade_level_line: '⬆️ Lv. {level}',
+    doc_title: 'Tycoon 3D — Building Tycoon',
+  },
+};
+
+function t(key, vars) {
+  let str = STRINGS[lang][key] ?? STRINGS.ru[key] ?? key;
+  if (vars) for (const k in vars) str = str.replaceAll(`{${k}}`, vars[k]);
+  return str;
+}
 
 /* ---------------------------------------------------------------------- */
 /*  STATE                                                                  */
@@ -609,7 +685,7 @@ function spawnUpgradePad(entry) {
   group.add(disc);
 
   const sprite = makeLabelSprite([
-    `⬆️ Ур. ${entry.level + 1}`,
+    t('upgrade_level_line', { level: entry.level + 1 }),
     `${fmt(buildingUpgradeCost(entry.index, entry.level))} 💰`,
   ]);
   sprite.position.y = 2.6;
@@ -618,7 +694,7 @@ function spawnUpgradePad(entry) {
 
   group.position.set(pos.x, 0, pos.z);
   scene.add(group);
-  entry.upgradePad = { group, pos, insufficientShown: false };
+  entry.upgradePad = { group, sprite, pos, insufficientShown: false };
 }
 
 function removeUpgradePad(entry) {
@@ -644,7 +720,7 @@ function upgradeBuilding(entry) {
   sfx.build();
   spawnBurst(entry.pos, 0x5ab0ff);
   triggerShake(0.12, 0.2);
-  toast(`Улучшено: ${STAGES[entry.index].name} → ур. ${entry.level}`);
+  toast(t('toast_upgraded', { name: stageName(STAGES[entry.index]), level: entry.level }));
   updateHUD();
   checkAchievements();
   save();
@@ -726,13 +802,13 @@ function spawnPad(index) {
   beacon.position.y = 3.5;
   group.add(beacon);
 
-  const sprite = makeLabelSprite([`${stage.emoji} ${stage.name}`, `${fmt(stage.cost)} 💰`]);
+  const sprite = makeLabelSprite([`${stage.emoji} ${stageName(stage)}`, `${fmt(stage.cost)} 💰`]);
   sprite.position.y = 8.6;
   group.add(sprite);
 
   group.position.set(pos.x, 0, pos.z);
   scene.add(group);
-  currentPad = { index, group, beacon, pos: new THREE.Vector3(pos.x, 0, pos.z), insufficientShown: false };
+  currentPad = { index, group, beacon, sprite, pos: new THREE.Vector3(pos.x, 0, pos.z), insufficientShown: false };
 }
 
 function purchaseCurrentPad() {
@@ -746,7 +822,7 @@ function purchaseCurrentPad() {
   sfx.build();
   spawnBurst(pos, 0xffd479);
   triggerShake(0.16, 0.26);
-  toast(`Построено: ${stage.emoji} ${stage.name}!`);
+  toast(t('toast_built', { emoji: stage.emoji, name: stageName(stage) }));
   currentPad = null;
   if (stageIndex < STAGES.length) spawnPad(stageIndex);
   updateHUD();
@@ -757,7 +833,7 @@ function purchaseCurrentPad() {
 function doPrestige() {
   if (stageIndex < STAGES.length) return;
   const nextMult = 1 + (stats.prestige + 1) * 0.5;
-  if (!confirm(`Начать тайкон заново? Все здания и деньги обнулятся, но доход навсегда умножится на x${nextMult.toFixed(1)}.`)) return;
+  if (!confirm(t('prestige_confirm', { mult: nextMult.toFixed(1) }))) return;
   stats.prestige += 1;
   buildings.forEach(b => {
     scene.remove(b.mesh);
@@ -769,7 +845,7 @@ function doPrestige() {
   displayedMoney = money;
   spawnPad(0);
   sfx.prestige();
-  toast(`✨ Престиж! Доход теперь x${incomeMultiplier().toFixed(1)}`);
+  toast(t('toast_prestige', { mult: incomeMultiplier().toFixed(1) }));
   updateHUD();
   checkAchievements();
   save();
@@ -794,12 +870,13 @@ function updateHUD() {
   const prestigeBtn = document.getElementById('prestigeBtn');
   if (stageIndex < STAGES.length) {
     const s = STAGES[stageIndex];
-    nextCard.textContent = `Далее: ${s.emoji} ${s.name} — ${fmt(s.cost)} 💰 (добегите до площадки)`;
+    nextCard.textContent = t('next_building', { emoji: s.emoji, name: stageName(s), cost: fmt(s.cost) });
     prestigeBtn.hidden = true;
   } else {
-    nextCard.textContent = `🎉 Тайкон полностью построен!${stats.prestige > 0 ? ` (престижей: ${stats.prestige})` : ''}`;
+    nextCard.textContent = t('next_complete') +
+      (stats.prestige > 0 ? t('next_prestige_suffix', { n: stats.prestige }) : '');
     prestigeBtn.hidden = false;
-    prestigeBtn.textContent = `✨ Престиж — доход x${(1 + (stats.prestige + 1) * 0.5).toFixed(1)}`;
+    prestigeBtn.textContent = t('prestige_btn', { mult: (1 + (stats.prestige + 1) * 0.5).toFixed(1) });
   }
 }
 
@@ -825,9 +902,9 @@ function renderAchList() {
     item.innerHTML = `
       <div class="ico">${a.emoji}</div>
       <div class="body">
-        <div class="name">${a.name}</div>
-        <div class="desc">${a.desc}</div>
-        <div class="reward">${unlocked ? 'Получено' : 'Награда'}: +${a.reward} 💰</div>
+        <div class="name">${achName(a)}</div>
+        <div class="desc">${achDesc(a)}</div>
+        <div class="reward">${unlocked ? t('ach_unlocked') : t('ach_reward')}: +${a.reward} 💰</div>
       </div>`;
     achListEl.appendChild(item);
   });
@@ -847,7 +924,7 @@ function checkAchievements() {
     if (a.check(stats, stageIndex, income)) {
       unlockedAch.add(a.id);
       earn(a.reward);
-      toast(`🏆 Достижение: ${a.name} (+${a.reward} 💰)`);
+      toast(t('toast_achievement', { name: achName(a), reward: a.reward }));
       sfx.achievement();
       unlockedAny = true;
     }
@@ -875,7 +952,7 @@ document.getElementById('achOverlay').addEventListener('click', (e) => {
 /*  UI — buttons, toast, hint                                              */
 /* ---------------------------------------------------------------------- */
 document.getElementById('resetBtn').addEventListener('click', () => {
-  if (!confirm('Сбросить весь прогресс?')) return;
+  if (!confirm(t('reset_confirm'))) return;
   localStorage.removeItem(SAVE_KEY);
   location.reload();
 });
@@ -899,6 +976,58 @@ muteBtn.addEventListener('click', () => {
   if (!muted) { ensureAudio(); sfx.build(); }
 });
 refreshMuteBtn();
+
+/* ---------------------------------------------------------------------- */
+/*  LANGUAGE SWITCHING — applies `lang` to all DOM text and any already-   */
+/*  rendered canvas sprite labels (pad/upgrade-pad price tags).            */
+/* ---------------------------------------------------------------------- */
+function regenerateSprite(oldSprite, lines, scaleY) {
+  oldSprite.material.map.dispose();
+  oldSprite.material.dispose();
+  const sprite = makeLabelSprite(lines);
+  sprite.position.y = oldSprite.position.y;
+  if (scaleY) sprite.scale.set(2.4, scaleY, 1);
+  return sprite;
+}
+
+function applyLanguage() {
+  document.title = t('doc_title');
+  document.documentElement.lang = lang;
+  document.getElementById('resetBtn').textContent = t('reset');
+  document.getElementById('langBtn').textContent = lang === 'ru' ? 'EN' : 'RU';
+  document.getElementById('hintTitle').textContent = t('hint_title');
+  document.getElementById('hintBullets').innerHTML =
+    (STRINGS[lang].hint_bullets || STRINGS.ru.hint_bullets).map(b => `<li>${b}</li>`).join('');
+  document.getElementById('hintCloseBtn').textContent = t('hint_button');
+  document.getElementById('achTitleText').textContent = t('ach_title');
+
+  if (currentPad) {
+    const stage = STAGES[currentPad.index];
+    const sprite = regenerateSprite(currentPad.sprite, [`${stage.emoji} ${stageName(stage)}`, `${fmt(stage.cost)} 💰`]);
+    currentPad.group.remove(currentPad.sprite);
+    currentPad.group.add(sprite);
+    currentPad.sprite = sprite;
+  }
+  for (const b of buildings) {
+    if (!b.upgradePad) continue;
+    const sprite = regenerateSprite(b.upgradePad.sprite, [
+      t('upgrade_level_line', { level: b.level + 1 }),
+      `${fmt(buildingUpgradeCost(b.index, b.level))} 💰`,
+    ], 1.15);
+    b.upgradePad.group.remove(b.upgradePad.sprite);
+    b.upgradePad.group.add(sprite);
+    b.upgradePad.sprite = sprite;
+  }
+
+  renderAchList();
+  updateHUD();
+}
+
+document.getElementById('langBtn').addEventListener('click', () => {
+  lang = lang === 'ru' ? 'en' : 'ru';
+  localStorage.setItem(LANG_KEY, lang);
+  applyLanguage();
+});
 
 let toastTimer = null;
 function toast(msg) {
@@ -1154,7 +1283,7 @@ function updatePlayer(dt) {
       } else if (!currentPad.insufficientShown) {
         currentPad.insufficientShown = true;
         sfx.error();
-        toast(`Нужно ещё ${fmt(stage.cost - money)} 💰`);
+        toast(t('toast_need_more', { amount: fmt(stage.cost - money) }));
       }
     } else if (dist > PAD_TRIGGER_RADIUS * 1.6) {
       currentPad.insufficientShown = false;
@@ -1173,7 +1302,7 @@ function updatePlayer(dt) {
       } else if (!up.insufficientShown) {
         up.insufficientShown = true;
         sfx.error();
-        toast(`Нужно ещё ${fmt(cost - money)} 💰 на улучшение`);
+        toast(t('toast_need_more_upgrade', { amount: fmt(cost - money) }));
       }
     } else if (dist > PAD_TRIGGER_RADIUS * 1.6) {
       up.insufficientShown = false;
@@ -1266,6 +1395,7 @@ function animate() {
 /*  INIT                                                                   */
 /* ---------------------------------------------------------------------- */
 load();
+applyLanguage();
 if (stageIndex < STAGES.length && !currentPad) spawnPad(stageIndex);
 
 // Position the camera behind the player, facing the next objective pad (or a sensible

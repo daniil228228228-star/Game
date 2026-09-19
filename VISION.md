@@ -92,9 +92,20 @@ browser or publish as a static page.
       (still >3% faster than prestige 9). If deeper-late-game reward is wanted
       later, that's the "proper permanent skill tree" in Phase 3, item 13 — not a
       fix needed here.
-- [ ] Minimal i18n layer (ru/en at least) — the game is shared as a public link and
+- [x] Minimal i18n layer (ru/en at least) — the game is shared as a public link and
       may reach non-Russian players. Keep it data-driven (a strings table), not a
-      rewrite.
+      rewrite. **Done**: a `STRINGS.{ru,en}` table + `t(key, vars)` helper drive every
+      DOM string (HUD, buttons, toasts, hint, achievements panel); `STAGES`/`ACHIEVEMENTS`
+      entries carry `nameEn`/`descEn` alongside the Russian originals. Language
+      auto-detects from `navigator.language` on first visit, is togglable via a new
+      🌐-style button (shows the language you'd switch *to*), and persists in
+      localStorage. In-world canvas sprite labels (pad/upgrade-pad price tags)
+      regenerate in place on toggle, not just static DOM text. Verified manually with
+      a headless-browser pass (toggle, achievements panel, hint overlay, building a
+      pad and its upgrade pad in each language, reload persistence — no errors);
+      `tests/i18n.test.mjs` locks in the data integrity (matching key sets between
+      languages, no empty strings, matching `{token}` placeholders, every stage/
+      achievement has both languages) as an automated regression check.
 - [ ] Real-device mobile control pass (or Chrome device emulation at minimum):
       one-handed play, joystick/camera-drag zones never fight each other.
 - [ ] Accessibility pass: colorblind-safe pad colors (current gold vs blue may not

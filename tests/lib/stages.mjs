@@ -1,5 +1,6 @@
-// Shared helpers for tests that simulate the in-game economy from the live STAGES data in
-// tycoon.html, so the game's numbers and the test's model can never drift apart silently.
+// Shared helpers for tests that pull live data (STAGES, ACHIEVEMENTS, STRINGS, ...) straight
+// out of tycoon.html, so the game's actual values and the test's model can never drift apart
+// silently. (Named stages.mjs from its first use; it now hosts general game-data extraction.)
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -14,6 +15,20 @@ export function loadStages() {
   const m = html.match(/const STAGES = (\[[\s\S]*?\n\]);/);
   assert.ok(m, 'Could not find STAGES array in tycoon.html — has it been renamed/restructured?');
   // eslint-disable-next-line no-new-func — trusted local file, plain array literal
+  return new Function(`return ${m[1]};`)();
+}
+
+export function loadAchievements() {
+  const m = html.match(/const ACHIEVEMENTS = (\[[\s\S]*?\n\]);/);
+  assert.ok(m, 'Could not find ACHIEVEMENTS array in tycoon.html — has it been renamed/restructured?');
+  // The array's `check` fields are function literals — safe to construct without STAGES in
+  // scope since we only ever inspect the plain-data fields, never call `check()` here.
+  return new Function(`return ${m[1]};`)();
+}
+
+export function loadStrings() {
+  const m = html.match(/const STRINGS = (\{[\s\S]*?\n\});/);
+  assert.ok(m, 'Could not find STRINGS table in tycoon.html — has it been renamed/restructured?');
   return new Function(`return ${m[1]};`)();
 }
 

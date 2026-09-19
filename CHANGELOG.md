@@ -71,6 +71,29 @@ All notable changes to Tycoon 3D. Each session appends an entry here — see
   `tests/balance.test.mjs` into `tests/lib/stages.mjs` so this test and the
   new `tests/prestige.test.mjs` share one model instead of duplicating it.
 
+### 2026-09-19 — Minimal ru/en i18n layer (VISION.md Phase 1, item 3)
+- Added a data-driven `STRINGS.{ru,en}` table + `t(key, vars)` helper and
+  wired it through every DOM string: HUD, buttons, toasts, the onboarding
+  hint, and the achievements panel. `STAGES` and `ACHIEVEMENTS` entries
+  now carry `nameEn`/`descEn` alongside the originals.
+- Language auto-detects from `navigator.language` on first visit, is
+  togglable via a new button in the top-right cluster (shows the language
+  you'd switch *to*, e.g. shows "EN" while in Russian), and persists in
+  localStorage.
+- In-world canvas sprite labels (the price-tag sprites on pads and
+  upgrade pads) now regenerate in place when the language changes, not
+  just the static DOM text — the previous approach would have left
+  already-built pads showing stale-language labels.
+- Verified manually with a headless-browser pass: toggling language
+  updates the hint overlay, achievements panel, HUD, and a freshly-built
+  pad + its upgrade pad, in both directions, with the choice surviving a
+  reload — no console errors.
+- Added `tests/i18n.test.mjs`: matching key sets between `STRINGS.ru`/`en`,
+  no empty strings, matching `{token}` placeholders per key, and every
+  `STAGES`/`ACHIEVEMENTS` entry carrying both languages — a future session
+  adding a string in only one language now fails the suite instead of
+  shipping silently broken.
+
 ---
 
 ## Format for new entries
