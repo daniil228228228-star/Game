@@ -190,16 +190,16 @@ const SPIRAL_RADIUS_STEP = 4.6;
 const SPIRAL_ANGLE_STEP = 0.95; // radians per stage
 
 const STAGES = [
-  { name: 'Дом',            nameEn: 'House',           cost: 50,     incomeAdd: 1,   emoji: '🏠', color: 0x6fcf6f, height: 2.4 },
-  { name: 'Второй дом',     nameEn: 'Second House',    cost: 150,    incomeAdd: 2,   emoji: '🏡', color: 0x7fd97f, height: 2.8 },
-  { name: 'Магазин',        nameEn: 'Shop',            cost: 400,    incomeAdd: 5,   emoji: '🏪', color: 0x5ab0ff, height: 3.4 },
-  { name: 'Склад',          nameEn: 'Warehouse',       cost: 900,    incomeAdd: 8,   emoji: '📦', color: 0x9aa5b1, height: 3.0 },
-  { name: 'Мини-завод',     nameEn: 'Mini Factory',    cost: 2000,   incomeAdd: 15,  emoji: '🏭', color: 0xff9d4d, height: 4.2 },
-  { name: 'Завод',          nameEn: 'Factory',         cost: 5000,   incomeAdd: 30,  emoji: '🏭', color: 0xff7d4d, height: 5.2 },
-  { name: 'Офис',           nameEn: 'Office',          cost: 12000,  incomeAdd: 60,  emoji: '🏢', color: 0xd282ff, height: 6.5 },
-  { name: 'Бизнес-центр',   nameEn: 'Business Center', cost: 30000,  incomeAdd: 120, emoji: '🏬', color: 0xb96cff, height: 8 },
-  { name: 'Небоскрёб',      nameEn: 'Skyscraper',      cost: 80000,  incomeAdd: 250, emoji: '🏙️', color: 0x8a5cff, height: 11 },
-  { name: 'Империя',        nameEn: 'Empire',          cost: 200000, incomeAdd: 500, emoji: '👑', color: 0xffd479, height: 14 },
+  { name: 'Дом',            nameEn: 'House',           cost: 50,     incomeAdd: 1,   emoji: '🏠', color: 0x6fcf6f, height: 2.4,  archetype: 'house',     baseSize: 2.2 },
+  { name: 'Второй дом',     nameEn: 'Second House',    cost: 150,    incomeAdd: 2,   emoji: '🏡', color: 0x7fd97f, height: 2.9,  archetype: 'house',     baseSize: 2.6 },
+  { name: 'Магазин',        nameEn: 'Shop',            cost: 400,    incomeAdd: 5,   emoji: '🏪', color: 0x5ab0ff, height: 2.6,  archetype: 'shop',      baseSize: 2.6 },
+  { name: 'Склад',          nameEn: 'Warehouse',       cost: 900,    incomeAdd: 8,   emoji: '📦', color: 0x9aa5b1, height: 2.4,  archetype: 'warehouse', baseSize: 2.2 },
+  { name: 'Мини-завод',     nameEn: 'Mini Factory',    cost: 2000,   incomeAdd: 15,  emoji: '🏭', color: 0xff9d4d, height: 3.0,  archetype: 'factory',   baseSize: 2.4, stacks: 1 },
+  { name: 'Завод',          nameEn: 'Factory',         cost: 5000,   incomeAdd: 30,  emoji: '🏭', color: 0xff7d4d, height: 3.6,  archetype: 'factory',   baseSize: 2.9, stacks: 2 },
+  { name: 'Офис',           nameEn: 'Office',          cost: 12000,  incomeAdd: 60,  emoji: '🏢', color: 0xd282ff, height: 6.5,  archetype: 'office',    baseSize: 2.4 },
+  { name: 'Бизнес-центр',   nameEn: 'Business Center', cost: 30000,  incomeAdd: 120, emoji: '🏬', color: 0xb96cff, height: 8.5,  archetype: 'office',    baseSize: 2.8 },
+  { name: 'Небоскрёб',      nameEn: 'Skyscraper',      cost: 80000,  incomeAdd: 250, emoji: '🏙️', color: 0x8a5cff, height: 13,   archetype: 'tower',     baseSize: 2.2 },
+  { name: 'Империя',        nameEn: 'Empire',          cost: 200000, incomeAdd: 500, emoji: '👑', color: 0xffd479, height: 16,   archetype: 'tower',     baseSize: 2.6, crown: true },
 ];
 
 function stageName(stage) {
@@ -603,8 +603,12 @@ const STATIC_COLLIDERS = [
   { pos: SAWMILL_POS, radius: 1.9 },
 ];
 
-const logsInTransit = []; // { mesh, t: 0..1 }
+const logsInTransit = []; // { mesh, t: 0..1, from: THREE.Vector3 }
 let woodSpawnTimer = 0;
+const sourceTrees = []; // { mesh, state: 'grown'|'chopping'|'regrowing', timer, baseScale }
+const CHOP_FALL_TIME = 0.3;
+const CHOP_SHRINK_TIME = 0.2;
+const REGROW_TIME = 6;
 
 function buildSawmillScenery() {
   // Generator: a small woodcutter's shed among a tight cluster of trees.
@@ -627,11 +631,25 @@ function buildSawmillScenery() {
   shed.add(shedRoof);
   shed.position.copy(GENERATOR_POS);
   scene.add(shed);
-  for (let i = 0; i < 5; i++) {
+
+  // A small grove around the shed IS the wood source: each tree gets chopped down and
+  // hauled to the belt when it's the generator's turn to produce a log, then regrows.
+  for (let i = 0; i < 4; i++) {
     const tree = makeTree();
-    const a = (i / 5) * Math.PI * 2;
-    tree.position.set(GENERATOR_POS.x + Math.cos(a) * 2.6, 0, GENERATOR_POS.z + Math.sin(a) * 2.6);
-    tree.scale.setScalar(0.85 + Math.random() * 0.3);
+    const a = (i / 4) * Math.PI * 2;
+    tree.position.set(GENERATOR_POS.x + Math.cos(a) * 2.4, 0, GENERATOR_POS.z + Math.sin(a) * 2.4);
+    const baseScale = 0.85 + Math.random() * 0.25;
+    tree.scale.setScalar(baseScale);
+    scene.add(tree);
+    sourceTrees.push({ mesh: tree, state: 'grown', timer: 0, baseScale });
+  }
+  // Purely decorative trees a little further out, so the grove doesn't look sparse once a
+  // couple of source trees are mid-regrow.
+  for (let i = 0; i < 4; i++) {
+    const tree = makeTree();
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    tree.position.set(GENERATOR_POS.x + Math.cos(a) * 3.6, 0, GENERATOR_POS.z + Math.sin(a) * 3.6);
+    tree.scale.setScalar(0.8 + Math.random() * 0.3);
     scene.add(tree);
   }
 
@@ -694,26 +712,58 @@ function buildSawmillScenery() {
 let sawmillBlade = null;
 buildSawmillScenery();
 
-function spawnLog() {
+function spawnLog(fromPos) {
   const log = new THREE.Mesh(
     new THREE.CylinderGeometry(0.22, 0.22, 0.9, 10),
     new THREE.MeshStandardMaterial({ color: 0x8a5a34, roughness: 0.85 })
   );
   log.rotation.z = Math.PI / 2;
-  log.position.copy(GENERATOR_POS);
+  const from = (fromPos || GENERATOR_POS).clone();
+  log.position.copy(from);
   log.position.y = 0.3;
   log.castShadow = true;
   scene.add(log);
-  logsInTransit.push({ mesh: log, t: 0 });
+  logsInTransit.push({ mesh: log, t: 0, from });
 }
 
 function updateSawmill(dt) {
   if (sawmillBlade) sawmillBlade.rotation.y += dt * 12;
 
+  // Animate each source tree through chop -> shrink -> regrow, so it's visually obvious
+  // where the belt's wood comes from.
+  for (const tree of sourceTrees) {
+    if (tree.state === 'chopping') {
+      tree.timer += dt;
+      if (tree.timer < CHOP_FALL_TIME) {
+        tree.mesh.rotation.z = (tree.timer / CHOP_FALL_TIME) * (Math.PI * 0.46);
+      } else if (tree.timer < CHOP_FALL_TIME + CHOP_SHRINK_TIME) {
+        const k = (tree.timer - CHOP_FALL_TIME) / CHOP_SHRINK_TIME;
+        tree.mesh.scale.setScalar(tree.baseScale * Math.max(0.001, 1 - k));
+      } else {
+        tree.state = 'regrowing';
+        tree.timer = 0;
+        tree.mesh.rotation.z = 0;
+        tree.mesh.scale.setScalar(0.001);
+      }
+    } else if (tree.state === 'regrowing') {
+      tree.timer += dt;
+      const k = Math.min(1, tree.timer / REGROW_TIME);
+      tree.mesh.scale.setScalar(tree.baseScale * k);
+      if (k >= 1) tree.state = 'grown';
+    }
+  }
+
   woodSpawnTimer += dt;
   if (woodSpawnTimer >= WOOD_SPAWN_INTERVAL) {
-    woodSpawnTimer = 0;
-    spawnLog();
+    const readyTree = sourceTrees.find(tr => tr.state === 'grown');
+    if (readyTree) {
+      woodSpawnTimer = 0;
+      readyTree.state = 'chopping';
+      readyTree.timer = 0;
+      spawnLog(readyTree.mesh.position);
+    }
+    // If every tree is mid-chop/regrow, keep the timer running and retry next frame —
+    // production is gently gated by actually having a tree ready to fell.
   }
 
   for (let i = logsInTransit.length - 1; i >= 0; i--) {
@@ -730,7 +780,7 @@ function updateSawmill(dt) {
       checkAchievements();
       save();
     } else {
-      log.mesh.position.lerpVectors(GENERATOR_POS, SAWMILL_POS, log.t);
+      log.mesh.position.lerpVectors(log.from, SAWMILL_POS, log.t);
       log.mesh.position.y = 0.3;
       log.mesh.rotation.x += dt * 3;
     }
@@ -781,39 +831,279 @@ scene.add(player);
 /* ---------------------------------------------------------------------- */
 /*  BUILDINGS & PADS                                                       */
 /* ---------------------------------------------------------------------- */
-function createBuildingMesh(stage, level = 1) {
+/* ---------------------------------------------------------------------- */
+/*  BUILDING ARCHETYPES — each STAGES entry picks a silhouette by         */
+/*  `archetype` so buildings read as what they are, not just tinted boxes. */
+/* ---------------------------------------------------------------------- */
+let windowTexture = null;
+function getWindowTexture() {
+  if (windowTexture) return windowTexture;
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#274b6b';
+  ctx.fillRect(0, 0, 64, 128);
+  ctx.fillStyle = '#bfe6ff';
+  for (let y = 6; y < 128; y += 20) {
+    for (let x = 6; x < 64; x += 20) ctx.fillRect(x, y, 11, 13);
+  }
+  windowTexture = new THREE.CanvasTexture(c);
+  windowTexture.wrapS = THREE.RepeatWrapping;
+  windowTexture.wrapT = THREE.RepeatWrapping;
+  windowTexture.colorSpace = THREE.SRGBColorSpace;
+  return windowTexture;
+}
+
+function makeIconSprite(emoji, size) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 96; canvas.height = 96;
+  const ctx = canvas.getContext('2d');
+  ctx.font = '76px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(emoji, 48, 54);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true }));
+  sprite.scale.set(size, size, 1);
+  sprite.renderOrder = 5;
+  return sprite;
+}
+
+function buildHouse(stage, height, baseSize) {
   const group = new THREE.Group();
-  const baseSize = 2.6;
-  const buildingHeight = stage.height * (1 + (level - 1) * 0.28);
   const body = new THREE.Mesh(
-    new THREE.BoxGeometry(baseSize, buildingHeight, baseSize),
-    new THREE.MeshStandardMaterial({ color: stage.color, roughness: 0.7, metalness: 0.05 })
+    new THREE.BoxGeometry(baseSize, height, baseSize),
+    new THREE.MeshStandardMaterial({ color: stage.color, roughness: 0.75 })
   );
-  body.position.y = buildingHeight / 2;
+  body.position.y = height / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  const roofH = height * 0.5;
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(baseSize * 0.78, roofH, 4),
+    new THREE.MeshStandardMaterial({ color: 0x8a3b2b, roughness: 0.85 })
+  );
+  roof.rotation.y = Math.PI / 4;
+  roof.position.y = height + roofH / 2;
+  roof.castShadow = true;
+  group.add(roof);
+
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize * 0.26, height * 0.4, 0.06),
+    new THREE.MeshStandardMaterial({ color: 0x4a2f1a, roughness: 0.8 })
+  );
+  door.position.set(0, height * 0.2, baseSize / 2 + 0.03);
+  group.add(door);
+
+  const winMat = new THREE.MeshStandardMaterial({ color: 0xbfe6ff, emissive: 0x6fa8c9, emissiveIntensity: 0.5, roughness: 0.3 });
+  for (const side of [-1, 1]) {
+    const win = new THREE.Mesh(new THREE.BoxGeometry(baseSize * 0.22, baseSize * 0.22, 0.06), winMat);
+    win.position.set(side * baseSize * 0.32, height * 0.62, baseSize / 2 + 0.03);
+    group.add(win);
+  }
+  return group;
+}
+
+function buildShop(stage, height, baseSize) {
+  const group = new THREE.Group();
+  const bodyH = height * 0.85;
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize, bodyH, baseSize),
+    new THREE.MeshStandardMaterial({ color: stage.color, roughness: 0.65 })
+  );
+  body.position.y = bodyH / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  const cap = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize * 1.06, height * 0.08, baseSize * 1.06),
+    new THREE.MeshStandardMaterial({ color: 0x333846, roughness: 0.8 })
+  );
+  cap.position.y = bodyH + height * 0.04;
+  cap.castShadow = true;
+  group.add(cap);
+
+  const awning = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize * 1.12, height * 0.07, baseSize * 0.5),
+    new THREE.MeshStandardMaterial({ color: 0xd6543f, roughness: 0.7 })
+  );
+  awning.position.set(0, bodyH * 0.68, baseSize / 2 + baseSize * 0.25);
+  awning.castShadow = true;
+  group.add(awning);
+
+  const glass = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize * 0.8, bodyH * 0.5, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x7fc8e8, transparent: true, opacity: 0.55, roughness: 0.15, metalness: 0.2 })
+  );
+  glass.position.set(0, bodyH * 0.3, baseSize / 2 + 0.03);
+  group.add(glass);
+
+  const sign = makeIconSprite(stage.emoji, baseSize * 0.7);
+  sign.position.set(0, bodyH + height * 0.16, 0);
+  group.add(sign);
+  return group;
+}
+
+function buildWarehouse(stage, height, baseSize) {
+  const group = new THREE.Group();
+  const w = baseSize * 1.55, d = baseSize * 1.15;
+  const bodyH = height * 0.85;
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(w, bodyH, d),
+    new THREE.MeshStandardMaterial({ color: stage.color, roughness: 0.8 })
+  );
+  body.position.y = bodyH / 2;
   body.castShadow = true;
   body.receiveShadow = true;
   group.add(body);
 
   const roof = new THREE.Mesh(
-    new THREE.ConeGeometry(baseSize * 0.75, buildingHeight * 0.3, 4),
-    new THREE.MeshStandardMaterial({ color: 0x8a3b2b, roughness: 0.8 })
+    new THREE.BoxGeometry(w * 1.04, height * 0.1, d * 1.04),
+    new THREE.MeshStandardMaterial({ color: 0x555f6b, roughness: 0.85 })
   );
-  roof.rotation.y = Math.PI / 4;
-  roof.position.y = buildingHeight + (buildingHeight * 0.3) / 2;
+  roof.position.y = bodyH + height * 0.05;
   roof.castShadow = true;
   group.add(roof);
 
-  // Small glowing pips on a corner mark the upgrade level at a glance.
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(w * 0.46, bodyH * 0.55, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x2c313b, roughness: 0.6 })
+  );
+  door.position.set(0, bodyH * 0.275, d / 2 + 0.03);
+  group.add(door);
+
+  const ventMat = new THREE.MeshStandardMaterial({ color: 0x8a8f99, roughness: 0.7 });
+  for (const side of [-1, 1]) {
+    const vent = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.32, 8), ventMat);
+    vent.position.set(side * w * 0.28, bodyH + height * 0.1 + 0.16, 0);
+    vent.castShadow = true;
+    group.add(vent);
+  }
+  return group;
+}
+
+function buildFactory(stage, height, baseSize) {
+  const group = new THREE.Group();
+  const w = baseSize * 1.25, d = baseSize * 1.1;
+  const bodyH = height * 0.6;
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(w, bodyH, d),
+    new THREE.MeshStandardMaterial({ color: stage.color, roughness: 0.75, metalness: 0.15 })
+  );
+  body.position.y = bodyH / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  const roofRidge = new THREE.Mesh(
+    new THREE.BoxGeometry(w * 1.02, height * 0.12, d * 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x4a4f5c, roughness: 0.8 })
+  );
+  roofRidge.position.set(0, bodyH + height * 0.06, d * 0.2);
+  group.add(roofRidge);
+
+  const stacks = stage.stacks || 1;
+  const stackH = height * 0.85;
+  const stackMat = new THREE.MeshStandardMaterial({ color: 0x555f6b, roughness: 0.8 });
+  group.userData.stackTops = [];
+  for (let i = 0; i < stacks; i++) {
+    const sx = stacks === 1 ? 0 : (i === 0 ? -w * 0.24 : w * 0.24);
+    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, stackH, 10), stackMat);
+    stack.position.set(sx, bodyH + stackH / 2, -d * 0.22);
+    stack.castShadow = true;
+    group.add(stack);
+    group.userData.stackTops.push(new THREE.Vector3(sx, bodyH + stackH, -d * 0.22));
+  }
+  return group;
+}
+
+function buildOffice(stage, height, baseSize) {
+  const group = new THREE.Group();
+  const d = baseSize * 0.85;
+  const tex = getWindowTexture().clone();
+  tex.repeat.set(1, Math.max(1, Math.round(height / 2.1)));
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize, height, d),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.1 })
+  );
+  body.position.y = height / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  const cap = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize * 1.03, height * 0.035, d * 1.03),
+    new THREE.MeshStandardMaterial({ color: 0x2c313b, roughness: 0.7 })
+  );
+  cap.position.y = height + height * 0.018;
+  group.add(cap);
+  return group;
+}
+
+function buildTower(stage, height, baseSize) {
+  const group = new THREE.Group();
+  const w = baseSize * 0.78;
+  const tex = getWindowTexture().clone();
+  tex.repeat.set(1, Math.max(2, Math.round(height / 2.1)));
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(w, height, w),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.4, metalness: 0.2 })
+  );
+  body.position.y = height / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  if (stage.crown) {
+    const crown = new THREE.Mesh(
+      new THREE.ConeGeometry(w * 0.62, height * 0.16, 8),
+      new THREE.MeshStandardMaterial({ color: 0xffd479, metalness: 0.6, roughness: 0.3, emissive: 0x664400, emissiveIntensity: 0.4 })
+    );
+    crown.position.y = height + height * 0.08;
+    crown.castShadow = true;
+    group.add(crown);
+  } else {
+    const spire = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.09, height * 0.22, 8),
+      new THREE.MeshStandardMaterial({ color: 0xd8d8e0, metalness: 0.7, roughness: 0.3 })
+    );
+    spire.position.y = height + height * 0.11;
+    group.add(spire);
+  }
+  return group;
+}
+
+const BUILDERS = { house: buildHouse, shop: buildShop, warehouse: buildWarehouse, factory: buildFactory, office: buildOffice, tower: buildTower };
+
+function createBuildingMesh(stage, level = 1) {
+  const height = stage.height * (1 + (level - 1) * 0.28);
+  const baseSize = stage.baseSize || 2.6;
+  const builder = BUILDERS[stage.archetype] || buildHouse;
+  const group = builder(stage, height, baseSize);
+
+  // Small glowing pips on a corner mark the upgrade level at a glance, regardless of archetype.
   for (let i = 0; i < level; i++) {
     const pip = new THREE.Mesh(
       new THREE.BoxGeometry(0.32, 0.22, 0.32),
       new THREE.MeshStandardMaterial({ color: 0xffe08a, emissive: 0x664400, emissiveIntensity: 0.5 })
     );
-    pip.position.set(baseSize / 2 - 0.25, buildingHeight + 0.2 + i * 0.3, baseSize / 2 - 0.25);
+    pip.position.set(baseSize / 2 - 0.2, height + 0.2 + i * 0.3, baseSize / 2 - 0.2);
     group.add(pip);
   }
 
   return group;
+}
+
+// Factory buildings expose their smokestack top positions (local space) via
+// mesh.userData.stackTops; convert to world space (buildings never rotate) for the smoke system.
+function smokeTopsFor(mesh, pos) {
+  const tops = mesh.userData.stackTops;
+  if (!tops || !tops.length) return null;
+  return tops.map(local => new THREE.Vector3(pos.x + local.x, local.y, pos.z + local.z));
 }
 
 function spawnBuilding(index, level, { grow = true } = {}) {
@@ -827,7 +1117,10 @@ function spawnBuilding(index, level, { grow = true } = {}) {
   }
   scene.add(mesh);
 
-  const entry = { index, level, mesh, pos, upgradePad: null };
+  const entry = {
+    index, level, mesh, pos, upgradePad: null,
+    smokeTops: smokeTopsFor(mesh, pos), smokeTimer: Math.random() * 1.4,
+  };
   buildings.push(entry);
   if (level < MAX_BUILDING_LEVEL) spawnUpgradePad(entry);
   return entry;
@@ -876,6 +1169,7 @@ function upgradeBuilding(entry) {
   entry.mesh.scale.set(0.001, 0.001, 0.001);
   growingMeshes.push(entry.mesh);
   scene.add(entry.mesh);
+  entry.smokeTops = smokeTopsFor(entry.mesh, entry.pos);
   if (entry.level < MAX_BUILDING_LEVEL) spawnUpgradePad(entry);
   else stats.maxLevelHit = true;
 
@@ -913,6 +1207,61 @@ function spawnBurst(pos, color) {
   const points = new THREE.Points(geo, mat);
   scene.add(points);
   particleBursts.push({ points, velocities, life: 0.9, maxLife: 0.9 });
+}
+
+/* ---------------------------------------------------------------------- */
+/*  SMOKE — drifting puffs from every factory's smokestacks                */
+/* ---------------------------------------------------------------------- */
+const SMOKE_INTERVAL = 1.5;
+let smokeTexture = null;
+function getSmokeTexture() {
+  if (smokeTexture) return smokeTexture;
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,0.85)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  smokeTexture = new THREE.CanvasTexture(c);
+  return smokeTexture;
+}
+
+const smokePuffs = [];
+function spawnSmokePuff(pos) {
+  const mat = new THREE.SpriteMaterial({ map: getSmokeTexture(), color: 0xd8d8dc, transparent: true, opacity: 0.5, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.position.copy(pos);
+  sprite.scale.set(0.5, 0.5, 1);
+  scene.add(sprite);
+  smokePuffs.push({ sprite, drift: (Math.random() - 0.5) * 0.3, life: 2.4, maxLife: 2.4 });
+}
+
+function updateSmoke(dt) {
+  for (const b of buildings) {
+    if (!b.smokeTops) continue;
+    b.smokeTimer += dt;
+    if (b.smokeTimer >= SMOKE_INTERVAL) {
+      b.smokeTimer = Math.random() * 0.4;
+      for (const top of b.smokeTops) spawnSmokePuff(top);
+    }
+  }
+  for (let i = smokePuffs.length - 1; i >= 0; i--) {
+    const p = smokePuffs[i];
+    p.life -= dt;
+    if (p.life <= 0) {
+      scene.remove(p.sprite);
+      p.sprite.material.dispose();
+      smokePuffs.splice(i, 1);
+      continue;
+    }
+    p.sprite.position.y += dt * 0.7;
+    p.sprite.position.x += dt * p.drift;
+    const k = 1 - p.life / p.maxLife;
+    p.sprite.scale.setScalar(0.5 + k * 1.3);
+    p.sprite.material.opacity = 0.5 * (p.life / p.maxLife);
+  }
 }
 
 function makeLabelSprite(lines) {
@@ -1492,6 +1841,7 @@ function animate() {
 
   updatePlayer(dt);
   updateSawmill(dt);
+  updateSmoke(dt);
 
   for (let i = growingMeshes.length - 1; i >= 0; i--) {
     const m = growingMeshes[i];

@@ -111,6 +111,19 @@ browser or publish as a static page.
 - [ ] Accessibility pass: colorblind-safe pad colors (current gold vs blue may not
       read for all players), larger tap targets, a "reduced motion" toggle that
       kills camera shake/particle bursts.
+- [x] Distinct building silhouettes — user feedback: "all the houses look the
+      same, unclear what they're for." Replaced the single tinted-box-and-cone
+      mesh with 6 archetypes keyed off a new `STAGES[i].archetype` field
+      (`house`, `shop`, `warehouse`, `factory`, `office`, `tower`), each with
+      real signature details: houses get a door/windows, shops a storefront
+      awning + glass + an emoji sign, warehouses a garage door + roof vents,
+      factories 1-2 smokestacks that actually emit drifting smoke puffs,
+      offices/towers a shared canvas-generated window-grid texture, and the
+      final "Империя" tower a gold crown instead of a plain spire. Verified
+      visually with a headless-browser flythrough of all 10 buildings at
+      once (upgrade levels included) plus the factories' smoke — no console
+      errors, no test regressions (`STAGES`'s new fields don't affect the
+      cost/income/name checks in `tests/`).
 
 ## Phase 2 — Content depth 🔷 (multi-session)
 
@@ -149,11 +162,22 @@ browser or publish as a static page.
             and/or gate a subset of building upgrades behind a plank cost
             alongside money (needs its own UI affordance on the upgrade pad's
             sprite label showing both costs).
-      - [ ] **Make the generator feel alive.** Currently always-on and
-            production is unconditional. Consider: unlock it at a stage
-            milestone (e.g. after Склад/Warehouse) as a discovered mid-game
-            system rather than visible from the very first second; a small
-            visual/audio cue when a log spawns, not just on arrival.
+      - [x] **Make the generator feel legible** — user asked directly "where
+            does the wood come from?" The grove around the shed IS the
+            source now: 4 of its trees are interactive (chop → fall → shrink
+            → regrow over `REGROW_TIME` 6s), and a log only spawns when a
+            tree is actually felled, riding the belt from *that tree's own
+            position*, not a fixed point. Production is now gently gated by
+            tree availability rather than purely by the timer. Verified with
+            a headless-browser pass anchored at the player's own position
+            near the grove (camera-only debug overrides don't work here —
+            the follow-cam resets `controls.target` to the player every
+            frame, so the camera snaps back; moving the player via a save
+            injection is the reliable way to screenshot a specific spot).
+      - [ ] **Make the generator feel discovered**, not just legible: still
+            always-on and visible from the very first second. Consider
+            unlocking it at a stage milestone (e.g. after Склад/Warehouse)
+            instead.
       - [ ] **Second material** (stretch): once planks have a real sink, a
             second raw resource (e.g. ore/stone) from a different generator
             elsewhere on the map, so the "which resource do I need" decision

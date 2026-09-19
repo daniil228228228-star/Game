@@ -119,6 +119,46 @@ All notable changes to Tycoon 3D. Each session appends an entry here — see
   don't have a spend yet, and the sawmill is always-on rather than
   unlocked at a milestone. Both are noted as explicit follow-ups.
 
+### 2026-09-19 — Distinct buildings, choppable trees, smoke (user feedback)
+- User feedback: buildings all looked like the same tinted box, it wasn't
+  clear where the sawmill's wood actually came from, and asked for both
+  fixed and general graphics improved.
+- **Buildings**: replaced the one-size-fits-all box+cone mesh with 6
+  archetypes (`house`, `shop`, `warehouse`, `factory`, `office`, `tower`)
+  selected per stage via a new `STAGES[i].archetype` field. Houses get a
+  door and windows; shops a storefront awning, glass, and an emoji sign
+  sprite; warehouses a garage door and roof vents; factories 1-2
+  smokestacks; offices/towers a shared canvas-generated window-grid
+  texture; the final tower ("Империя") a gold crown instead of a plain
+  spire. `createBuildingMesh()` now dispatches to a `BUILDERS` table
+  instead of one function, keeping the per-level pip indicator and
+  height scaling shared across all archetypes.
+- **Smoke**: factory buildings register their smokestack top position(s)
+  (in world space, converted from the mesh's local `userData.stackTops`)
+  and periodically emit a soft, fading, upward-drifting sprite puff —
+  reusing a canvas-generated radial-gradient texture so it doesn't render
+  as a flat square.
+- **Where the wood comes from**: 4 of the trees in the grove around the
+  sawmill's generator shed are now interactive source trees instead of
+  decoration. Producing a log actually fells one (rotates over, shrinks
+  away) and starts it regrowing (scales back up over 6s); the log now
+  rides the belt from *that tree's own position* rather than a fixed
+  point, and production is gently gated by having an actually-grown tree
+  available rather than the timer alone.
+- **Collision**: unaffected — `BUILDING_RADIUS` stays a flat constant, so
+  the new archetypes' varying footprints (the warehouse in particular is
+  noticeably wider) aren't pixel-perfect against their collider, but the
+  mismatch is minor and not visually jarring.
+- Verified with a headless-browser pass: a flythrough of all 10 stage
+  buildings (mixed upgrade levels) with no console errors; confirmed via
+  the HUD's planks counter and the "First Planks" achievement firing on
+  schedule that a tree is visibly shorter (mid-regrow) with a log freshly
+  on the ground beside it after the first production cycle. Note for
+  future sessions: a camera-only debug override doesn't work for this
+  kind of shot — the follow-cam resets `controls.target` to the player
+  every frame, snapping the camera back — so anchor the *player's saved
+  position* to the spot you want to screenshot instead.
+
 ---
 
 ## Format for new entries
