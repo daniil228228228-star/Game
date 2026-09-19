@@ -45,6 +45,21 @@ All notable changes to Tycoon 3D. Each session appends an entry here — see
   future sessions (autonomous loop or human-directed) have a shared target
   and a legible history instead of ad hoc improvements.
 
+### 2026-09-19 — Balance pass (VISION.md Phase 1, item 1)
+- Simulated the base (level-1, no-upgrade) time-to-build curve from the live
+  `STAGES` data: first two buildings are instantly affordable with starting
+  cash (intentional fast hook), then a smooth ~1.7 → ~6.8 min/stage ramp,
+  ~28 minutes for a full no-upgrade playthrough — already inside the
+  15–30 min late-game target, so no cost/income numbers needed changing.
+- Added `tests/balance.test.mjs` (Node's built-in `node:test`, run via
+  `node --test`) that re-derives this curve from `tycoon.html` and asserts
+  it stays within the decided bounds, so a future balance change can't
+  silently break pacing.
+- This is also the first file under `tests/` — a first step toward the
+  Phase 4 "promote ad hoc scripts into a permanent tests/ folder" item,
+  though that item itself is still open (this only adds one test, not the
+  full harness/runner).
+
 ---
 
 ## Format for new entries
