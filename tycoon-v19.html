@@ -990,6 +990,35 @@ function makeSignPost(textColor = 0x1c2430) {
   return group;
 }
 
+function makeTrafficCone() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.68 });
+  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.6 });
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.03, 0.22), mat);
+  base.position.y = 0.015; group.add(base);
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.32, 10), mat);
+  cone.position.y = 0.19; group.add(cone);
+  const stripe = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.08, 0.05, 10), whiteMat);
+  stripe.position.y = 0.19; group.add(stripe);
+  return group;
+}
+
+// A zebra-crossing painted across a road segment, oriented the same way the road/lane
+// geometry already is (BoxGeometry's local width axis along the segment's tangent, depth
+// axis along its travel direction, then rotated by atan2(dir.x, dir.z) -- matches the road
+// mesh's own rotation convention so the stripes line up square with the road, not the map).
+function addCrosswalk(center, dir) {
+  const stripeMat = new THREE.MeshStandardMaterial({ color: 0xf0eee8, roughness: 0.7 });
+  const angle = Math.atan2(dir.x, dir.z);
+  for (const off of [-0.72, -0.36, 0, 0.36, 0.72]) {
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.02, 0.28), stripeMat);
+    stripe.position.copy(center).addScaledVector(dir, off);
+    stripe.position.y = 0.065;
+    stripe.rotation.y = angle;
+    scene.add(stripe);
+  }
+}
+
 function makeFireHydrant() {
   const group = new THREE.Group();
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0xd23b2e, roughness: 0.55, metalness: 0.12 });
@@ -1036,6 +1065,9 @@ function makeFireHydrant() {
     sign.position.copy(mid.clone().addScaledVector(tangent, -2.8));
     sign.rotation.y = Math.atan2(tangent.x, tangent.z);
     scene.add(sign);
+    // A crosswalk at every other bench/sign stop (not every one, to avoid stacking a zebra
+    // pattern across the whole spiral) -- sections 14-15's remaining "world density" items.
+    if (i % 4 === 0) addCrosswalk(mid, dir);
   }
 
   const fountainBase = new THREE.Mesh(
@@ -3143,6 +3175,11 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.76, 0.08), new THREE.MeshStandardMaterial({ color: 0x7e8794, roughness: 0.74, metalness: 0.3 }));
     post.position.set(sx * 1.72, 0.38, sz * 1.6);
     yard.add(post);
+  }
+  for (const [cx, cz] of [[1.35, 1.05], [1.58, 0.4], [-1.5, -1.15]]) {
+    const cone = makeTrafficCone();
+    cone.position.set(cx, 0, cz);
+    yard.add(cone);
   }
 
   const siteOffice = new THREE.Group();

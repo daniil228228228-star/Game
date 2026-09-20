@@ -479,6 +479,17 @@ tracks progress against.
   damping doesn't stomp it back). Zero new failures across the full
   regression suite.
 
+### 2026-09-20 — Added crosswalks and construction-site cones
+- `addCrosswalk()`: 5-stripe zebra crossing, oriented via the same
+  rotation convention the road/lane meshes already use. Added at 3 of
+  the road-segment stops the benches/signs iterate over.
+- `makeTrafficCone()`: 3 cones scattered around every construction
+  site's yard.
+- Verified numerically (scene traverse counted 15 stripe meshes = 3
+  crosswalks x 5, and 3 cone meshes per construction site, all at
+  expected positions) since screenshots keep fighting the follow-camera.
+  Zero new failures across the regression suite.
+
 ---
 
 ## Format for new entries

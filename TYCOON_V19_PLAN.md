@@ -100,6 +100,25 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Crosswalks + construction-site cones** (this session, spec sections
+14-15, continuing the "world density" checklist). Added `addCrosswalk()`
+(5 zebra stripes, oriented via the same `atan2(dir.x, dir.z)` rotation
+convention the road/lane meshes already use, so they line up square with
+the road rather than the map) at 3 of the road-segment stops the
+benches/signs already iterate over (every other one, to avoid stacking
+a crossing at literally every corner), and `makeTrafficCone()`, with 3
+cones scattered around each construction site's yard for a bit more
+"active site" texture alongside the existing fence.
+
+Verified: a scene-wide traverse counted exactly 15 stripe meshes (3
+crosswalks x 5 stripes, matching the `i % 4 === 0` selection over the
+road-segment loop) at the expected positions; a purchase-triggered
+construction site was confirmed to contain exactly 3 cone meshes,
+grounded at y=0. Screenshots weren't useful for this check either (same
+follow-camera-fighting issue as prior sessions), so verification stayed
+numeric. Re-ran the boot, pinch-zoom, full-build-lifecycle and camera-
+obstruction regression tests with zero new failures.
+
 **Two direct user-reported fixes this session**: (1) **Road marking
 flicker ("разметка бликует")** -- root-caused to `outerRingMark` (the
 painted line on the big outer ring road, near the map's edge) sitting
@@ -752,9 +771,10 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
       generated images, or re-attempting from an environment with
       broader network access).
 - [~] **World density / roads** (sections 14-15) — benches, streetlights,
-      signs existed already; this session added curbs + sidewalks along
-      every road segment and scattered fire hydrants. Still missing:
-      crosswalks, parking, cones.
+      signs, curbs, sidewalks and hydrants already done; this session
+      added zebra crosswalks (3, at alternating road segments) and
+      traffic cones around every construction site's yard. Still
+      missing: parking.
 - [x] **Road-node vehicle navigation** (section 16) — done this session
       (`ROAD_NODES` / `buildRoadRoute()`). See known limitation noted above
       (off-road bases don't get a dedicated driveway node yet).
@@ -829,8 +849,8 @@ In priority order, given what's already solid vs. genuinely missing:
    upgrades) now have a validated pacing model to extend (see the
    economy-pacing audit above); keep the same "does chopping actually
    matter" question in mind when adding a second resource loop.
-2. World density / roads polish (sections 14-15) — curbs/sidewalks/
-   hydrants done this session; crosswalks, parking, and cones remain.
+2. World density / roads polish (sections 14-15) — crosswalks and cones
+   done this session; only parking remains.
 3. **Keep doing incidental audits, not just this one dedicated pass**:
    four sessions running have now found a real bug purely by reading code
    closely (`buildSawmillScenery()` called twice; the lift's platform
