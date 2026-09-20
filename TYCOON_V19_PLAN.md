@@ -100,8 +100,58 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Delivery-vehicle status labels now name the target building** (this
+session, spec item from the "suggested next slice" list). Previously
+both the delivery truck and the lift showed a generic secondary line
+("доставка на объект" / "delivery", "работает на стройке" / "working")
+regardless of which building they were actually headed to or working on
+-- despite `assignVehicleJob()` already picking a specific real target.
+Added `jobTargetName(ud)`, reading a new `ud.assignedEntry` that
+`assignVehicleJob()` now sets in every branch -- both for a real
+construction/upgrade target *and* the delivery role's "nothing under
+construction, restock the nearest built warehouse/factory" fallback,
+which previously used a bare-position helper (`nearestBuiltByArchetype()`,
+now removed, its one caller inlined) with no way to name what it found.
+Status text now reads e.g. "МАТЕРИАЛЫ / → Дом" while driving out, and
+"разгрузка: Дом" / "работает: Дом" once arrived, through all three
+phases of a job (assign -> arrive/work -> the label stays correct since
+`assignedEntry` isn't cleared until the next assignment). Note: the game
+doesn't yet track *which* resource is being delivered (concrete doesn't
+exist yet, spec item under section 3) so "МАТЕРИАЛЫ"/"MATERIALS" stays as
+the resource side of the label for now -- the target-naming half is what
+this slice actually had real data for.
+
+Verified with a headless-browser pass: confirmed a real construction
+target is named correctly right after `assignVehicleJob()`; confirmed
+the delivery restock fallback (no active construction, a built warehouse
+exists) also correctly names that warehouse via `assignedEntry`, not just
+a bare position; confirmed the "nothing to do" idle/waiting paths (no
+active construction and no warehouse/factory built yet) are untouched
+and don't crash on a null `assignedEntry`. Re-ran the full existing
+regression suite (boot, construction, contracts, road-node routing, the
+lift, worker roles, the pinch-zoom fix) with zero new failures.
+
+**Note on this session's Bloom attempt**: the user asked for the Bloom
+image-generation connector to be used for the still-open texture pass
+(spec sections 12-13). Generated 4 candidate seamless textures (brick,
+concrete, corrugated metal, asphalt) via `bloom_generate_image` against
+the account's existing "Элитруф" brand — all 4 completed successfully.
+However, this sandbox's outbound network policy blocks `trybloom.ai`
+(confirmed via a direct `curl` 403 and the agent-proxy's own status log),
+and no other available tool path (`Read`, `WebFetch`, which only
+extracts text) can retrieve the actual image bytes from that host into
+this environment. The generated images exist in the Bloom workspace but
+could not be downloaded, converted, or embedded into the game from here.
+**This is an environment limitation, not a prompt-quality problem** --
+don't re-attempt Bloom texture generation from this same sandboxed dev
+environment without first confirming a way to pull the resulting file
+bytes in (e.g. the user downloading the 4 already-generated images from
+their Bloom account and attaching them directly, which this session
+*can* read as local files). Pivoted this session's remaining time to the
+delivery-label slice above instead.
+
 **Critical fix: pinch-zoom crashed the whole game on real phones**
-(this session, user-reported). The user published this file as a Claude
+(previous session, user-reported). The user published this file as a Claude
 Artifact and immediately hit a hard crash on their iPhone: `TypeError:
 undefined is not an object (evaluating 'event.touches[1].pageX')`, which
 blanked the entire screen behind the boot-error overlay (that overlay's
@@ -407,9 +457,12 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
       sinks (below) are in good shape; the spec explicitly says add
       resources gradually, 5 max (money, logs, planks, concrete, metal).
 - [x] **Construction stages** (section 4) — see audit above.
-- [~] **Delivery visualization** (section 5) — trucks already exist and
-      accelerate construction; specific "resource → target building" label
-      text is the remaining polish.
+- [x] **Delivery visualization** (section 5) — trucks accelerate
+      construction and (this session) status labels now name the real
+      target building (`jobTargetName()`/`ud.assignedEntry`). The specific
+      *resource* half of "resource → building" stays generic ("МАТЕРИАЛЫ")
+      since the game only has one delivered-materials concept until a
+      second raw resource (section 3) exists to actually differentiate.
 - [x] **Construction equipment 3D models** (section 6) — excavator, tower
       crane, mixer, and (this session) the lift/telehandler all modelled
       with correct parts and animated at the right phases. Lift now has
@@ -431,7 +484,13 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 - [ ] **Texture pass** (sections 12-13) — 10 embedded textures exist
       (brick/concrete/metal/roof/siding/asphalt/dirt/grass/wood + splash)
       but haven't been checked against the "correct scale per building
-      size" requirement (repeat values per archetype).
+      size" requirement (repeat values per archetype). A Bloom-based
+      attempt this session generated 4 replacement candidates but hit an
+      environment limitation (can't download from `trybloom.ai` in this
+      sandbox) — see the session log note; still open, needs a different
+      path to get file bytes in (e.g. the user attaching the already-
+      generated images, or re-attempting from an environment with
+      broader network access).
 - [ ] **World density / roads** (sections 14-15) — decor props
       (benches, streetlights, signs) already visible in playtest
       screenshots; full checklist (curbs, sidewalks, crosswalks, parking,
@@ -496,18 +555,15 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 ## Suggested next slice (pick one, don't do everything at once)
 
 In priority order, given what's already solid vs. genuinely missing:
-1. Delivery-vehicle status labels: name the specific resource + target
-   building (spec wants e.g. "Доски → Дом") instead of the current generic
-   "MATERIALS" — small polish on top of the road-routing work.
-2. Progression-stage milestone UI (section 18) — the 10-stage `STAGES`
+1. Progression-stage milestone UI (section 18) — the 10-stage `STAGES`
    array covers this loosely; no explicit "you are now in Stage 3:
    Commercial Construction" moment yet, which the spec calls out as
    important for the player always knowing the next big milestone.
-3. Second raw resource (concrete) + a warehouse-as-storage mechanic
+2. Second raw resource (concrete) + a warehouse-as-storage mechanic
    (section 3) — only once the log→plank chain's existing sinks (planks
    already used for building cost, upgrades, and now nothing else
    pending) feel complete; check economy pacing (section 20) first.
-4. **Keep doing incidental audits, not just this one dedicated pass**:
+3. **Keep doing incidental audits, not just this one dedicated pass**:
    four sessions running have now found a real bug purely by reading code
    closely (`buildSawmillScenery()` called twice; the lift's platform
    never attached to its lifting mechanism; the old ambient-worker wander

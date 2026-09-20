@@ -6,6 +6,41 @@ tracks progress against.
 
 ## Session log
 
+### 2026-09-20 — Delivery-vehicle status labels now name the target building; a Bloom texture attempt hit an environment limit
+- User asked for the Bloom connector to be used for the texture pass
+  (spec sections 12-13). Generated 4 seamless texture candidates (brick,
+  concrete, corrugated metal, asphalt) via `bloom_generate_image` against
+  the account's existing "Элитруф" brand -- all 4 generations completed
+  successfully. However, this sandbox's outbound network policy blocks
+  `trybloom.ai` (confirmed with a direct `curl` 403 and the agent-proxy's
+  own status log), and no other available tool (`Read`, `WebFetch` --
+  text-only) can pull the actual image bytes in from that host. The 4
+  generated images exist in the Bloom workspace but couldn't be
+  downloaded, converted to JPG, or embedded into the game. This is an
+  environment limitation, not a prompt problem -- noted in
+  `TYCOON_V19_PLAN.md` so a future session doesn't spend credits
+  re-attempting the same blocked path.
+- Pivoted the rest of the session to a real, deliverable slice instead:
+  **delivery-vehicle status labels now name the target building**
+  (previously flagged as remaining polish on section 5). Added
+  `jobTargetName(ud)` reading a new `ud.assignedEntry`, which
+  `assignVehicleJob()` now sets in every branch -- both for a real
+  construction/upgrade target and the delivery role's "nothing under
+  construction, restock the nearest built warehouse/factory" fallback
+  (previously a bare-position helper, `nearestBuiltByArchetype()`, now
+  removed and inlined, with no way to name what it found). Status text
+  now reads e.g. "МАТЕРИАЛЫ / → Дом" while driving and "разгрузка: Дом" /
+  "работает: Дом" once arrived.
+- Verified with a headless-browser pass: confirmed a real construction
+  target is named correctly right after assignment; confirmed the
+  delivery restock fallback also correctly names a built warehouse via
+  `assignedEntry` (not just its bare position); confirmed the "nothing
+  to do" idle/waiting paths are untouched and handle a null
+  `assignedEntry` without crashing. Re-ran the full regression suite
+  (boot, construction, contracts, road-node routing, the lift, worker
+  roles, the pinch-zoom fix) with zero new failures.
+- Checked off spec item 5 in `TYCOON_V19_PLAN.md`.
+
 ### 2026-09-20 — Critical fix: pinch-zoom crashed the whole game on real phones (user-reported)
 - User published this file as a Claude Artifact and reported an
   immediate hard crash on their iPhone with a screenshot: `TypeError:

@@ -3911,9 +3911,14 @@ function vehicleWorkTargets(role = 'delivery') {
     .map(build => ({ pos: build.entry.pos.clone(), build }));
 }
 
-function nearestBuiltByArchetype(archetype) {
-  const found = buildings.find(b => !b.underConstruction && STAGES[b.index]?.archetype === archetype);
-  return found ? found.pos.clone() : null;
+// Names the building a vehicle's status label should reference, e.g. "Доски → Дом" instead
+// of the previous generic "MATERIALS / delivery" (spec section 5). Reads ud.assignedEntry,
+// set by assignVehicleJob() for both a real construction/upgrade target and the delivery
+// role's "no active site, restock the nearest built warehouse/factory" fallback -- so it
+// stays correct through the whole outbound -> working -> returning cycle, not just at
+// assignment time.
+function jobTargetName(ud) {
+  return ud.assignedEntry ? stageName(STAGES[ud.assignedEntry.index]) : null;
 }
 
 function setVehicleStatus(vehicle, primary, secondary = '') {
@@ -3927,7 +3932,7 @@ function assignVehicleJob(vehicle) {
   const targets = vehicleWorkTargets(ud.role || 'delivery');
   const activeJob = targets.length ? targets[Math.floor(Math.random() * targets.length)] : null;
   const activeTarget = activeJob ? activeJob.pos : null;
-  ud.assignedBuild = activeJob ? activeJob.build : null;
+  ud.assignedEntry = activeJob ? activeJob.build.entry : null;
   if (ud.role === 'lift') {
     if (!activeTarget) {
       ud.state = 'idle';
@@ -3940,10 +3945,20 @@ function assignVehicleJob(vehicle) {
     ud.path = buildRoadRoute(ud.home, ud.jobTarget);
     ud.pathIndex = 0;
     ud.state = 'outbound';
-    setVehicleStatus(vehicle, lang === 'ru' ? 'ПОДЪЁМНИК' : 'LIFT', lang === 'ru' ? 'едет на объект' : 'to worksite');
+    const liftTargetName = jobTargetName(ud);
+    setVehicleStatus(vehicle, lang === 'ru' ? 'ПОДЪЁМНИК' : 'LIFT',
+      liftTargetName ? `→ ${liftTargetName}` : (lang === 'ru' ? 'едет на объект' : 'to worksite'));
   } else {
     let target = activeTarget;
-    if (!target) target = nearestBuiltByArchetype('warehouse') || nearestBuiltByArchetype('factory');
+    // With no active construction to deliver to, restock whichever built warehouse or
+    // factory is nearest instead -- keep its entry (not just its position), same as the
+    // real-construction case above, so the status label can still name a real target
+    // building all the way through outbound -> working -> returning.
+    if (!target) {
+      ud.assignedEntry = buildings.find(b => !b.underConstruction && STAGES[b.index]?.archetype === 'warehouse')
+        || buildings.find(b => !b.underConstruction && STAGES[b.index]?.archetype === 'factory');
+      if (ud.assignedEntry) target = ud.assignedEntry.pos.clone();
+    }
     if (!target) {
       ud.state = 'idle';
       ud.path = [ud.home.clone()];
@@ -3955,7 +3970,9 @@ function assignVehicleJob(vehicle) {
     ud.path = buildRoadRoute(ud.home, ud.jobTarget);
     ud.pathIndex = 0;
     ud.state = 'outbound';
-    setVehicleStatus(vehicle, lang === 'ru' ? 'МАТЕРИАЛЫ' : 'MATERIALS', lang === 'ru' ? 'доставка на объект' : 'delivery');
+    const deliveryTargetName = jobTargetName(ud);
+    setVehicleStatus(vehicle, lang === 'ru' ? 'МАТЕРИАЛЫ' : 'MATERIALS',
+      deliveryTargetName ? `→ ${deliveryTargetName}` : (lang === 'ru' ? 'доставка на объект' : 'delivery'));
   }
 }
 
@@ -4029,9 +4046,15 @@ function moveWorkVehicle(vehicle, dt) {
           const build = constructionBuildNear(vehicle.position, 4.2);
           if (build && (build.phase ?? 0) <= 3) build.timer = Math.min(build.duration, build.timer + build.duration * 0.09);
         }
-        setVehicleStatus(vehicle,
-          ud.role === 'lift' ? (lang === 'ru' ? 'ПОДЪЁМНИК' : 'LIFT') : (lang === 'ru' ? 'МАТЕРИАЛЫ' : 'MATERIALS'),
-          ud.role === 'lift' ? (lang === 'ru' ? 'работает на стройке' : 'working') : (lang === 'ru' ? 'разгрузка' : 'unloading'));
+        {
+          const workingTargetName = jobTargetName(ud);
+          const workingSecondary = ud.role === 'lift'
+            ? (workingTargetName ? `${lang === 'ru' ? 'работает' : 'working'}: ${workingTargetName}` : (lang === 'ru' ? 'работает на стройке' : 'working'))
+            : (workingTargetName ? `${lang === 'ru' ? 'разгрузка' : 'unloading'}: ${workingTargetName}` : (lang === 'ru' ? 'разгрузка' : 'unloading'));
+          setVehicleStatus(vehicle,
+            ud.role === 'lift' ? (lang === 'ru' ? 'ПОДЪЁМНИК' : 'LIFT') : (lang === 'ru' ? 'МАТЕРИАЛЫ' : 'MATERIALS'),
+            workingSecondary);
+        }
       } else {
         ud.state = 'idle';
         ud.recheck = 1.0;
