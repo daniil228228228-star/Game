@@ -490,6 +490,21 @@ tracks progress against.
   expected positions) since screenshots keep fighting the follow-camera.
   Zero new failures across the regression suite.
 
+### 2026-09-20 — Fixed scattered decor (trees/rocks/bushes) spawning on the road
+- Root cause: `scatterScenery()` only checked clearance against the 10
+  stage node positions, never against the road segments connecting
+  them, so a piece could land in the middle of a long segment with no
+  check at all. Confirmed via a live-scene scan: ~2% of scattered decor
+  landed within the road's footprint, one as close as 1.24 units from
+  its centerline.
+- Fixed with `distToNearestRoadSegment()` (perpendicular point-to-
+  segment distance against every road segment) and a `ROAD_CLEAR = 2.6`
+  rejection in the scatter loop.
+- Verified across 5 fresh random-seeded page loads post-fix: zero decor
+  pieces landed on/near a road in any of them, with placement counts
+  staying similar to before. Zero new failures across the regression
+  suite.
+
 ---
 
 ## Format for new entries

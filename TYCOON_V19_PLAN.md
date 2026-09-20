@@ -100,6 +100,27 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Found and fixed scattered decor spawning on the road** (this session,
+another incidental-audit find). `scatterScenery()`'s random tree/rock/
+bush placement only checked clearance against the 10 stage NODE
+positions, never against the ROAD ITSELF connecting them -- a segment's
+midpoint, far from either endpoint, had no clearance check at all.
+Confirmed via a live-scene scan across fresh page loads: roughly 2% of
+scattered decor (2 of 88 checked pieces in one run) landed within the
+road's own footprint, one as close as 1.24 units from the centerline --
+well inside the road+sidewalk width. Added `distToNearestRoadSegment()`
+(perpendicular point-to-segment distance, checked against every road
+segment, not just its endpoints) and a `ROAD_CLEAR = 2.6` rejection in
+the scatter loop, mirroring the existing per-stage-node clearance check.
+
+Verified: re-ran the same live-scene scan across 5 fresh random-seeded
+page loads post-fix -- zero pieces landed on/near a road in any of them
+(down from the earlier confirmed non-zero case), while placement counts
+stayed similar (77-88 vs. the original ~88), so the extra clearance
+check isn't meaningfully starving the scatter budget. Re-ran the boot,
+pinch-zoom, full-build-lifecycle, and camera-obstruction regression
+tests with zero new failures.
+
 **Crosswalks + construction-site cones** (this session, spec sections
 14-15, continuing the "world density" checklist). Added `addCrosswalk()`
 (5 zebra stripes, oriented via the same `atan2(dir.x, dir.z)` rotation
