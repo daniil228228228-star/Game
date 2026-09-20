@@ -302,6 +302,7 @@
     <div class="stat"><span id="planks">🪵 0</span></div>
     <div class="stat" id="concreteStat" hidden><span id="concreteAmt">🧱 0</span></div>
     <div class="stat" id="metalStat" hidden><span id="metalAmt">🔩 0</span></div>
+    <div class="stat" id="populationStat"><span id="populationAmt">🏘️ 0</span></div>
     <div class="stat"><span id="carriedLogs">🪵🎒 0/3</span></div>
   </div>
   <div id="topRightBtns">
@@ -446,6 +447,7 @@
     <div class="v30Section">
       <div class="cityTopline"><div><div class="v30SectionTitle" id="cityCareerTitle">Репутация компании</div><div id="cityClientTier" class="sub"></div></div><div id="cityReputation" class="cityRep"></div></div>
       <div id="cityMarketText" class="cityMarket"></div>
+      <div id="cityPopulationText" class="cityMarket"></div>
     </div>
     <div class="v30Section">
       <div class="v30SectionTitle" id="districtsTitle">Районы города</div>
@@ -571,6 +573,17 @@ let tenderState = { active:null, completed:[] };
 let cityState = {
   reputation:0,
   districts:{ suburb:0, industrial:0, business:0, waterfront:0 },
+  // v31 Stage A slice 1 ("жилой город"): districts stop being a flat unlock-level integer and
+  // gain their own lightweight simulated stats -- population share and a 0-100 attractiveness
+  // stat, updated periodically (see updateDistrictStats()), not per-frame.
+  districtStats:{
+    suburb:{ population:0, satisfaction:50 },
+    industrial:{ population:0, satisfaction:50 },
+    business:{ population:0, satisfaction:50 },
+    waterfront:{ population:0, satisfaction:50 },
+  },
+  population:0, // real, tracked city population resource (see updatePopulation())
+  housing:{ apartmentBlockBuilt:false, pendingUntil:0, pos:null }, // slice-1 residential building state
   initiative:null,
   initiativesCompleted:0,
   marketIndex:0,
@@ -6994,6 +7007,8 @@ function updateHUD() {
   }
   const carriedEl = document.getElementById('carriedLogs');
   if (carriedEl) carriedEl.textContent = `🪵🎒 ${carriedLogs}/${maxCarriedLogs()}`;
+  const populationAmtEl = document.getElementById('populationAmt');
+  if (populationAmtEl) populationAmtEl.textContent = `🏘️ ${fmt(Math.round(cityState.population))}/${fmt(populationCapacity())}`;
 
   const nextCard = document.getElementById('nextCard');
   const prestigeBtn = document.getElementById('prestigeBtn');
@@ -8438,6 +8453,7 @@ function applyLanguage() {
   updateHUD();
   renderSystemsPanel();
   if (typeof refreshCityExpansionWorld === 'function') refreshCityExpansionWorld();
+  if (typeof refreshResidentialWorld === 'function') refreshResidentialWorld();
   if (typeof cityOverlay !== 'undefined' && cityOverlay?.classList.contains('show')) renderCityPanel();
   if (operationsOverlay?.classList.contains('show')) renderOperationsPanel();
 }
@@ -8533,7 +8549,7 @@ const CITY_INITIATIVES = [
   { id:'modernization', emoji:'⬆️', kind:'upgrades', unlockRep:75, baseTarget:5, reward:5600, rep:27, ru:'Модернизация портфеля', en:'Portfolio Modernization', descRu:'Прокачай существующие объекты', descEn:'Upgrade existing properties' },
   { id:'flagship', emoji:'🏗️', kind:'strategic', unlockRep:120, baseTarget:1, reward:8000, rep:36, ru:'Флагманский проект', en:'Flagship Project', descRu:'Заверши спецпроект или крупный тендер', descEn:'Complete a special project or major tender' },
 ];
-const cityWorldRuntime = { hubs:new Map() };
+const cityWorldRuntime = { hubs:new Map(), residential:null };
 function districtLevel(id){ return Math.max(0,Math.min(3,Math.floor(Number(cityState?.districts?.[id])||0))); }
 function currentClientTier(){ let tier=CLIENT_TIERS[0]; for(const t of CLIENT_TIERS) if(cityState.reputation>=t.rep) tier=t; return tier; }
 function districtUnlocked(cfg){ return districtLevel(cfg.id)>0 || (cityState.reputation>=cfg.unlockRep && companyTierIndex()>=cfg.unlockTier); }
@@ -8629,6 +8645,112 @@ function refreshCityExpansionWorld(){
     const old=cityWorldRuntime.hubs.get(cfg.id); if(old){scene.remove(old);disposeObject3D(old);} const g=createDistrictHub(cfg); cityWorldRuntime.hubs.set(cfg.id,g);
   }
 }
+
+/* ---------------------------------------------------------------------- */
+/*  v31 STAGE A SLICE 1 — "жилой город": real population + one real         */
+/*  residential building, separate from the STAGES production spiral.      */
+/*  Population trends toward residential capacity (simple lerp, no demand/ */
+/*  supply model -- that's a later stage) and district stats are a small   */
+/*  per-district object updated on the existing 1s city tick, not per-frame.*/
+/* ---------------------------------------------------------------------- */
+const RESIDENTIAL_BUILDING = {
+  id:'apartment_block', ru:'Жилой дом', en:'Apartment Block', emoji:'🏘️',
+  archetype:'office', color:0xdba86c, height:4.6, baseSize:2.5,
+  capacity:60, costMoney:650, costWood:4, buildDuration:4.5,
+};
+function residentialBuildCost(){ return { money:RESIDENTIAL_BUILDING.costMoney, wood:RESIDENTIAL_BUILDING.costWood, concrete:0, metal:0 }; }
+function populationCapacity(){ return cityState.housing.apartmentBlockBuilt ? RESIDENTIAL_BUILDING.capacity : 0; }
+// Same clearance check the decor scatter pass uses (distToNearestRoadSegment) -- this repo has
+// a documented history of things landing on roads, so any new placement re-verifies it directly
+// instead of trusting a hand-picked coordinate near the (fixed, corner-of-the-map) suburb hub.
+function residentialBuildingPosition(){
+  const hub = CITY_DISTRICTS.find(d=>d.id==='suburb')?.pos || new THREE.Vector3(-46,0,-34);
+  const ROAD_CLEAR = 2.6, HUB_CLEAR = 4.4;
+  for (let ring=0; ring<6; ring++){
+    const radius = 6 + ring*2.4;
+    for (let k=0;k<12;k++){
+      const angle=(k/12)*Math.PI*2 + ring*0.37;
+      const x=hub.x+Math.cos(angle)*radius, z=hub.z+Math.sin(angle)*radius;
+      if (Math.hypot(x,z) > GROUND_HALF-4) continue;
+      if (Math.hypot(x-hub.x,z-hub.z) < HUB_CLEAR) continue;
+      if (distToNearestRoadSegment(x,z) < ROAD_CLEAR) continue;
+      return new THREE.Vector3(x,0,z);
+    }
+  }
+  return new THREE.Vector3(hub.x+9,0,hub.z+9);
+}
+function createResidentialBuildingMesh(){
+  const mesh = createBuildingMesh(RESIDENTIAL_BUILDING, 1);
+  const label = makeLabelSprite([
+    `${RESIDENTIAL_BUILDING.emoji} ${lang==='ru'?RESIDENTIAL_BUILDING.ru:RESIDENTIAL_BUILDING.en}`,
+    `${lang==='ru'?'НАСЕЛЕНИЕ':'POP'} ${Math.round(cityState.population)}/${populationCapacity()}`,
+  ]);
+  label.position.set(0, RESIDENTIAL_BUILDING.height*1.5, 0);
+  label.scale.set(1.7, 0.68, 1);
+  mesh.add(label);
+  mesh.userData.residentialLabel = label;
+  return mesh;
+}
+function refreshResidentialWorld(){
+  if (cityWorldRuntime.residential) { scene.remove(cityWorldRuntime.residential); disposeObject3D(cityWorldRuntime.residential); cityWorldRuntime.residential=null; }
+  if (!cityState.housing.apartmentBlockBuilt) return;
+  const saved = cityState.housing.pos;
+  const pos = (saved && Number.isFinite(saved.x) && Number.isFinite(saved.z)) ? new THREE.Vector3(saved.x,0,saved.z) : residentialBuildingPosition();
+  const mesh = createResidentialBuildingMesh();
+  mesh.position.set(pos.x, 0, pos.z);
+  scene.add(mesh);
+  cityWorldRuntime.residential = mesh;
+  refreshCameraSolidMeshes();
+}
+function updateResidentialLabel(){
+  const mesh = cityWorldRuntime.residential;
+  if (!mesh || !mesh.userData.residentialLabel) return;
+  updateLabelSprite(mesh.userData.residentialLabel, [
+    `${RESIDENTIAL_BUILDING.emoji} ${lang==='ru'?RESIDENTIAL_BUILDING.ru:RESIDENTIAL_BUILDING.en}`,
+    `${lang==='ru'?'НАСЕЛЕНИЕ':'POP'} ${Math.round(cityState.population)}/${populationCapacity()}`,
+  ]);
+}
+function buildResidentialBlock(){
+  if (cityState.housing.apartmentBlockBuilt || cityState.housing.pendingUntil>0) return;
+  const cost = residentialBuildCost();
+  if (!tryPayResources(cost)) { sfx.error(); toast(lang==='ru'?'Не хватает ресурсов на жилой дом':'Not enough resources for the apartment block'); return; }
+  const pos = residentialBuildingPosition();
+  cityState.housing.pos = { x:pos.x, z:pos.z };
+  spawnConstructionSite(pos, { archetype:RESIDENTIAL_BUILDING.archetype, baseSize:RESIDENTIAL_BUILDING.baseSize, height:RESIDENTIAL_BUILDING.height, color:0xffb84d }, RESIDENTIAL_BUILDING.buildDuration);
+  cityState.housing.pendingUntil = Date.now() + RESIDENTIAL_BUILDING.buildDuration*1000;
+  sfx.build(); haptic('medium'); triggerImpactFlash(.16);
+  toast(lang==='ru'?`🏗️ Стройка начата: ${RESIDENTIAL_BUILDING.ru}`:`🏗️ Construction started: ${RESIDENTIAL_BUILDING.en}`);
+  renderCityPanel(); renderSystemsPanel(); save();
+}
+// Lightweight per-district simulation: population share + a 0-100 attractiveness stat that
+// reacts to real state (district level, whether housing actually got built) -- not a hidden
+// demand/supply model, just a couple of numbers eased toward a target each tick.
+function updateDistrictStats(){
+  const cap = populationCapacity();
+  for (const cfg of CITY_DISTRICTS) {
+    const ds = cityState.districtStats[cfg.id]; if (!ds) continue;
+    const lvl = districtLevel(cfg.id);
+    let popShare = 0, target = 38 + lvl*14;
+    if (cfg.id === 'suburb') {
+      popShare = cityState.population;
+      target += cityState.housing.apartmentBlockBuilt ? 12 : -8;
+      if (cap>0) target -= Math.max(0, (cityState.population/cap)-0.92)*40;
+    }
+    ds.population = Math.round(popShare);
+    target = THREE.MathUtils.clamp(target, 0, 100);
+    ds.satisfaction = THREE.MathUtils.clamp(ds.satisfaction + (target-ds.satisfaction)*0.2, 0, 100);
+  }
+}
+function updatePopulation(){
+  const cap = populationCapacity();
+  const gap = cap - cityState.population;
+  cityState.population = Math.max(0, cityState.population + gap*0.15);
+  if (Math.abs(cap-cityState.population) < 0.4) cityState.population = cap;
+  updateDistrictStats();
+  updateResidentialLabel();
+  updateHUD();
+}
+
 function renderCityPanel(){
   const overlay=document.getElementById('cityOverlay'); if(!overlay)return;
   const tier=currentClientTier(),market=ensureCityMarket(); const left=Math.max(0,Math.ceil((cityState.marketEndsAt-Date.now())/1000));
@@ -8637,12 +8759,28 @@ function renderCityPanel(){
   document.getElementById('cityReputation').textContent=`⭐ ${fmt(cityState.reputation)} REP`;
   document.getElementById('cityClientTier').textContent=`${tier.emoji} ${lang==='ru'?tier.ru:tier.en} · x${tier.mult.toFixed(2)} ${lang==='ru'?'контракты':'contracts'}`;
   document.getElementById('cityMarketText').innerHTML=`${market.emoji} <b>${lang==='ru'?market.ru:market.en}</b> · ${lang==='ru'?market.descRu:market.descEn} · ⏱ ${left}${lang==='ru'?'с':'s'}`;
+  document.getElementById('cityPopulationText').innerHTML=`🏘️ <b>${lang==='ru'?'Население города':'City population'}</b> · ${fmt(Math.round(cityState.population))}/${fmt(populationCapacity())}`;
   document.getElementById('districtsTitle').textContent=lang==='ru'?'Районы города':'City Districts';
   document.getElementById('districtsHint').textContent=lang==='ru'?'Районы остаются развитыми после престижа и постепенно меняют город.':'District development persists through prestige and gradually transforms the city.';
   document.getElementById('cityGrid').innerHTML=CITY_DISTRICTS.map(cfg=>{
     const lv=districtLevel(cfg.id),unlocked=districtUnlocked(cfg),maxed=lv>=3,cost=maxed?null:districtUpgradeCost(cfg); const affordable=cost&&canPayResources(cost);
     const lock=unlocked?'':(lang==='ru'?`Нужно: ${cfg.unlockRep} реп. и статус ${COMPANY_TIERS[cfg.unlockTier]?.ru||''}`:`Need ${cfg.unlockRep} rep and ${COMPANY_TIERS[cfg.unlockTier]?.en||''}`);
-    return `<div class="cityCard ${!unlocked?'locked':''} ${maxed?'maxed':''}"><div class="name">${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}</div><div class="desc">${lang==='ru'?cfg.bonusRu:cfg.bonusEn}</div><div class="status">${unlocked?(lang==='ru'?`Уровень ${lv}/3`:`Level ${lv}/3`):`🔒 ${lock}`}</div>${!maxed&&unlocked?`<div class="resourceLine">${districtCostText(cost)}</div><button class="v30Btn ${affordable?'primary':''}" data-district="${cfg.id}" ${!affordable?'disabled':''}>${lang==='ru'?'Развить':'Upgrade'}</button>`:maxed?`<button class="v30Btn" disabled>✓ MAX</button>`:''}</div>`;
+    const ds=cityState.districtStats[cfg.id]||{population:0,satisfaction:50};
+    const statsLine=unlocked?`<div class="resourceLine">👥 ${fmt(ds.population)} · ${lang==='ru'?'Довольство':'Satisfaction'} ${Math.round(ds.satisfaction)}%</div>`:'';
+    let housingLine='';
+    if (cfg.id==='suburb' && unlocked) {
+      const h=cityState.housing;
+      if (h.apartmentBlockBuilt) {
+        housingLine=`<div class="status">🏘️ ${lang==='ru'?'Жилой дом построен':'Apartment block built'}</div>`;
+      } else if (h.pendingUntil>0) {
+        const buildLeft=Math.max(0,Math.ceil((h.pendingUntil-Date.now())/1000));
+        housingLine=`<div class="status">🏗️ ${lang==='ru'?'Стройка идёт':'Under construction'} · ⏱ ${buildLeft}${lang==='ru'?'с':'s'}</div>`;
+      } else {
+        const rcost=residentialBuildCost(); const raffordable=canPayResources(rcost);
+        housingLine=`<div class="resourceLine">${districtCostText(rcost)}</div><button class="v30Btn ${raffordable?'primary':''}" data-residential="apartment_block" ${!raffordable?'disabled':''}>${lang==='ru'?'Построить жилой дом':'Build apartment block'}</button>`;
+      }
+    }
+    return `<div class="cityCard ${!unlocked?'locked':''} ${maxed?'maxed':''}"><div class="name">${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}</div><div class="desc">${lang==='ru'?cfg.bonusRu:cfg.bonusEn}</div><div class="status">${unlocked?(lang==='ru'?`Уровень ${lv}/3`:`Level ${lv}/3`):`🔒 ${lock}`}</div>${statsLine}${housingLine}${!maxed&&unlocked?`<div class="resourceLine">${districtCostText(cost)}</div><button class="v30Btn ${affordable?'primary':''}" data-district="${cfg.id}" ${!affordable?'disabled':''}>${lang==='ru'?'Развить':'Upgrade'}</button>`:maxed?`<button class="v30Btn" disabled>✓ MAX</button>`:''}</div>`;
   }).join('');
   document.getElementById('initiativeTitle').textContent=lang==='ru'?'Стратегический проект':'Strategic Initiative';
   const active=cityState.initiative,progress=cityInitiativeProgress();
@@ -8655,6 +8793,7 @@ function renderCityPanel(){
   }).join('');
   document.querySelectorAll('[data-district]').forEach(b=>b.onclick=()=>upgradeCityDistrict(b.dataset.district));
   document.querySelectorAll('[data-initiative]').forEach(b=>b.onclick=()=>startCityInitiative(b.dataset.initiative));
+  document.querySelectorAll('[data-residential]').forEach(b=>b.onclick=()=>buildResidentialBlock());
 }
 const cityOverlay=document.getElementById('cityOverlay');
 document.getElementById('openCityBtn')?.addEventListener('click',()=>{renderCityPanel();cityOverlay.classList.add('show');});
@@ -8662,13 +8801,23 @@ document.getElementById('cityClose')?.addEventListener('click',()=>cityOverlay.c
 cityOverlay?.addEventListener('click',e=>{if(e.target===cityOverlay)cityOverlay.classList.remove('show');});
 const _renderSystemsPanelV31=renderSystemsPanel;
 renderSystemsPanel=function(){
-  _renderSystemsPanelV31(); const s=document.getElementById('citySummaryText'); if(s){const t=currentClientTier();const active=cityState.initiative;s.textContent=lang==='ru'?`${fmt(cityState.reputation)} реп. · ${t.ru}${active?' · стратегия активна':''}`:`${fmt(cityState.reputation)} rep · ${t.en}${active?' · strategy active':''}`;}
+  _renderSystemsPanelV31(); const s=document.getElementById('citySummaryText'); if(s){const t=currentClientTier();const active=cityState.initiative;s.textContent=lang==='ru'?`${fmt(cityState.reputation)} реп. · ${t.ru}${active?' · стратегия активна':''} · 👥 ${fmt(Math.round(cityState.population))}`:`${fmt(cityState.reputation)} rep · ${t.en}${active?' · strategy active':''} · 👥 ${fmt(Math.round(cityState.population))}`;}
 };
 let cityTickAccumulator=0;
 function updateCityExpansion(dt){
   cityTickAccumulator+=dt; if(cityTickAccumulator<1)return; cityTickAccumulator=0;
   const before=cityState.marketIndex; ensureCityMarket(); if(cityState.marketIndex!==before){const m=currentCityMarket();toast(`${m.emoji} ${lang==='ru'?m.ru:m.en}`);renderSystemsPanel();}
-  checkCityInitiative(); if(cityOverlay?.classList.contains('show'))renderCityPanel();
+  checkCityInitiative();
+  if (cityState.housing.pendingUntil>0 && Date.now()>=cityState.housing.pendingUntil) {
+    cityState.housing.pendingUntil=0; cityState.housing.apartmentBlockBuilt=true;
+    refreshResidentialWorld();
+    const hp=cityState.housing.pos; if(hp) spawnBurst(new THREE.Vector3(hp.x,0,hp.z), 0xffd479);
+    sfx.achievement(); haptic('heavy'); triggerImpactFlash(.22);
+    toast(lang==='ru'?`🏘️ Построено: ${RESIDENTIAL_BUILDING.ru}! Население города начинает расти.`:`🏘️ Built: ${RESIDENTIAL_BUILDING.en}! City population starts growing.`);
+    renderSystemsPanel(); save();
+  }
+  updatePopulation();
+  if(cityOverlay?.classList.contains('show'))renderCityPanel();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -8810,7 +8959,7 @@ function save() {
   }));
   try {
     const payload = JSON.stringify({
-      saveVersion: 19,
+      saveVersion: 20, // v31 Stage A slice 1: cityState grew population/districtStats/housing fields
       savedAt: Date.now(),
       money: finiteNonNegative(money),
       stageIndex: integerNonNegative(stageIndex),
@@ -8932,6 +9081,25 @@ function load() {
         reward:Math.max(0, integerNonNegative(ci.reward, 0)),
         rep:Math.max(1, integerNonNegative(ci.rep, 1))
       } : null;
+      // v31 Stage A slice 1 fields -- absent on saveVersion < 20, default to 0/false so an old
+      // save loads with no population/housing yet (exactly like planks/concrete before them).
+      cityState.population = finiteNonNegative(data.cityState.population, 0);
+      const housing = data.cityState.housing || {};
+      const housingPos = housing.pos;
+      cityState.housing = {
+        apartmentBlockBuilt: !!housing.apartmentBlockBuilt,
+        pendingUntil: Number.isFinite(Number(housing.pendingUntil)) ? Math.max(0, Number(housing.pendingUntil)) : 0,
+        pos: (housingPos && Number.isFinite(Number(housingPos.x)) && Number.isFinite(Number(housingPos.z)))
+          ? { x:Number(housingPos.x), z:Number(housingPos.z) } : null,
+      };
+      const dsRaw = data.cityState.districtStats || {};
+      for (const key of ['suburb','industrial','business','waterfront']) {
+        const entry = dsRaw[key] || {};
+        cityState.districtStats[key] = {
+          population: Math.max(0, Math.floor(Number(entry.population) || 0)),
+          satisfaction: THREE.MathUtils.clamp(Number.isFinite(Number(entry.satisfaction)) ? Number(entry.satisfaction) : 50, 0, 100),
+        };
+      }
     }
     fleetOpsState.universalTrucks = Math.min(fleetOpsState.universalTrucks, universalTruckCapacity());
     stageIndex = Math.min(integerNonNegative(data.stageIndex, 0), STAGES.length);
@@ -9829,6 +9997,7 @@ load();
 syncUniversalFleet();
 refreshSpecialProjectWorld();
 refreshCityExpansionWorld();
+refreshResidentialWorld();
 ensureCityMarket();
 ensureContracts();
 applyLanguage();
