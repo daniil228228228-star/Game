@@ -1006,17 +1006,28 @@ function makeFireHydrant() {
 }
 
 (function createRoadsideDetails() {
-  for (let i = 1; i < pathPoints.length; i += 2) {
-    const p = pathPoints[i];
-    const dir = p.clone().normalize();
+  // Placed at each road SEGMENT's midpoint using that segment's own direction (matching the
+  // road/curb/sidewalk loop exactly), not at a stage corner using the radial direction from
+  // the map's origin. The old corner-based placement had two bugs: (1) the offset tangent was
+  // perpendicular to the wrong direction (radial-from-origin instead of the segment the point
+  // actually sits on), and (2) even fixing that, a corner point has a SECOND road segment
+  // meeting it at a different angle (the spiral turns ~54deg per stage), which could still
+  // pass right by an offset that only cleared the first segment -- one bench measured only
+  // 0.08 units from the next segment, deep inside the road itself. A segment's midpoint has
+  // no such neighbor problem: the nearest other segment is at least half a segment away.
+  for (let i = 0; i < pathPoints.length - 1; i += 2) {
+    const a = pathPoints[i];
+    const b = pathPoints[i + 1];
+    const dir = b.clone().sub(a).normalize();
     if (dir.lengthSq() < 0.001) continue;
+    const mid = a.clone().add(b).multiplyScalar(0.5);
     const tangent = new THREE.Vector3(-dir.z, 0, dir.x);
     const bench = makeBench();
-    bench.position.copy(p.clone().addScaledVector(tangent, 2.95));
+    bench.position.copy(mid.clone().addScaledVector(tangent, 2.95));
     bench.rotation.y = Math.atan2(-tangent.x, -tangent.z);
     scene.add(bench);
     const sign = makeSignPost();
-    sign.position.copy(p.clone().addScaledVector(tangent, -2.8));
+    sign.position.copy(mid.clone().addScaledVector(tangent, -2.8));
     sign.rotation.y = Math.atan2(tangent.x, tangent.z);
     scene.add(sign);
   }
@@ -1224,14 +1235,19 @@ function makeLamp() {
     placed++;
   }
 
-  for (let i = 0; i < pathPoints.length; i += 2) {
-    const p = pathPoints[i];
+  for (let i = 0; i < pathPoints.length - 1; i += 2) {
+    // Same fix and same reason as the benches/signposts above: anchor to a road SEGMENT's
+    // midpoint and its own direction, not a corner point and the radial direction from the
+    // map's origin.
+    const a = pathPoints[i];
+    const b = pathPoints[i + 1];
     const side = i % 4 === 0 ? 1 : -1;
-    const dir = p.clone().normalize();
+    const dir = b.clone().sub(a).normalize();
     if (dir.lengthSq() < 0.001) continue;
+    const mid = a.clone().add(b).multiplyScalar(0.5);
     const tangent = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(2.15 * side);
     const lamp = makeLamp();
-    lamp.position.set(p.x + tangent.x, 0, p.z + tangent.z);
+    lamp.position.set(mid.x + tangent.x, 0, mid.z + tangent.z);
     lamp.rotation.y = Math.atan2(-tangent.x, -tangent.z);
     scene.add(lamp);
   }

@@ -100,6 +100,30 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Benches/signposts/lamps sitting on the road** (this session, direct
+user report: "скамейки на самих дорогах стоят"). Root cause:
+`createRoadsideDetails()` and the lamp-scattering loop anchored their
+perpendicular offset to a spiral *corner point* using the *radial
+direction from the map's origin* as the tangent basis — not the actual
+road segment's own direction. The spiral turns ~54deg per stage, so
+those two directions diverge sharply at some points; worse, a corner
+point has a second road segment meeting it at a different angle, so
+even a tangent computed from one adjacent segment could still pass
+close to the other. Measured one bench at just 0.08 units from the
+segment leaving that corner — deep inside the road, not just close to
+it. Fixed by anchoring to each road SEGMENT's own midpoint and
+direction (matching how the curb/sidewalk loop already does it),
+which has no such neighboring-segment problem since the nearest other
+segment is at least half a segment length away.
+
+Verified: a `THREE.Box3`/segment-distance diagnostic (not screenshots,
+which don't reliably show a few units of clearance at this zoom) checked
+every relocated bench against every road segment in the whole network,
+not just its own: all five are now a consistent 2.95 units clear of any
+road, versus the old worst case of 0.08. Re-ran the boot regression test
+and took a top-down screenshot to visually confirm nothing sits on the
+road surface. Zero new console errors.
+
 **Four direct user-reported fixes this session**: (1) **Icon sprites were
 genuinely clipped** (gear ⚙️ and up-arrow ⬆️ on upgrade pads) — reproduced
 by dumping `makeIconSprite()`'s own canvas: the 96x96 canvas at a 76px

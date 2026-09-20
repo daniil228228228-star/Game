@@ -410,6 +410,20 @@ tracks progress against.
   material/texture overlap on some buildings, and a general push for
   more detailed/realistic buildings and construction sites.
 
+### 2026-09-20 — Fixed benches/signposts/lamps sitting on the road
+- Root cause: road-side decor was anchored to a spiral corner point
+  using the radial direction from the map's origin as its offset basis,
+  instead of the actual road segment's own direction -- diverging
+  sharply at some corners (one bench measured only 0.08 units from the
+  next road segment, effectively on the road).
+- Fixed by anchoring to each road segment's own midpoint + direction
+  (matching how curbs/sidewalks are already placed), which has no
+  neighboring-segment problem since the nearest other segment is always
+  at least half a segment away.
+- Verified with a segment-distance diagnostic checking every bench
+  against every road segment in the network: all now consistently 2.95
+  units clear, versus a 0.08 worst case before. Zero new console errors.
+
 ---
 
 ## Format for new entries
