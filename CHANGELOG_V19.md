@@ -6,6 +6,36 @@ tracks progress against.
 
 ## Session log
 
+### 2026-09-20 — Road-node vehicle navigation (autonomous loop)
+- Re-checked the previous session's two "known mobile HUD bugs" before
+  spending a slice fixing them — closer inspection (actual DOM bounding
+  boxes + 390px screenshots) showed neither was really broken: the 5-chip
+  HUD stat row's 2-line wrap reads cleanly, and the field-upgrade label
+  near the screen edge is just a world-space 3D sprite near the current
+  camera framing's edge (expected, not a CSS bug). Downgraded both in
+  `TYCOON_V19_PLAN.md` instead of "fixing" non-issues.
+- **Implemented road-node vehicle navigation** (spec section 16, confirmed
+  open gap). Service vehicles previously routed as a straight 3-point path
+  through the literal map center regardless of where the actual road ran.
+  The visible road is already one simple chain (plaza center → each of the
+  10 stage positions in order), so added `ROAD_NODES` (that chain),
+  `nearestRoadNodeIndex()`, and `buildRoadRoute(from, to)` — finds the
+  nearest road node to each end and walks the chain between them — and
+  swapped it in at all 3 call sites that used to build `makeVehiclePath()`
+  (now removed). No changes needed to the per-frame movement/rotation
+  logic, which already walked an arbitrary-length path array.
+- Verified with a headless-browser pass: `ROAD_NODES` has the expected 11
+  entries at the right world positions; a force-assigned delivery job
+  produced a real multi-waypoint route along the spiral (6 points) instead
+  of the old fixed 3; watched the truck drive with per-frame position/
+  rotation telemetry (`y` stayed exactly 0 — grounded, no floating) plus
+  screenshots; ran a 25s soak with both the delivery truck and the lift
+  vehicle actively cycling outbound/working/returning/idle with zero
+  console errors, both still valid and grounded at the end; re-ran the
+  full existing regression pass (boot, construction, contracts) with no
+  new failures.
+- Checked off spec items 16 and 22 in `TYCOON_V19_PLAN.md`.
+
 ### 2026-09-20 — Adopt v19, add contracts, fix a mobile HUD collision
 - Imported the user-provided `tycoon_v19_construction_system.html` (28.5MB,
   base64-embedded textures) into this repo as `tycoon-v19.html`, using the

@@ -80,24 +80,66 @@ grepping), so future sessions don't waste time re-building working systems:
   achievements, prestige, i18n (ru/en), save versioning (`saveVersion: 4`)**
   all already exist and work (verified with a headless pass — build a
   house end to end, income starts, upgrade pad appears).
-- Vehicle navigation is **not** yet on road nodes — `makeVehiclePath()` is
-  still a straight 3-point path (home → map center → target). Section 16's
-  ask (real `roadNodes` graph, turning, no cutting through lawns) is a real,
-  still-open gap.
 - **No contracts system existed** before this session (spec item 19) —
-  implemented this session, see below.
-- Known pre-existing mobile-layout bugs (not introduced this session, found
-  while testing at 390px width): the 5-chip HUD stats row
-  (money/income/progress/planks/carriedLogs) overflows and wraps badly on
-  narrow phones, and the field-upgrade world-space label ("Build Speed
-  1/3") can render partially off the left edge of the viewport. Left as a
-  follow-up — see Phase list below. Do **not** confuse this with the
-  contracts card, which was positioned defensively to clear the
-  known-wrapping icon row (see CSS comment at `#contractsCard`).
+  implemented in the previous session, see below.
+- Vehicle navigation was **not** on road nodes as of the previous session
+  (`makeVehiclePath()` was a straight 3-point path: home → map center →
+  target). **Fixed this session** — see "What this session added" below.
+- Re-checked the two "known mobile bugs" noted by the previous session
+  before spending a slice on them, and downgraded both after a closer look
+  (measured actual DOM bounding boxes + screenshots at 390px, not just a
+  glance): the 5-chip HUD stats row wraps to 2 lines at narrow widths, but
+  reads cleanly (no overlap/garble) — not actually broken, just two lines
+  instead of one; acceptable per section 22's "don't take half the
+  screen" bar. The field-upgrade label appearing near the screen edge is a
+  world-space 3D sprite near the current camera framing's edge, not a
+  CSS/DOM overflow bug — any world-space label can be partially
+  off-screen depending on where the player is standing, and that's
+  expected behavior for this label system, not a defect. Neither is worth
+  a dedicated slice; removed from the priority list below.
 
-## What this session added (v19 → next)
+## What this session added
 
-**Contracts system** (spec item 19). Up to 2 simultaneous short-term
+**Road-node vehicle navigation** (spec item 16, previously a confirmed
+open gap). Service vehicles (the delivery truck and the lift/telehandler)
+used to route as a straight 3-point path — home, then literally the map
+center `(0,0,0)`, then the target — cutting across open lawn regardless of
+where the actual road ran. The visible road itself is already built from a
+simple chain (`pathPoints`: plaza center, then each of the 10
+`stagePosition(i)` points in order, per the existing road-segment-building
+loop), so routing didn't need a real graph/pathfinder: added `ROAD_NODES`
+(that same chain), `nearestRoadNodeIndex()`, and `buildRoadRoute(from, to)`
+which finds the nearest road node to each end and slices the chain between
+them (ascending or descending as needed), replacing `makeVehiclePath()` at
+all 3 call sites (both `assignVehicleJob()` branches and the hardcoded
+return-to-base path in `moveWorkVehicle()`). No changes needed to the
+actual per-frame movement/rotation code — `moveWorkVehicle()` already
+walked an arbitrary-length `path` array one waypoint at a time, so this
+was a drop-in upgrade to *how* the path is built, not how it's followed.
+
+Verified with a headless-browser pass: confirmed `ROAD_NODES` has the
+expected 11 entries (center + 10 stages) at the right world positions;
+force-assigned the delivery truck a job after building a house and
+confirmed its route is no longer a fixed 3 points but walks multiple real
+road nodes toward the target (6 waypoints in the test case, following the
+spiral instead of cutting through open ground); watched the truck drive
+for several seconds with position/rotation telemetry each frame (`y`
+stayed exactly `0` throughout — grounded, no floating) and screenshots
+along the way; ran a 25-second soak with both vehicles actively cycling
+through outbound/working/returning/idle and re-assignment with zero
+console errors and both still in valid, grounded states at the end. Also
+re-ran the full existing regression pass (boot, construction pipeline,
+contracts) to confirm nothing else broke — all green.
+
+One known limitation carried forward, not a regression: since vehicle home
+bases (the sawmill/generator area) sit off the spiral entirely, "nearest
+road node" can occasionally be a node that isn't on the visually shortest
+side of the chain, producing a slightly indirect first/last leg. Good
+enough for this slice (real improvement over "always through dead
+center"); a future refinement could give off-road bases their own fixed
+driveway node instead of pure nearest-neighbor snapping.
+
+**Contracts system** (spec item 19, previous session). Up to 2 simultaneous short-term
 objectives, randomly drawn from 4 templates (build N buildings, produce N
 planks, chop N logs, earn N money), each with a scaled cash reward. Tracked
 via new `stats.buildingsCompleted` / `stats.logsChopped` counters (plus the
@@ -165,9 +207,9 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
       (benches, streetlights, signs) already visible in playtest
       screenshots; full checklist (curbs, sidewalks, crosswalks, parking,
       hydrants, cones, etc.) not audited.
-- [ ] **Road-node vehicle navigation** (section 16) — confirmed still a
-      straight 3-point path, not a road graph. Real gap, meaningful next
-      slice.
+- [x] **Road-node vehicle navigation** (section 16) — done this session
+      (`ROAD_NODES` / `buildRoadRoute()`). See known limitation noted above
+      (off-road bases don't get a dedicated driveway node yet).
 - [~] **NPC worker roles** (section 17) — worker NPCs with `chooseWorkerTarget`
       exist; whether they have distinct visual roles (builder/rigger/
       foreman/loader per spec) not audited.
@@ -178,8 +220,10 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 - [ ] **Economy pacing re-check** (section 20) — not re-validated against
       the fuller feature set (contracts should help; worth simulating).
 - [x] **Prestige** (section 21) — exists (`doPrestige`), messaging clear.
-- [~] **UI cleanliness** (section 22) — mostly good, but see the two known
-      mobile bugs above (HUD stat row wrap, upgrade-pad label off-edge).
+- [~] **UI cleanliness** (section 22) — the two specific bugs the previous
+      session flagged were re-audited and downgraded (see note above, not
+      real issues); general responsive polish beyond that pair not
+      exhaustively re-checked.
 - [x] **3D label auto-fit** (section 23) — already implemented generically.
 - [ ] **Camera tuning** (section 24) — default follow-cam distance/angle
       not specifically re-tuned against the spec's "mobile tycoon" feel.
@@ -204,26 +248,31 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
   fix are the first v19→v20-ish increment.
 - **v20 — Production Chain**: warehouse-as-storage, concrete, metal, real
   logistics. Not started.
-- **v21 — City Life**: road-node navigation, worker roles, city decor.
-  Not started (road nodes is the clearest concrete next step here).
+- **v21 — City Life**: road-node navigation now done; worker roles and
+  city decor remain.
 - **v22 — Economy & Contracts**: contracts now done; milestone UI and a
   fresh balance pass remain.
 - **v23 — Visual Polish**: models/textures/lighting/effects/animation/camera.
-- **v24 — Mobile & Performance**: the two known mobile HUD bugs belong here
-  at the latest, ideally sooner since they're already found.
+- **v24 — Mobile & Performance**: the two previously-flagged mobile HUD
+  items turned out not to need fixing (see audit above); a real
+  performance profiling pass is still outstanding.
 - **v25 — Release Candidate**: full bug/softlock/save/UI/perf sweep.
 
 ## Suggested next slice (pick one, don't do everything at once)
 
 In priority order, given what's already solid vs. genuinely missing:
-1. Fix the two known mobile HUD bugs (stat-row wrap, upgrade-label
-   off-edge) — quick, concrete, user explicitly cares about mobile.
-2. Road-node vehicle navigation (section 16) — clearly still a stub,
-   meaningfully visible improvement (trucks stop cutting across lawns).
-3. Tree species variety (section 7) — self-contained, visually obvious win.
-4. Audit + finish the lift/telehandler model and NPC role visuals
-   (sections 6, 17) against the spec, since these were flagged `[~]` not
-   `[x]` this session for lack of time, not because they're known-broken.
+1. Tree species variety (section 7) — self-contained, visually obvious win,
+   `makeTree()` currently produces one repeated cone shape.
+2. Audit + finish the lift/telehandler model and NPC role visuals
+   (sections 6, 17) against the spec — flagged `[~]` not `[x]` for lack of
+   time in an earlier session, not because they're known-broken.
+3. Delivery-vehicle status labels: name the specific resource + target
+   building (spec wants e.g. "Доски → Дом") instead of the current generic
+   "MATERIALS" — small polish on top of this session's routing work.
+4. Second raw resource (concrete) + a warehouse-as-storage mechanic
+   (section 3) — only once the log→plank chain's existing sinks (planks
+   already used for building cost, upgrades, and now nothing else
+   pending) feel complete; check economy pacing (section 20) first.
 
 ## Process reminder for future sessions
 

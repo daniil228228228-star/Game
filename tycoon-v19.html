@@ -737,6 +737,36 @@ for (let i = 0; i < pathPoints.length - 1; i++) {
   scene.add(lane);
 }
 
+/* ---------------------------------------------------------------------- */
+/*  ROAD NETWORK — service vehicles route along the actual road centerline */
+/*  (this same spiral chain the road segments above are built from)       */
+/*  instead of cutting one straight line through the lawn via a single    */
+/*  map-center waypoint. `pathPoints` is a simple chain (index 0 = plaza  */
+/*  center, index i = stagePosition(i-1)), so routing between any two     */
+/*  points is just slicing it in the right direction -- no graph search   */
+/*  needed. (Spec section 16.)                                             */
+/* ---------------------------------------------------------------------- */
+const ROAD_NODES = pathPoints.map(p => p.clone());
+
+function nearestRoadNodeIndex(pos) {
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < ROAD_NODES.length; i++) {
+    const d = ROAD_NODES[i].distanceToSquared(pos);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
+function buildRoadRoute(fromPos, toPos) {
+  const fromIdx = nearestRoadNodeIndex(fromPos);
+  const toIdx = nearestRoadNodeIndex(toPos);
+  const route = [fromPos.clone()];
+  const step = fromIdx <= toIdx ? 1 : -1;
+  for (let i = fromIdx; i !== toIdx + step; i += step) route.push(ROAD_NODES[i].clone());
+  route.push(toPos.clone());
+  return route;
+}
+
 const plotRing = new THREE.Mesh(
   new THREE.RingGeometry(GROUND_HALF * 0.93, GROUND_HALF * 0.97, 96),
   new THREE.MeshBasicMaterial({ color: 0xd9bf74, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
@@ -3749,15 +3779,6 @@ function setVehicleStatus(vehicle, primary, secondary = '') {
   updateLabelSprite(sprite, [primary, secondary].filter(Boolean));
 }
 
-function makeVehiclePath(home, target, offset = 0) {
-  const center = new THREE.Vector3(0, 0, 0);
-  const approach = target.clone();
-  const dir = target.clone().sub(center);
-  if (dir.lengthSq() > 0.01) dir.normalize();
-  approach.add(new THREE.Vector3(-dir.z * offset, 0, dir.x * offset));
-  return [home.clone(), center, approach];
-}
-
 function assignVehicleJob(vehicle) {
   const ud = vehicle.userData;
   const targets = vehicleWorkTargets(ud.role || 'delivery');
@@ -3773,7 +3794,7 @@ function assignVehicleJob(vehicle) {
       return;
     }
     ud.jobTarget = activeTarget.clone().add(new THREE.Vector3(1.7, 0, -1.2));
-    ud.path = makeVehiclePath(ud.home, ud.jobTarget, 1.1);
+    ud.path = buildRoadRoute(ud.home, ud.jobTarget);
     ud.pathIndex = 0;
     ud.state = 'outbound';
     setVehicleStatus(vehicle, lang === 'ru' ? 'ПОДЪЁМНИК' : 'LIFT', lang === 'ru' ? 'едет на объект' : 'to worksite');
@@ -3788,7 +3809,7 @@ function assignVehicleJob(vehicle) {
       return;
     }
     ud.jobTarget = target.clone().add(new THREE.Vector3(-1.5, 0, 1.2));
-    ud.path = makeVehiclePath(ud.home, ud.jobTarget, -1.0);
+    ud.path = buildRoadRoute(ud.home, ud.jobTarget);
     ud.pathIndex = 0;
     ud.state = 'outbound';
     setVehicleStatus(vehicle, lang === 'ru' ? 'МАТЕРИАЛЫ' : 'MATERIALS', lang === 'ru' ? 'доставка на объект' : 'delivery');
@@ -3828,7 +3849,7 @@ function moveWorkVehicle(vehicle, dt) {
       if (nearbyBuild && liftPhase >= 4) nearbyBuild.timer = Math.min(nearbyBuild.duration, nearbyBuild.timer + dt * 0.34);
     }
     if (ud.waitTimer <= 0) {
-      ud.path = [vehicle.position.clone(), new THREE.Vector3(0, 0, 0), ud.home.clone()];
+      ud.path = buildRoadRoute(vehicle.position, ud.home);
       ud.pathIndex = 0;
       ud.state = 'returning';
       setVehicleStatus(vehicle,
