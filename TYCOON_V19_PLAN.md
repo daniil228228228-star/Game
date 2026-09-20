@@ -100,6 +100,38 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Two direct user-reported fixes this session**: (1) **Road marking
+flicker ("разметка бликует")** -- root-caused to `outerRingMark` (the
+painted line on the big outer ring road, near the map's edge) sitting
+only 0.007 world units above `outerRingRoad` while fully overlapping its
+radius band. At that ring's distance from the camera (~55+ units, near
+`GROUND_HALF`), the depth buffer's precision at the far end of the
+camera's `[0.1, 500]` clip range isn't fine enough to keep two
+near-coplanar surfaces that close apart, causing them to flicker/
+z-fight. The inner spiral roads' own lane markings already use a much
+larger ~0.0375 gap successfully; bumped `outerRingMark` to a 0.045 gap
+(0.09 vs. 0.045) to match. (2) **Camera clipping through buildings** --
+added a raycast-based obstruction check to `updatePlayer()`'s camera-
+follow code: each frame, after the existing follow-camera positioning
+logic computes a desired camera position, a single reused
+`THREE.Raycaster` checks the line from the player's eye to that position
+against all completed (non-under-construction) building meshes, and
+pulls the camera in front of the nearest hit (with a small buffer) if
+one exists -- previously OrbitControls had no concept of solid geometry
+at all, so walking close to a building's far side could put the camera
+inside or behind its wall.
+
+Verified: an obstruction test placed a real building between the player
+and an intentionally-far camera position and confirmed the camera pulls
+in from a raw ~12 units to ~4.4 (in front of the wall), confirmed via a
+separate case that an unobstructed camera in open grass is completely
+unaffected (identical distance before/after), and confirmed the pulled-
+in position survives several real `animate()`/`controls.update()` frames
+(not just the single `updatePlayer()` call) so OrbitControls' damping
+doesn't stomp it back. Re-ran the full existing regression suite (boot,
+pinch-zoom, the three earlier user-reported fixes, milestone banner,
+full build lifecycle) with zero new failures.
+
 **Found and fixed the reported material-overlap bug** (this session,
 follow-up to the earlier "материалы накладываются друг на друга"
 report). Screenshots alone weren't reliable for hunting this down (the

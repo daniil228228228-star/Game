@@ -829,7 +829,13 @@ const outerRingMark = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ color: 0xffe2a8, transparent: true, opacity: 0.72, side: THREE.DoubleSide })
 );
 outerRingMark.rotation.x = -Math.PI / 2;
-outerRingMark.position.y = 0.052;
+// Was only 0.007 above outerRingRoad (0.045 vs 0.052) -- at this ring's radius (~55 units
+// out, near the edge of the map) that's far enough from the camera for depth-buffer
+// precision to blur the two flat surfaces together, flickering ("разметка бликует"). Lane
+// markings on the inner spiral roads already use a much bigger gap (~0.0375) successfully;
+// matched that margin here too, scaled up a bit further since this ring is viewed from
+// even greater distances.
+outerRingMark.position.y = 0.09;
 scene.add(outerRingMark);
 
 const waterRing = new THREE.Mesh(
@@ -5053,6 +5059,16 @@ const moveDir = new THREE.Vector3();
 let runCycle = 0;
 let lastFootstepPhase = 0;
 
+// Camera-obstruction avoidance: OrbitControls has no notion of solid geometry, so without
+// this the near-clip plane would slice straight through a building's wall the moment the
+// player rounds a corner close to one, showing the inside of an opaque box. A single reused
+// Raycaster (never allocated per-frame) checks the line from the player's eye to the
+// camera's intended position each frame and pulls the camera in if a building is in the way.
+const cameraRaycaster = new THREE.Raycaster();
+const camEyeTarget = new THREE.Vector3();
+const camToCam = new THREE.Vector3();
+const CAMERA_OBSTRUCTION_BUFFER = 0.35;
+
 function updatePlayer(dt) {
   const prevX = player.position.x;
   const prevZ = player.position.z;
@@ -5236,6 +5252,28 @@ function updatePlayer(dt) {
     camera.position.x += player.position.x - prevX;
     camera.position.z += player.position.z - prevZ;
   }
+
+  // Pull the camera in front of any building it would otherwise clip through. Only checks
+  // completed buildings (a construction site's scaffolding is meant to be see-through-ish
+  // and isn't worth the extra raycast targets every frame).
+  camEyeTarget.set(player.position.x, PLAYER_EYE_HEIGHT, player.position.z);
+  camToCam.subVectors(camera.position, camEyeTarget);
+  const camDist = camToCam.length();
+  if (camDist > CAMERA_OBSTRUCTION_BUFFER + 0.1 && buildings.length) {
+    camToCam.divideScalar(camDist); // normalize in place, camDist already captured above
+    cameraRaycaster.set(camEyeTarget, camToCam);
+    cameraRaycaster.far = camDist;
+    cameraRaycaster.near = 0.1;
+    const solidMeshes = buildings.filter(b => !b.underConstruction).map(b => b.mesh);
+    if (solidMeshes.length) {
+      const hits = cameraRaycaster.intersectObjects(solidMeshes, true);
+      if (hits.length && hits[0].distance < camDist - CAMERA_OBSTRUCTION_BUFFER) {
+        const pulled = Math.max(CAM_MIN_DIST * 0.4, hits[0].distance - CAMERA_OBSTRUCTION_BUFFER);
+        camera.position.copy(camEyeTarget).addScaledVector(camToCam, pulled);
+      }
+    }
+  }
+
   controls.target.set(player.position.x, PLAYER_EYE_HEIGHT, player.position.z);
 }
 

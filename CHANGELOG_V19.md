@@ -459,6 +459,26 @@ tracks progress against.
   lobby" band on office/tower) are intentional layered trim, matching
   the same pattern used throughout the file -- not bugs.
 
+### 2026-09-20 — Fixed flickering outer-ring road marking; added camera-obstruction avoidance
+- **Road marking flicker**: `outerRingMark` sat only 0.007 units above
+  `outerRingRoad` while fully overlapping its radius band -- classic
+  z-fighting, made worse by that ring's distance from the camera (near
+  the map edge). Bumped the gap to 0.045, matching the inner roads'
+  already-working lane-marking separation.
+- **Camera clipping through buildings**: added a raycast obstruction
+  check to the camera-follow code in `updatePlayer()`. Each frame, after
+  computing the desired camera position, a reused `THREE.Raycaster`
+  checks the line from the player's eye to that position against all
+  completed building meshes and pulls the camera in front of the
+  nearest hit if one exists.
+- Verified: a real building placed between the player and a
+  deliberately-far camera position pulled the camera in from ~12 units
+  to ~4.4 (in front of the wall); a separate open-grass case confirmed
+  zero effect when nothing's in the way; confirmed the pulled-in
+  position survives several real animation frames (OrbitControls'
+  damping doesn't stomp it back). Zero new failures across the full
+  regression suite.
+
 ---
 
 ## Format for new entries
