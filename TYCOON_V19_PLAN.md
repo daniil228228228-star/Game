@@ -100,7 +100,46 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
-**Duplicate sawmill scenery bug fix + tree species variety** (this
+**Fixed the lift/telehandler's disconnected platform + gave it real
+deploy/extend/retract behavior** (this session, spec section 6). Audited
+`createWorkLift()` against the spec (base, wheels, outriggers, telescoping
+arm, basket, worker inside) and found a real bug: the platform (the
+basket the whole vehicle exists to raise) was a **separate mesh at a
+fixed absolute height**, not a child of the scissor-arm pivot
+(`liftArms`) that the animation loop actually moves — so the "lift" never
+visibly lifted its own basket; the arms shifted by a token amount
+underneath a platform that just sat there. Confirmed with a structural
+check (`platformIsChildOfArms: false`, platform fixed at local Y 1.72
+while the arms only ever spanned roughly 0.46-1.5) before touching
+anything. Fixed by: reparenting the platform (+ guard rail/posts) onto
+`liftArms` so it now genuinely rides the mechanism; widening the
+raise/lower range `moveWorkVehicle()` drives it across (retracted 0.34 →
+working 1.35, or 1.95 during the finishing phase) so the raise is
+actually visible instead of a token few centimeters; adding 8 outrigger
+leg/pad meshes (hidden while driving/idle, shown while `state ===
+'working'`); and adding a small rider (`createWorkerNPC()`, reused as-is)
+standing on the platform, visible only while working. All of this is
+driven from a single new always-runs-first block in `moveWorkVehicle()`
+that retracts/hides everything whenever the vehicle isn't in the
+`'working'` state, so idle/outbound/returning all correctly fold the lift
+away — matching the spec's own described sequence ("arrives, deploys
+legs, raises the basket, a worker does finishing work, then folds up,
+leaves").
+
+Verified with a headless-browser pass: confirmed `platformIsChildOfArms`
+is now `true`; forced the lift into a real `'working'` state next to an
+active construction site and sampled arm height / rider visibility /
+outrigger visibility every 0.5s — height climbed steadily (0.57 → 0.89 →
+1.07 → 1.16 → 1.22 → 1.28, converging on target) with rider and
+outriggers visible throughout; then ended the work cycle and confirmed
+the arms were already retracting (1.28 → 0.43) and the rider had gone
+invisible again within 3.5s of returning. Screenshot shows the scissor
+arms genuinely raised with the platform, rail, and rider sitting properly
+on top — grounded, no disconnect. Re-ran the full existing regression
+suite (boot, construction, contracts, road-node routing, a 25s multi-
+vehicle soak) with zero new failures.
+
+**Duplicate sawmill scenery bug fix + tree species variety** (previous
 session). Two changes:
 
 1. Found and fixed a real, previously-unaudited bug while reading the
@@ -238,12 +277,11 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 - [~] **Delivery visualization** (section 5) — trucks already exist and
       accelerate construction; specific "resource → target building" label
       text is the remaining polish.
-- [~] **Construction equipment 3D models** (section 6) — excavator, tower
-      crane and mixer already modelled with correct parts and animated at
-      the right phases (verified). Lift/telehandler (`подъёмник`) exists as
-      a vehicle role (`role: 'lift'`) with `liftArms` but wasn't visually
-      audited this session — verify its model next (base, outriggers,
-      telescoping arm, basket, worker inside, per spec).
+- [x] **Construction equipment 3D models** (section 6) — excavator, tower
+      crane, mixer, and (this session) the lift/telehandler all modelled
+      with correct parts and animated at the right phases. Lift now has
+      outriggers, a platform that actually rides its scissor arms, and a
+      rider, all correctly shown/hidden by work state (see session log).
 - [x] **Tree variety** (section 7) — done this session: conifer +
       deciduous species with independently-scaled trunk/canopy size tiers.
 - [ ] **Log-carry stacking visual** (section 8) — carried logs currently
@@ -319,9 +357,11 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 ## Suggested next slice (pick one, don't do everything at once)
 
 In priority order, given what's already solid vs. genuinely missing:
-1. Audit + finish the lift/telehandler model and NPC role visuals
-   (sections 6, 17) against the spec — flagged `[~]` not `[x]` for lack of
-   time in an earlier session, not because they're known-broken.
+1. Audit NPC role visuals (section 17) against the spec — worker NPCs
+   exist with `chooseWorkerTarget()` but whether they read as visually
+   distinct roles (builder/rigger/foreman/loader) hasn't been checked.
+   This session covered section 6 (equipment) fully instead, including a
+   real bug fix on the lift; section 17 is still only `[~]`.
 2. Delivery-vehicle status labels: name the specific resource + target
    building (spec wants e.g. "Доски → Дом") instead of the current generic
    "MATERIALS" — small polish on top of the road-routing work.
@@ -329,13 +369,13 @@ In priority order, given what's already solid vs. genuinely missing:
    (section 3) — only once the log→plank chain's existing sinks (planks
    already used for building cost, upgrades, and now nothing else
    pending) feel complete; check economy pacing (section 20) first.
-4. **Worth a dedicated pass, not just incidental findings**: this session
-   found a real duplicate-function-call bug (`buildSawmillScenery()`
-   called twice) purely by reading code while planning something else.
-   Grep the file for any other init-time function called more than once
-   (`grep -n "^\w\+();" tycoon-v19.html | sort | uniq -c | sort -rn` on the
-   top-level call statements is a decent starting point) — there may be
-   more silent duplicates like this one worth a focused audit session.
+4. **Worth a dedicated pass, not just incidental findings**: two sessions
+   in a row have now found a real bug purely by reading code while
+   planning something else (`buildSawmillScenery()` called twice; the
+   lift's platform never actually attached to its own lifting mechanism).
+   A focused audit session — read through the vehicle/NPC/construction
+   code specifically looking for "does this visibly do what it claims to
+   do," not implementing anything new — would likely be high-value.
 
 ## Process reminder for future sessions
 

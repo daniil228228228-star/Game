@@ -6,6 +6,37 @@ tracks progress against.
 
 ## Session log
 
+### 2026-09-20 — Fix the lift's disconnected platform, give it real deploy/retract behavior (autonomous loop)
+- Audited `createWorkLift()` (the "подъёмник" telehandler/scissor lift)
+  against spec section 6's checklist (base, wheels, outriggers,
+  telescoping arm, basket, worker inside) and found a real bug: the
+  platform -- the basket the whole vehicle exists to raise -- was a
+  separate mesh sitting at a fixed absolute height, not a child of the
+  scissor-arm pivot the animation actually moves. The lift never visibly
+  lifted its own basket; confirmed structurally
+  (`platformIsChildOfArms: false`) before touching any code.
+- Fixed by reparenting the platform (+ rail/posts) onto the arm pivot so
+  it now genuinely rides the mechanism, and widened the raise/lower range
+  `moveWorkVehicle()` drives it across (0.34 retracted → 1.35, or 1.95
+  during the finishing phase) so the raise is actually visible instead of
+  a few-centimeter token shift. Added 8 outrigger leg/pad meshes and a
+  small rider (reusing `createWorkerNPC()` as-is), both hidden while
+  driving/idle and shown only while the lift is in its `'working'` state
+  -- via a new block at the top of `moveWorkVehicle()` that retracts and
+  hides everything whenever the vehicle isn't actively working, so
+  idle/outbound/returning all correctly fold the lift away.
+- Verified with a headless-browser pass: confirmed the platform is now a
+  real child of the arm pivot; forced the lift into a genuine `'working'`
+  state next to an active site and sampled arm height/rider/outrigger
+  visibility every 0.5s -- height climbed steadily toward its target with
+  rider and outriggers visible throughout; ended the work cycle and
+  confirmed the arms were already retracting and the rider hidden again
+  within 3.5s. Screenshot shows the scissor arms genuinely raised with
+  platform, rail, and rider sitting correctly on top. Re-ran the full
+  regression suite (boot, construction, contracts, road-node routing, a
+  25s multi-vehicle soak) with zero new failures.
+- Checked off spec item 6 in `TYCOON_V19_PLAN.md` (previously `[~]`).
+
 ### 2026-09-20 — Fix a duplicate-sawmill bug, add tree species variety (autonomous loop)
 - **Found and fixed a real bug**: `buildSawmillScenery()` was called twice
   at init with no guard, silently doubling the entire sawmill complex on
