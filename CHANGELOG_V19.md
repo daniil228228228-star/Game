@@ -6,6 +6,38 @@ tracks progress against.
 
 ## Session log
 
+### 2026-09-20 — Critical fix: pinch-zoom crashed the whole game on real phones (user-reported)
+- User published this file as a Claude Artifact and reported an
+  immediate hard crash on their iPhone with a screenshot: `TypeError:
+  undefined is not an object (evaluating 'event.touches[1].pageX')`,
+  which blanks the whole screen behind the boot-error overlay (that
+  overlay's global error handler treats any uncaught runtime error as
+  fatal, not just boot-time ones).
+- Traced it to the vendored `vendor_v19/three_r128/OrbitControls.js` (not
+  the game's own code, which has no `touches[1]` reference at all):
+  `handleTouchStartDolly()`/`handleTouchMoveDolly()` read
+  `event.touches[0]`/`[1]` completely unguarded, unlike the sibling
+  rotate/pan handlers in the same file, which already check
+  `touches.length` first. The controls' touch state machine dispatches
+  purely on a `state` set at `touchstart` and only cleared on `touchend`,
+  so lifting the second finger mid-pinch -- routine on a real phone,
+  basically unreachable from a synthetic mouse-driven test -- fires one
+  more `touchmove` with 1 touch left while state is still
+  `TOUCH_DOLLY_PAN`.
+- Fixed with the same `if (event.touches.length < 2) return;` guard the
+  file already uses elsewhere, in both dolly handlers.
+- Verified with a headless-browser pass (Playwright with `hasTouch:
+  true` for real `Touch`/`TouchEvent` support): confirmed the repro was
+  faithful by running it against the unfixed file first (via `git
+  stash`) and getting the identical error and boot-error overlay;
+  restored the fix and got zero errors on the identical touch sequence;
+  separately confirmed a genuine two-finger pinch (no finger lift) still
+  actually zooms the camera, so the fix doesn't disable pinch-zoom, only
+  the crash. Re-ran the full regression suite with zero new failures.
+- Republished the Claude Artifact (same URL, `6FEiX58PSjZHSzjuyTDuoM`)
+  with the patched vendor file so the user's already-shared link is
+  fixed immediately, and pushed the same fix to the repo.
+
 ### 2026-09-20 — Fix an orphaned-construction-site bug in doPrestige() (autonomous loop, dedicated audit pass)
 - Followed through on the previous session's own suggestion to do a
   focused "does this visibly do what it claims" audit rather than build

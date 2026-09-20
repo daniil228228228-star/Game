@@ -100,8 +100,48 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Critical fix: pinch-zoom crashed the whole game on real phones**
+(this session, user-reported). The user published this file as a Claude
+Artifact and immediately hit a hard crash on their iPhone: `TypeError:
+undefined is not an object (evaluating 'event.touches[1].pageX')`, which
+blanked the entire screen behind the boot-error overlay (that overlay's
+global `window.addEventListener('error', ...)` handler treats *any*
+uncaught runtime error, not just boot-time ones, as fatal). Traced the
+reported line number to the vendored `vendor_v19/three_r128/OrbitControls.js`
+(the game's own `tycoon-v19.html` has no `touches[1]` reference at all):
+`handleTouchStartDolly()`/`handleTouchMoveDolly()` read
+`event.touches[0]`/`event.touches[1]` completely unguarded, while the
+sibling rotate/pan handlers in the same file already correctly check
+`event.touches.length` first. The controls' touch state machine
+(`onTouchMove`) dispatches purely on a `state` value set once at
+`touchstart` and only reset on `touchend` -- so lifting the *second*
+finger mid-pinch (routine on a real phone, essentially never produced by
+a synthetic mouse-driven test) can fire one more `touchmove` with only 1
+touch left while state is still `TOUCH_DOLLY_PAN`, hitting the unguarded
+`touches[1]`.
+Fixed by adding the same `if (event.touches.length < 2) return;` guard
+already used elsewhere in the file to both dolly handlers -- a one-line
+change per function, matching the file's own established defensive
+pattern.
+
+Verified with a headless-browser pass (Playwright launched with
+`hasTouch: true` so real `Touch`/`TouchEvent` constructors work):
+first confirmed the repro was faithful by running it against the
+*unfixed* file (`git stash`) and getting the exact same error plus the
+boot-error overlay appearing; restored the fix and re-ran the identical
+two-finger-touchstart -> two-finger-touchmove -> one-finger-touchmove
+sequence and got zero errors with the game still fully responsive
+afterward; separately verified a genuine two-finger pinch (both fingers
+staying down the whole gesture) still actually zooms the camera
+(distance changed 9.55 -> 3.5), so the fix doesn't silently disable
+pinch-zoom, only the crash on an asymmetric finger-lift. Re-ran the full
+existing regression suite with zero new failures. Republished the
+Claude Artifact (same URL) with the patched vendor file so the user's
+already-shared link is immediately fixed, and pushed the same fix to the
+repo.
+
 **Dedicated audit pass: fixed an orphaned-construction-site bug in
-`doPrestige()`** (this session, following through on last session's own
+`doPrestige()`** (previous session, following through on last session's own
 suggestion to do a focused "does this visibly do what it claims" pass
 rather than build something new). Read through `doPrestige()`,
 `purchaseCurrentPad()`, and `upgradeBuilding()` together and found a real,

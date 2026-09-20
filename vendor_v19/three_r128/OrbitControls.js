@@ -597,6 +597,11 @@
 
 			function handleTouchStartDolly( event ) {
 
+				// A pinch gesture can lose its second finger between events (the browser fires
+				// touchmove/touchstart with touches.length back down to 1 before touchend
+				// resets the FSM state) -- guard instead of crashing on touches[1].pageX.
+				if ( event.touches.length < 2 ) return;
+
 				const dx = event.touches[ 0 ].pageX - event.touches[ 1 ].pageX;
 				const dy = event.touches[ 0 ].pageY - event.touches[ 1 ].pageY;
 				const distance = Math.sqrt( dx * dx + dy * dy );
@@ -662,6 +667,13 @@
 			}
 
 			function handleTouchMoveDolly( event ) {
+
+				// Same guard as handleTouchStartDolly() above -- this is the exact crash
+				// reported from a real device (TypeError: undefined is not an object
+				// (evaluating 'event.touches[1].pageX')): lifting one finger during a pinch
+				// can leave the controls' internal state at TOUCH_DOLLY_PAN/DOLLY_ROTATE for
+				// one more touchmove event with only a single touch left.
+				if ( event.touches.length < 2 ) return;
 
 				const dx = event.touches[ 0 ].pageX - event.touches[ 1 ].pageX;
 				const dy = event.touches[ 0 ].pageY - event.touches[ 1 ].pageY;
