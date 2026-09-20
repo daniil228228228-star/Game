@@ -576,11 +576,12 @@ let cityState = {
   // v31 Stage A slice 1 ("жилой город"): districts stop being a flat unlock-level integer and
   // gain their own lightweight simulated stats -- population share and a 0-100 attractiveness
   // stat, updated periodically (see updateDistrictStats()), not per-frame.
+  // v31 Stage B slice 1: added `health` (0-100, raised by a built clinic -- see CLINIC_BUILDING).
   districtStats:{
-    suburb:{ population:0, satisfaction:50 },
-    industrial:{ population:0, satisfaction:50 },
-    business:{ population:0, satisfaction:50 },
-    waterfront:{ population:0, satisfaction:50 },
+    suburb:{ population:0, satisfaction:50, health:50 },
+    industrial:{ population:0, satisfaction:50, health:50 },
+    business:{ population:0, satisfaction:50, health:50 },
+    waterfront:{ population:0, satisfaction:50, health:50 },
   },
   population:0, // real, tracked city population resource (see updatePopulation())
   // v31 Stage A slice 2: housing is now keyed per district (suburb/business/waterfront each get
@@ -589,6 +590,15 @@ let cityState = {
     suburb:{ apartmentBlockBuilt:false, pendingUntil:0, pos:null },
     business:{ apartmentBlockBuilt:false, pendingUntil:0, pos:null },
     waterfront:{ apartmentBlockBuilt:false, pendingUntil:0, pos:null },
+  },
+  // v31 Stage B slice 1 ("городская инфраструктура"): first civic building, a clinic. Unlike
+  // housing, every district can host one (including industrial, which has no housing of its own
+  // -- a workers' clinic is a natural first civic building for a factory zone).
+  civic:{
+    suburb:{ clinicBuilt:false, pendingUntil:0, pos:null },
+    industrial:{ clinicBuilt:false, pendingUntil:0, pos:null },
+    business:{ clinicBuilt:false, pendingUntil:0, pos:null },
+    waterfront:{ clinicBuilt:false, pendingUntil:0, pos:null },
   },
   initiative:null,
   initiativesCompleted:0,
@@ -8460,6 +8470,7 @@ function applyLanguage() {
   renderSystemsPanel();
   if (typeof refreshCityExpansionWorld === 'function') refreshCityExpansionWorld();
   if (typeof refreshResidentialWorld === 'function') refreshResidentialWorld();
+  if (typeof refreshCivicWorld === 'function') refreshCivicWorld();
   if (typeof cityOverlay !== 'undefined' && cityOverlay?.classList.contains('show')) renderCityPanel();
   if (operationsOverlay?.classList.contains('show')) renderOperationsPanel();
 }
@@ -8555,7 +8566,7 @@ const CITY_INITIATIVES = [
   { id:'modernization', emoji:'⬆️', kind:'upgrades', unlockRep:75, baseTarget:5, reward:5600, rep:27, ru:'Модернизация портфеля', en:'Portfolio Modernization', descRu:'Прокачай существующие объекты', descEn:'Upgrade existing properties' },
   { id:'flagship', emoji:'🏗️', kind:'strategic', unlockRep:120, baseTarget:1, reward:8000, rep:36, ru:'Флагманский проект', en:'Flagship Project', descRu:'Заверши спецпроект или крупный тендер', descEn:'Complete a special project or major tender' },
 ];
-const cityWorldRuntime = { hubs:new Map(), residential:new Map() }; // residential: districtId -> mesh (slice 2: multiple housing districts)
+const cityWorldRuntime = { hubs:new Map(), residential:new Map(), civic:new Map() }; // residential/civic: districtId -> mesh
 function districtLevel(id){ return Math.max(0,Math.min(3,Math.floor(Number(cityState?.districts?.[id])||0))); }
 function currentClientTier(){ let tier=CLIENT_TIERS[0]; for(const t of CLIENT_TIERS) if(cityState.reputation>=t.rep) tier=t; return tier; }
 function districtUnlocked(cfg){ return districtLevel(cfg.id)>0 || (cityState.reputation>=cfg.unlockRep && companyTierIndex()>=cfg.unlockTier); }
@@ -8761,26 +8772,37 @@ function updateDistrictStats(){
   for (const cfg of CITY_DISTRICTS) {
     const ds = cityState.districtStats[cfg.id]; if (!ds) continue;
     const lvl = districtLevel(cfg.id);
+    const hasClinic = districtHasClinic(cfg.id);
     let target = 38 + lvl*14;
     if (HOUSING_DISTRICT_IDS.includes(cfg.id)) {
       const cap = districtHousingCapacity(cfg.id);
+      // Stage B slice 1: a built clinic speeds up how fast a district's population closes in on
+      // its housing capacity (families move in faster with local healthcare) -- a real, visible
+      // number-moves-faster effect, not a hidden demand/supply model.
+      const growthRate = hasClinic ? 0.225 : 0.15;
       const gap = cap - ds.population;
-      ds.population = Math.max(0, ds.population + gap*0.15);
+      ds.population = Math.max(0, ds.population + gap*growthRate);
       if (Math.abs(cap-ds.population) < 0.4) ds.population = cap;
       target += cap>0 ? 12 : -8;
       if (cap>0) target -= Math.max(0, (ds.population/cap)-0.92)*40;
     } else {
       ds.population = 0; // non-housing district (industrial) -- no residents yet
     }
+    if (hasClinic) target += 16; // healthcare directly lifts satisfaction too
     totalPopulation += ds.population;
     target = THREE.MathUtils.clamp(target, 0, 100);
     ds.satisfaction = THREE.MathUtils.clamp(ds.satisfaction + (target-ds.satisfaction)*0.2, 0, 100);
+    // health: eased toward a target driven by district level (better-developed districts have
+    // some baseline healthcare access) plus a large, real bonus once a clinic is actually built.
+    const healthTarget = THREE.MathUtils.clamp(28 + lvl*7 + (hasClinic?42:0), 0, 100);
+    ds.health = THREE.MathUtils.clamp((Number.isFinite(ds.health)?ds.health:50) + (healthTarget-(Number.isFinite(ds.health)?ds.health:50))*0.2, 0, 100);
   }
   cityState.population = totalPopulation;
 }
 function updatePopulation(){
   updateDistrictStats();
   updateResidentialLabel();
+  updateCivicLabel();
   updateHUD();
 }
 
@@ -8798,8 +8820,8 @@ function renderCityPanel(){
   document.getElementById('cityGrid').innerHTML=CITY_DISTRICTS.map(cfg=>{
     const lv=districtLevel(cfg.id),unlocked=districtUnlocked(cfg),maxed=lv>=3,cost=maxed?null:districtUpgradeCost(cfg); const affordable=cost&&canPayResources(cost);
     const lock=unlocked?'':(lang==='ru'?`Нужно: ${cfg.unlockRep} реп. и статус ${COMPANY_TIERS[cfg.unlockTier]?.ru||''}`:`Need ${cfg.unlockRep} rep and ${COMPANY_TIERS[cfg.unlockTier]?.en||''}`);
-    const ds=cityState.districtStats[cfg.id]||{population:0,satisfaction:50};
-    const statsLine=unlocked?`<div class="resourceLine">👥 ${fmt(Math.round(ds.population))} · ${lang==='ru'?'Довольство':'Satisfaction'} ${Math.round(ds.satisfaction)}%</div>`:'';
+    const ds=cityState.districtStats[cfg.id]||{population:0,satisfaction:50,health:50};
+    const statsLine=unlocked?`<div class="resourceLine">👥 ${fmt(Math.round(ds.population))} · ${lang==='ru'?'Довольство':'Satisfaction'} ${Math.round(ds.satisfaction)}% · ${lang==='ru'?'Здоровье':'Health'} ${Math.round(ds.health)}%</div>`:'';
     let housingLine='';
     if (HOUSING_DISTRICT_IDS.includes(cfg.id) && unlocked) {
       const h=cityState.housing[cfg.id];
@@ -8813,7 +8835,20 @@ function renderCityPanel(){
         housingLine=`<div class="resourceLine">${districtCostText(rcost)}</div><button class="v30Btn ${raffordable?'primary':''}" data-residential="${cfg.id}" ${!raffordable?'disabled':''}>${lang==='ru'?'Построить жилой дом':'Build apartment block'}</button>`;
       }
     }
-    return `<div class="cityCard ${!unlocked?'locked':''} ${maxed?'maxed':''}"><div class="name">${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}</div><div class="desc">${lang==='ru'?cfg.bonusRu:cfg.bonusEn}</div><div class="status">${unlocked?(lang==='ru'?`Уровень ${lv}/3`:`Level ${lv}/3`):`🔒 ${lock}`}</div>${statsLine}${housingLine}${!maxed&&unlocked?`<div class="resourceLine">${districtCostText(cost)}</div><button class="v30Btn ${affordable?'primary':''}" data-district="${cfg.id}" ${!affordable?'disabled':''}>${lang==='ru'?'Развить':'Upgrade'}</button>`:maxed?`<button class="v30Btn" disabled>✓ MAX</button>`:''}</div>`;
+    let civicLine='';
+    if (unlocked) {
+      const c=cityState.civic[cfg.id];
+      if (c.clinicBuilt) {
+        civicLine=`<div class="status">⚕️ ${lang==='ru'?'Поликлиника построена':'Clinic built'}</div>`;
+      } else if (c.pendingUntil>0) {
+        const buildLeft=Math.max(0,Math.ceil((c.pendingUntil-Date.now())/1000));
+        civicLine=`<div class="status">🏗️ ${lang==='ru'?'Стройка идёт':'Under construction'} · ⏱ ${buildLeft}${lang==='ru'?'с':'s'}</div>`;
+      } else {
+        const ccost=civicBuildCost(); const caffordable=canPayResources(ccost);
+        civicLine=`<div class="resourceLine">${districtCostText(ccost)}</div><button class="v30Btn ${caffordable?'primary':''}" data-civic="${cfg.id}" ${!caffordable?'disabled':''}>${lang==='ru'?'Построить поликлинику':'Build clinic'}</button>`;
+      }
+    }
+    return `<div class="cityCard ${!unlocked?'locked':''} ${maxed?'maxed':''}"><div class="name">${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}</div><div class="desc">${lang==='ru'?cfg.bonusRu:cfg.bonusEn}</div><div class="status">${unlocked?(lang==='ru'?`Уровень ${lv}/3`:`Level ${lv}/3`):`🔒 ${lock}`}</div>${statsLine}${housingLine}${civicLine}${!maxed&&unlocked?`<div class="resourceLine">${districtCostText(cost)}</div><button class="v30Btn ${affordable?'primary':''}" data-district="${cfg.id}" ${!affordable?'disabled':''}>${lang==='ru'?'Развить':'Upgrade'}</button>`:maxed?`<button class="v30Btn" disabled>✓ MAX</button>`:''}</div>`;
   }).join('');
   document.getElementById('initiativeTitle').textContent=lang==='ru'?'Стратегический проект':'Strategic Initiative';
   const active=cityState.initiative,progress=cityInitiativeProgress();
@@ -8827,6 +8862,7 @@ function renderCityPanel(){
   document.querySelectorAll('[data-district]').forEach(b=>b.onclick=()=>upgradeCityDistrict(b.dataset.district));
   document.querySelectorAll('[data-initiative]').forEach(b=>b.onclick=()=>startCityInitiative(b.dataset.initiative));
   document.querySelectorAll('[data-residential]').forEach(b=>b.onclick=()=>buildResidentialBlock(b.dataset.residential));
+  document.querySelectorAll('[data-civic]').forEach(b=>b.onclick=()=>buildCivicBuilding(b.dataset.civic));
 }
 const cityOverlay=document.getElementById('cityOverlay');
 document.getElementById('openCityBtn')?.addEventListener('click',()=>{renderCityPanel();cityOverlay.classList.add('show');});
@@ -8852,8 +8888,123 @@ function updateCityExpansion(dt){
       renderSystemsPanel(); save();
     }
   }
+  for (const districtId of CIVIC_DISTRICT_IDS) {
+    const c = cityState.civic[districtId];
+    if (c.pendingUntil>0 && Date.now()>=c.pendingUntil) {
+      c.pendingUntil=0; c.clinicBuilt=true;
+      refreshCivicWorld();
+      const cp=c.pos; if(cp) spawnBurst(new THREE.Vector3(cp.x,0,cp.z), 0x7fd6c4);
+      sfx.achievement(); haptic('heavy'); triggerImpactFlash(.22);
+      toast(lang==='ru'?`⚕️ Построено: ${CLINIC_BUILDING.ru}! Довольство и здоровье района растут.`:`⚕️ Built: ${CLINIC_BUILDING.en}! District health and satisfaction rise.`);
+      renderSystemsPanel(); save();
+    }
+  }
   updatePopulation();
   if(cityOverlay?.classList.contains('show'))renderCityPanel();
+}
+
+/* ---------------------------------------------------------------------- */
+/*  v31 STAGE B SLICE 1 — "городская инфраструктура": first civic building,  */
+/*  a clinic. Unlike housing (suburb/business/waterfront only), every        */
+/*  district including industrial can host one -- a workers' clinic is a     */
+/*  natural first civic building for a factory zone that has no housing of   */
+/*  its own. Reuses the exact same construction/placement pipeline as the    */
+/*  residential building (spawnConstructionSite + createBuildingMesh +       */
+/*  ring-search placement + distToNearestRoadSegment clearance), and gives a */
+/*  real, measurable gameplay effect: it raises the district's new `health`  */
+/*  stat, its satisfaction, and (for housing districts) how fast population  */
+/*  closes in on capacity -- not a spatial simulation, just "same district". */
+/* ---------------------------------------------------------------------- */
+const CLINIC_BUILDING = {
+  id:'clinic', ru:'Поликлиника', en:'Clinic', emoji:'⚕️',
+  archetype:'shop', color:0xf1ece2, height:3.2, baseSize:2.6,
+  costMoney:900, costWood:3, costConcrete:2, buildDuration:5.5,
+};
+// Every district can host a clinic -- civic infrastructure isn't housing-gated the way
+// RESIDENTIAL_BUILDING is, so this deliberately includes 'industrial' too.
+const CIVIC_DISTRICT_IDS = CITY_DISTRICTS.map(d=>d.id);
+function civicBuildCost(){ return { money:CLINIC_BUILDING.costMoney, wood:CLINIC_BUILDING.costWood, concrete:CLINIC_BUILDING.costConcrete, metal:0 }; }
+function districtHasClinic(districtId){ return !!cityState.civic[districtId]?.clinicBuilt; }
+// Union of every already-placed (or pending) residential + civic building position, so a new
+// clinic never lands on top of another building -- generalizes the BUILDING_CLEAR distance check
+// residentialBuildingPosition() already uses for residential-vs-residential.
+function occupiedBuildingPositions(excludeCivicDistrict){
+  const positions=[];
+  for (const id of HOUSING_DISTRICT_IDS){ const p=cityState.housing[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
+  for (const id of CIVIC_DISTRICT_IDS){ if (id===excludeCivicDistrict) continue; const p=cityState.civic[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
+  return positions;
+}
+function civicBuildingPosition(districtId){
+  const hub = CITY_DISTRICTS.find(d=>d.id===districtId)?.pos || new THREE.Vector3(0,0,0);
+  const ROAD_CLEAR = 2.6, HUB_CLEAR = 4.4, BUILDING_CLEAR = 6.0;
+  const otherPositions = occupiedBuildingPositions(districtId);
+  for (let ring=0; ring<6; ring++){
+    const radius = 6 + ring*2.4;
+    for (let k=0;k<12;k++){
+      // Angle offset from residentialBuildingPosition()'s ring search so a clinic built in the
+      // same district as a housing block doesn't compete for the exact same candidate spots.
+      const angle=(k/12)*Math.PI*2 + ring*0.37 + Math.PI/12;
+      const x=hub.x+Math.cos(angle)*radius, z=hub.z+Math.sin(angle)*radius;
+      if (Math.hypot(x,z) > GROUND_HALF-4) continue;
+      if (Math.hypot(x-hub.x,z-hub.z) < HUB_CLEAR) continue;
+      if (distToNearestRoadSegment(x,z) < ROAD_CLEAR) continue;
+      if (otherPositions.some(p=>Math.hypot(x-p.x,z-p.z) < BUILDING_CLEAR)) continue;
+      return new THREE.Vector3(x,0,z);
+    }
+  }
+  return new THREE.Vector3(hub.x-9,0,hub.z-9);
+}
+function createCivicBuildingMesh(districtId){
+  const mesh = createBuildingMesh(CLINIC_BUILDING, 1);
+  const ds = cityState.districtStats[districtId] || { health:50 };
+  const label = makeLabelSprite([
+    `${CLINIC_BUILDING.emoji} ${lang==='ru'?CLINIC_BUILDING.ru:CLINIC_BUILDING.en}`,
+    `${lang==='ru'?'ЗДОРОВЬЕ':'HEALTH'} ${Math.round(ds.health)}%`,
+  ]);
+  label.position.set(0, CLINIC_BUILDING.height*1.5, 0);
+  label.scale.set(1.7, 0.68, 1);
+  mesh.add(label);
+  mesh.userData.civicLabel = label;
+  mesh.userData.civicDistrict = districtId;
+  return mesh;
+}
+function refreshCivicWorld(){
+  for (const districtId of CIVIC_DISTRICT_IDS) {
+    const old = cityWorldRuntime.civic.get(districtId);
+    if (old) { scene.remove(old); disposeObject3D(old); cityWorldRuntime.civic.delete(districtId); }
+    const c = cityState.civic[districtId];
+    if (!c?.clinicBuilt) continue;
+    const saved = c.pos;
+    const pos = (saved && Number.isFinite(saved.x) && Number.isFinite(saved.z)) ? new THREE.Vector3(saved.x,0,saved.z) : civicBuildingPosition(districtId);
+    const mesh = createCivicBuildingMesh(districtId);
+    mesh.position.set(pos.x, 0, pos.z);
+    scene.add(mesh);
+    cityWorldRuntime.civic.set(districtId, mesh);
+  }
+  refreshCameraSolidMeshes();
+}
+function updateCivicLabel(){
+  for (const [districtId, mesh] of cityWorldRuntime.civic) {
+    if (!mesh.userData.civicLabel) continue;
+    const ds = cityState.districtStats[districtId] || { health:50 };
+    updateLabelSprite(mesh.userData.civicLabel, [
+      `${CLINIC_BUILDING.emoji} ${lang==='ru'?CLINIC_BUILDING.ru:CLINIC_BUILDING.en}`,
+      `${lang==='ru'?'ЗДОРОВЬЕ':'HEALTH'} ${Math.round(ds.health)}%`,
+    ]);
+  }
+}
+function buildCivicBuilding(districtId){
+  const c = cityState.civic[districtId]; if (!c) return;
+  if (c.clinicBuilt || c.pendingUntil>0) return;
+  const cost = civicBuildCost();
+  if (!tryPayResources(cost)) { sfx.error(); toast(lang==='ru'?'Не хватает ресурсов на поликлинику':'Not enough resources for the clinic'); return; }
+  const pos = civicBuildingPosition(districtId);
+  c.pos = { x:pos.x, z:pos.z };
+  spawnConstructionSite(pos, { archetype:CLINIC_BUILDING.archetype, baseSize:CLINIC_BUILDING.baseSize, height:CLINIC_BUILDING.height, color:0xffb84d }, CLINIC_BUILDING.buildDuration);
+  c.pendingUntil = Date.now() + CLINIC_BUILDING.buildDuration*1000;
+  sfx.build(); haptic('medium'); triggerImpactFlash(.16);
+  toast(lang==='ru'?`🏗️ Стройка начата: ${CLINIC_BUILDING.ru}`:`🏗️ Construction started: ${CLINIC_BUILDING.en}`);
+  renderCityPanel(); renderSystemsPanel(); save();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -8995,7 +9146,7 @@ function save() {
   }));
   try {
     const payload = JSON.stringify({
-      saveVersion: 21, // v31 Stage A slice 2: cityState.housing is now keyed per district (suburb/business/waterfront)
+      saveVersion: 22, // v31 Stage B slice 1: cityState.civic (per-district clinic) + districtStats[id].health
       savedAt: Date.now(),
       money: finiteNonNegative(money),
       stageIndex: integerNonNegative(stageIndex),
@@ -9144,6 +9295,24 @@ function load() {
         cityState.districtStats[key] = {
           population: Math.max(0, Math.floor(Number(entry.population) || 0)),
           satisfaction: THREE.MathUtils.clamp(Number.isFinite(Number(entry.satisfaction)) ? Number(entry.satisfaction) : 50, 0, 100),
+          // v31 Stage B slice 1 -- absent on saveVersion < 22, defaults to 50 (same neutral
+          // baseline satisfaction starts at) so an old save loads with no clinic effect yet.
+          health: THREE.MathUtils.clamp(Number.isFinite(Number(entry.health)) ? Number(entry.health) : 50, 0, 100),
+        };
+      }
+      // v31 Stage B slice 1: first civic building (clinic), one per district including
+      // industrial. Absent entirely on saveVersion < 22 -- every district defaults to unbuilt,
+      // same pattern as the housing migration above.
+      const civicRaw = data.cityState.civic || {};
+      cityState.civic = {};
+      for (const districtId of CIVIC_DISTRICT_IDS) {
+        const c = civicRaw[districtId] || {};
+        const cPos = c.pos;
+        cityState.civic[districtId] = {
+          clinicBuilt: !!c.clinicBuilt,
+          pendingUntil: Number.isFinite(Number(c.pendingUntil)) ? Math.max(0, Number(c.pendingUntil)) : 0,
+          pos: (cPos && Number.isFinite(Number(cPos.x)) && Number.isFinite(Number(cPos.z)))
+            ? { x:Number(cPos.x), z:Number(cPos.z) } : null,
         };
       }
     }
@@ -10044,6 +10213,7 @@ syncUniversalFleet();
 refreshSpecialProjectWorld();
 refreshCityExpansionWorld();
 refreshResidentialWorld();
+refreshCivicWorld();
 ensureCityMarket();
 ensureContracts();
 applyLanguage();
