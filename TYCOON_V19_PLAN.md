@@ -100,6 +100,37 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Concrete — the third resource, first slice** (this session, spec
+section 3: "add resources gradually, 5 max: money, logs, planks,
+concrete, metal"). Added `CONCRETE_PLANT_POS` (verified clear of the
+road network and the sawmill camp's other structures via
+`distToNearestRoadSegment()` before finalizing, same discipline as the
+parking-lot placement earlier), `buildConcretePlant()` (a silo + rotating
+mixer drum model near the sawmill camp, with a sign label), and
+`updateConcretePlant(dt)`: silent until `stageIndex >= CONCRETE_UNLOCK_STAGE`
+(4, Mini Factory), then a slow passive tick (every 14s, vs. planks'
+10-16s) producing 1 concrete (scaling with prestige, mirroring the
+sawmill's own formula). A new HUD chip (`#concreteStat`) stays hidden
+until the resource is relevant. `save()`/`load()` updated
+(`saveVersion: 5`, with a defensive `typeof === 'number'` fallback so
+older saves without a `concrete` field still load cleanly at 0).
+
+Deliberately does **not** yet spend concrete on anything -- cost
+integration into building/upgrade prices touches many coordinated call
+sites (STAGES cost fields, purchase/upgrade deduction, insufficient-
+funds checks, multiple price-tag labels) and deserves its own tested
+slice rather than being rushed alongside landing the resource itself,
+per the "one real slice, not everything at once" rule. Noted as the
+literal #1 item on next session's suggested-slice list.
+
+Verified: a dedicated test confirmed zero production before unlock even
+over 400 simulated seconds, exactly 4 concrete after 60 simulated
+seconds post-unlock (60s / 14s-interval = 4 full ticks), the HUD chip's
+hidden/text state, and a `save()`/`load()` round-trip preserving the
+value. Re-ran the full regression suite (boot, pinch-zoom, full-build
+lifecycle, camera-obstruction, milestone banner, scatter-on-road) with
+zero new failures.
+
 **Two direct real-device-reported fixes this session**: (1) **Label
 clipping was NOT actually fixed by the earlier "reduce label scale by
 ~0.68x" session** -- confirmed by the user's own iPhone screenshot
@@ -827,10 +858,14 @@ breakpoints.
 
 Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 
-- [~] **Production chain**: money, logs, planks done. Concrete/metal (spec
-      section 3) not started — don't add until the log→plank chain's own
-      sinks (below) are in good shape; the spec explicitly says add
-      resources gradually, 5 max (money, logs, planks, concrete, metal).
+- [~] **Production chain**: money, logs, planks done. This session added
+      **concrete** (4th of the 5 resources the spec calls for) as a
+      standalone slice: a concrete plant near the sawmill camp, silent
+      until stage 4 (Mini Factory), then a slow passive tick like the
+      sawmill's own. Deliberately does NOT yet spend concrete on
+      anything (cost integration into building/upgrade prices is a
+      separate follow-up slice, to land the resource loop itself tested
+      end to end first). Metal (the 5th resource) not started.
 - [x] **Construction stages** (section 4) — see audit above.
 - [x] **Delivery visualization** (section 5) — trucks accelerate
       construction and (this session) status labels now name the real
@@ -942,14 +977,18 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 ## Suggested next slice (pick one, don't do everything at once)
 
 In priority order, given what's already solid vs. genuinely missing:
-1. Second raw resource (concrete) + a warehouse-as-storage mechanic
-   (section 3) — the log→plank chain's own sinks (building cost,
-   upgrades) now have a validated pacing model to extend (see the
-   economy-pacing audit above); keep the same "does chopping actually
-   matter" question in mind when adding a second resource loop. This is
-   now the only fully unstarted item left on the whole checklist.
-2. World density / roads (sections 14-15) is now fully done.
-3. **Keep doing incidental audits, not just this one dedicated pass**:
+1. **Spend concrete on something** — the resource loop itself (plant,
+   passive production, HUD, save/load) landed this session and is
+   tested end to end, but nothing costs concrete yet. Natural next step:
+   add `concreteCost` to a handful of the later STAGES (industrial tier
+   onward), wire it into `purchaseCurrentPad()`/`upgradeBuilding()`'s
+   deduction + insufficient-funds checks, and the pad/upgrade-pad price
+   labels. Re-run the economy-pacing simulator afterward (same technique
+   as the earlier sawmill-rate audit) to sanity-check the new sink
+   doesn't stall progression.
+2. A warehouse-as-storage mechanic (section 3) -- not started, lower
+   priority than actually spending the resource that exists now.
+4. **Keep doing incidental audits, not just this one dedicated pass**:
    four sessions running have now found a real bug purely by reading code
    closely (`buildSawmillScenery()` called twice; the lift's platform
    never attached to its lifting mechanism; the old ambient-worker wander

@@ -550,6 +550,21 @@ tracks progress against.
   `page.evaluate()` check confirming both hint sprites exist per
   building.
 
+### 2026-09-20 — Added concrete, the third resource (production loop only)
+- `CONCRETE_PLANT_POS` (verified clear of the road network before
+  placement), `buildConcretePlant()` (silo + rotating mixer model), and
+  `updateConcretePlant(dt)`: silent until stage 4 (Mini Factory), then a
+  slow passive tick producing concrete like the sawmill's own formula.
+- New HUD chip, hidden until relevant. `save()`/`load()` bumped to
+  `saveVersion: 5` with a defensive fallback for older saves.
+- Deliberately does not yet spend concrete on anything -- cost
+  integration into building/upgrade prices is a separate, more invasive
+  follow-up slice (now item #1 on the suggested-next-slice list).
+- Verified: zero production before unlock over 400 simulated seconds;
+  exactly 4 concrete after 60 simulated seconds post-unlock; HUD
+  hidden/text state; a save/load round-trip. Zero new failures across
+  the full regression suite.
+
 ---
 
 ## Format for new entries

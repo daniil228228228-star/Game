@@ -188,6 +188,7 @@
     <div class="stat"><span id="income">+0/с</span></div>
     <div class="stat"><span id="progress">0/0</span></div>
     <div class="stat"><span id="planks">🪵 0</span></div>
+    <div class="stat" id="concreteStat" hidden><span id="concreteAmt">🧱 0</span></div>
     <div class="stat"><span id="carriedLogs">🪵🎒 0/3</span></div>
   </div>
   <div id="topRightBtns">
@@ -464,6 +465,7 @@ let displayedMoney = money; // eased toward `money` each frame for a count-up fe
 let stageIndex = 0; // number of stages already built
 let stamina = STAMINA_MAX;
 let planks = 0; // secondary resource produced by the sawmill (see SAWMILL below)
+let concrete = 0; // third resource, produced by the concrete plant once unlocked (see CONCRETE below)
 const fieldUpgrades = { carry: 0, sawmill: 0, yield: 0, construction: 0 };
 const fieldUpgradePads = [];
 const stats = { totalEarned: 0, distanceRun: 0, prestige: 0, maxLevelHit: false, planksEarned: 0, buildingsCompleted: 0, logsChopped: 0 };
@@ -1344,12 +1346,17 @@ const TREE_INTERACT_RADIUS = 2.65;
 // Picked to sit well clear of every spiral stage (nearest is >9 units away) at any prestige.
 const GENERATOR_POS = new THREE.Vector3(-10.3, 0, -3.8);
 const SAWMILL_POS = new THREE.Vector3(-17.9, 0, -6.5);
+// Verified clear of the road network (distToNearestRoadSegment ~7.9) and the sawmill camp's
+// own buildings/parking lot before picking it, after this session's earlier fixes for
+// hand-placed positions that turned out to sit on the road by accident.
+const CONCRETE_PLANT_POS = new THREE.Vector3(SAWMILL_POS.x + 5.8, 0, SAWMILL_POS.z - 3.2);
 
 // Static colliders for the sawmill's two buildings, so they're as solid as any spiral
 // building (checked in updatePlayer() alongside the `buildings` array).
 const STATIC_COLLIDERS = [
   { pos: GENERATOR_POS, radius: 1.9 },
   { pos: SAWMILL_POS, radius: 2.15 },
+  { pos: CONCRETE_PLANT_POS, radius: 1.7 },
 ];
 
 const logsInTransit = []; // { mesh, path, segment, t }
@@ -1604,6 +1611,83 @@ function buildSawmillScenery() {
 }
 
 buildSawmillScenery();
+
+/* ---------------------------------------------------------------------- */
+/*  CONCRETE — the third resource (spec section 3: "add resources          */
+/*  gradually, 5 max: money, logs, planks, concrete, metal"). A standalone  */
+/*  plant near the sawmill camp, silent until CONCRETE_UNLOCK_STAGE is      */
+/*  reached, then ticks a slow passive production like the sawmill's own.   */
+/*  Cost integration into building/upgrade prices is a deliberately         */
+/*  separate follow-up slice -- this one lands the resource loop itself,    */
+/*  tested end to end, before anything spends it.                          */
+/* ---------------------------------------------------------------------- */
+const CONCRETE_UNLOCK_STAGE = 4; // unlocks once Mini Factory (index 4) is under way
+const CONCRETE_AUTO_INTERVAL = 14; // slower than planks -- a later, denser resource
+let concretePlantTimer = 0;
+let concretePlant = null;
+
+function buildConcretePlant() {
+  const group = new THREE.Group();
+  group.add(createFoundation(4.2, 3.6, 0.18, 0xb9b3a6));
+
+  const siloMat = createMetalMaterial(0xb8bec7, { roughness: 0.5, metalness: 0.32 });
+  const silo = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 2.5, 16), siloMat);
+  silo.position.set(-1.05, 1.34, 0);
+  silo.castShadow = true;
+  group.add(silo);
+  const siloTop = new THREE.Mesh(new THREE.ConeGeometry(0.9, 0.55, 16), siloMat);
+  siloTop.position.set(-1.05, 2.86, 0);
+  group.add(siloTop);
+  const siloLeg = (sx, sz) => {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.5, 0.08), createMetalMaterial(0x6b7280, { roughness: 0.6, metalness: 0.3 }));
+    leg.position.set(-1.05 + sx, 0.25, sz);
+    group.add(leg);
+  };
+  siloLeg(0.55, 0.5); siloLeg(0.55, -0.5); siloLeg(-0.55, 0.5); siloLeg(-0.55, -0.5);
+
+  const mixerBase = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.3, 1.3), createMetalMaterial(0x5c6572, { roughness: 0.62, metalness: 0.2 }));
+  mixerBase.position.set(1.05, 0.25, 0);
+  group.add(mixerBase);
+  const drumPivot = new THREE.Group();
+  drumPivot.position.set(1.05, 1.05, 0);
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.64, 1.3, 14), createConcreteMaterial(0xc9c3b6, { roughness: 0.85 }));
+  drum.rotation.z = Math.PI / 2;
+  drum.castShadow = true;
+  drumPivot.add(drum);
+  group.add(drumPivot);
+  const chute = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.14, 0.6, 8), createMetalMaterial(0x7a828d, { roughness: 0.6, metalness: 0.28 }));
+  chute.position.set(1.75, 0.55, 0);
+  chute.rotation.z = Math.PI / 5;
+  group.add(chute);
+
+  const sign = makeSignPost();
+  sign.position.set(0, 0, -1.9);
+  group.add(sign);
+  const label = makeLabelSprite([lang === 'ru' ? 'БЕТОННЫЙ ЗАВОД' : 'CONCRETE PLANT']);
+  label.position.set(0, 2.5, 0);
+  label.scale.set(1.45, 0.597, 1);
+  group.add(label);
+
+  group.position.copy(CONCRETE_PLANT_POS);
+  scene.add(group);
+  return { group, drumPivot, label };
+}
+concretePlant = buildConcretePlant();
+
+function updateConcretePlant(dt) {
+  if (concretePlant.drumPivot) concretePlant.drumPivot.rotation.x += dt * (stageIndex >= CONCRETE_UNLOCK_STAGE ? 2.2 : 0.3);
+  if (stageIndex < CONCRETE_UNLOCK_STAGE) return;
+  concretePlantTimer += dt;
+  if (concretePlantTimer >= CONCRETE_AUTO_INTERVAL) {
+    concretePlantTimer -= CONCRETE_AUTO_INTERVAL;
+    const produced = 1 + Math.floor(stats.prestige / 3);
+    concrete += produced;
+    spawnBurst(CONCRETE_PLANT_POS, 0xb9b3a6);
+    sfx.plank();
+    updateHUD();
+    save();
+  }
+}
 
 // A small parking lot for the sawmill camp -- last item on the "world density / roads"
 // checklist. Position verified clear of both the road network and the camp's own buildings
@@ -4657,6 +4741,11 @@ function updateHUD() {
     `+${fmt(totalIncomePerSec())}/с${stats.prestige > 0 ? ` (x${incomeMultiplier().toFixed(1)})` : ''}`;
   document.getElementById('progress').textContent = `🏗️ ${stageIndex}/${STAGES.length}${buildings.some(b => b.underConstruction) ? '  🚧' : ''}`;
   document.getElementById('planks').textContent = `🪵 ${fmt(planks)}`;
+  const concreteStatEl = document.getElementById('concreteStat');
+  if (concreteStatEl) {
+    concreteStatEl.hidden = stageIndex < CONCRETE_UNLOCK_STAGE && concrete <= 0;
+    document.getElementById('concreteAmt').textContent = `🧱 ${fmt(concrete)}`;
+  }
   const carriedEl = document.getElementById('carriedLogs');
   if (carriedEl) carriedEl.textContent = `🪵🎒 ${carriedLogs}/${maxCarriedLogs()}`;
 
@@ -5101,8 +5190,8 @@ function updateJoy(e) {
 /* ---------------------------------------------------------------------- */
 function save() {
   localStorage.setItem(SAVE_KEY, JSON.stringify({
-    saveVersion: 4,
-    money, stageIndex, stats, unlocked: [...unlockedAch], planks, carriedLogs, fieldUpgrades, contracts,
+    saveVersion: 5,
+    money, stageIndex, stats, unlocked: [...unlockedAch], planks, concrete, carriedLogs, fieldUpgrades, contracts,
     buildings: buildings.map(b => ({ index: b.index, level: b.level })),
     player: { x: player.position.x, z: player.position.z },
   }));
@@ -5115,6 +5204,7 @@ function load() {
     const data = JSON.parse(raw);
     money = typeof data.money === 'number' ? data.money : money;
     planks = typeof data.planks === 'number' ? data.planks : planks;
+    concrete = typeof data.concrete === 'number' ? data.concrete : concrete; // absent on saveVersion < 5, defaults to 0
     carriedLogs = typeof data.carriedLogs === 'number' ? THREE.MathUtils.clamp(Math.floor(data.carriedLogs), 0, maxCarriedLogs()) : carriedLogs;
     refreshCarriedLogVisuals();
     if (data.fieldUpgrades) {
@@ -5394,6 +5484,7 @@ function animate() {
   updatePlayer(dt);
   updateTreeInteraction();
   updateSawmill(dt);
+  updateConcretePlant(dt);
   updateSmoke(dt);
   updateAmbientLife(dt);
 
