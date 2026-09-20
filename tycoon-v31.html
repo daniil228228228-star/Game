@@ -578,11 +578,12 @@ let cityState = {
   // stat, updated periodically (see updateDistrictStats()), not per-frame.
   // v31 Stage B slice 1: added `health` (0-100, raised by a built clinic -- see CLINIC_BUILDING).
   // v31 Stage B slice 2: added `safety` (0-100, raised by a built police station -- see POLICE_BUILDING).
+  // v31 Stage B slice 3: added `education` (0-100, raised by a built school -- see SCHOOL_BUILDING).
   districtStats:{
-    suburb:{ population:0, satisfaction:50, health:50, safety:50 },
-    industrial:{ population:0, satisfaction:50, health:50, safety:50 },
-    business:{ population:0, satisfaction:50, health:50, safety:50 },
-    waterfront:{ population:0, satisfaction:50, health:50, safety:50 },
+    suburb:{ population:0, satisfaction:50, health:50, safety:50, education:50 },
+    industrial:{ population:0, satisfaction:50, health:50, safety:50, education:50 },
+    business:{ population:0, satisfaction:50, health:50, safety:50, education:50 },
+    waterfront:{ population:0, satisfaction:50, health:50, safety:50, education:50 },
   },
   population:0, // real, tracked city population resource (see updatePopulation())
   // v31 Stage A slice 2: housing is now keyed per district (suburb/business/waterfront each get
@@ -609,6 +610,15 @@ let cityState = {
     industrial:{ stationBuilt:false, pendingUntil:0, pos:null },
     business:{ stationBuilt:false, pendingUntil:0, pos:null },
     waterfront:{ stationBuilt:false, pendingUntil:0, pos:null },
+  },
+  // v31 Stage B slice 3 ("городская инфраструктура"): third civic building, a school. Same
+  // "every district including industrial" reach as the clinic/police, own top-level per-district
+  // object (own pendingUntil/pos), same pattern as `civic`/`police` above rather than folding in.
+  school:{
+    suburb:{ schoolBuilt:false, pendingUntil:0, pos:null },
+    industrial:{ schoolBuilt:false, pendingUntil:0, pos:null },
+    business:{ schoolBuilt:false, pendingUntil:0, pos:null },
+    waterfront:{ schoolBuilt:false, pendingUntil:0, pos:null },
   },
   initiative:null,
   initiativesCompleted:0,
@@ -8482,6 +8492,7 @@ function applyLanguage() {
   if (typeof refreshResidentialWorld === 'function') refreshResidentialWorld();
   if (typeof refreshCivicWorld === 'function') refreshCivicWorld();
   if (typeof refreshPoliceWorld === 'function') refreshPoliceWorld();
+  if (typeof refreshSchoolWorld === 'function') refreshSchoolWorld();
   if (typeof cityOverlay !== 'undefined' && cityOverlay?.classList.contains('show')) renderCityPanel();
   if (operationsOverlay?.classList.contains('show')) renderOperationsPanel();
 }
@@ -8577,7 +8588,7 @@ const CITY_INITIATIVES = [
   { id:'modernization', emoji:'⬆️', kind:'upgrades', unlockRep:75, baseTarget:5, reward:5600, rep:27, ru:'Модернизация портфеля', en:'Portfolio Modernization', descRu:'Прокачай существующие объекты', descEn:'Upgrade existing properties' },
   { id:'flagship', emoji:'🏗️', kind:'strategic', unlockRep:120, baseTarget:1, reward:8000, rep:36, ru:'Флагманский проект', en:'Flagship Project', descRu:'Заверши спецпроект или крупный тендер', descEn:'Complete a special project or major tender' },
 ];
-const cityWorldRuntime = { hubs:new Map(), residential:new Map(), civic:new Map(), police:new Map() }; // residential/civic/police: districtId -> mesh
+const cityWorldRuntime = { hubs:new Map(), residential:new Map(), civic:new Map(), police:new Map(), school:new Map() }; // residential/civic/police/school: districtId -> mesh
 function districtLevel(id){ return Math.max(0,Math.min(3,Math.floor(Number(cityState?.districts?.[id])||0))); }
 function currentClientTier(){ let tier=CLIENT_TIERS[0]; for(const t of CLIENT_TIERS) if(cityState.reputation>=t.rep) tier=t; return tier; }
 function districtUnlocked(cfg){ return districtLevel(cfg.id)>0 || (cityState.reputation>=cfg.unlockRep && companyTierIndex()>=cfg.unlockTier); }
@@ -8785,15 +8796,17 @@ function updateDistrictStats(){
     const lvl = districtLevel(cfg.id);
     const hasClinic = districtHasClinic(cfg.id);
     const hasPolice = districtHasPolice(cfg.id);
+    const hasSchool = districtHasSchool(cfg.id);
     let target = 38 + lvl*14;
     if (HOUSING_DISTRICT_IDS.includes(cfg.id)) {
       const cap = districtHousingCapacity(cfg.id);
       // Stage B slice 1: a built clinic speeds up how fast a district's population closes in on
       // its housing capacity (families move in faster with local healthcare) -- a real, visible
       // number-moves-faster effect, not a hidden demand/supply model. Stage B slice 2: a built
-      // police station adds the same +0.5x bonus, and the two stack additively (both built =
-      // 2x base rate) rather than either one capping the total.
-      const growthMult = 1 + (hasClinic?0.5:0) + (hasPolice?0.5:0);
+      // police station adds the same +0.5x bonus, and stacks additively with the clinic (both
+      // built = 2x base rate). Stage B slice 3: a built school adds a third +0.5x term, stacking
+      // the same way (all three built = 2.5x base rate) rather than any one capping the total.
+      const growthMult = 1 + (hasClinic?0.5:0) + (hasPolice?0.5:0) + (hasSchool?0.5:0);
       const growthRate = 0.15 * growthMult;
       const gap = cap - ds.population;
       ds.population = Math.max(0, ds.population + gap*growthRate);
@@ -8805,6 +8818,7 @@ function updateDistrictStats(){
     }
     if (hasClinic) target += 16; // healthcare directly lifts satisfaction too
     if (hasPolice) target += 14; // and so does public safety, a slightly smaller bump than health
+    if (hasSchool) target += 15; // and so does education, between health and safety's bumps
     totalPopulation += ds.population;
     target = THREE.MathUtils.clamp(target, 0, 100);
     ds.satisfaction = THREE.MathUtils.clamp(ds.satisfaction + (target-ds.satisfaction)*0.2, 0, 100);
@@ -8816,6 +8830,10 @@ function updateDistrictStats(){
     // station is actually built -- an independent stat, not a copy of health.
     const safetyTarget = THREE.MathUtils.clamp(30 + lvl*7 + (hasPolice?42:0), 0, 100);
     ds.safety = THREE.MathUtils.clamp((Number.isFinite(ds.safety)?ds.safety:50) + (safetyTarget-(Number.isFinite(ds.safety)?ds.safety:50))*0.2, 0, 100);
+    // education: same shape as health/safety, driven by district level plus a large bonus once a
+    // school is actually built -- a third independent stat, not a copy of the other two.
+    const educationTarget = THREE.MathUtils.clamp(29 + lvl*7 + (hasSchool?42:0), 0, 100);
+    ds.education = THREE.MathUtils.clamp((Number.isFinite(ds.education)?ds.education:50) + (educationTarget-(Number.isFinite(ds.education)?ds.education:50))*0.2, 0, 100);
   }
   cityState.population = totalPopulation;
 }
@@ -8824,6 +8842,7 @@ function updatePopulation(){
   updateResidentialLabel();
   updateCivicLabel();
   updatePoliceLabel();
+  updateSchoolLabel();
   updateHUD();
 }
 
@@ -8841,8 +8860,8 @@ function renderCityPanel(){
   document.getElementById('cityGrid').innerHTML=CITY_DISTRICTS.map(cfg=>{
     const lv=districtLevel(cfg.id),unlocked=districtUnlocked(cfg),maxed=lv>=3,cost=maxed?null:districtUpgradeCost(cfg); const affordable=cost&&canPayResources(cost);
     const lock=unlocked?'':(lang==='ru'?`Нужно: ${cfg.unlockRep} реп. и статус ${COMPANY_TIERS[cfg.unlockTier]?.ru||''}`:`Need ${cfg.unlockRep} rep and ${COMPANY_TIERS[cfg.unlockTier]?.en||''}`);
-    const ds=cityState.districtStats[cfg.id]||{population:0,satisfaction:50,health:50,safety:50};
-    const statsLine=unlocked?`<div class="resourceLine">👥 ${fmt(Math.round(ds.population))} · ${lang==='ru'?'Довольство':'Satisfaction'} ${Math.round(ds.satisfaction)}% · ${lang==='ru'?'Здоровье':'Health'} ${Math.round(ds.health)}% · ${lang==='ru'?'Безопасность':'Safety'} ${Math.round(ds.safety)}%</div>`:'';
+    const ds=cityState.districtStats[cfg.id]||{population:0,satisfaction:50,health:50,safety:50,education:50};
+    const statsLine=unlocked?`<div class="resourceLine">👥 ${fmt(Math.round(ds.population))} · ${lang==='ru'?'Довольство':'Satisfaction'} ${Math.round(ds.satisfaction)}% · ${lang==='ru'?'Здоровье':'Health'} ${Math.round(ds.health)}% · ${lang==='ru'?'Безопасность':'Safety'} ${Math.round(ds.safety)}% · ${lang==='ru'?'Образование':'Education'} ${Math.round(ds.education)}%</div>`:'';
     let housingLine='';
     if (HOUSING_DISTRICT_IDS.includes(cfg.id) && unlocked) {
       const h=cityState.housing[cfg.id];
@@ -8882,7 +8901,20 @@ function renderCityPanel(){
         policeLine=`<div class="resourceLine">${districtCostText(pcost)}</div><button class="v30Btn ${paffordable?'primary':''}" data-police="${cfg.id}" ${!paffordable?'disabled':''}>${lang==='ru'?'Построить полицейский участок':'Build police station'}</button>`;
       }
     }
-    return `<div class="cityCard ${!unlocked?'locked':''} ${maxed?'maxed':''}"><div class="name">${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}</div><div class="desc">${lang==='ru'?cfg.bonusRu:cfg.bonusEn}</div><div class="status">${unlocked?(lang==='ru'?`Уровень ${lv}/3`:`Level ${lv}/3`):`🔒 ${lock}`}</div>${statsLine}${housingLine}${civicLine}${policeLine}${!maxed&&unlocked?`<div class="resourceLine">${districtCostText(cost)}</div><button class="v30Btn ${affordable?'primary':''}" data-district="${cfg.id}" ${!affordable?'disabled':''}>${lang==='ru'?'Развить':'Upgrade'}</button>`:maxed?`<button class="v30Btn" disabled>✓ MAX</button>`:''}</div>`;
+    let schoolLine='';
+    if (unlocked) {
+      const sc=cityState.school[cfg.id];
+      if (sc.schoolBuilt) {
+        schoolLine=`<div class="status">🏫 ${lang==='ru'?'Школа построена':'School built'}</div>`;
+      } else if (sc.pendingUntil>0) {
+        const buildLeft=Math.max(0,Math.ceil((sc.pendingUntil-Date.now())/1000));
+        schoolLine=`<div class="status">🏗️ ${lang==='ru'?'Стройка идёт':'Under construction'} · ⏱ ${buildLeft}${lang==='ru'?'с':'s'}</div>`;
+      } else {
+        const scost=schoolBuildCost(); const saffordable=canPayResources(scost);
+        schoolLine=`<div class="resourceLine">${districtCostText(scost)}</div><button class="v30Btn ${saffordable?'primary':''}" data-school="${cfg.id}" ${!saffordable?'disabled':''}>${lang==='ru'?'Построить школу':'Build school'}</button>`;
+      }
+    }
+    return `<div class="cityCard ${!unlocked?'locked':''} ${maxed?'maxed':''}"><div class="name">${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}</div><div class="desc">${lang==='ru'?cfg.bonusRu:cfg.bonusEn}</div><div class="status">${unlocked?(lang==='ru'?`Уровень ${lv}/3`:`Level ${lv}/3`):`🔒 ${lock}`}</div>${statsLine}${housingLine}${civicLine}${policeLine}${schoolLine}${!maxed&&unlocked?`<div class="resourceLine">${districtCostText(cost)}</div><button class="v30Btn ${affordable?'primary':''}" data-district="${cfg.id}" ${!affordable?'disabled':''}>${lang==='ru'?'Развить':'Upgrade'}</button>`:maxed?`<button class="v30Btn" disabled>✓ MAX</button>`:''}</div>`;
   }).join('');
   document.getElementById('initiativeTitle').textContent=lang==='ru'?'Стратегический проект':'Strategic Initiative';
   const active=cityState.initiative,progress=cityInitiativeProgress();
@@ -8898,6 +8930,7 @@ function renderCityPanel(){
   document.querySelectorAll('[data-residential]').forEach(b=>b.onclick=()=>buildResidentialBlock(b.dataset.residential));
   document.querySelectorAll('[data-civic]').forEach(b=>b.onclick=()=>buildCivicBuilding(b.dataset.civic));
   document.querySelectorAll('[data-police]').forEach(b=>b.onclick=()=>buildPoliceStation(b.dataset.police));
+  document.querySelectorAll('[data-school]').forEach(b=>b.onclick=()=>buildSchool(b.dataset.school));
 }
 const cityOverlay=document.getElementById('cityOverlay');
 document.getElementById('openCityBtn')?.addEventListener('click',()=>{renderCityPanel();cityOverlay.classList.add('show');});
@@ -8945,6 +8978,17 @@ function updateCityExpansion(dt){
       renderSystemsPanel(); save();
     }
   }
+  for (const districtId of SCHOOL_DISTRICT_IDS) {
+    const sc = cityState.school[districtId];
+    if (sc.pendingUntil>0 && Date.now()>=sc.pendingUntil) {
+      sc.pendingUntil=0; sc.schoolBuilt=true;
+      refreshSchoolWorld();
+      const scp=sc.pos; if(scp) spawnBurst(new THREE.Vector3(scp.x,0,scp.z), 0xe3b959);
+      sfx.achievement(); haptic('heavy'); triggerImpactFlash(.22);
+      toast(lang==='ru'?`🏫 Построено: ${SCHOOL_BUILDING.ru}! Довольство и образование района растут.`:`🏫 Built: ${SCHOOL_BUILDING.en}! District education and satisfaction rise.`);
+      renderSystemsPanel(); save();
+    }
+  }
   updatePopulation();
   if(cityOverlay?.classList.contains('show'))renderCityPanel();
 }
@@ -8971,14 +9015,16 @@ const CLINIC_BUILDING = {
 const CIVIC_DISTRICT_IDS = CITY_DISTRICTS.map(d=>d.id);
 function civicBuildCost(){ return { money:CLINIC_BUILDING.costMoney, wood:CLINIC_BUILDING.costWood, concrete:CLINIC_BUILDING.costConcrete, metal:0 }; }
 function districtHasClinic(districtId){ return !!cityState.civic[districtId]?.clinicBuilt; }
-// Union of every already-placed (or pending) residential + civic + police building position, so a
-// new civic building never lands on top of another building -- generalizes the BUILDING_CLEAR
-// distance check residentialBuildingPosition() already uses for residential-vs-residential.
-function occupiedBuildingPositions(excludeCivicDistrict, excludePoliceDistrict){
+// Union of every already-placed (or pending) residential + civic + police + school building
+// position, so a new building never lands on top of another one -- generalizes the
+// BUILDING_CLEAR distance check residentialBuildingPosition() already uses for
+// residential-vs-residential.
+function occupiedBuildingPositions(excludeCivicDistrict, excludePoliceDistrict, excludeSchoolDistrict){
   const positions=[];
   for (const id of HOUSING_DISTRICT_IDS){ const p=cityState.housing[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
   for (const id of CIVIC_DISTRICT_IDS){ if (id===excludeCivicDistrict) continue; const p=cityState.civic[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
   for (const id of POLICE_DISTRICT_IDS){ if (id===excludePoliceDistrict) continue; const p=cityState.police[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
+  for (const id of SCHOOL_DISTRICT_IDS){ if (id===excludeSchoolDistrict) continue; const p=cityState.school[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
   return positions;
 }
 function civicBuildingPosition(districtId){
@@ -9151,6 +9197,103 @@ function buildPoliceStation(districtId){
 }
 
 /* ---------------------------------------------------------------------- */
+/*  v31 STAGE B SLICE 3 — "городская инфраструктура": third civic building,  */
+/*  a school. Same reach as the clinic/police (every district including      */
+/*  industrial), same construction pipeline (spawnConstructionSite +         */
+/*  createBuildingMesh + ring-search placement + distToNearestRoadSegment    */
+/*  clearance + occupiedBuildingPositions overlap check), but a distinct     */
+/*  archetype ('house', a squat two-story block instead of the clinic's      */
+/*  storefront 'shop', housing's 'office' or police's tiered 'tower') and a  */
+/*  distinct warm soft-yellow color, so it reads differently in the 3D       */
+/*  world at a glance. Real, measurable effect: raises the district's new    */
+/*  `education` stat, its satisfaction, and -- stacking additively with a    */
+/*  clinic and/or police station in the same district -- how fast population */
+/*  closes in on housing capacity.                                           */
+/* ---------------------------------------------------------------------- */
+const SCHOOL_BUILDING = {
+  id:'school', ru:'Школа', en:'School', emoji:'🏫',
+  archetype:'house', color:0xe3b959, height:3.4, baseSize:2.5,
+  costMoney:920, costWood:3, costConcrete:2, buildDuration:5.5,
+};
+// Every district can host a school too -- same civic reach as the clinic/police.
+const SCHOOL_DISTRICT_IDS = CITY_DISTRICTS.map(d=>d.id);
+function schoolBuildCost(){ return { money:SCHOOL_BUILDING.costMoney, wood:SCHOOL_BUILDING.costWood, concrete:SCHOOL_BUILDING.costConcrete, metal:0 }; }
+function districtHasSchool(districtId){ return !!cityState.school[districtId]?.schoolBuilt; }
+function schoolBuildingPosition(districtId){
+  const hub = CITY_DISTRICTS.find(d=>d.id===districtId)?.pos || new THREE.Vector3(0,0,0);
+  const ROAD_CLEAR = 2.6, HUB_CLEAR = 4.4, BUILDING_CLEAR = 6.0;
+  const otherPositions = occupiedBuildingPositions(undefined, undefined, districtId);
+  for (let ring=0; ring<6; ring++){
+    const radius = 6 + ring*2.4;
+    for (let k=0;k<12;k++){
+      // A fourth angle offset (beyond residentialBuildingPosition's, civicBuildingPosition's and
+      // policeBuildingPosition's) so a school built alongside housing/clinic/police in the same
+      // district doesn't compete for the same candidate ring spots.
+      const angle=(k/12)*Math.PI*2 + ring*0.37 + Math.PI/4;
+      const x=hub.x+Math.cos(angle)*radius, z=hub.z+Math.sin(angle)*radius;
+      if (Math.hypot(x,z) > GROUND_HALF-4) continue;
+      if (Math.hypot(x-hub.x,z-hub.z) < HUB_CLEAR) continue;
+      if (distToNearestRoadSegment(x,z) < ROAD_CLEAR) continue;
+      if (otherPositions.some(p=>Math.hypot(x-p.x,z-p.z) < BUILDING_CLEAR)) continue;
+      return new THREE.Vector3(x,0,z);
+    }
+  }
+  return new THREE.Vector3(hub.x-9,0,hub.z+9);
+}
+function createSchoolBuildingMesh(districtId){
+  const mesh = createBuildingMesh(SCHOOL_BUILDING, 1);
+  const ds = cityState.districtStats[districtId] || { education:50 };
+  const label = makeLabelSprite([
+    `${SCHOOL_BUILDING.emoji} ${lang==='ru'?SCHOOL_BUILDING.ru:SCHOOL_BUILDING.en}`,
+    `${lang==='ru'?'ОБРАЗОВАНИЕ':'EDUCATION'} ${Math.round(ds.education)}%`,
+  ]);
+  label.position.set(0, SCHOOL_BUILDING.height*1.5, 0);
+  label.scale.set(1.7, 0.68, 1);
+  mesh.add(label);
+  mesh.userData.schoolLabel = label;
+  mesh.userData.schoolDistrict = districtId;
+  return mesh;
+}
+function refreshSchoolWorld(){
+  for (const districtId of SCHOOL_DISTRICT_IDS) {
+    const old = cityWorldRuntime.school.get(districtId);
+    if (old) { scene.remove(old); disposeObject3D(old); cityWorldRuntime.school.delete(districtId); }
+    const sc = cityState.school[districtId];
+    if (!sc?.schoolBuilt) continue;
+    const saved = sc.pos;
+    const pos = (saved && Number.isFinite(saved.x) && Number.isFinite(saved.z)) ? new THREE.Vector3(saved.x,0,saved.z) : schoolBuildingPosition(districtId);
+    const mesh = createSchoolBuildingMesh(districtId);
+    mesh.position.set(pos.x, 0, pos.z);
+    scene.add(mesh);
+    cityWorldRuntime.school.set(districtId, mesh);
+  }
+  refreshCameraSolidMeshes();
+}
+function updateSchoolLabel(){
+  for (const [districtId, mesh] of cityWorldRuntime.school) {
+    if (!mesh.userData.schoolLabel) continue;
+    const ds = cityState.districtStats[districtId] || { education:50 };
+    updateLabelSprite(mesh.userData.schoolLabel, [
+      `${SCHOOL_BUILDING.emoji} ${lang==='ru'?SCHOOL_BUILDING.ru:SCHOOL_BUILDING.en}`,
+      `${lang==='ru'?'ОБРАЗОВАНИЕ':'EDUCATION'} ${Math.round(ds.education)}%`,
+    ]);
+  }
+}
+function buildSchool(districtId){
+  const sc = cityState.school[districtId]; if (!sc) return;
+  if (sc.schoolBuilt || sc.pendingUntil>0) return;
+  const cost = schoolBuildCost();
+  if (!tryPayResources(cost)) { sfx.error(); toast(lang==='ru'?'Не хватает ресурсов на школу':'Not enough resources for the school'); return; }
+  const pos = schoolBuildingPosition(districtId);
+  sc.pos = { x:pos.x, z:pos.z };
+  spawnConstructionSite(pos, { archetype:SCHOOL_BUILDING.archetype, baseSize:SCHOOL_BUILDING.baseSize, height:SCHOOL_BUILDING.height, color:0xffb84d }, SCHOOL_BUILDING.buildDuration);
+  sc.pendingUntil = Date.now() + SCHOOL_BUILDING.buildDuration*1000;
+  sfx.build(); haptic('medium'); triggerImpactFlash(.16);
+  toast(lang==='ru'?`🏗️ Стройка начата: ${SCHOOL_BUILDING.ru}`:`🏗️ Construction started: ${SCHOOL_BUILDING.en}`);
+  renderCityPanel(); renderSystemsPanel(); save();
+}
+
+/* ---------------------------------------------------------------------- */
 /*  COMPASS — points at the next pad when it's off-screen                  */
 /* ---------------------------------------------------------------------- */
 const compassEl = document.getElementById('compass');
@@ -9289,7 +9432,7 @@ function save() {
   }));
   try {
     const payload = JSON.stringify({
-      saveVersion: 23, // v31 Stage B slice 2: cityState.police (per-district station) + districtStats[id].safety
+      saveVersion: 24, // v31 Stage B slice 3: cityState.school (per-district school) + districtStats[id].education
       savedAt: Date.now(),
       money: finiteNonNegative(money),
       stageIndex: integerNonNegative(stageIndex),
@@ -9444,6 +9587,9 @@ function load() {
           // v31 Stage B slice 2 -- absent on saveVersion < 23, defaults to 50 (same neutral
           // baseline) so an old save loads with no police station effect yet.
           safety: THREE.MathUtils.clamp(Number.isFinite(Number(entry.safety)) ? Number(entry.safety) : 50, 0, 100),
+          // v31 Stage B slice 3 -- absent on saveVersion < 24, defaults to 50 (same neutral
+          // baseline) so an old save loads with no school effect yet.
+          education: THREE.MathUtils.clamp(Number.isFinite(Number(entry.education)) ? Number(entry.education) : 50, 0, 100),
         };
       }
       // v31 Stage B slice 1: first civic building (clinic), one per district including
@@ -9474,6 +9620,21 @@ function load() {
           pendingUntil: Number.isFinite(Number(p.pendingUntil)) ? Math.max(0, Number(p.pendingUntil)) : 0,
           pos: (pPos && Number.isFinite(Number(pPos.x)) && Number.isFinite(Number(pPos.z)))
             ? { x:Number(pPos.x), z:Number(pPos.z) } : null,
+        };
+      }
+      // v31 Stage B slice 3: third civic building (school), one per district including
+      // industrial. Absent entirely on saveVersion < 24 -- every district defaults to unbuilt,
+      // same pattern as the clinic/police migrations above.
+      const schoolRaw = data.cityState.school || {};
+      cityState.school = {};
+      for (const districtId of SCHOOL_DISTRICT_IDS) {
+        const sc = schoolRaw[districtId] || {};
+        const scPos = sc.pos;
+        cityState.school[districtId] = {
+          schoolBuilt: !!sc.schoolBuilt,
+          pendingUntil: Number.isFinite(Number(sc.pendingUntil)) ? Math.max(0, Number(sc.pendingUntil)) : 0,
+          pos: (scPos && Number.isFinite(Number(scPos.x)) && Number.isFinite(Number(scPos.z)))
+            ? { x:Number(scPos.x), z:Number(scPos.z) } : null,
         };
       }
     }
@@ -10376,6 +10537,7 @@ refreshCityExpansionWorld();
 refreshResidentialWorld();
 refreshCivicWorld();
 refreshPoliceWorld();
+refreshSchoolWorld();
 ensureCityMarket();
 ensureContracts();
 applyLanguage();
