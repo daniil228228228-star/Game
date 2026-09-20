@@ -44,6 +44,15 @@
               padding: 9px 16px; color: #ffe6a8; font-size: 13px; font-weight: 700; backdrop-filter: blur(10px);
               text-align: center; max-width: 90vw; box-shadow: 0 12px 24px rgba(0,0,0,.22); }
 
+  #contractsCard { position: fixed; top: 66px; right: 12px; z-index: 8; pointer-events: none;
+                   display: flex; flex-direction: column; gap: 6px; max-width: min(230px, 44vw); }
+  .contractRow { background: linear-gradient(180deg, rgba(29,35,46,.9), rgba(18,24,33,.82));
+                 border: 1px solid rgba(154,203,255,.3); border-radius: 12px; padding: 7px 10px;
+                 font-size: 11px; color: #dce8fa; backdrop-filter: blur(8px); line-height: 1.35;
+                 overflow-wrap: anywhere; box-shadow: 0 10px 20px rgba(0,0,0,.18); }
+  .contractRow .ctxt { display: block; font-weight: 700; color: #eaf2ff; }
+  .contractRow .cprog { display: block; color: #8be2c8; font-weight: 700; margin-top: 2px; }
+
   #prestigeBtn { position: fixed; top: 108px; left: 50%; transform: translateX(-50%); z-index: 9; cursor: pointer;
                  border: none; border-radius: 14px; padding: 10px 18px; font-weight: 800; font-size: 13px;
                  background: linear-gradient(135deg,#ffd479,#ff9d4d); color: #2a1a00;
@@ -126,6 +135,10 @@
     #topRightBtns { position: absolute; top: calc(8px + env(safe-area-inset-top)); right: 8px; width: 140px; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
     .iconBtn { width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border-radius: 10px; font-size: 13px; }
     #nextCard { top: calc(98px + env(safe-area-inset-top)); max-width: calc(100vw - 20px); padding: 8px 11px; font-size: 12px; line-height: 1.25; }
+    /* topRightBtns wraps to two rows at this width (5 icons in a 140px-wide box), so the
+       contracts card needs to clear both rows, not just one. */
+    #contractsCard { top: calc(78px + env(safe-area-inset-top)); right: 8px; max-width: 128px; gap: 4px; }
+    .contractRow { font-size: 9.5px; padding: 5px 7px; border-radius: 9px; }
     #prestigeBtn { top: calc(142px + env(safe-area-inset-top)); padding: 9px 12px; font-size: 12px; }
     #toast { top: calc(136px + env(safe-area-inset-top)); max-width: calc(100vw - 24px); padding: 8px 12px; font-size: 12px; }
     #actionPrompt { bottom: calc(150px + env(safe-area-inset-bottom)); max-width: calc(100vw - 138px); padding: 8px 10px; font-size: 12px; }
@@ -145,6 +158,8 @@
     #topRightBtns { width: 124px; }
     .iconBtn { width: 29px; height: 29px; font-size: 12px; }
     #nextCard { top: calc(110px + env(safe-area-inset-top)); font-size: 11.5px; }
+    #contractsCard { top: calc(92px + env(safe-area-inset-top)); max-width: 112px; }
+    .contractRow { font-size: 9px; padding: 4px 6px; }
     #toast { top: calc(148px + env(safe-area-inset-top)); }
     #actionPrompt { max-width: calc(100vw - 128px); font-size: 11.5px; }
   }
@@ -175,6 +190,7 @@
 </div>
 
 <div id="nextCard"></div>
+<div id="contractsCard"></div>
 <button id="prestigeBtn" hidden></button>
 <div id="toast"></div>
 <div id="compass"><div class="arrow"></div></div>
@@ -439,7 +455,7 @@ let stamina = STAMINA_MAX;
 let planks = 0; // secondary resource produced by the sawmill (see SAWMILL below)
 const fieldUpgrades = { carry: 0, sawmill: 0, yield: 0, construction: 0 };
 const fieldUpgradePads = [];
-const stats = { totalEarned: 0, distanceRun: 0, prestige: 0, maxLevelHit: false, planksEarned: 0 };
+const stats = { totalEarned: 0, distanceRun: 0, prestige: 0, maxLevelHit: false, planksEarned: 0, buildingsCompleted: 0, logsChopped: 0 };
 const unlockedAch = new Set();
 let currentPad = null; // { index, group, pos: THREE.Vector3 }
 const growingMeshes = []; // pop-in scale animation queue
@@ -1624,6 +1640,7 @@ function updateSawmill(dt) {
         if (!tree.logSpawned) {
           if (carriedLogs < maxCarriedLogs()) {
             carriedLogs += 1;
+            stats.logsChopped += 1;
             refreshCarriedLogVisuals();
             updateHUD();
             save();
@@ -4173,6 +4190,7 @@ setInterval(() => {
   earn(totalIncomePerSec());
   updateHUD();
   checkAchievements();
+  checkContracts();
   save();
 }, 1000);
 
@@ -4236,6 +4254,102 @@ document.getElementById('achClose').addEventListener('click', () => {
 document.getElementById('achOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'achOverlay') e.currentTarget.classList.remove('show');
 });
+
+/* ---------------------------------------------------------------------- */
+/*  CONTRACTS — short optional objectives with a cash reward. Up to        */
+/*  CONTRACT_SLOTS active at once; a completed slot is replaced by a fresh */
+/*  contract on the next check, so there's (almost) always something      */
+/*  short-term to work toward besides the main build path.                 */
+/* ---------------------------------------------------------------------- */
+const CONTRACT_SLOTS = 2;
+const CONTRACT_TEMPLATES = [
+  { kind: 'build', min: 1, max: 3,
+    reward: n => 90 * n,
+    ru: n => `Построить ${n} ${n === 1 ? 'здание' : n < 5 ? 'здания' : 'зданий'}`,
+    en: n => `Build ${n} building${n > 1 ? 's' : ''}` },
+  { kind: 'planks', min: 10, max: 30,
+    reward: n => 6 * n,
+    ru: n => `Произвести ${n} досок`,
+    en: n => `Produce ${n} planks` },
+  { kind: 'logs', min: 8, max: 20,
+    reward: n => 7 * n,
+    ru: n => `Срубить ${n} брёвен`,
+    en: n => `Chop ${n} logs` },
+  { kind: 'earn', min: 500, max: 2000,
+    reward: n => Math.round(n * 0.22),
+    ru: n => `Заработать ${fmt(n)} 💰`,
+    en: n => `Earn ${fmt(n)} 💰` },
+];
+
+let contracts = []; // { id, kind, amount, reward, startValue }
+
+function contractTemplate(kind) {
+  return CONTRACT_TEMPLATES.find(tpl => tpl.kind === kind) || CONTRACT_TEMPLATES[0];
+}
+
+function contractProgressValue(kind) {
+  switch (kind) {
+    case 'build': return stats.buildingsCompleted || 0;
+    case 'planks': return stats.planksEarned || 0;
+    case 'logs': return stats.logsChopped || 0;
+    case 'earn': return stats.totalEarned || 0;
+    default: return 0;
+  }
+}
+
+function generateContract() {
+  const tpl = CONTRACT_TEMPLATES[Math.floor(Math.random() * CONTRACT_TEMPLATES.length)];
+  const amount = Math.round(THREE.MathUtils.lerp(tpl.min, tpl.max, Math.random()));
+  return {
+    id: `${tpl.kind}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    kind: tpl.kind,
+    amount,
+    reward: tpl.reward(amount),
+    startValue: contractProgressValue(tpl.kind),
+  };
+}
+
+function contractText(c) {
+  const tpl = contractTemplate(c.kind);
+  return lang === 'ru' ? tpl.ru(c.amount) : tpl.en(c.amount);
+}
+
+function contractProgress(c) {
+  return Math.max(0, contractProgressValue(c.kind) - c.startValue);
+}
+
+function ensureContracts() {
+  while (contracts.length < CONTRACT_SLOTS) contracts.push(generateContract());
+}
+
+function checkContracts() {
+  let changed = false;
+  for (let i = contracts.length - 1; i >= 0; i--) {
+    const c = contracts[i];
+    if (contractProgress(c) >= c.amount) {
+      earn(c.reward);
+      toast(lang === 'ru' ? `📜 Контракт выполнен! +${c.reward} 💰` : `📜 Contract done! +${c.reward} 💰`);
+      sfx.achievement();
+      contracts.splice(i, 1);
+      changed = true;
+    }
+  }
+  if (changed) {
+    ensureContracts();
+    renderContracts();
+    updateHUD();
+    save();
+  }
+}
+
+function renderContracts() {
+  const el = document.getElementById('contractsCard');
+  if (!el) return;
+  el.innerHTML = contracts.map(c => {
+    const p = Math.min(c.amount, contractProgress(c));
+    return `<div class="contractRow"><span class="ctxt">📜 ${contractText(c)}</span><span class="cprog">${fmt(p)}/${fmt(c.amount)} · +${fmt(c.reward)}💰</span></div>`;
+  }).join('');
+}
 
 /* ---------------------------------------------------------------------- */
 /*  UI — buttons, toast, hint                                              */
@@ -4323,6 +4437,7 @@ function applyLanguage() {
   }
 
   renderAchList();
+  renderContracts();
   updateHUD();
 }
 
@@ -4455,7 +4570,7 @@ function updateJoy(e) {
 function save() {
   localStorage.setItem(SAVE_KEY, JSON.stringify({
     saveVersion: 4,
-    money, stageIndex, stats, unlocked: [...unlockedAch], planks, carriedLogs, fieldUpgrades,
+    money, stageIndex, stats, unlocked: [...unlockedAch], planks, carriedLogs, fieldUpgrades, contracts,
     buildings: buildings.map(b => ({ index: b.index, level: b.level })),
     player: { x: player.position.x, z: player.position.z },
   }));
@@ -4479,6 +4594,9 @@ function load() {
     stageIndex = Math.min(typeof data.stageIndex === 'number' ? data.stageIndex : 0, STAGES.length);
     if (data.stats) Object.assign(stats, data.stats);
     (data.unlocked || []).forEach(id => unlockedAch.add(id));
+    if (Array.isArray(data.contracts)) {
+      contracts = data.contracts.filter(c => c && contractTemplate(c.kind) && typeof c.amount === 'number');
+    }
     if (Array.isArray(data.buildings)) {
       data.buildings.forEach(({ index, level }) => {
         if (STAGES[index]) spawnBuilding(index, Math.min(level || 1, MAX_BUILDING_LEVEL), { grow: false });
@@ -4715,6 +4833,7 @@ function animate() {
       build.mesh.visible = true;
       build.mesh.scale.set(1, 1, 1);
       build.entry.underConstruction = false;
+      if (!build.upgrading) stats.buildingsCompleted += 1;
       if (build.entry.level < MAX_BUILDING_LEVEL && !build.entry.upgradePad) spawnUpgradePad(build.entry);
       sfx.build();
       spawnBurst(build.entry.pos, build.upgrading ? 0x5ab0ff : 0xffd479);
@@ -4819,6 +4938,7 @@ function animate() {
 /*  INIT                                                                   */
 /* ---------------------------------------------------------------------- */
 load();
+ensureContracts();
 applyLanguage();
 if (stageIndex < STAGES.length && !currentPad) spawnPad(stageIndex);
 
