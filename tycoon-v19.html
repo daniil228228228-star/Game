@@ -996,20 +996,33 @@ function makeBush() {
   return bush;
 }
 
-function makeTree() {
+// Tree variety (VISION spec section 7 -- "the forest shouldn't look like 50 identical
+// cones"). Two species with genuinely different silhouettes (conifer: stacked cones,
+// like the original single tree shape; deciduous: a round leafy canopy on a short thick
+// trunk) plus a size tier that scales trunk and canopy *independently* rather than just
+// uniformly scaling the whole group, so a "young" tree reads as spindly, not just small.
+// Both still return a plain THREE.Group with userData.harvestableTree = true, so the
+// chop/carry/regrow system (which just does group.scale.setScalar(...) on whatever it's
+// given) needs no changes at all.
+const TREE_SIZES = {
+  young:  { trunkR: 0.62, trunkH: 0.68, canopy: 0.66 },
+  normal: { trunkR: 1.0,  trunkH: 1.0,  canopy: 1.0 },
+  large:  { trunkR: 1.3,  trunkH: 1.22, canopy: 1.2 },
+};
+
+function makeConiferTree(sizeKey) {
+  const s = TREE_SIZES[sizeKey];
   const group = new THREE.Group();
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.92 });
-  const trunk = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.16, 0.24, 1.95, 8),
-    trunkMat
-  );
-  trunk.position.y = 0.98;
+  const trunkH = 1.95 * s.trunkH;
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16 * s.trunkR, 0.24 * s.trunkR, trunkH, 8), trunkMat);
+  trunk.position.y = trunkH / 2;
   trunk.castShadow = true;
   group.add(trunk);
 
   for (let i = 0; i < 3; i++) {
-    const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.62, 7), trunkMat);
-    branch.position.set((i - 1) * 0.18, 1.46 + i * 0.16, i % 2 ? 0.12 : -0.12);
+    const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.035 * s.trunkR, 0.05 * s.trunkR, 0.62 * s.canopy, 7), trunkMat);
+    branch.position.set((i - 1) * 0.18, trunkH * 0.75 + i * 0.16 * s.canopy, i % 2 ? 0.12 : -0.12);
     branch.rotation.z = (i - 1) * 0.45;
     branch.rotation.x = i % 2 ? 0.32 : -0.24;
     branch.castShadow = true;
@@ -1017,23 +1030,72 @@ function makeTree() {
   }
 
   const leafColors = [0x2f7d4a, 0x3a8f55, 0x2a7142, 0x468b54];
+  const canopyBase = trunkH * 0.91;
   for (let i = 0; i < 4; i++) {
     const leaves = new THREE.Mesh(
-      new THREE.ConeGeometry(1.1 - i * 0.16, 1.18, 9),
+      new THREE.ConeGeometry((1.1 - i * 0.16) * s.canopy, 1.18 * s.canopy, 9),
       new THREE.MeshStandardMaterial({ color: leafColors[(i + Math.floor(Math.random() * leafColors.length)) % leafColors.length], roughness: 0.86 })
     );
-    leaves.position.y = 1.78 + i * 0.38;
+    leaves.position.y = canopyBase + i * 0.38 * s.canopy;
     leaves.castShadow = true;
     group.add(leaves);
   }
 
   const topPuff = new THREE.Mesh(
-    new THREE.SphereGeometry(0.42, 9, 9),
+    new THREE.SphereGeometry(0.42 * s.canopy, 9, 9),
     new THREE.MeshStandardMaterial({ color: leafColors[Math.floor(Math.random() * leafColors.length)], roughness: 0.88 })
   );
-  topPuff.position.y = 3.02;
+  topPuff.position.y = canopyBase + 4 * 0.38 * s.canopy - 0.24 * s.canopy;
   topPuff.castShadow = true;
   group.add(topPuff);
+  return group;
+}
+
+function makeDeciduousTree(sizeKey) {
+  const s = TREE_SIZES[sizeKey];
+  const group = new THREE.Group();
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x7a5a38, roughness: 0.9 });
+  const trunkH = 1.15 * s.trunkH;
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * s.trunkR, 0.26 * s.trunkR, trunkH, 8), trunkMat);
+  trunk.position.y = trunkH / 2;
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  // A short fork of two leaning limbs instead of the conifer's straight central trunk,
+  // so the deciduous silhouette reads differently even before the canopy is added.
+  for (const side of [-1, 1]) {
+    const limb = new THREE.Mesh(new THREE.CylinderGeometry(0.07 * s.trunkR, 0.11 * s.trunkR, 0.55 * s.canopy, 7), trunkMat);
+    limb.position.set(side * 0.16 * s.canopy, trunkH + 0.2 * s.canopy, 0);
+    limb.rotation.z = side * 0.5;
+    limb.castShadow = true;
+    group.add(limb);
+  }
+
+  // Round, leafy canopy: a cluster of overlapping spheres (same technique as makeBush(),
+  // scaled up) instead of stacked cones -- this is the silhouette that actually reads as
+  // "deciduous" rather than "small pine."
+  const canopyColors = [0x5aa447, 0x6fb552, 0x4f9640, 0x7abd5c];
+  const canopyY = trunkH + 0.55 * s.canopy;
+  const puffs = 5;
+  for (let i = 0; i < puffs; i++) {
+    const a = (i / puffs) * Math.PI * 2;
+    const r = 0.34 * s.canopy;
+    const puff = new THREE.Mesh(
+      new THREE.SphereGeometry((0.55 + Math.random() * 0.16) * s.canopy, 8, 8),
+      new THREE.MeshStandardMaterial({ color: canopyColors[i % canopyColors.length], roughness: 0.88 })
+    );
+    puff.position.set(Math.cos(a) * r, canopyY + (i === 0 ? 0.28 * s.canopy : 0), Math.sin(a) * r);
+    puff.castShadow = true;
+    group.add(puff);
+  }
+  return group;
+}
+
+function makeTree(opts = {}) {
+  const species = opts.species || (Math.random() < 0.62 ? 'conifer' : 'deciduous');
+  const sizeRoll = Math.random();
+  const sizeKey = opts.size || (sizeRoll < 0.2 ? 'young' : (sizeRoll < 0.85 ? 'normal' : 'large'));
+  const group = species === 'deciduous' ? makeDeciduousTree(sizeKey) : makeConiferTree(sizeKey);
 
   if (Math.random() < 0.7) {
     const bush = makeBush();
@@ -1042,6 +1104,7 @@ function makeTree() {
     group.add(bush);
   }
   group.userData.harvestableTree = true;
+  group.userData.treeSpecies = species;
   return group;
 }
 
@@ -1384,7 +1447,6 @@ function buildSawmillScenery() {
   };
 }
 
-buildSawmillScenery();
 buildSawmillScenery();
 
 function registerAllHarvestableTrees() {

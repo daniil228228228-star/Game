@@ -98,7 +98,66 @@ grepping), so future sessions don't waste time re-building working systems:
   expected behavior for this label system, not a defect. Neither is worth
   a dedicated slice; removed from the priority list below.
 
-## What this session added
+## What recent sessions added (most recent first)
+
+**Duplicate sawmill scenery bug fix + tree species variety** (this
+session). Two changes:
+
+1. Found and fixed a real, previously-unaudited bug while reading the
+   sawmill code to plan the tree-variety work: `buildSawmillScenery()` was
+   called **twice** (two back-to-back statements right before
+   `registerAllHarvestableTrees()`), with no guard against re-entry. Since
+   the function unconditionally builds and `scene.add()`s a brand-new
+   camp/shed/rack/mill/conveyor/blade every call, this silently doubled
+   the entire sawmill complex on top of itself: 2 identical shed bodies
+   z-fighting at the same position, 12 grove trees instead of 6 (all
+   pushed into `sourceTrees`, so the sawmill's "gently gated by tree
+   availability" production pacing was subtly wrong), a duplicated
+   spinning saw blade (only one of the two ends up referenced by the
+   `sawmillBlade` variable that the animation loop spins — the other sits
+   there identical but frozen), and duplicated conveyor belt slats reading
+   stale vs. fresh `conveyorData` geometry. Fixed by removing the
+   duplicate call (one-line diff, but the runtime effect is large — see
+   verification below). This is exactly the class of bug the plan's "no
+   flying/duplicate objects" rule exists to catch, and it predates every
+   session logged in this file (present from the original v19 import).
+2. **Tree species variety** (spec section 7 — "the forest shouldn't look
+   like 50 identical cones"). `makeTree()` used to always build the same
+   stacked-cone conifer shape (only leaf color and uniform group scale
+   varied). Replaced with `makeConiferTree(size)` (the original shape,
+   kept) and a new `makeDeciduousTree(size)` (short thick trunk, two
+   leaning fork limbs, a round leafy canopy built from overlapping
+   spheres — genuinely different silhouette, not just a recolor), plus a
+   `TREE_SIZES` table (`young`/`normal`/`large`) that scales trunk and
+   canopy **independently** rather than uniformly scaling the whole
+   group, so a young tree actually reads as spindly rather than just a
+   shrunk adult. `makeTree(opts)` now picks species (~62% conifer / 38%
+   deciduous) and size randomly unless told otherwise, and both species
+   still return a plain group with `userData.harvestableTree = true` (now
+   also `userData.treeSpecies`), so the chop/carry/regrow system — which
+   only ever calls `group.scale.setScalar(...)` on whatever it's given —
+   needed zero changes.
+
+Verified with a headless-browser pass: before the fix, a scene traversal
+counted 2 shed-body meshes at identical dimensions and 12 grove
+`sourceTrees` within 3.2 units of `GENERATOR_POS`; after the fix, exactly
+1 and 6, confirming the duplication is gone (and only the intended amount
+of geometry remains — checked this wasn't secretly needed for anything
+else, since nothing in the game reads a "second sawmill" concept). For
+tree variety: counted species tags across the full scene (61 total trees
+in one run, ~2:1 conifer:deciduous, matching the roll probability) and
+confirmed every tree's group-level Y position is exactly 0 (grounded, per
+the "no flying objects" rule); screenshots from ground level show clearly
+distinct silhouettes side by side (sharp conical pines vs. round bushy
+canopies). Confirmed the chop → shrink → regrow cycle still works
+correctly end to end on the new tree shapes: teleported the player onto a
+real grove `sourceTrees[0]` entry, called the actual `tryHarvestTree()`
+function the E/Space handler uses (not a faked state change), and traced
+`state`/`scale`/`position.y` across the chop and regrow phases — scale
+animated smoothly (1.07 → 0.91 mid-chop → 0.34 mid-regrow) with `y`
+staying exactly 0 throughout. Re-ran the full existing regression suite
+(boot, construction pipeline, contracts, road-node routing) with zero new
+failures.
 
 **Road-node vehicle navigation** (spec item 16, previously a confirmed
 open gap). Service vehicles (the delivery truck and the lift/telehandler)
@@ -185,9 +244,8 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
       a vehicle role (`role: 'lift'`) with `liftArms` but wasn't visually
       audited this session — verify its model next (base, outriggers,
       telescoping arm, basket, worker inside, per spec).
-- [ ] **Tree variety** (section 7) — `makeTree()` needs to produce a few
-      distinct species (height/girth/color/canopy shape), not one cone
-      repeated. Not yet audited/implemented.
+- [x] **Tree variety** (section 7) — done this session: conifer +
+      deciduous species with independently-scaled trunk/canopy size tiers.
 - [ ] **Log-carry stacking visual** (section 8) — carried logs currently
       shown via `refreshCarriedLogVisuals()`; whether it does the
       1/2/3/4-6 stacking pattern the spec wants hasn't been checked yet.
@@ -261,18 +319,23 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 ## Suggested next slice (pick one, don't do everything at once)
 
 In priority order, given what's already solid vs. genuinely missing:
-1. Tree species variety (section 7) — self-contained, visually obvious win,
-   `makeTree()` currently produces one repeated cone shape.
-2. Audit + finish the lift/telehandler model and NPC role visuals
+1. Audit + finish the lift/telehandler model and NPC role visuals
    (sections 6, 17) against the spec — flagged `[~]` not `[x]` for lack of
    time in an earlier session, not because they're known-broken.
-3. Delivery-vehicle status labels: name the specific resource + target
+2. Delivery-vehicle status labels: name the specific resource + target
    building (spec wants e.g. "Доски → Дом") instead of the current generic
-   "MATERIALS" — small polish on top of this session's routing work.
-4. Second raw resource (concrete) + a warehouse-as-storage mechanic
+   "MATERIALS" — small polish on top of the road-routing work.
+3. Second raw resource (concrete) + a warehouse-as-storage mechanic
    (section 3) — only once the log→plank chain's existing sinks (planks
    already used for building cost, upgrades, and now nothing else
    pending) feel complete; check economy pacing (section 20) first.
+4. **Worth a dedicated pass, not just incidental findings**: this session
+   found a real duplicate-function-call bug (`buildSawmillScenery()`
+   called twice) purely by reading code while planning something else.
+   Grep the file for any other init-time function called more than once
+   (`grep -n "^\w\+();" tycoon-v19.html | sort | uniq -c | sort -rn` on the
+   top-level call statements is a decent starting point) — there may be
+   more silent duplicates like this one worth a focused audit session.
 
 ## Process reminder for future sessions
 

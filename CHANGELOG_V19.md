@@ -6,6 +6,39 @@ tracks progress against.
 
 ## Session log
 
+### 2026-09-20 — Fix a duplicate-sawmill bug, add tree species variety (autonomous loop)
+- **Found and fixed a real bug**: `buildSawmillScenery()` was called twice
+  at init with no guard, silently doubling the entire sawmill complex on
+  top of itself (2 identical sheds z-fighting, 12 grove trees instead of
+  6, a duplicated-but-frozen saw blade, doubled conveyor slats). Found by
+  reading the sawmill code while planning the tree-variety work below, not
+  by looking for it specifically — a reminder that this file likely has
+  more init-time duplicates worth a dedicated grep pass (see
+  `TYCOON_V19_PLAN.md`'s suggested-next-slice list; a scan for other
+  top-level duplicate calls turned up none this time, but wasn't
+  exhaustive). One-line fix (removed the duplicate call); verified via
+  scene traversal counts before/after (2→1 shed meshes, 12→6 grove trees)
+  and a screenshot showing a single, correct sawmill camp.
+- **Added tree species variety** (spec section 7). `makeTree()` used to
+  always build the same stacked-cone shape. Added a genuinely different
+  second silhouette (`makeDeciduousTree`: short trunk, forked limbs, round
+  leafy canopy from overlapping spheres) alongside the original
+  (`makeConiferTree`), plus a `TREE_SIZES` young/normal/large tier that
+  scales trunk and canopy independently instead of uniformly, so a young
+  tree reads as spindly rather than just smaller. `makeTree()` now rolls
+  species (~62/38 conifer/deciduous) and size randomly; both still return
+  a plain group with `userData.harvestableTree = true`, so the existing
+  chop/carry/regrow system needed no changes.
+- Verified with a headless-browser pass: species/grounding counted across
+  the whole scene (61 trees, ~2:1 ratio, 100% at group-Y 0); screenshots
+  confirm visually distinct silhouettes side by side; ran the actual chop
+  → shrink → regrow cycle on a real grove tree via the genuine
+  `tryHarvestTree()` function (not a faked state change) and traced
+  state/scale/Y across all phases — smooth, grounded throughout. Re-ran
+  the full existing regression suite (boot, construction, contracts,
+  road-node routing) with zero new failures.
+- Checked off spec item 7 in `TYCOON_V19_PLAN.md`.
+
 ### 2026-09-20 — Road-node vehicle navigation (autonomous loop)
 - Re-checked the previous session's two "known mobile HUD bugs" before
   spending a slice fixing them — closer inspection (actual DOM bounding
