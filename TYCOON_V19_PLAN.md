@@ -100,8 +100,50 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**NPC worker roles + stay-near-base idle behavior** (this session, spec
+section 17). Audited `createWorkerNPC()`/`spawnAmbientLife()` and found the
+7 ambient workers were all the exact same model with only a random shirt
+color from a 7-color palette — no role distinction at all — and when idle
+(no construction to help with), `chooseWorkerTarget()` sent them to a
+random point among *every* building position on the map via
+`ambientTargetPoints()`, which could be far from wherever they actually
+started. Neither matched spec section 17 (four named roles: 👷 Строитель/
+🔧 Монтажник/🦺 Прораб/📦 Грузчик; idle workers should stay near base with
+short routes, not roam the whole map).
+
+Fixed both: added a `WORKER_ROLES` table (builder/rigger/foreman/loader)
+with a distinct helmet+brim color per role (the most legible signal at
+ambient-NPC distance) and a role-appropriate hand tool built by a new
+`addWorkerTool()` helper (brick / wrench / clipboard / stacked crate),
+each parented directly onto the existing `armR` limb group so it
+automatically follows the same arm-swing animation the worker already
+had — no new animation code needed. `createWorkerNPC()` now takes a role
+key (a bare color still works via a back-compat branch, used by the
+lift's rider). `spawnAmbientList()`'s 7 workers now cycle through the 4
+roles and each stores its spawn point as `worker.homeBase`;
+`chooseWorkerTarget()`'s "nothing to help with" branch now picks a point
+near that stored `homeBase` (±1.6 units) instead of `ambientTargetPoints()`
+(removed, now dead code) — deleted the ~24-line function.
+
+Verified with a headless-browser pass: confirmed all 7 workers spawn with
+the expected 2/2/2/1 role distribution and a stored `homeBase`; sampled
+distance-from-home-base every 1.5s over a 12-second window with no active
+construction and confirmed every worker stayed within ~1.9 units of home
+(previously they could roam to any building anywhere on the spiral);
+confirmed the "72% chance to go help an active build" behavior still
+works unchanged (6 of 7 workers correctly picked up a freshly-started
+house's construction site within 6 seconds); confirmed programmatically
+that each role's helmet material is the exact intended distinct color
+(not just relying on a screenshot, which this scene's bright tone-mapping
+can wash out); and confirmed every tool prop is a direct child of `armR`
+at the hand position and its world position genuinely moves when `armR`
+rotates (0.557 units for a 1-radian test rotation) — i.e. not a
+disconnected floating prop, the exact class of bug fixed on the lift last
+session. Re-ran the full regression suite (boot, construction, contracts,
+road-node routing, the lift) with zero new failures.
+
 **Fixed the lift/telehandler's disconnected platform + gave it real
-deploy/extend/retract behavior** (this session, spec section 6). Audited
+deploy/extend/retract behavior** (previous session, spec section 6). Audited
 `createWorkLift()` against the spec (base, wheels, outriggers, telescoping
 arm, basket, worker inside) and found a real bug: the platform (the
 basket the whole vehicle exists to raise) was a **separate mesh at a
@@ -306,9 +348,9 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 - [x] **Road-node vehicle navigation** (section 16) — done this session
       (`ROAD_NODES` / `buildRoadRoute()`). See known limitation noted above
       (off-road bases don't get a dedicated driveway node yet).
-- [~] **NPC worker roles** (section 17) — worker NPCs with `chooseWorkerTarget`
-      exist; whether they have distinct visual roles (builder/rigger/
-      foreman/loader per spec) not audited.
+- [x] **NPC worker roles** (section 17) — done this session: 4 visually
+      distinct roles (helmet color + hand tool) plus stay-near-home-base
+      idle behavior instead of roaming the whole map.
 - [~] **Progression stages** (section 18) — the 10-stage `STAGES` array
       covers this loosely; no explicit "you are now in Stage 3:
       Commercial Construction" milestone UI yet.
@@ -357,11 +399,14 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 ## Suggested next slice (pick one, don't do everything at once)
 
 In priority order, given what's already solid vs. genuinely missing:
-1. Audit NPC role visuals (section 17) against the spec — worker NPCs
-   exist with `chooseWorkerTarget()` but whether they read as visually
-   distinct roles (builder/rigger/foreman/loader) hasn't been checked.
-   This session covered section 6 (equipment) fully instead, including a
-   real bug fix on the lift; section 17 is still only `[~]`.
+1. **Worth a dedicated pass now, not just incidental findings**: three
+   sessions in a row have found a real bug purely by reading code while
+   planning something else (`buildSawmillScenery()` called twice; the
+   lift's platform never attached to its lifting mechanism; the old
+   ambient-worker wander target ignored home base entirely). A focused
+   audit session — read through the remaining vehicle/building/economy
+   code specifically asking "does this visibly do what it claims to do,"
+   not implementing anything new — would likely keep paying off.
 2. Delivery-vehicle status labels: name the specific resource + target
    building (spec wants e.g. "Доски → Дом") instead of the current generic
    "MATERIALS" — small polish on top of the road-routing work.
@@ -369,13 +414,10 @@ In priority order, given what's already solid vs. genuinely missing:
    (section 3) — only once the log→plank chain's existing sinks (planks
    already used for building cost, upgrades, and now nothing else
    pending) feel complete; check economy pacing (section 20) first.
-4. **Worth a dedicated pass, not just incidental findings**: two sessions
-   in a row have now found a real bug purely by reading code while
-   planning something else (`buildSawmillScenery()` called twice; the
-   lift's platform never actually attached to its own lifting mechanism).
-   A focused audit session — read through the vehicle/NPC/construction
-   code specifically looking for "does this visibly do what it claims to
-   do," not implementing anything new — would likely be high-value.
+4. Progression-stage milestone UI (section 18) — the 10-stage `STAGES`
+   array covers this loosely; no explicit "you are now in Stage 3:
+   Commercial Construction" moment yet, which the spec calls out as
+   important for the player always knowing the next big milestone.
 
 ## Process reminder for future sessions
 

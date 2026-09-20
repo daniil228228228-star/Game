@@ -6,6 +6,39 @@ tracks progress against.
 
 ## Session log
 
+### 2026-09-20 — NPC worker roles + stay-near-base idle behavior (autonomous loop)
+- Audited `createWorkerNPC()`/`spawnAmbientLife()`/`chooseWorkerTarget()`
+  against spec section 17 and found two real gaps: all 7 ambient workers
+  were the identical model with only a random shirt color (no role
+  distinction at all), and when idle they'd wander toward a random point
+  among *every* building position on the entire map
+  (`ambientTargetPoints()`), not just near wherever they'd actually
+  started.
+- Added a `WORKER_ROLES` table (builder/rigger/foreman/loader) with a
+  distinct helmet+brim color per role plus a role-appropriate hand tool
+  (brick/wrench/clipboard/crate, via a new `addWorkerTool()` helper)
+  parented directly onto the existing `armR` limb so it automatically
+  follows the worker's existing arm-swing animation. `createWorkerNPC()`
+  now takes a role key (old bare-color calls still work via a back-compat
+  branch). Each of the 7 spawned workers now stores its spawn point as
+  `worker.homeBase`, and `chooseWorkerTarget()`'s idle branch picks a
+  point near that instead of anywhere on the map -- deleted
+  `ambientTargetPoints()` as dead code once nothing called it anymore.
+- Verified with a headless-browser pass: confirmed the expected role
+  distribution and stored home bases on spawn; sampled distance-from-home
+  every 1.5s over 12s with no active construction and confirmed every
+  worker stayed within ~1.9 units (previously unbounded); confirmed the
+  "help an active build" behavior is unchanged (6/7 workers picked up a
+  fresh house's construction within 6s); confirmed each role's helmet
+  color programmatically (screenshots of this scene's bright tone-mapping
+  can wash out subtle color differences, so didn't rely on that alone);
+  confirmed every tool prop is a direct child of the arm at the hand
+  position and its world position genuinely moves when the arm rotates
+  (not a disconnected floating prop -- the same bug class fixed on the
+  lift last session). Re-ran the full regression suite with zero new
+  failures.
+- Checked off spec item 17 in `TYCOON_V19_PLAN.md`.
+
 ### 2026-09-20 — Fix the lift's disconnected platform, give it real deploy/retract behavior (autonomous loop)
 - Audited `createWorkLift()` (the "подъёмник" telehandler/scissor lift)
   against spec section 6's checklist (base, wheels, outriggers,
