@@ -100,6 +100,40 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Economy pacing audit + a real tuning fix** (this session, spec section
+20, #2 on the "suggested next slice" list). Wrote a pure-numeric
+idle-progression simulator that drives the game's own real formula
+functions (`buildingIncome`, `buildingUpgradeCost`, `buildingPlankCost`,
+`constructionDuration`, `sawmillAutoInterval`, etc. — called directly via
+`page.evaluate()`, never touching the THREE scene) to fast-forward
+thousands of simulated seconds and compare three play styles: idle (only
+the passive sawmill tick), light manual chopping (3 logs/min), and active
+manual chopping (8 logs/min, near the carry-capacity pace). Finding: with
+the original `BASE_SAWMILL_AUTO_INTERVAL = 10`, all three profiles
+finished the entire 10-building + all-upgrades run within a few percent
+of each other (e.g. full completion at ~6569s idle vs. ~2821s active —
+but the *initial 10-building race itself* was within single-digit
+seconds regardless of chopping). In other words, manually chopping
+trees — the interactive mechanic the hint overlay specifically teaches
+new players — had almost no effect on how fast the game actually
+progressed; plank costs on the main build path are trivially small next
+to the money costs, so wood was essentially never the bottleneck.
+Slowed the passive rate (`BASE_SAWMILL_AUTO_INTERVAL: 10 → 16`, i.e.
+3.75 planks/min passively instead of 6/min) and re-ran the same
+simulation: the early build race is still (correctly) money-dominated,
+but the midgame-to-endgame upgrade grind now meaningfully rewards active
+play — full completion moved to ~10505s idle vs. ~3361s active (roughly
+3.1x apart, up from ~2.3x), without breaking idle progression (it still
+finishes, just slower). A single well-reasoned constant change rather
+than a broad rebalance, backed by before/after simulation data;
+worth revisiting if a real playtest disagrees with the model.
+
+Verified: re-ran the idle/light/active simulation before and after the
+change and confirmed the intended before/after separation above; re-ran
+the full existing regression suite (boot, pinch-zoom, camera-follow/
+construction-reveal/label-scale, milestone banner) with zero new
+failures — this was a pure constant tweak, no logic paths touched.
+
 **Progression-stage milestone banner** (this session, spec section 18,
 top of the "suggested next slice" list). The 10-stage `STAGES` array
 already tracked raw progress (`🏗️ N/10` in the HUD), but there was no
@@ -583,8 +617,11 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
       with a centered "you've entered a new era" announcement the first
       time a building from it starts.
 - [x] **Contracts** (section 19) — done this session.
-- [ ] **Economy pacing re-check** (section 20) — not re-validated against
-      the fuller feature set (contracts should help; worth simulating).
+- [x] **Economy pacing re-check** (section 20) — simulated idle vs. active
+      play this session (see note above) and found manual tree-chopping
+      had almost zero effect on progression speed; tuned the passive
+      sawmill rate so it now does. The initial 10-building race is still
+      (correctly) money-dominated regardless.
 - [x] **Prestige** (section 21) — exists (`doPrestige`), messaging clear.
 - [~] **UI cleanliness** (section 22) — the two specific bugs the previous
       session flagged were re-audited and downgraded (see note above, not
@@ -639,12 +676,13 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 
 In priority order, given what's already solid vs. genuinely missing:
 1. Second raw resource (concrete) + a warehouse-as-storage mechanic
-   (section 3) — only once the log→plank chain's existing sinks (planks
-   already used for building cost, upgrades, and now nothing else
-   pending) feel complete; check economy pacing (section 20) first.
-2. Economy pacing re-check (section 20) — not re-validated against the
-   fuller feature set (contracts + milestone eras should both help the
-   feel of it; worth simulating a full playthrough's cost/income curve).
+   (section 3) — the log→plank chain's own sinks (building cost,
+   upgrades) now have a validated pacing model to extend (see the
+   economy-pacing audit above); keep the same "does chopping actually
+   matter" question in mind when adding a second resource loop.
+2. World density / roads polish (sections 14-15) — decor props exist;
+   full checklist (curbs, sidewalks, crosswalks, parking, hydrants,
+   cones) not audited.
 3. **Keep doing incidental audits, not just this one dedicated pass**:
    four sessions running have now found a real bug purely by reading code
    closely (`buildSawmillScenery()` called twice; the lift's platform

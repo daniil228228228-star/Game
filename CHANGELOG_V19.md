@@ -351,6 +351,29 @@ tracks progress against.
 - Updated `TYCOON_V19_PLAN.md`: checked off item 18, removed it from the
   "suggested next slice" list, updated the v22 release-line note.
 
+### 2026-09-20 — Economy pacing audit; slowed the passive sawmill rate
+- Built a pure-numeric idle-progression simulator (drives the game's own
+  real formula functions via `page.evaluate()`, no scene/rendering
+  involved) to compare idle play, light manual tree-chopping (3 logs/
+  min), and active chopping (8 logs/min) across a full 10-building +
+  all-upgrades run.
+- Finding: with the original `BASE_SAWMILL_AUTO_INTERVAL = 10`, all
+  three profiles finished within a few percent of each other — manual
+  chopping, the interactive mechanic the hint overlay specifically
+  teaches, had almost no effect on progression speed, because plank
+  costs on the main build path are trivially small next to money costs.
+- Fix: `BASE_SAWMILL_AUTO_INTERVAL: 10 → 16` (passive rate 6 → 3.75
+  planks/min). Re-ran the simulation: the early build race is still
+  correctly money-dominated, but the midgame/endgame upgrade grind now
+  separates idle (~10505s to fully finish) from active play (~3361s,
+  ~3.1x apart, up from ~2.3x) — active chopping now visibly matters.
+- Verified: before/after simulation comparison; re-ran the full existing
+  regression suite (boot, pinch-zoom, the three user-reported fixes,
+  milestone banner) with zero new failures, since this was a single
+  constant change with no logic touched.
+- Updated `TYCOON_V19_PLAN.md`: checked off item 20, added the audit
+  writeup, refreshed the "suggested next slice" list.
+
 ---
 
 ## Format for new entries
