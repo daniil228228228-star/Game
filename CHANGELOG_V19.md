@@ -424,6 +424,22 @@ tracks progress against.
   against every road segment in the network: all now consistently 2.95
   units clear, versus a 0.08 worst case before. Zero new console errors.
 
+### 2026-09-20 — Construction sites now differ by archetype, not just size
+- Follow-up to the size-only scaling fix, which "didn't look very
+  different" per direct feedback -- early buildings are close enough in
+  size that a pure scale difference wasn't very visible.
+- `spawnConstructionSite()` now picks one of 4 archetype groups (house /
+  shop / industrial / vertical) and gives each a genuinely different
+  wall shape+material and roof shape+material: industrial (warehouse,
+  factory) gets a wider corrugated-metal shell; vertical (office, tower)
+  gets a narrower shell in the same emissive glass curtain-wall material
+  the finished buildings use; house keeps its gable roof.
+- Verified programmatically (material/geometry properties compared
+  across all 4 groups) rather than via screenshots, since the game's own
+  `animate()` loop continuously re-derives camera position from
+  OrbitControls' damped state, fighting a one-off camera move meant only
+  for a screenshot. Re-ran the full regression suite with zero failures.
+
 ---
 
 ## Format for new entries

@@ -3182,22 +3182,47 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
   skeleton.visible = false;
   group.add(skeleton);
 
+  // Wall/roof shape and material during construction now read as the actual archetype going
+  // up, not one generic box shell for every building -- flagged directly ("construction
+  // looks the same for every building, boring") even after the previous session's size-only
+  // scaling fix, since early buildings are close enough in size that the difference wasn't
+  // very visible; shape + material reads immediately regardless of size.
+  const archetypeGroup = (stage?.archetype === 'warehouse' || stage?.archetype === 'factory') ? 'industrial'
+    : (stage?.archetype === 'office' || stage?.archetype === 'tower') ? 'vertical'
+    : (stage?.archetype === 'house') ? 'house' : 'shop';
+
   const wallVisual = new THREE.Group();
-  const wallMat = createConcreteMaterial(stage?.archetype === 'house' ? 0xd7c9b8 : 0xc5c9cc, { roughness: 0.88 });
-  const frontPanel = new THREE.Mesh(new THREE.BoxGeometry(1.62, 1.45, 0.08), wallMat);
-  frontPanel.position.set(0, 0.92, 0.62); wallVisual.add(frontPanel);
-  const backPanel = frontPanel.clone(); backPanel.position.z = -0.62; wallVisual.add(backPanel);
-  const sidePanelL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.45, 1.16), wallMat);
-  sidePanelL.position.set(-0.76, 0.92, 0); wallVisual.add(sidePanelL);
-  const sidePanelR = sidePanelL.clone(); sidePanelR.position.x = 0.76; wallVisual.add(sidePanelR);
+  let wallMat, wallW, wallD;
+  if (archetypeGroup === 'vertical') {
+    wallMat = createCurtainWallMaterial(stage?.color || 0x467aa2, { roughness: 0.15, metalness: 0.4 });
+    wallW = 1.32; wallD = 1.18;
+  } else if (archetypeGroup === 'industrial') {
+    wallMat = createCorrugatedMaterial(0xb9bec6, { roughness: 0.78, metalness: 0.14 });
+    wallW = 2.15; wallD = 1.7;
+  } else {
+    wallMat = createConcreteMaterial(archetypeGroup === 'house' ? 0xd7c9b8 : 0xc5c9cc, { roughness: 0.88 });
+    wallW = 1.62; wallD = 1.16;
+  }
+  const frontPanel = new THREE.Mesh(new THREE.BoxGeometry(wallW, 1.45, 0.08), wallMat);
+  frontPanel.position.set(0, 0.92, wallD / 2); wallVisual.add(frontPanel);
+  const backPanel = frontPanel.clone(); backPanel.position.z = -wallD / 2; wallVisual.add(backPanel);
+  const sidePanelL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.45, wallD), wallMat);
+  sidePanelL.position.set(-wallW / 2, 0.92, 0); wallVisual.add(sidePanelL);
+  const sidePanelR = sidePanelL.clone(); sidePanelR.position.x = wallW / 2; wallVisual.add(sidePanelR);
   wallVisual.scale.set(envW, 1, envW); // Y is driven per-frame below, multiplied by envH
   wallVisual.visible = false;
   group.add(wallVisual);
 
   const roofVisual = new THREE.Group();
   let tempRoof;
-  if (stage?.archetype === 'house' || stage?.archetype === 'warehouse' || stage?.archetype === 'factory') {
+  if (archetypeGroup === 'house') {
     tempRoof = createGableRoof(1.84, 1.5, 0.48, createRoofMaterial(0x6b5241, { roughness: 0.9 }));
+    tempRoof.position.y = 1.72;
+  } else if (archetypeGroup === 'industrial') {
+    tempRoof = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.12, 1.85), createCorrugatedMaterial(0x596471, { roughness: 0.78, metalness: 0.16 }));
+    tempRoof.position.y = 1.6;
+  } else if (archetypeGroup === 'vertical') {
+    tempRoof = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.1, 1.28), createMetalMaterial(0x3e4b5a, { roughness: 0.6, metalness: 0.28 }));
     tempRoof.position.y = 1.72;
   } else {
     tempRoof = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.12, 1.42), createMetalMaterial(0x69737f, { roughness: 0.72, metalness: 0.18 }));

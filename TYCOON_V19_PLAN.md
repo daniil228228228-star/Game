@@ -100,6 +100,32 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Construction walls/roof now genuinely differ per archetype** (this
+session, direct follow-up: the previous session's size-only scaling fix
+"didn't look very different" since early buildings are close enough in
+size that the difference wasn't visible -- shape and material read
+immediately regardless of size, so that's the lever pulled this time).
+`spawnConstructionSite()` now classifies each build into one of 4
+archetype groups (house / shop / industrial (warehouse, factory) /
+vertical (office, tower)) and gives each a genuinely different wall
+shape+material and roof shape+material during the walls/roof
+construction phases (which together span over half the total build
+time): house keeps its gable roof + tan concrete walls; industrial gets
+a wider footprint + corrugated-metal walls and roof; vertical gets a
+narrower, taller-reading footprint + an emissive glass curtain-wall
+material (matching `createCurtainWallMaterial`, same one the finished
+office/tower buildings use) + a dark flat metal roof; shop keeps the
+previous generic box/metal-roof default. Verified programmatically
+(material color/metalness/emissive and geometry width/roof-geometry-type
+compared across all 4 groups -- confirmed genuinely distinct, not just
+recolored) rather than via screenshots, which kept framing the wrong
+part of the map due to the animate() loop's own `controls.update()`
+continuously re-deriving camera position from OrbitControls' damped
+internal state, fighting any one-off camera repositioning done for a
+screenshot. Re-ran the full regression suite (boot, full purchase→
+complete lifecycle, camera-follow/growth-reveal/label-scale, milestone
+banner) with zero new failures.
+
 **Benches/signposts/lamps sitting on the road** (this session, direct
 user report: "скамейки на самих дорогах стоят"). Root cause:
 `createRoadsideDetails()` and the lamp-scattering loop anchored their
