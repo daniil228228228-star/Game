@@ -287,6 +287,44 @@ tracks progress against.
   ("Build Speed 1/3") can render partially off the left edge of the
   viewport. Both predate this session.
 
+### 2026-09-20 — Three direct user-reported fixes: camera follow, construction reveal, label overflow
+- **Joystick camera auto-follow**: `updatePlayer()` now interpolates the
+  camera's azimuth around the player toward "directly behind the player's
+  facing direction" every frame while the joystick is actively pushed and
+  the player is moving, instead of only translating camera position (which
+  never changed the *viewing angle*, making it uncomfortable to walk and
+  steer at the same time). Idle-joystick free-look (drag/OrbitControls)
+  is untouched.
+- **Construction reveal is no longer a slow "grow"**: the building mesh
+  used to scale/fade in gradually from phase 3 onward, so the finished
+  house appeared to inflate out of the ground well before its real
+  textures showed up. Now the mesh stays fully hidden through phase 4
+  (frame/walls/roof — the crane/scaffolding/fence visuals already carry
+  the "under construction" read) and only reveals in the last 12% of
+  build time (phase 5, finish) with a quick ease-out-cubic pop, so
+  geometry and textures appear together in one beat.
+- **Label overflow on mobile fixed**: reduced every label sprite's
+  `.scale.set()` by ~0.68x across all ~9 call sites (sawmill dropoff,
+  field-upgrade pads, construction-site phase label, building upgrade
+  pad, lift/delivery vehicle status labels, `makeLabelSprite`'s internal
+  default, the main gold build-pad label), preserving aspect ratio, and
+  fixed a stale hardcoded `regenerateSprite(..., 1.15)` override in
+  `applyLanguage()` that had drifted from the creation-time value. Root
+  cause (found in a prior session) was sprite *world-space* scale being
+  too large relative to the visible viewport at close camera distances on
+  narrow portrait screens, not the font-fitting logic.
+- Verified with a headless-browser pass: 90 simulated frames of held-
+  joystick turning show the camera azimuth converging from a 2.7 rad
+  offset down to 0.005 rad behind the player; sampled construction-mesh
+  visibility/scale across the full build timeline confirms it stays
+  hidden through phase 4 and only pops in during phase 5; a close-up
+  screenshot of a field-upgrade label at the same tight camera distance
+  that previously clipped now fits cleanly. Re-ran the pinch-zoom and
+  boot regression tests with zero new console errors.
+- Updated `TYCOON_V19_PLAN.md`: added a "What recent sessions added"
+  entry, upgraded item 23 (label auto-fit) to `[x]` with the corrected
+  root-cause note, and item 24 (camera tuning) to `[~]`.
+
 ---
 
 ## Format for new entries

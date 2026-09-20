@@ -100,6 +100,54 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Three direct user-reported fixes this session** (real gameplay feedback,
+not a plan-list item): (1) **joystick-driven camera auto-follow** --
+`updatePlayer()`'s camera-follow tail used to translate the camera by the
+player's per-frame delta only, so the camera's *viewing angle* never
+changed while walking (uncomfortable per the user: "неудобно ходить").
+Now, while the joystick is actively pushed (`joyMag > 0.08`) and the
+player is moving, the camera's XZ offset from the player is reinterpreted
+as a spherical azimuth around a fixed radius, and that azimuth is
+interpolated (shortest-path, `atan2(sin(da), cos(da))`, rate `dt * 2.6`)
+toward "directly behind the player's facing direction"
+(`player.rotation.y + Math.PI`) every frame, before `controls.update()`
+runs. Falls back to the old plain-translation behavior when the joystick
+is idle/centered, so free-look via drag/OrbitControls when standing still
+is untouched. (2) **Construction "growing" look fixed** -- the building
+mesh used to fade/scale in gradually across phases 3-5 (frame through
+finish), which read as the finished house slowly inflating out of the
+ground the moment the frame went up, well before its real textures
+appeared -- the user specifically flagged this as looking unnatural. Now
+`growingMeshes` stays fully invisible through phase 4 (frame/walls/roof,
+crane+scaffolding+fence visuals carry all the "under construction" read
+instead) and only reveals in phase 5 (finish, last 12% of build time)
+with a quick ease-out-cubic pop (`scale` 0.92->1.0 on Y, 0.97->1.0 on
+XZ) -- textures and geometry appear together in one beat instead of a
+long slow grow. (3) **Label overflow on mobile fixed** -- root-caused (in
+a prior session) to label *sprite* world-space scale being too large
+relative to the visible viewport width at typical close-up camera
+distances on narrow portrait screens, not a font-fitting bug. Reduced
+every label sprite's `.scale.set()` by ~0.68x across all ~9 creation/
+regeneration call sites (sawmill dropoff, field-upgrade pads x2,
+construction-site phase label, building upgrade pad, lift/delivery
+vehicle status labels, `makeLabelSprite`'s internal default, the main
+gold build-pad label) while preserving each one's aspect ratio, and fixed
+one stale hardcoded `regenerateSprite(..., 1.15)` scaleY override in
+`applyLanguage()` that had drifted out of sync with its creation-time
+value (now `0.82`, matching the upgrade-pad's new scale).
+
+Verified with a headless-browser pass: simulated 90 frames of joystick-
+held movement with the player turning and confirmed the camera's azimuth
+converges from a 2.7 rad offset down to 0.005 rad behind the player;
+sampled `growingMeshes` visibility/scale across the full 0-1 construction
+timeline and confirmed the mesh stays hidden through t=0.85 (end of
+phase 4) and only appears at t=0.9+ with the new narrow scale range;
+confirmed the new label scales are applied and took a close-up screenshot
+of a field-upgrade label at the same tight camera distance that
+previously showed real clipping -- text now fits cleanly inside the
+viewport. Re-ran the pinch-zoom-fix and boot regression tests with zero
+new console errors.
+
 **Delivery-vehicle status labels now name the target building** (this
 session, spec item from the "suggested next slice" list). Previously
 both the delivery truck and the lift showed a generic secondary line
@@ -512,9 +560,14 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
       session flagged were re-audited and downgraded (see note above, not
       real issues); general responsive polish beyond that pair not
       exhaustively re-checked.
-- [x] **3D label auto-fit** (section 23) — already implemented generically.
-- [ ] **Camera tuning** (section 24) — default follow-cam distance/angle
-      not specifically re-tuned against the spec's "mobile tycoon" feel.
+- [x] **3D label auto-fit** (section 23) — font-fit logic was already
+      correct; the real overflow bug was label *sprite world-scale* being
+      too large for close-up mobile viewports, fixed this session (see
+      note above) by shrinking every label sprite's scale ~0.68x.
+- [~] **Camera tuning** (section 24) — this session added joystick-driven
+      camera auto-follow (camera azimuth now turns to stay behind the
+      player while actively steering, per direct user feedback); default
+      follow distance/angle constants themselves not further re-tuned.
 - [~] **Lighting** (section 25) — sun/hemisphere/fog present in screenshots;
       not specifically audited against bloom/tone-mapping asks.
 - [~] **Effects** (section 26) — particle bursts, smoke, sawmill dust seen;

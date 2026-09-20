@@ -1482,7 +1482,7 @@ function createSawmillDropoff() {
     lang === 'ru' ? 'Принеси брёвна сюда' : 'Bring logs here',
   ]);
   label.position.y = 2.6;
-  label.scale.set(3.05, 1.22, 1);
+  label.scale.set(2.07, 0.83, 1);
   group.add(label);
   group.position.copy(SAWMILL_DROPOFF_POS);
   scene.add(group);
@@ -1516,7 +1516,7 @@ function refreshFieldUpgradePad(pad) {
   const lines = fieldUpgradeLabelLines(pad.cfg);
   const newSprite = regenerateSprite(pad.sprite, lines);
   newSprite.position.y = 2.55;
-  newSprite.scale.set(3.0, 1.2, 1);
+  newSprite.scale.set(2.05, 0.82, 1);
   pad.group.remove(pad.sprite);
   pad.group.add(newSprite);
   pad.sprite = newSprite;
@@ -1546,7 +1546,7 @@ function createFieldUpgradePads() {
     group.add(icon);
     const sprite = makeLabelSprite(fieldUpgradeLabelLines(cfg));
     sprite.position.y = 2.55;
-    sprite.scale.set(3.0, 1.2, 1);
+    sprite.scale.set(2.05, 0.82, 1);
     group.add(sprite);
     group.position.copy(cfg.pos);
     scene.add(group);
@@ -3212,7 +3212,7 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
 
   const phaseLabel = makeLabelSprite([lang === 'ru' ? 'ПОДГОТОВКА' : 'SITE PREP', '0%']);
   phaseLabel.position.set(0, 3.0, 0);
-  phaseLabel.scale.set(2.35, 0.92, 1);
+  phaseLabel.scale.set(1.6, 0.63, 1);
   group.add(phaseLabel);
 
   group.position.copy(pos);
@@ -3424,7 +3424,7 @@ function spawnUpgradePad(entry) {
         `${fmt(buildingUpgradeCost(entry.index, entry.level))} 💰  •  ${upgradeWood} 🪵`,
       ]);
       sprite.position.y = 2.6;
-      sprite.scale.set(2.95, 1.2, 1);
+      sprite.scale.set(2.0, 0.82, 1);
       group.add(sprite);
       primarySprite = sprite;
     } else {
@@ -3893,7 +3893,7 @@ function createWorkLift(color = 0x5ab0ff) {
 
   const label = makeLabelSprite([lang === 'ru' ? 'ПОДЪЁМНИК' : 'LIFT', lang === 'ru' ? 'ожидает задачу' : 'waiting']);
   label.position.set(0, 3.15, 0);
-  label.scale.set(1.9, 0.76, 1);
+  label.scale.set(1.33, 0.53, 1);
   group.add(label);
   group.userData.statusSprite = label;
   group.userData.liftArms = lowerPivot;
@@ -4098,7 +4098,7 @@ function spawnAmbientLife() {
   delivery.position.copy(delivery.userData.home);
   const deliveryLabel = makeLabelSprite([lang === 'ru' ? 'МАТЕРИАЛЫ' : 'MATERIALS', lang === 'ru' ? 'на базе' : 'at base']);
   deliveryLabel.position.set(0, 1.95, 0);
-  deliveryLabel.scale.set(1.9, 0.78, 1);
+  deliveryLabel.scale.set(1.33, 0.55, 1);
   delivery.add(deliveryLabel);
   delivery.userData.statusSprite = deliveryLabel;
   scene.add(delivery);
@@ -4260,7 +4260,7 @@ function makeLabelSprite(lines) {
   texture.magFilter = THREE.LinearFilter;
   const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(3.75, safeLines.length >= 3 ? 1.78 : 1.54, 1);
+  sprite.scale.set(2.55, safeLines.length >= 3 ? 1.21 : 1.05, 1);
   sprite.renderOrder = 10;
   return sprite;
 }
@@ -4307,7 +4307,7 @@ function spawnPad(index) {
 
   const sprite = makeLabelSprite([`${stage.emoji} ${stageName(stage)}`, `${fmt(stage.cost)} 💰  •  ${buildingPlankCost(index)} 🪵`]);
   sprite.position.y = 6.9;
-  sprite.scale.set(4.0, 1.62, 1);
+  sprite.scale.set(2.72, 1.1, 1);
   group.add(sprite);
 
   group.position.set(pos.x, 0, pos.z);
@@ -4659,7 +4659,7 @@ function applyLanguage() {
     const sprite = regenerateSprite(b.upgradePad.sprite, [
       t('upgrade_level_line', { level: b.level + 1 }),
       `${fmt(buildingUpgradeCost(b.index, b.level))} 💰  •  ${buildingUpgradePlankCost(b.index, b.level)} 🪵`,
-    ], 1.15);
+    ], 0.82);
     b.upgradePad.group.remove(b.upgradePad.sprite);
     b.upgradePad.group.add(sprite);
     b.upgradePad.sprite = sprite;
@@ -5009,8 +5009,37 @@ function updatePlayer(dt) {
   // on every call. Since target now teleports to the player each frame, the camera must be
   // shifted by the exact same delta first — otherwise the offset (and thus distance) balloons
   // every frame until it's clamped at maxDistance, leaving the camera stranded far behind.
-  camera.position.x += player.position.x - prevX;
-  camera.position.z += player.position.z - prevZ;
+  //
+  // While actively steering with the touch joystick specifically (not keyboard, where players
+  // expect independent mouse-look), also auto-rotate the camera to settle in behind the
+  // player's current facing direction -- user feedback: turning the joystick without the
+  // camera following was awkward to play, since the view stays wherever it was last dragged
+  // while the player runs off in a new direction. Recompute the camera's XZ offset from its
+  // own current azimuth (relative to the OLD player position) directly at the new azimuth
+  // instead of a plain translation, which folds the follow-behind rotation and the usual
+  // per-frame position shift into one step -- doing both separately would double-count the
+  // player's movement delta.
+  const joyMag = Math.hypot(joyVec.x, joyVec.z);
+  if (moving && joyMag > 0.08) {
+    const offX = camera.position.x - prevX;
+    const offZ = camera.position.z - prevZ;
+    const radiusXZ = Math.hypot(offX, offZ);
+    if (radiusXZ > 0.0001) {
+      const currentAzimuth = Math.atan2(offX, offZ);
+      const targetAzimuth = player.rotation.y + Math.PI; // camera sits behind the player
+      let da = targetAzimuth - currentAzimuth;
+      da = Math.atan2(Math.sin(da), Math.cos(da));
+      const newAzimuth = currentAzimuth + da * Math.min(1, dt * 2.6);
+      camera.position.x = player.position.x + Math.sin(newAzimuth) * radiusXZ;
+      camera.position.z = player.position.z + Math.cos(newAzimuth) * radiusXZ;
+    } else {
+      camera.position.x += player.position.x - prevX;
+      camera.position.z += player.position.z - prevZ;
+    }
+  } else {
+    camera.position.x += player.position.x - prevX;
+    camera.position.z += player.position.z - prevZ;
+  }
   controls.target.set(player.position.x, PLAYER_EYE_HEIGHT, player.position.z);
 }
 
@@ -5032,27 +5061,22 @@ function animate() {
     const phase = constructionPhaseIndex(t);
     build.phase = phase;
 
-    // The finished building no longer grows from a paper-thin point. It only appears once
-    // the structural shell exists, then gains height as walls/roof/finishing are completed.
-    if (phase < 3) {
+    // The finished building stays hidden through prep/foundation/frame/walls/roof -- that's
+    // what the scaffolding, crane and site props are for, and they already read as "under
+    // construction" on their own. It only appears during the finishing phase, with a short,
+    // snappy ease-out settle (not a slow multi-phase inflate) -- user feedback: watching the
+    // real building visibly balloon up from ~40% height alongside the scaffolding for nearly
+    // half the build time looked unnatural, like the house was just "growing." Confining the
+    // reveal to the last ~12% of build time and narrowing the scale range (0.92->1 instead of
+    // 0.38->1) makes it read as the building *completing*, not inflating.
+    if (phase < 5) {
       build.mesh.visible = false;
     } else {
       build.mesh.visible = true;
-      let sy = 0.48;
-      let sxz = 0.96;
-      if (phase === 3) {
-        const k = THREE.MathUtils.clamp((t - 0.52) / 0.20, 0, 1);
-        sy = 0.38 + 0.28 * k;
-        sxz = 0.95 + 0.02 * k;
-      } else if (phase === 4) {
-        const k = THREE.MathUtils.clamp((t - 0.72) / 0.16, 0, 1);
-        sy = 0.66 + 0.22 * k;
-        sxz = 0.97 + 0.02 * k;
-      } else {
-        const k = THREE.MathUtils.clamp((t - 0.88) / 0.12, 0, 1);
-        sy = 0.88 + 0.12 * k;
-        sxz = 0.99 + 0.01 * k;
-      }
+      const k = THREE.MathUtils.clamp((t - 0.88) / 0.12, 0, 1);
+      const ease = 1 - Math.pow(1 - k, 3); // ease-out cubic: fast start, gentle settle
+      const sy = 0.92 + 0.08 * ease;
+      const sxz = 0.97 + 0.03 * ease;
       build.mesh.scale.set(sxz, sy, sxz);
     }
 
