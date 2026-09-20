@@ -620,6 +620,17 @@ let cityState = {
     business:{ schoolBuilt:false, pendingUntil:0, pos:null },
     waterfront:{ schoolBuilt:false, pendingUntil:0, pos:null },
   },
+  // v31 Stage B slice 4 ("городская инфраструктура"): fourth and last planned civic building,
+  // a park. Same "every district including industrial" reach and own top-level per-district
+  // object as clinic/police/school above -- but deliberately NOT a new districtStats field
+  // (see updateDistrictStats()): a park's whole point is satisfaction, so it boosts that
+  // existing stat much more strongly instead of cloning a fourth near-identical 0-100 field.
+  park:{
+    suburb:{ parkBuilt:false, pendingUntil:0, pos:null },
+    industrial:{ parkBuilt:false, pendingUntil:0, pos:null },
+    business:{ parkBuilt:false, pendingUntil:0, pos:null },
+    waterfront:{ parkBuilt:false, pendingUntil:0, pos:null },
+  },
   initiative:null,
   initiativesCompleted:0,
   marketIndex:0,
@@ -8493,6 +8504,7 @@ function applyLanguage() {
   if (typeof refreshCivicWorld === 'function') refreshCivicWorld();
   if (typeof refreshPoliceWorld === 'function') refreshPoliceWorld();
   if (typeof refreshSchoolWorld === 'function') refreshSchoolWorld();
+  if (typeof refreshParkWorld === 'function') refreshParkWorld();
   if (typeof cityOverlay !== 'undefined' && cityOverlay?.classList.contains('show')) renderCityPanel();
   if (operationsOverlay?.classList.contains('show')) renderOperationsPanel();
 }
@@ -8588,7 +8600,7 @@ const CITY_INITIATIVES = [
   { id:'modernization', emoji:'⬆️', kind:'upgrades', unlockRep:75, baseTarget:5, reward:5600, rep:27, ru:'Модернизация портфеля', en:'Portfolio Modernization', descRu:'Прокачай существующие объекты', descEn:'Upgrade existing properties' },
   { id:'flagship', emoji:'🏗️', kind:'strategic', unlockRep:120, baseTarget:1, reward:8000, rep:36, ru:'Флагманский проект', en:'Flagship Project', descRu:'Заверши спецпроект или крупный тендер', descEn:'Complete a special project or major tender' },
 ];
-const cityWorldRuntime = { hubs:new Map(), residential:new Map(), civic:new Map(), police:new Map(), school:new Map() }; // residential/civic/police/school: districtId -> mesh
+const cityWorldRuntime = { hubs:new Map(), residential:new Map(), civic:new Map(), police:new Map(), school:new Map(), park:new Map() }; // residential/civic/police/school/park: districtId -> mesh
 function districtLevel(id){ return Math.max(0,Math.min(3,Math.floor(Number(cityState?.districts?.[id])||0))); }
 function currentClientTier(){ let tier=CLIENT_TIERS[0]; for(const t of CLIENT_TIERS) if(cityState.reputation>=t.rep) tier=t; return tier; }
 function districtUnlocked(cfg){ return districtLevel(cfg.id)>0 || (cityState.reputation>=cfg.unlockRep && companyTierIndex()>=cfg.unlockTier); }
@@ -8797,6 +8809,7 @@ function updateDistrictStats(){
     const hasClinic = districtHasClinic(cfg.id);
     const hasPolice = districtHasPolice(cfg.id);
     const hasSchool = districtHasSchool(cfg.id);
+    const hasPark = districtHasPark(cfg.id);
     let target = 38 + lvl*14;
     if (HOUSING_DISTRICT_IDS.includes(cfg.id)) {
       const cap = districtHousingCapacity(cfg.id);
@@ -8806,6 +8819,8 @@ function updateDistrictStats(){
       // police station adds the same +0.5x bonus, and stacks additively with the clinic (both
       // built = 2x base rate). Stage B slice 3: a built school adds a third +0.5x term, stacking
       // the same way (all three built = 2.5x base rate) rather than any one capping the total.
+      // Deliberately no `hasPark` term here -- see the slice-4 comment below the satisfaction
+      // bumps for why the park is kept out of the growth-speed formula on purpose.
       const growthMult = 1 + (hasClinic?0.5:0) + (hasPolice?0.5:0) + (hasSchool?0.5:0);
       const growthRate = 0.15 * growthMult;
       const gap = cap - ds.population;
@@ -8819,6 +8834,14 @@ function updateDistrictStats(){
     if (hasClinic) target += 16; // healthcare directly lifts satisfaction too
     if (hasPolice) target += 14; // and so does public safety, a slightly smaller bump than health
     if (hasSchool) target += 15; // and so does education, between health and safety's bumps
+    // Stage B slice 4: the park is deliberately NOT a fourth "hasX -> +0.5 growth speed" term and
+    // does NOT get its own districtStats field (no `greenery`/`environment`) -- three
+    // near-identical 0-100 stats in a row was already the risk flagged for this slice. A park's
+    // whole point is quality of life, so instead it gives satisfaction a much bigger, standalone
+    // bump than any of the other three (+30 vs their +14..+16) and stays out of population growth
+    // speed entirely -- a genuinely different lever (happiness, not growth), not a fourth copy of
+    // the same "build it, get +X to a bar" pattern.
+    if (hasPark) target += 30;
     totalPopulation += ds.population;
     target = THREE.MathUtils.clamp(target, 0, 100);
     ds.satisfaction = THREE.MathUtils.clamp(ds.satisfaction + (target-ds.satisfaction)*0.2, 0, 100);
@@ -8843,6 +8866,7 @@ function updatePopulation(){
   updateCivicLabel();
   updatePoliceLabel();
   updateSchoolLabel();
+  updateParkLabel();
   updateHUD();
 }
 
@@ -8914,7 +8938,20 @@ function renderCityPanel(){
         schoolLine=`<div class="resourceLine">${districtCostText(scost)}</div><button class="v30Btn ${saffordable?'primary':''}" data-school="${cfg.id}" ${!saffordable?'disabled':''}>${lang==='ru'?'Построить школу':'Build school'}</button>`;
       }
     }
-    return `<div class="cityCard ${!unlocked?'locked':''} ${maxed?'maxed':''}"><div class="name">${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}</div><div class="desc">${lang==='ru'?cfg.bonusRu:cfg.bonusEn}</div><div class="status">${unlocked?(lang==='ru'?`Уровень ${lv}/3`:`Level ${lv}/3`):`🔒 ${lock}`}</div>${statsLine}${housingLine}${civicLine}${policeLine}${schoolLine}${!maxed&&unlocked?`<div class="resourceLine">${districtCostText(cost)}</div><button class="v30Btn ${affordable?'primary':''}" data-district="${cfg.id}" ${!affordable?'disabled':''}>${lang==='ru'?'Развить':'Upgrade'}</button>`:maxed?`<button class="v30Btn" disabled>✓ MAX</button>`:''}</div>`;
+    let parkLine='';
+    if (unlocked) {
+      const pk=cityState.park[cfg.id];
+      if (pk.parkBuilt) {
+        parkLine=`<div class="status">🌳 ${lang==='ru'?'Парк разбит':'Park built'}</div>`;
+      } else if (pk.pendingUntil>0) {
+        const buildLeft=Math.max(0,Math.ceil((pk.pendingUntil-Date.now())/1000));
+        parkLine=`<div class="status">🏗️ ${lang==='ru'?'Озеленение идёт':'Landscaping underway'} · ⏱ ${buildLeft}${lang==='ru'?'с':'s'}</div>`;
+      } else {
+        const pkcost=parkBuildCost(); const pkaffordable=canPayResources(pkcost);
+        parkLine=`<div class="resourceLine">${districtCostText(pkcost)}</div><button class="v30Btn ${pkaffordable?'primary':''}" data-park="${cfg.id}" ${!pkaffordable?'disabled':''}>${lang==='ru'?'Разбить парк':'Build park'}</button>`;
+      }
+    }
+    return `<div class="cityCard ${!unlocked?'locked':''} ${maxed?'maxed':''}"><div class="name">${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}</div><div class="desc">${lang==='ru'?cfg.bonusRu:cfg.bonusEn}</div><div class="status">${unlocked?(lang==='ru'?`Уровень ${lv}/3`:`Level ${lv}/3`):`🔒 ${lock}`}</div>${statsLine}${housingLine}${civicLine}${policeLine}${schoolLine}${parkLine}${!maxed&&unlocked?`<div class="resourceLine">${districtCostText(cost)}</div><button class="v30Btn ${affordable?'primary':''}" data-district="${cfg.id}" ${!affordable?'disabled':''}>${lang==='ru'?'Развить':'Upgrade'}</button>`:maxed?`<button class="v30Btn" disabled>✓ MAX</button>`:''}</div>`;
   }).join('');
   document.getElementById('initiativeTitle').textContent=lang==='ru'?'Стратегический проект':'Strategic Initiative';
   const active=cityState.initiative,progress=cityInitiativeProgress();
@@ -8931,6 +8968,7 @@ function renderCityPanel(){
   document.querySelectorAll('[data-civic]').forEach(b=>b.onclick=()=>buildCivicBuilding(b.dataset.civic));
   document.querySelectorAll('[data-police]').forEach(b=>b.onclick=()=>buildPoliceStation(b.dataset.police));
   document.querySelectorAll('[data-school]').forEach(b=>b.onclick=()=>buildSchool(b.dataset.school));
+  document.querySelectorAll('[data-park]').forEach(b=>b.onclick=()=>buildPark(b.dataset.park));
 }
 const cityOverlay=document.getElementById('cityOverlay');
 document.getElementById('openCityBtn')?.addEventListener('click',()=>{renderCityPanel();cityOverlay.classList.add('show');});
@@ -8989,6 +9027,28 @@ function updateCityExpansion(dt){
       renderSystemsPanel(); save();
     }
   }
+  for (const districtId of PARK_DISTRICT_IDS) {
+    const pk = cityState.park[districtId];
+    if (pk.pendingUntil>0 && Date.now()>=pk.pendingUntil) {
+      pk.pendingUntil=0; pk.parkBuilt=true;
+      // Defensive cleanup: the landscaping site's own visual progress (parkSites, dt-accumulated
+      // per animate() frame) and this wall-clock pendingUntil check normally finish within the
+      // same instant, but under a badly throttled frame rate they can drift out of sync -- force
+      // the in-progress landscaping rig gone the moment the real park appears, so the two never
+      // visibly overlap (a stale "LANDSCAPING X%" label floating over the finished park).
+      const staleSite = parkSiteByDistrict.get(districtId);
+      if (staleSite) {
+        const idx = parkSites.indexOf(staleSite);
+        if (idx>=0) { scene.remove(staleSite.group); disposeObject3D(staleSite.group); parkSites.splice(idx,1); }
+        parkSiteByDistrict.delete(districtId);
+      }
+      refreshParkWorld();
+      const pkp=pk.pos; if(pkp) spawnBurst(new THREE.Vector3(pkp.x,0,pkp.z), 0x6fcf6f);
+      sfx.achievement(); haptic('heavy'); triggerImpactFlash(.22);
+      toast(lang==='ru'?`🌳 Разбит: ${PARK_BUILDING.ru}! Довольство района заметно растёт.`:`🌳 Built: ${PARK_BUILDING.en}! District satisfaction rises noticeably.`);
+      renderSystemsPanel(); save();
+    }
+  }
   updatePopulation();
   if(cityOverlay?.classList.contains('show'))renderCityPanel();
 }
@@ -9015,16 +9075,17 @@ const CLINIC_BUILDING = {
 const CIVIC_DISTRICT_IDS = CITY_DISTRICTS.map(d=>d.id);
 function civicBuildCost(){ return { money:CLINIC_BUILDING.costMoney, wood:CLINIC_BUILDING.costWood, concrete:CLINIC_BUILDING.costConcrete, metal:0 }; }
 function districtHasClinic(districtId){ return !!cityState.civic[districtId]?.clinicBuilt; }
-// Union of every already-placed (or pending) residential + civic + police + school building
-// position, so a new building never lands on top of another one -- generalizes the
+// Union of every already-placed (or pending) residential + civic + police + school + park
+// building position, so a new building never lands on top of another one -- generalizes the
 // BUILDING_CLEAR distance check residentialBuildingPosition() already uses for
 // residential-vs-residential.
-function occupiedBuildingPositions(excludeCivicDistrict, excludePoliceDistrict, excludeSchoolDistrict){
+function occupiedBuildingPositions(excludeCivicDistrict, excludePoliceDistrict, excludeSchoolDistrict, excludeParkDistrict){
   const positions=[];
   for (const id of HOUSING_DISTRICT_IDS){ const p=cityState.housing[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
   for (const id of CIVIC_DISTRICT_IDS){ if (id===excludeCivicDistrict) continue; const p=cityState.civic[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
   for (const id of POLICE_DISTRICT_IDS){ if (id===excludePoliceDistrict) continue; const p=cityState.police[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
   for (const id of SCHOOL_DISTRICT_IDS){ if (id===excludeSchoolDistrict) continue; const p=cityState.school[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
+  for (const id of PARK_DISTRICT_IDS){ if (id===excludeParkDistrict) continue; const p=cityState.park[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
   return positions;
 }
 function civicBuildingPosition(districtId){
@@ -9294,6 +9355,234 @@ function buildSchool(districtId){
 }
 
 /* ---------------------------------------------------------------------- */
+/*  v31 STAGE B SLICE 4 — "городская инфраструктура": fourth and last planned */
+/*  civic building of this stage, a park. Same district reach as the other    */
+/*  three (every district including industrial), same cost/placement pipeline */
+/*  (ring-search + distToNearestRoadSegment clearance + occupiedBuildingPositions */
+/*  overlap check), but deliberately DIFFERENT in the two ways that matter     */
+/*  most: (1) visually it is not a fourth colored box -- it reuses the         */
+/*  existing tree/bush/bench helpers (makeTree/makeBush/makeBench, the same    */
+/*  ones the roadside scenery and the pre-existing "City Park" SPECIAL_PROJECT */
+/*  landmark already use) to build an actual green space -- a lawn disc, a     */
+/*  small pond, trees around the edge, benches -- with NO createBuildingMesh() */
+/*  call at all; (2) its construction isn't spawnConstructionSite()'s crane/   */
+/*  scaffolding rig (which would look absurd for landscaping a lawn) -- it     */
+/*  gets its own much simpler "landscaping site" animation (spawnParkSite() /  */
+/*  updateParkSites()): tilled soil that fills in with sod tiles and a rolled- */
+/*  turf pallet that shrinks as it's used, no crane, no walls, no roof. Real,  */
+/*  measurable effect: see the comment above `if (hasPark) target += 30;` in   */
+/*  updateDistrictStats() -- a much bigger, standalone satisfaction bump       */
+/*  instead of a fourth districtStats field or a fourth growth-speed term.     */
+/* ---------------------------------------------------------------------- */
+const PARK_BUILDING = {
+  id:'district_park', ru:'Парк', en:'Park', emoji:'🌳',
+  color:0x5b9348, lawnRadius:2.6,
+  costMoney:850, costWood:5, costConcrete:1, buildDuration:4.5,
+};
+// Note: deliberately NOT reusing the id 'park' -- SPECIAL_PROJECTS already has an unrelated
+// one-off fixed-position landmark with that id (see createSpecialProjectLandmark()). Different
+// system, different state object (cityState.park vs specialProjectState), so there's no actual
+// collision, but 'district_park' keeps the two easy to tell apart when grepping.
+const PARK_DISTRICT_IDS = CITY_DISTRICTS.map(d=>d.id);
+function parkBuildCost(){ return { money:PARK_BUILDING.costMoney, wood:PARK_BUILDING.costWood, concrete:PARK_BUILDING.costConcrete, metal:0 }; }
+function districtHasPark(districtId){ return !!cityState.park[districtId]?.parkBuilt; }
+function parkBuildingPosition(districtId){
+  const hub = CITY_DISTRICTS.find(d=>d.id===districtId)?.pos || new THREE.Vector3(0,0,0);
+  // A park's lawn footprint (radius ~2.6-2.8 with trees) is wider than the other three
+  // buildings' ~1.2-1.3 half-size, so it gets its own larger road/hub clearance -- the shared
+  // BUILDING_CLEAR (6.0) passed to occupiedBuildingPositions still applies for building-vs-
+  // building spacing since that's a single distance check independent of footprint shape.
+  const ROAD_CLEAR = 3.2, HUB_CLEAR = 4.8, BUILDING_CLEAR = 6.0;
+  const otherPositions = occupiedBuildingPositions(undefined, undefined, undefined, districtId);
+  for (let ring=0; ring<6; ring++){
+    const radius = 6 + ring*2.4;
+    for (let k=0;k<12;k++){
+      // A fifth angle offset (beyond residentialBuildingPosition's and civic/police/school's)
+      // so a park built alongside housing/clinic/police/school in the same district doesn't
+      // compete for the same candidate ring spots.
+      const angle=(k/12)*Math.PI*2 + ring*0.37 + Math.PI/3;
+      const x=hub.x+Math.cos(angle)*radius, z=hub.z+Math.sin(angle)*radius;
+      if (Math.hypot(x,z) > GROUND_HALF-4) continue;
+      if (Math.hypot(x-hub.x,z-hub.z) < HUB_CLEAR) continue;
+      if (distToNearestRoadSegment(x,z) < ROAD_CLEAR) continue;
+      if (otherPositions.some(p=>Math.hypot(x-p.x,z-p.z) < BUILDING_CLEAR)) continue;
+      return new THREE.Vector3(x,0,z);
+    }
+  }
+  return new THREE.Vector3(hub.x+9,0,hub.z+9);
+}
+// The actual finished park -- a real green space, not a building archetype. Adapts the exact
+// recipe the pre-existing "City Park" special-project landmark already uses (lawn disc + a
+// few makeTree()s + makeBench()s, see createSpecialProjectLandmark()), plus a small pond for
+// visual variety so this doesn't read as a copy of that landmark.
+function createParkMesh(districtId){
+  const group = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(2.75, 2.85, 0.1, 28), new THREE.MeshStandardMaterial({ color: 0xcfc4af, roughness: 0.95 }));
+  base.position.y = 0.05;
+  base.receiveShadow = true;
+  group.add(base);
+  const lawn = new THREE.Mesh(new THREE.CylinderGeometry(PARK_BUILDING.lawnRadius, PARK_BUILDING.lawnRadius + 0.06, 0.08, 28), new THREE.MeshStandardMaterial({ color: PARK_BUILDING.color, roughness: 0.97 }));
+  lawn.position.y = 0.12;
+  lawn.receiveShadow = true;
+  group.add(lawn);
+  // A small pond off-center (not in the middle of the lawn), distinct from the special-project
+  // landmark's plain lamp-post centerpiece.
+  const pondRim = new THREE.Mesh(new THREE.CylinderGeometry(0.98, 1.04, 0.09, 22), new THREE.MeshStandardMaterial({ color: 0xb9ac8f, roughness: 0.9 }));
+  pondRim.position.set(0.95, 0.16, -0.55);
+  group.add(pondRim);
+  const pond = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.84, 0.05, 22), new THREE.MeshStandardMaterial({ color: 0x7fc2f0, roughness: 0.12, metalness: 0.06, transparent: true, opacity: 0.9 }));
+  pond.position.set(0.95, 0.22, -0.55);
+  group.add(pond);
+  // Trees around the edge, alternating species/size for a natural silhouette (same makeTree()
+  // helper used by every other tree in the game) -- explicitly not harvestable, this is
+  // ornamental park greenery, not the sawmill's wood source.
+  const treeSpots = [[-2.05,1.1],[1.85,1.55],[-1.55,-1.75],[1.7,-1.55],[-0.25,2.15]];
+  treeSpots.forEach(([tx,tz],i)=>{
+    const tree = makeTree({ species: i%2 ? 'deciduous':'conifer', size:'young' });
+    tree.userData.harvestableTree = false;
+    tree.scale.setScalar(0.5 + (i%3)*0.08);
+    tree.position.set(tx, 0.12, tz);
+    group.add(tree);
+    registerCameraFoliage(tree);
+  });
+  // A couple of bushes for ground-level texture, plus two benches facing the pond.
+  for (const [bx,bz] of [[-1.0,0.35],[0.35,1.7]]) {
+    const bush = makeBush();
+    bush.position.set(bx, 0.12, bz);
+    bush.scale.setScalar(0.75);
+    group.add(bush);
+    registerCameraFoliage(bush);
+  }
+  for (const a of [0.55, Math.PI+0.35]) {
+    const bench = makeBench();
+    bench.position.set(Math.cos(a)*1.55, 0.12, Math.sin(a)*1.55 - 0.55);
+    bench.rotation.y = -a;
+    group.add(bench);
+  }
+  const ds = cityState.districtStats[districtId] || { satisfaction:50 };
+  const label = makeLabelSprite([
+    `${PARK_BUILDING.emoji} ${lang==='ru'?PARK_BUILDING.ru:PARK_BUILDING.en}`,
+    `${lang==='ru'?'ДОВОЛЬСТВО':'SATISFACTION'} ${Math.round(ds.satisfaction)}%`,
+  ]);
+  label.position.set(0, 2.2, 0);
+  label.scale.set(1.7, 0.68, 1);
+  group.add(label);
+  group.userData.parkLabel = label;
+  group.userData.parkDistrict = districtId;
+  return group;
+}
+function refreshParkWorld(){
+  for (const districtId of PARK_DISTRICT_IDS) {
+    const old = cityWorldRuntime.park.get(districtId);
+    if (old) { scene.remove(old); disposeObject3D(old); cityWorldRuntime.park.delete(districtId); }
+    const pk = cityState.park[districtId];
+    if (!pk?.parkBuilt) continue;
+    const saved = pk.pos;
+    const pos = (saved && Number.isFinite(saved.x) && Number.isFinite(saved.z)) ? new THREE.Vector3(saved.x,0,saved.z) : parkBuildingPosition(districtId);
+    const mesh = createParkMesh(districtId);
+    mesh.position.set(pos.x, 0, pos.z);
+    scene.add(mesh);
+    cityWorldRuntime.park.set(districtId, mesh);
+  }
+  refreshCameraSolidMeshes();
+}
+function updateParkLabel(){
+  for (const [districtId, mesh] of cityWorldRuntime.park) {
+    if (!mesh.userData.parkLabel) continue;
+    const ds = cityState.districtStats[districtId] || { satisfaction:50 };
+    updateLabelSprite(mesh.userData.parkLabel, [
+      `${PARK_BUILDING.emoji} ${lang==='ru'?PARK_BUILDING.ru:PARK_BUILDING.en}`,
+      `${lang==='ru'?'ДОВОЛЬСТВО':'SATISFACTION'} ${Math.round(ds.satisfaction)}%`,
+    ]);
+  }
+}
+// Lightweight "landscaping in progress" visual, separate from spawnConstructionSite()'s
+// crane/scaffolding rig on purpose -- a park isn't a building going up floor by floor, it's
+// turf being laid. Tilled soil under a stake perimeter fills in with sod tiles as a shrinking
+// pallet of rolled turf gets used, then the whole rig is swapped for the real createParkMesh()
+// park once cityState.park[id].pendingUntil actually elapses (see the PARK_DISTRICT_IDS loop
+// in updateCityExpansion(), same "visual timer separate from wall-clock completion" split the
+// crane rig already uses for the other three building types).
+const parkSites = [];
+// Maps districtId -> its in-progress landscaping site, purely for the defensive cleanup below --
+// NOT persisted (cityState.park only stores pendingUntil/pos, never a THREE object reference).
+const parkSiteByDistrict = new Map();
+function spawnParkSite(pos, duration){
+  const group = new THREE.Group();
+  const soil = new THREE.Mesh(new THREE.CylinderGeometry(2.7, 2.8, 0.1, 28), new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.98 }));
+  soil.position.y = 0.05;
+  group.add(soil);
+  const stakeMat = new THREE.MeshStandardMaterial({ color: 0xd8d8d8, roughness: 0.7 });
+  for (let i=0;i<4;i++){
+    const a = (i/4)*Math.PI*2 + 0.4;
+    const stake = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.55,6), stakeMat);
+    stake.position.set(Math.cos(a)*2.85, 0.27, Math.sin(a)*2.85);
+    group.add(stake);
+  }
+  const sodStack = new THREE.Group();
+  const sodMat = new THREE.MeshStandardMaterial({ color: 0x4f8a3d, roughness: 0.9 });
+  for (let i=0;i<3;i++){
+    const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.55,10), sodMat);
+    roll.rotation.z = Math.PI/2;
+    roll.position.set(0, 0.22 + i*0.42, 0);
+    sodStack.add(roll);
+  }
+  sodStack.position.set(2.1, 0, -2.1);
+  group.add(sodStack);
+  const tileMat = new THREE.MeshStandardMaterial({ color: PARK_BUILDING.color, roughness: 0.95 });
+  const TILE_COUNT = 14;
+  const tiles = [];
+  for (let i=0;i<TILE_COUNT;i++){
+    const a = (i/TILE_COUNT)*Math.PI*2;
+    const r = 0.75 + (i%3)*0.55;
+    const tile = new THREE.Mesh(new THREE.BoxGeometry(0.55,0.06,0.55), tileMat);
+    tile.position.set(Math.cos(a)*r, 0.11, Math.sin(a)*r);
+    tile.rotation.y = Math.random()*0.3;
+    tile.visible = false;
+    group.add(tile);
+    tiles.push(tile);
+  }
+  const label = makeLabelSprite([lang==='ru'?'ОЗЕЛЕНЕНИЕ':'LANDSCAPING', '0%']);
+  label.position.set(0, 1.7, 0);
+  label.scale.set(1.5, 0.6, 1);
+  group.add(label);
+  group.position.copy(pos);
+  scene.add(group);
+  const site = { group, soil, tiles, sodStack, label, timer:0, duration };
+  parkSites.push(site);
+  return site;
+}
+function updateParkSites(dt){
+  for (let i=parkSites.length-1;i>=0;i--){
+    const site = parkSites[i];
+    site.timer += dt;
+    const t = Math.min(1, site.timer/site.duration);
+    const revealed = Math.floor(t*site.tiles.length);
+    for (let k=0;k<site.tiles.length;k++) site.tiles[k].visible = k<revealed;
+    const sodLeft = Math.max(0, 3 - Math.floor(t*3));
+    site.sodStack.children.forEach((r,idx)=>{ r.visible = idx<sodLeft; });
+    updateLabelSprite(site.label, [lang==='ru'?'ОЗЕЛЕНЕНИЕ':'LANDSCAPING', `${Math.round(t*100)}%`]);
+    if (t>=1){
+      scene.remove(site.group); disposeObject3D(site.group);
+      parkSites.splice(i,1);
+    }
+  }
+}
+function buildPark(districtId){
+  const pk = cityState.park[districtId]; if (!pk) return;
+  if (pk.parkBuilt || pk.pendingUntil>0) return;
+  const cost = parkBuildCost();
+  if (!tryPayResources(cost)) { sfx.error(); toast(lang==='ru'?'Не хватает ресурсов на парк':'Not enough resources for the park'); return; }
+  const pos = parkBuildingPosition(districtId);
+  pk.pos = { x:pos.x, z:pos.z };
+  parkSiteByDistrict.set(districtId, spawnParkSite(pos, PARK_BUILDING.buildDuration));
+  pk.pendingUntil = Date.now() + PARK_BUILDING.buildDuration*1000;
+  sfx.build(); haptic('medium'); triggerImpactFlash(.16);
+  toast(lang==='ru'?`🏗️ Озеленение начато: ${PARK_BUILDING.ru}`:`🏗️ Landscaping started: ${PARK_BUILDING.en}`);
+  renderCityPanel(); renderSystemsPanel(); save();
+}
+
+/* ---------------------------------------------------------------------- */
 /*  COMPASS — points at the next pad when it's off-screen                  */
 /* ---------------------------------------------------------------------- */
 const compassEl = document.getElementById('compass');
@@ -9432,7 +9721,7 @@ function save() {
   }));
   try {
     const payload = JSON.stringify({
-      saveVersion: 24, // v31 Stage B slice 3: cityState.school (per-district school) + districtStats[id].education
+      saveVersion: 25, // v31 Stage B slice 4: cityState.park (per-district park); no new districtStats field
       savedAt: Date.now(),
       money: finiteNonNegative(money),
       stageIndex: integerNonNegative(stageIndex),
@@ -9635,6 +9924,23 @@ function load() {
           pendingUntil: Number.isFinite(Number(sc.pendingUntil)) ? Math.max(0, Number(sc.pendingUntil)) : 0,
           pos: (scPos && Number.isFinite(Number(scPos.x)) && Number.isFinite(Number(scPos.z)))
             ? { x:Number(scPos.x), z:Number(scPos.z) } : null,
+        };
+      }
+      // v31 Stage B slice 4: fourth civic building (park), one per district including
+      // industrial. Absent entirely on saveVersion < 25 -- every district defaults to unbuilt,
+      // same pattern as the clinic/police/school migrations above. No matching districtStats
+      // migration needed -- the park deliberately reuses the existing `satisfaction` field
+      // instead of adding a new one.
+      const parkRaw = data.cityState.park || {};
+      cityState.park = {};
+      for (const districtId of PARK_DISTRICT_IDS) {
+        const pk = parkRaw[districtId] || {};
+        const pkPos = pk.pos;
+        cityState.park[districtId] = {
+          parkBuilt: !!pk.parkBuilt,
+          pendingUntil: Number.isFinite(Number(pk.pendingUntil)) ? Math.max(0, Number(pk.pendingUntil)) : 0,
+          pos: (pkPos && Number.isFinite(Number(pkPos.x)) && Number.isFinite(Number(pkPos.z)))
+            ? { x:Number(pkPos.x), z:Number(pkPos.z) } : null,
         };
       }
     }
@@ -10335,6 +10641,7 @@ function animate() {
     }
   }
   updateConstructionSites(dt);
+  updateParkSites(dt);
 
   visualUiAccumulator += dt;
   goalHudAccumulator += dt;
@@ -10538,6 +10845,7 @@ refreshResidentialWorld();
 refreshCivicWorld();
 refreshPoliceWorld();
 refreshSchoolWorld();
+refreshParkWorld();
 ensureCityMarket();
 ensureContracts();
 applyLanguage();
