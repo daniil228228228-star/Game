@@ -100,6 +100,34 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Found and fixed the reported material-overlap bug** (this session,
+follow-up to the earlier "материалы накладываются друг на друга"
+report). Screenshots alone weren't reliable for hunting this down (the
+game's own `animate()` loop keeps re-deriving camera position from
+OrbitControls' state every frame, fighting any one-off camera move meant
+for a diagnostic shot -- worked around by teleporting the *player*, not
+just the camera, since `updatePlayer()` resets `controls.target` to the
+player's position every frame regardless of anything else set
+externally). Wrote a `THREE.Box3`-based scanner that walks every
+building archetype's mesh tree and flags structurally-significant
+mesh pairs (skipping small trim/window/mullion pieces, which are
+*meant* to sit flush against their parent surface) whose bounding boxes
+overlap by more than 85% of the smaller one's volume. Found: `buildWarehouse()`'s
+"office" annex (and its roof/window/door) was positioned at `x = -w*0.38`,
+but the annex's own half-width (`w*0.12`) meant its entire footprint sat
+inside the main body's range (which extends to `-w*0.5`) -- the whole
+wing, meant to read as a visible attached structure, was completely
+swallowed inside the opaque main warehouse box, invisible. Fixed by
+moving it to `-w*0.55` (now pokes out ~29% of its own width past the
+main wall, similar overlap ratio to the equivalent wing in `buildHouse()`
+which was already correct). Verified: re-ran the scanner (warehouse no
+longer flagged) and took an isolated screenshot confirming the annex
+(cream walls, red gable roof) is now clearly visible attached to the
+warehouse's side, not hidden. The other flagged pairs across all 10
+archetypes turned out to be intentional trim/belt bands (wood siding
+bands on houses, a "sky lobby" band on office/tower) matching the same
+layered-trim pattern used everywhere else in the file -- not bugs.
+
 **Construction walls/roof now genuinely differ per archetype** (this
 session, direct follow-up: the previous session's size-only scaling fix
 "didn't look very different" since early buildings are close enough in

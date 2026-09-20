@@ -440,6 +440,25 @@ tracks progress against.
   OrbitControls' damped state, fighting a one-off camera move meant only
   for a screenshot. Re-ran the full regression suite with zero failures.
 
+### 2026-09-20 — Fixed the warehouse's office annex being swallowed inside the main body
+- Root cause: `buildWarehouse()`'s "office" annex (siding walls, gable
+  roof, window, door) was positioned at `x = -w*0.38`, but its own
+  half-width (`w*0.12`) meant its entire footprint sat inside the main
+  body's range (which extends to `-w*0.5`) -- the whole wing was fully
+  swallowed inside the opaque main box, invisible instead of reading as
+  a distinct attached structure.
+- Found via a `THREE.Box3` overlap scanner across all 10 building
+  archetypes (screenshots weren't reliable for this hunt, since the
+  game's own camera-follow loop kept re-centering on the player every
+  frame regardless of manual camera moves).
+- Fixed by moving the annex to `-w*0.55` (now pokes out ~29% of its own
+  width). Verified with the same scanner (no longer flagged) and an
+  isolated screenshot showing the annex clearly visible on the
+  warehouse's side.
+- The scanner's other flagged pairs (wood trim bands on houses, a "sky
+  lobby" band on office/tower) are intentional layered trim, matching
+  the same pattern used throughout the file -- not bugs.
+
 ---
 
 ## Format for new entries

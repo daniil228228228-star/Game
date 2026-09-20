@@ -2681,19 +2681,24 @@ function buildWarehouse(stage, height, baseSize) {
   addFramedWindow(group, { width: 0.24, height: 0.18, x: 0, y: bodyH * 0.58 + 0.08, z: -d / 2 - 0.02, side: 'back' });
   addFramedWindow(group, { width: 0.24, height: 0.18, x: w * 0.36, y: bodyH * 0.58 + 0.08, z: -d / 2 - 0.02, side: 'back' });
 
+  // The office annex must actually stick out past the main body's own wall (x < -w/2) to
+  // read as a distinct attached structure. At the old -w*0.38 offset, the whole wing (half-
+  // width w*0.12) sat entirely inside the main body's footprint (which spans to -w*0.5) --
+  // its walls, roof, window and door were all fully swallowed by the main warehouse box,
+  // invisible/z-fighting against its interior instead of forming a visible side annex.
   const office = new THREE.Mesh(new THREE.BoxGeometry(w * 0.24, bodyH * 0.66, d * 0.5), createSidingMaterial(0xe7e2d8, { roughness: 0.86 }));
-  office.position.set(-w * 0.38, bodyH * 0.33 + 0.08, -d * 0.14);
+  office.position.set(-w * 0.55, bodyH * 0.33 + 0.08, -d * 0.14);
   office.castShadow = true;
   office.receiveShadow = true;
   group.add(office);
   const officeRoof = createGableRoof(w * 0.3, d * 0.58, height * 0.16, createRoofMaterial(0x675445));
-  officeRoof.position.set(-w * 0.38, bodyH * 0.66 + 0.08, -d * 0.14);
+  officeRoof.position.set(-w * 0.55, bodyH * 0.66 + 0.08, -d * 0.14);
   officeRoof.rotation.y = Math.PI / 2;
   group.add(officeRoof);
-  addFramedWindow(group, { width: 0.18, height: 0.18, x: -w * 0.38, y: bodyH * 0.44 + 0.08, z: d * 0.12 });
+  addFramedWindow(group, { width: 0.18, height: 0.18, x: -w * 0.55, y: bodyH * 0.44 + 0.08, z: d * 0.12 });
   addFramedWindow(group, { width: 0.12, height: 0.18, x: -w * 0.5, y: bodyH * 0.38 + 0.08, z: -d * 0.14, side: 'left' });
   const officeDoor = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.42, 0.04), createMetalMaterial(0x40464d, { roughness: 0.64 }));
-  officeDoor.position.set(-w * 0.38, 0.21, d * 0.1);
+  officeDoor.position.set(-w * 0.55, 0.21, d * 0.1);
   group.add(officeDoor);
 
   const stair = new THREE.Group();
