@@ -2316,13 +2316,19 @@ function addBollard(group, x, z, color = 0xffbf50) {
 }
 
 function makeIconSprite(emoji, size) {
+  // 128x128 canvas at a 76px font (a ~0.6 font-to-canvas ratio) instead of the old 96x96
+  // canvas at the same 76px font (~0.79 ratio) -- some emoji glyphs (notably ones with a
+  // decorative ring, like the gear and up-arrow icons used on upgrade pads) render their
+  // actual ink noticeably larger than their nominal font-size box, and the old tight ratio
+  // clipped their edges. World-space size is unaffected: `size` still drives sprite.scale,
+  // only the raster's own resolution/margin changed.
   const canvas = document.createElement('canvas');
-  canvas.width = 96; canvas.height = 96;
+  canvas.width = 128; canvas.height = 128;
   const ctx = canvas.getContext('2d');
-  ctx.font = '76px sans-serif';
+  ctx.font = '64px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(emoji, 48, 54);
+  ctx.fillText(emoji, 64, 66);
   const texture = new THREE.CanvasTexture(canvas);
   texture.encoding = THREE.sRGBEncoding;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true }));
@@ -3041,23 +3047,28 @@ function setConstructionPhaseVisual(site, phase, t) {
   if (site.rebarCage) site.rebarCage.visible = phase <= 2;
   if (site.craneParts) site.craneParts.forEach(obj => { if (obj) obj.visible = phase >= 1 && phase <= 4; });
 
+  // scale.y here is multiplied by the site's own envH baseline (set once in
+  // spawnConstructionSite from the building's real height) rather than overwritten outright,
+  // so a skyscraper's foundation/frame/walls grow to their actual taller proportions instead
+  // of every building's construction stages topping out at the same fixed height.
+  const envH = site.envH ?? 1;
   if (site.foundationVisual && phase === 1) {
     const k = THREE.MathUtils.clamp((t - 0.12) / 0.18, 0.08, 1);
-    site.foundationVisual.scale.y = k;
+    site.foundationVisual.scale.y = k * envH;
   } else if (site.foundationVisual) {
-    site.foundationVisual.scale.y = 1;
+    site.foundationVisual.scale.y = envH;
   }
   if (site.frameVisual && phase === 2) {
     const k = THREE.MathUtils.clamp((t - 0.30) / 0.22, 0.08, 1);
-    site.frameVisual.scale.y = k;
+    site.frameVisual.scale.y = k * envH;
   } else if (site.frameVisual) {
-    site.frameVisual.scale.y = 1;
+    site.frameVisual.scale.y = envH;
   }
   if (site.wallVisual && phase === 3) {
     const k = THREE.MathUtils.clamp((t - 0.52) / 0.20, 0.08, 1);
-    site.wallVisual.scale.y = k;
+    site.wallVisual.scale.y = k * envH;
   } else if (site.wallVisual) {
-    site.wallVisual.scale.y = 1;
+    site.wallVisual.scale.y = envH;
   }
 
   const pct = Math.min(100, Math.max(0, Math.round(t * 100)));
@@ -3072,27 +3083,39 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
   const group = new THREE.Group();
   const accent = stage?.color || 0xffb84d;
 
+  // Scale the whole rig to roughly match the building actually going up here, so a house's
+  // site doesn't look identical to a skyscraper's -- flagged directly ("construction looks
+  // the same for every building, gets boring"). Clamped so even the biggest stage's site
+  // doesn't balloon into its neighbors' plots.
+  const envW = THREE.MathUtils.clamp((stage?.baseSize || 2.2) / 2.2, 0.85, 1.55);
+  const envH = THREE.MathUtils.clamp((stage?.height || 2.4) / 2.4, 0.85, 2.6);
+  const craneH = THREE.MathUtils.clamp(1 + (envH - 1) * 0.55, 1, 1.9);
+
+  const yard = new THREE.Group();
+  yard.scale.set(envW, 1, envW);
+  group.add(yard);
+
   const dirt = new THREE.Mesh(new THREE.CylinderGeometry(2.3, 2.45, 0.12, 28), new THREE.MeshStandardMaterial({ color: 0x8b6d48, roughness: 0.97 }));
   dirt.position.y = 0.06;
   dirt.receiveShadow = true;
-  group.add(dirt);
+  yard.add(dirt);
   const pad = new THREE.Mesh(new THREE.BoxGeometry(3.55, 0.1, 3.2), new THREE.MeshStandardMaterial({ color: 0xc9c0b1, roughness: 0.96 }));
   pad.position.y = 0.11;
-  group.add(pad);
+  yard.add(pad);
 
   const fenceMat = new THREE.MeshStandardMaterial({ color: 0xffb84d, roughness: 0.72, metalness: 0.06 });
   for (const side of [-1, 1]) {
     const fenceA = new THREE.Mesh(new THREE.BoxGeometry(3.34, 0.24, 0.08), fenceMat);
     fenceA.position.set(0, 0.26, side * 1.6);
-    group.add(fenceA);
+    yard.add(fenceA);
     const fenceB = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.24, 3.1), fenceMat);
     fenceB.position.set(side * 1.72, 0.26, 0);
-    group.add(fenceB);
+    yard.add(fenceB);
   }
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.76, 0.08), new THREE.MeshStandardMaterial({ color: 0x7e8794, roughness: 0.74, metalness: 0.3 }));
     post.position.set(sx * 1.72, 0.38, sz * 1.6);
-    group.add(post);
+    yard.add(post);
   }
 
   const siteOffice = new THREE.Group();
@@ -3109,7 +3132,7 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
   const siteRoof = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.06, 0.84), createMetalMaterial(0x707983, { roughness: 0.64, metalness: 0.18 }));
   siteRoof.position.y = 0.79;
   siteOffice.add(siteRoof);
-  group.add(siteOffice);
+  yard.add(siteOffice);
 
   const foundationVisual = new THREE.Group();
   const foundationSlab = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.18, 1.56), createConcreteMaterial(0xbfc1be, { roughness: 0.92 }));
@@ -3120,6 +3143,7 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
     footing.position.set(sx, 0.22, sz);
     foundationVisual.add(footing);
   }
+  foundationVisual.scale.set(envW, 1, envW); // Y is driven per-frame below, multiplied by envH
   foundationVisual.visible = false;
   group.add(foundationVisual);
 
@@ -3138,6 +3162,7 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
     beamC.position.set(0.8, y, 0); skeleton.add(beamC);
     const beamD = beamC.clone(); beamD.position.x = -0.8; skeleton.add(beamD);
   }
+  skeleton.scale.set(envW, 1, envW); // Y is driven per-frame below, multiplied by envH
   skeleton.visible = false;
   group.add(skeleton);
 
@@ -3149,6 +3174,7 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
   const sidePanelL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.45, 1.16), wallMat);
   sidePanelL.position.set(-0.76, 0.92, 0); wallVisual.add(sidePanelL);
   const sidePanelR = sidePanelL.clone(); sidePanelR.position.x = 0.76; wallVisual.add(sidePanelR);
+  wallVisual.scale.set(envW, 1, envW); // Y is driven per-frame below, multiplied by envH
   wallVisual.visible = false;
   group.add(wallVisual);
 
@@ -3162,6 +3188,7 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
     tempRoof.position.y = 1.72;
   }
   roofVisual.add(tempRoof);
+  roofVisual.scale.set(envW, envH, envW);
   roofVisual.visible = false;
   group.add(roofVisual);
 
@@ -3175,22 +3202,32 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
   const finishDoor = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.56, 0.05), createMetalMaterial(0x4c5662, { roughness: 0.62 }));
   finishDoor.position.set(0.52, 0.48, 0.67);
   finishVisual.add(finishDoor);
+  finishVisual.scale.set(envW, envH, envW);
   finishVisual.visible = false;
   group.add(finishVisual);
 
+  // The crane rig sits in its own group so its whole height (mast + jib + hook) can stretch
+  // for taller buildings without distorting the mast's own cross-section -- a fixed-height
+  // crane looks silly dwarfed by a skyscraper's shell. Its base is repositioned by envW so
+  // it still clears a wider building's footprint.
+  const craneRig = new THREE.Group();
+  craneRig.position.set(-1.2 * envW, 0, -1.18 * envW);
+  craneRig.scale.y = craneH;
+  group.add(craneRig);
+
   const craneBase = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.22, 0.46), new THREE.MeshStandardMaterial({ color: 0x555d6b, roughness: 0.82 }));
-  craneBase.position.set(-1.2, 0.22, -1.18);
-  group.add(craneBase);
+  craneBase.position.set(0, 0.22, 0);
+  craneRig.add(craneBase);
   const mast = new THREE.Mesh(new THREE.BoxGeometry(0.22, 3.95, 0.22), new THREE.MeshStandardMaterial({ color: 0xffc35c, roughness: 0.72 }));
-  mast.position.set(-1.2, 2.06, -1.18);
-  group.add(mast);
+  mast.position.set(0, 2.06, 0);
+  craneRig.add(mast);
   for (let i = 0; i < 6; i++) {
     const rung = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.04, 0.18), new THREE.MeshStandardMaterial({ color: 0xfad58a, roughness: 0.72 }));
-    rung.position.set(-1.2, 0.72 + i * 0.58, -1.18);
-    group.add(rung);
+    rung.position.set(0, 0.72 + i * 0.58, 0);
+    craneRig.add(rung);
   }
   const jibPivot = new THREE.Group();
-  jibPivot.position.set(-1.18, 4.02, -1.14);
+  jibPivot.position.set(0.02, 4.02, 0.04);
   const jib = new THREE.Mesh(new THREE.BoxGeometry(3.26, 0.12, 0.12), new THREE.MeshStandardMaterial({ color: 0xffcf74, roughness: 0.72 }));
   jib.position.x = 1.48;
   jibPivot.add(jib);
@@ -3212,10 +3249,10 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
   cargo.position.y = -1.9;
   hook.add(cargo);
   jibPivot.add(hook);
-  group.add(jibPivot);
+  craneRig.add(jibPivot);
 
   const mixer = new THREE.Group();
-  mixer.position.set(1.14, 0.16, -1.08);
+  mixer.position.set(1.14 * envW, 0.16, -1.08 * envW);
   const mixerBase = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.18, 0.66), new THREE.MeshStandardMaterial({ color: 0x404856, roughness: 0.82 }));
   mixerBase.position.y = 0.14;
   mixer.add(mixerBase);
@@ -3228,7 +3265,7 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
   group.add(mixer);
 
   const excavator = new THREE.Group();
-  excavator.position.set(1.12, 0.12, 1.02);
+  excavator.position.set(1.12 * envW, 0.12, 1.02 * envW);
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.3, 0.6), new THREE.MeshStandardMaterial({ color: 0xf0b243, roughness: 0.64 }));
   body.position.y = 0.3;
   excavator.add(body);
@@ -3256,7 +3293,7 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
   excavator.add(armBase);
   group.add(excavator);
   const beamStack = new THREE.Group();
-  beamStack.position.set(0.7, 0.08, -0.26);
+  beamStack.position.set(0.7 * envW, 0.08, -0.26 * envW);
   for (let i = 0; i < 4; i++) {
     const beam = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.08, 0.12), createMetalMaterial(0x87919c, { roughness: 0.76, metalness: 0.24 }));
     beam.position.set(0, 0.06 + i * 0.08, 0);
@@ -3264,7 +3301,7 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
   }
   group.add(beamStack);
   const rebarCage = new THREE.Group();
-  rebarCage.position.set(-0.14, 0.12, 0.18);
+  rebarCage.position.set(-0.14 * envW, 0.12, 0.18 * envW);
   for (const sx of [-0.24, 0.24]) for (const sz of [-0.18, 0.18]) {
     const rod = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.82, 0.02), createMetalMaterial(0x60656b, { roughness: 0.82 }));
     rod.position.set(sx, 0.42, sz);
@@ -3273,20 +3310,20 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
   group.add(rebarCage);
 
   const phaseLabel = makeLabelSprite([lang === 'ru' ? 'ПОДГОТОВКА' : 'SITE PREP', '0%']);
-  phaseLabel.position.set(0, 3.0, 0);
+  phaseLabel.position.set(0, 3.0 * Math.max(1, envH * 0.7), 0);
   phaseLabel.scale.set(1.6, 0.63, 1);
   group.add(phaseLabel);
 
   group.position.copy(pos);
   scene.add(group);
-  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 5.4, 8, 1, true), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.16, side: THREE.DoubleSide }));
-  beacon.position.y = 2.8;
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 5.4 * envH, 8, 1, true), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.16, side: THREE.DoubleSide }));
+  beacon.position.y = 2.8 * envH;
   group.add(beacon);
   const site = {
     group, jibPivot, hook, drumPivot, armBase, arm2Pivot, beacon,
     mixer, excavator, beamStack, rebarCage,
     foundationVisual, frameVisual: skeleton, wallVisual, roofVisual, finishVisual,
-    craneParts: [craneBase, mast, jibPivot], phaseLabel,
+    craneParts: [craneBase, mast, jibPivot], phaseLabel, envH,
     phase: -1, lastPctBucket: -1,
     timer: 0, duration: buildDuration, buildRef: null,
   };
@@ -5124,24 +5161,32 @@ function updatePlayer(dt) {
   // instead of a plain translation, which folds the follow-behind rotation and the usual
   // per-frame position shift into one step -- doing both separately would double-count the
   // player's movement delta.
-  const joyMag = Math.hypot(joyVec.x, joyVec.z);
-  if (moving && joyMag > 0.08) {
-    const offX = camera.position.x - prevX;
-    const offZ = camera.position.z - prevZ;
-    const radiusXZ = Math.hypot(offX, offZ);
-    if (radiusXZ > 0.0001) {
-      const currentAzimuth = Math.atan2(offX, offZ);
-      const targetAzimuth = player.rotation.y + Math.PI; // camera sits behind the player
-      let da = targetAzimuth - currentAzimuth;
+  // Single continuous formula instead of a hard joyMag>0.08 on/off switch between two
+  // different position formulas -- that hard cutoff is what made a joystick nudge that
+  // barely crossed the threshold look like the camera "snapping"/flying off: one frame it
+  // held its offset exactly, the next it started rotating from scratch. `followWeight` ramps
+  // smoothly from 0 (hold the current viewing angle, i.e. plain translate) to 1 (pull fully
+  // toward directly-behind-the-player) over joyMag in [0.04, 0.18], so light and
+  // barely-past-threshold pushes ease in instead of toggling.
+  const offX = camera.position.x - prevX;
+  const offZ = camera.position.z - prevZ;
+  const radiusXZ = Math.hypot(offX, offZ);
+  if (radiusXZ > 0.25) {
+    const joyMag = Math.hypot(joyVec.x, joyVec.z);
+    const followWeight = moving ? THREE.MathUtils.clamp((joyMag - 0.04) / 0.14, 0, 1) : 0;
+    const currentAzimuth = Math.atan2(offX, offZ);
+    let targetAzimuth = currentAzimuth;
+    if (followWeight > 0) {
+      const behindAzimuth = player.rotation.y + Math.PI; // camera sits behind the player
+      let da = behindAzimuth - currentAzimuth;
       da = Math.atan2(Math.sin(da), Math.cos(da));
-      const newAzimuth = currentAzimuth + da * Math.min(1, dt * 2.6);
-      camera.position.x = player.position.x + Math.sin(newAzimuth) * radiusXZ;
-      camera.position.z = player.position.z + Math.cos(newAzimuth) * radiusXZ;
-    } else {
-      camera.position.x += player.position.x - prevX;
-      camera.position.z += player.position.z - prevZ;
+      targetAzimuth = currentAzimuth + da * Math.min(1, dt * 2.6) * followWeight;
     }
+    camera.position.x = player.position.x + Math.sin(targetAzimuth) * radiusXZ;
+    camera.position.z = player.position.z + Math.cos(targetAzimuth) * radiusXZ;
   } else {
+    // Camera nearly overhead (XZ offset too small for atan2 to stay numerically stable) --
+    // just carry the same delta the player moved, same as the old small-radius fallback.
     camera.position.x += player.position.x - prevX;
     camera.position.z += player.position.z - prevZ;
   }

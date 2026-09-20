@@ -384,6 +384,32 @@ tracks progress against.
 - Updated `TYCOON_V19_PLAN.md`: item 14-15 upgraded to `[~]` (crosswalks/
   parking/cones still remain).
 
+### 2026-09-20 — Icon clipping, camera glitch, and construction-site scaling fixes
+- **Icon sprites** (gear/up-arrow on upgrade pads): were genuinely
+  clipped at the canvas edges. `makeIconSprite()` now uses a 128x128
+  canvas at 64px font instead of 96x96 at 76px, for real margin.
+- **Camera glitch on a slight joystick nudge**: root cause was a hard
+  `joyMag > 0.08` on/off switch between two different position formulas.
+  Replaced with one continuous formula (`followWeight` ramps over
+  `joyMag ∈ [0.04, 0.18]`) that's provably identical to the old
+  plain-translate behavior at weight 0. Max per-frame camera jump under
+  a threshold-jitter simulation dropped from 0.78 to 0.34 units.
+- **Construction sites all looked identical**: added `envW`/`envH` scale
+  factors (from the real `stage.baseSize`/`height`) to
+  `spawnConstructionSite()`'s building envelope + crane rig, with
+  equipment repositioned outward proportionally. Total rig height now
+  ranges 5.5 (House) to 14.3 (Empire) instead of one fixed size for
+  every building.
+- Verified: raw-canvas dumps confirm icons no longer clip; a jitter
+  simulation (before/after via `git stash`) confirms the camera
+  smoothness improvement; `THREE.Box3` measurements confirm construction
+  sites now scale with the building; a full purchase→complete lifecycle
+  test confirms buildings still finish correctly. Zero new console
+  errors across the full existing regression suite.
+- Still open from this round of feedback (not addressed yet): reported
+  material/texture overlap on some buildings, and a general push for
+  more detailed/realistic buildings and construction sites.
+
 ---
 
 ## Format for new entries

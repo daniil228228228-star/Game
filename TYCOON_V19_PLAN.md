@@ -100,6 +100,45 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Four direct user-reported fixes this session**: (1) **Icon sprites were
+genuinely clipped** (gear ⚙️ and up-arrow ⬆️ on upgrade pads) — reproduced
+by dumping `makeIconSprite()`'s own canvas: the 96x96 canvas at a 76px
+font gave almost no margin, and some emoji glyphs' actual ink extends
+past their nominal font-size box, clipping the edges. Fixed by using a
+128x128 canvas at a smaller 64px font for real headroom; verified the
+raw canvas render no longer touches any edge. (2) **Camera glitching on
+a slight joystick nudge** — root-caused to a hard `joyMag > 0.08`
+on/off switch between two *different* position formulas (rotate-behind-
+player vs. plain-translate); a thumb hovering right around that cutoff
+made the camera alternate between them every frame. Replaced with one
+continuous formula parameterized by a `followWeight` that ramps smoothly
+over `joyMag ∈ [0.04, 0.18]` instead of a hard threshold — proven
+algebraically (and by simulation) to reduce to the exact same translate
+behavior at weight 0, so there's no seam. Verified via a jitter
+simulation (joyMag oscillating right around the old threshold): max
+per-frame camera displacement dropped from 0.78 to 0.34 units (old code
+vs. new, same input) -- confirmed by literally re-running the same test
+against the pre-fix code via `git stash`. (3) **Every construction site
+was identically sized regardless of the building** — `spawnConstructionSite()`
+used fixed dimensions for the foundation/frame/walls/roof/crane no matter
+whether it was building a House or an Empire, which read as "boring,
+always the same." Added `envW`/`envH` scale factors derived from the
+real `stage.baseSize`/`height`, applied to the building-envelope groups
+and (partially, height-only) the crane rig, with equipment repositioned
+outward by `envW` so it still clears a wider footprint.
+`setConstructionPhaseVisual()`'s per-phase Y-scale animation now
+multiplies by `envH` instead of overwriting it outright. Verified via
+`THREE.Box3` bounding-box measurements (not screenshots, which were
+hard to frame cleanly against existing map clutter): total rig height
+went 5.5 (House) → 6.87 (Mini Factory) → 14.3 (Empire), a real, visible
+size difference; full-lifecycle test confirmed a site still completes
+correctly (building becomes visible at scale 1,1,1, site cleans up).
+(4) Noted but not yet addressed this session: reported material/texture
+overlap on some buildings, and a general ask for more detailed/realistic
+building and construction-site geometry -- both need focused follow-up
+(the overlap needs a reproduction pass across archetypes; "more
+detail/realism" is an open-ended visual-quality push, not a single bug).
+
 **Economy pacing audit + a real tuning fix** (this session, spec section
 20, #2 on the "suggested next slice" list). Wrote a pure-numeric
 idle-progression simulator that drives the game's own real formula
