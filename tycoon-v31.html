@@ -583,7 +583,13 @@ let cityState = {
     waterfront:{ population:0, satisfaction:50 },
   },
   population:0, // real, tracked city population resource (see updatePopulation())
-  housing:{ apartmentBlockBuilt:false, pendingUntil:0, pos:null }, // slice-1 residential building state
+  // v31 Stage A slice 2: housing is now keyed per district (suburb/business/waterfront each get
+  // their own independently-built apartment block) instead of slice-1's single flat object.
+  housing:{
+    suburb:{ apartmentBlockBuilt:false, pendingUntil:0, pos:null },
+    business:{ apartmentBlockBuilt:false, pendingUntil:0, pos:null },
+    waterfront:{ apartmentBlockBuilt:false, pendingUntil:0, pos:null },
+  },
   initiative:null,
   initiativesCompleted:0,
   marketIndex:0,
@@ -8549,7 +8555,7 @@ const CITY_INITIATIVES = [
   { id:'modernization', emoji:'⬆️', kind:'upgrades', unlockRep:75, baseTarget:5, reward:5600, rep:27, ru:'Модернизация портфеля', en:'Portfolio Modernization', descRu:'Прокачай существующие объекты', descEn:'Upgrade existing properties' },
   { id:'flagship', emoji:'🏗️', kind:'strategic', unlockRep:120, baseTarget:1, reward:8000, rep:36, ru:'Флагманский проект', en:'Flagship Project', descRu:'Заверши спецпроект или крупный тендер', descEn:'Complete a special project or major tender' },
 ];
-const cityWorldRuntime = { hubs:new Map(), residential:null };
+const cityWorldRuntime = { hubs:new Map(), residential:new Map() }; // residential: districtId -> mesh (slice 2: multiple housing districts)
 function districtLevel(id){ return Math.max(0,Math.min(3,Math.floor(Number(cityState?.districts?.[id])||0))); }
 function currentClientTier(){ let tier=CLIENT_TIERS[0]; for(const t of CLIENT_TIERS) if(cityState.reputation>=t.rep) tier=t; return tier; }
 function districtUnlocked(cfg){ return districtLevel(cfg.id)>0 || (cityState.reputation>=cfg.unlockRep && companyTierIndex()>=cfg.unlockTier); }
@@ -8647,25 +8653,38 @@ function refreshCityExpansionWorld(){
 }
 
 /* ---------------------------------------------------------------------- */
-/*  v31 STAGE A SLICE 1 — "жилой город": real population + one real         */
-/*  residential building, separate from the STAGES production spiral.      */
+/*  v31 STAGE A SLICE 1+2 — "жилой город": real population + real            */
+/*  residential buildings, separate from the STAGES production spiral.     */
 /*  Population trends toward residential capacity (simple lerp, no demand/ */
 /*  supply model -- that's a later stage) and district stats are a small   */
 /*  per-district object updated on the existing 1s city tick, not per-frame.*/
+/*  Slice 2 extends slice 1's single fixed building (suburb only) to one   */
+/*  independently-buildable apartment block per housing district, each     */
+/*  contributing to that district's own population.                        */
 /* ---------------------------------------------------------------------- */
 const RESIDENTIAL_BUILDING = {
   id:'apartment_block', ru:'Жилой дом', en:'Apartment Block', emoji:'🏘️',
   archetype:'office', color:0xdba86c, height:4.6, baseSize:2.5,
   capacity:60, costMoney:650, costWood:4, buildDuration:4.5,
 };
+// Districts that can host their own apartment block. Industrial stays non-residential (fits the
+// theme -- a zone of factories/warehouses, not homes) and is left for a later stage/slice.
+const HOUSING_DISTRICT_IDS = ['suburb','business','waterfront'];
 function residentialBuildCost(){ return { money:RESIDENTIAL_BUILDING.costMoney, wood:RESIDENTIAL_BUILDING.costWood, concrete:0, metal:0 }; }
-function populationCapacity(){ return cityState.housing.apartmentBlockBuilt ? RESIDENTIAL_BUILDING.capacity : 0; }
+function districtHousingCapacity(districtId){ return cityState.housing[districtId]?.apartmentBlockBuilt ? RESIDENTIAL_BUILDING.capacity : 0; }
+function populationCapacity(){ return HOUSING_DISTRICT_IDS.reduce((sum,id)=>sum+districtHousingCapacity(id),0); }
 // Same clearance check the decor scatter pass uses (distToNearestRoadSegment) -- this repo has
 // a documented history of things landing on roads, so any new placement re-verifies it directly
-// instead of trusting a hand-picked coordinate near the (fixed, corner-of-the-map) suburb hub.
-function residentialBuildingPosition(){
-  const hub = CITY_DISTRICTS.find(d=>d.id==='suburb')?.pos || new THREE.Vector3(-46,0,-34);
-  const ROAD_CLEAR = 2.6, HUB_CLEAR = 4.4;
+// instead of trusting a hand-picked coordinate near a district hub. Also checked against every
+// other already-placed (or pending) residential building, the same simple distance-to-other-
+// -object pattern the ground-detail scatter pass already uses against stage buildings.
+function residentialBuildingPosition(districtId){
+  const hub = CITY_DISTRICTS.find(d=>d.id===districtId)?.pos || new THREE.Vector3(0,0,0);
+  const ROAD_CLEAR = 2.6, HUB_CLEAR = 4.4, BUILDING_CLEAR = 6.0;
+  const otherPositions = HOUSING_DISTRICT_IDS
+    .filter(id=>id!==districtId)
+    .map(id=>cityState.housing[id]?.pos)
+    .filter(p=>p && Number.isFinite(p.x) && Number.isFinite(p.z));
   for (let ring=0; ring<6; ring++){
     const radius = 6 + ring*2.4;
     for (let k=0;k<12;k++){
@@ -8674,78 +8693,92 @@ function residentialBuildingPosition(){
       if (Math.hypot(x,z) > GROUND_HALF-4) continue;
       if (Math.hypot(x-hub.x,z-hub.z) < HUB_CLEAR) continue;
       if (distToNearestRoadSegment(x,z) < ROAD_CLEAR) continue;
+      if (otherPositions.some(p=>Math.hypot(x-p.x,z-p.z) < BUILDING_CLEAR)) continue;
       return new THREE.Vector3(x,0,z);
     }
   }
   return new THREE.Vector3(hub.x+9,0,hub.z+9);
 }
-function createResidentialBuildingMesh(){
+function createResidentialBuildingMesh(districtId){
   const mesh = createBuildingMesh(RESIDENTIAL_BUILDING, 1);
+  const ds = cityState.districtStats[districtId] || { population:0 };
   const label = makeLabelSprite([
     `${RESIDENTIAL_BUILDING.emoji} ${lang==='ru'?RESIDENTIAL_BUILDING.ru:RESIDENTIAL_BUILDING.en}`,
-    `${lang==='ru'?'НАСЕЛЕНИЕ':'POP'} ${Math.round(cityState.population)}/${populationCapacity()}`,
+    `${lang==='ru'?'НАСЕЛЕНИЕ':'POP'} ${Math.round(ds.population)}/${districtHousingCapacity(districtId)}`,
   ]);
   label.position.set(0, RESIDENTIAL_BUILDING.height*1.5, 0);
   label.scale.set(1.7, 0.68, 1);
   mesh.add(label);
   mesh.userData.residentialLabel = label;
+  mesh.userData.residentialDistrict = districtId;
   return mesh;
 }
 function refreshResidentialWorld(){
-  if (cityWorldRuntime.residential) { scene.remove(cityWorldRuntime.residential); disposeObject3D(cityWorldRuntime.residential); cityWorldRuntime.residential=null; }
-  if (!cityState.housing.apartmentBlockBuilt) return;
-  const saved = cityState.housing.pos;
-  const pos = (saved && Number.isFinite(saved.x) && Number.isFinite(saved.z)) ? new THREE.Vector3(saved.x,0,saved.z) : residentialBuildingPosition();
-  const mesh = createResidentialBuildingMesh();
-  mesh.position.set(pos.x, 0, pos.z);
-  scene.add(mesh);
-  cityWorldRuntime.residential = mesh;
+  for (const districtId of HOUSING_DISTRICT_IDS) {
+    const old = cityWorldRuntime.residential.get(districtId);
+    if (old) { scene.remove(old); disposeObject3D(old); cityWorldRuntime.residential.delete(districtId); }
+    const h = cityState.housing[districtId];
+    if (!h?.apartmentBlockBuilt) continue;
+    const saved = h.pos;
+    const pos = (saved && Number.isFinite(saved.x) && Number.isFinite(saved.z)) ? new THREE.Vector3(saved.x,0,saved.z) : residentialBuildingPosition(districtId);
+    const mesh = createResidentialBuildingMesh(districtId);
+    mesh.position.set(pos.x, 0, pos.z);
+    scene.add(mesh);
+    cityWorldRuntime.residential.set(districtId, mesh);
+  }
   refreshCameraSolidMeshes();
 }
 function updateResidentialLabel(){
-  const mesh = cityWorldRuntime.residential;
-  if (!mesh || !mesh.userData.residentialLabel) return;
-  updateLabelSprite(mesh.userData.residentialLabel, [
-    `${RESIDENTIAL_BUILDING.emoji} ${lang==='ru'?RESIDENTIAL_BUILDING.ru:RESIDENTIAL_BUILDING.en}`,
-    `${lang==='ru'?'НАСЕЛЕНИЕ':'POP'} ${Math.round(cityState.population)}/${populationCapacity()}`,
-  ]);
+  for (const [districtId, mesh] of cityWorldRuntime.residential) {
+    if (!mesh.userData.residentialLabel) continue;
+    const ds = cityState.districtStats[districtId] || { population:0 };
+    updateLabelSprite(mesh.userData.residentialLabel, [
+      `${RESIDENTIAL_BUILDING.emoji} ${lang==='ru'?RESIDENTIAL_BUILDING.ru:RESIDENTIAL_BUILDING.en}`,
+      `${lang==='ru'?'НАСЕЛЕНИЕ':'POP'} ${Math.round(ds.population)}/${districtHousingCapacity(districtId)}`,
+    ]);
+  }
 }
-function buildResidentialBlock(){
-  if (cityState.housing.apartmentBlockBuilt || cityState.housing.pendingUntil>0) return;
+function buildResidentialBlock(districtId){
+  const h = cityState.housing[districtId]; if (!h) return;
+  if (h.apartmentBlockBuilt || h.pendingUntil>0) return;
   const cost = residentialBuildCost();
   if (!tryPayResources(cost)) { sfx.error(); toast(lang==='ru'?'Не хватает ресурсов на жилой дом':'Not enough resources for the apartment block'); return; }
-  const pos = residentialBuildingPosition();
-  cityState.housing.pos = { x:pos.x, z:pos.z };
+  const pos = residentialBuildingPosition(districtId);
+  h.pos = { x:pos.x, z:pos.z };
   spawnConstructionSite(pos, { archetype:RESIDENTIAL_BUILDING.archetype, baseSize:RESIDENTIAL_BUILDING.baseSize, height:RESIDENTIAL_BUILDING.height, color:0xffb84d }, RESIDENTIAL_BUILDING.buildDuration);
-  cityState.housing.pendingUntil = Date.now() + RESIDENTIAL_BUILDING.buildDuration*1000;
+  h.pendingUntil = Date.now() + RESIDENTIAL_BUILDING.buildDuration*1000;
   sfx.build(); haptic('medium'); triggerImpactFlash(.16);
   toast(lang==='ru'?`🏗️ Стройка начата: ${RESIDENTIAL_BUILDING.ru}`:`🏗️ Construction started: ${RESIDENTIAL_BUILDING.en}`);
   renderCityPanel(); renderSystemsPanel(); save();
 }
-// Lightweight per-district simulation: population share + a 0-100 attractiveness stat that
-// reacts to real state (district level, whether housing actually got built) -- not a hidden
-// demand/supply model, just a couple of numbers eased toward a target each tick.
+// Lightweight per-district simulation: each housing district lerps its own population toward
+// its own housing capacity (same 0.15-per-second easing slice 1 used for the single suburb
+// building), plus a 0-100 attractiveness stat that reacts to real state (district level, whether
+// housing actually got built) -- not a hidden demand/supply model, just a few numbers eased
+// toward a target each tick. cityState.population (shown in the HUD chip) is their sum.
 function updateDistrictStats(){
-  const cap = populationCapacity();
+  let totalPopulation = 0;
   for (const cfg of CITY_DISTRICTS) {
     const ds = cityState.districtStats[cfg.id]; if (!ds) continue;
     const lvl = districtLevel(cfg.id);
-    let popShare = 0, target = 38 + lvl*14;
-    if (cfg.id === 'suburb') {
-      popShare = cityState.population;
-      target += cityState.housing.apartmentBlockBuilt ? 12 : -8;
-      if (cap>0) target -= Math.max(0, (cityState.population/cap)-0.92)*40;
+    let target = 38 + lvl*14;
+    if (HOUSING_DISTRICT_IDS.includes(cfg.id)) {
+      const cap = districtHousingCapacity(cfg.id);
+      const gap = cap - ds.population;
+      ds.population = Math.max(0, ds.population + gap*0.15);
+      if (Math.abs(cap-ds.population) < 0.4) ds.population = cap;
+      target += cap>0 ? 12 : -8;
+      if (cap>0) target -= Math.max(0, (ds.population/cap)-0.92)*40;
+    } else {
+      ds.population = 0; // non-housing district (industrial) -- no residents yet
     }
-    ds.population = Math.round(popShare);
+    totalPopulation += ds.population;
     target = THREE.MathUtils.clamp(target, 0, 100);
     ds.satisfaction = THREE.MathUtils.clamp(ds.satisfaction + (target-ds.satisfaction)*0.2, 0, 100);
   }
+  cityState.population = totalPopulation;
 }
 function updatePopulation(){
-  const cap = populationCapacity();
-  const gap = cap - cityState.population;
-  cityState.population = Math.max(0, cityState.population + gap*0.15);
-  if (Math.abs(cap-cityState.population) < 0.4) cityState.population = cap;
   updateDistrictStats();
   updateResidentialLabel();
   updateHUD();
@@ -8766,10 +8799,10 @@ function renderCityPanel(){
     const lv=districtLevel(cfg.id),unlocked=districtUnlocked(cfg),maxed=lv>=3,cost=maxed?null:districtUpgradeCost(cfg); const affordable=cost&&canPayResources(cost);
     const lock=unlocked?'':(lang==='ru'?`Нужно: ${cfg.unlockRep} реп. и статус ${COMPANY_TIERS[cfg.unlockTier]?.ru||''}`:`Need ${cfg.unlockRep} rep and ${COMPANY_TIERS[cfg.unlockTier]?.en||''}`);
     const ds=cityState.districtStats[cfg.id]||{population:0,satisfaction:50};
-    const statsLine=unlocked?`<div class="resourceLine">👥 ${fmt(ds.population)} · ${lang==='ru'?'Довольство':'Satisfaction'} ${Math.round(ds.satisfaction)}%</div>`:'';
+    const statsLine=unlocked?`<div class="resourceLine">👥 ${fmt(Math.round(ds.population))} · ${lang==='ru'?'Довольство':'Satisfaction'} ${Math.round(ds.satisfaction)}%</div>`:'';
     let housingLine='';
-    if (cfg.id==='suburb' && unlocked) {
-      const h=cityState.housing;
+    if (HOUSING_DISTRICT_IDS.includes(cfg.id) && unlocked) {
+      const h=cityState.housing[cfg.id];
       if (h.apartmentBlockBuilt) {
         housingLine=`<div class="status">🏘️ ${lang==='ru'?'Жилой дом построен':'Apartment block built'}</div>`;
       } else if (h.pendingUntil>0) {
@@ -8777,7 +8810,7 @@ function renderCityPanel(){
         housingLine=`<div class="status">🏗️ ${lang==='ru'?'Стройка идёт':'Under construction'} · ⏱ ${buildLeft}${lang==='ru'?'с':'s'}</div>`;
       } else {
         const rcost=residentialBuildCost(); const raffordable=canPayResources(rcost);
-        housingLine=`<div class="resourceLine">${districtCostText(rcost)}</div><button class="v30Btn ${raffordable?'primary':''}" data-residential="apartment_block" ${!raffordable?'disabled':''}>${lang==='ru'?'Построить жилой дом':'Build apartment block'}</button>`;
+        housingLine=`<div class="resourceLine">${districtCostText(rcost)}</div><button class="v30Btn ${raffordable?'primary':''}" data-residential="${cfg.id}" ${!raffordable?'disabled':''}>${lang==='ru'?'Построить жилой дом':'Build apartment block'}</button>`;
       }
     }
     return `<div class="cityCard ${!unlocked?'locked':''} ${maxed?'maxed':''}"><div class="name">${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}</div><div class="desc">${lang==='ru'?cfg.bonusRu:cfg.bonusEn}</div><div class="status">${unlocked?(lang==='ru'?`Уровень ${lv}/3`:`Level ${lv}/3`):`🔒 ${lock}`}</div>${statsLine}${housingLine}${!maxed&&unlocked?`<div class="resourceLine">${districtCostText(cost)}</div><button class="v30Btn ${affordable?'primary':''}" data-district="${cfg.id}" ${!affordable?'disabled':''}>${lang==='ru'?'Развить':'Upgrade'}</button>`:maxed?`<button class="v30Btn" disabled>✓ MAX</button>`:''}</div>`;
@@ -8793,7 +8826,7 @@ function renderCityPanel(){
   }).join('');
   document.querySelectorAll('[data-district]').forEach(b=>b.onclick=()=>upgradeCityDistrict(b.dataset.district));
   document.querySelectorAll('[data-initiative]').forEach(b=>b.onclick=()=>startCityInitiative(b.dataset.initiative));
-  document.querySelectorAll('[data-residential]').forEach(b=>b.onclick=()=>buildResidentialBlock());
+  document.querySelectorAll('[data-residential]').forEach(b=>b.onclick=()=>buildResidentialBlock(b.dataset.residential));
 }
 const cityOverlay=document.getElementById('cityOverlay');
 document.getElementById('openCityBtn')?.addEventListener('click',()=>{renderCityPanel();cityOverlay.classList.add('show');});
@@ -8808,13 +8841,16 @@ function updateCityExpansion(dt){
   cityTickAccumulator+=dt; if(cityTickAccumulator<1)return; cityTickAccumulator=0;
   const before=cityState.marketIndex; ensureCityMarket(); if(cityState.marketIndex!==before){const m=currentCityMarket();toast(`${m.emoji} ${lang==='ru'?m.ru:m.en}`);renderSystemsPanel();}
   checkCityInitiative();
-  if (cityState.housing.pendingUntil>0 && Date.now()>=cityState.housing.pendingUntil) {
-    cityState.housing.pendingUntil=0; cityState.housing.apartmentBlockBuilt=true;
-    refreshResidentialWorld();
-    const hp=cityState.housing.pos; if(hp) spawnBurst(new THREE.Vector3(hp.x,0,hp.z), 0xffd479);
-    sfx.achievement(); haptic('heavy'); triggerImpactFlash(.22);
-    toast(lang==='ru'?`🏘️ Построено: ${RESIDENTIAL_BUILDING.ru}! Население города начинает расти.`:`🏘️ Built: ${RESIDENTIAL_BUILDING.en}! City population starts growing.`);
-    renderSystemsPanel(); save();
+  for (const districtId of HOUSING_DISTRICT_IDS) {
+    const h = cityState.housing[districtId];
+    if (h.pendingUntil>0 && Date.now()>=h.pendingUntil) {
+      h.pendingUntil=0; h.apartmentBlockBuilt=true;
+      refreshResidentialWorld();
+      const hp=h.pos; if(hp) spawnBurst(new THREE.Vector3(hp.x,0,hp.z), 0xffd479);
+      sfx.achievement(); haptic('heavy'); triggerImpactFlash(.22);
+      toast(lang==='ru'?`🏘️ Построено: ${RESIDENTIAL_BUILDING.ru}! Население города начинает расти.`:`🏘️ Built: ${RESIDENTIAL_BUILDING.en}! City population starts growing.`);
+      renderSystemsPanel(); save();
+    }
   }
   updatePopulation();
   if(cityOverlay?.classList.contains('show'))renderCityPanel();
@@ -8959,7 +8995,7 @@ function save() {
   }));
   try {
     const payload = JSON.stringify({
-      saveVersion: 20, // v31 Stage A slice 1: cityState grew population/districtStats/housing fields
+      saveVersion: 21, // v31 Stage A slice 2: cityState.housing is now keyed per district (suburb/business/waterfront)
       savedAt: Date.now(),
       money: finiteNonNegative(money),
       stageIndex: integerNonNegative(stageIndex),
@@ -9084,14 +9120,24 @@ function load() {
       // v31 Stage A slice 1 fields -- absent on saveVersion < 20, default to 0/false so an old
       // save loads with no population/housing yet (exactly like planks/concrete before them).
       cityState.population = finiteNonNegative(data.cityState.population, 0);
-      const housing = data.cityState.housing || {};
-      const housingPos = housing.pos;
-      cityState.housing = {
-        apartmentBlockBuilt: !!housing.apartmentBlockBuilt,
-        pendingUntil: Number.isFinite(Number(housing.pendingUntil)) ? Math.max(0, Number(housing.pendingUntil)) : 0,
-        pos: (housingPos && Number.isFinite(Number(housingPos.x)) && Number.isFinite(Number(housingPos.z)))
-          ? { x:Number(housingPos.x), z:Number(housingPos.z) } : null,
-      };
+      // v31 Stage A slice 2: housing became per-district (saveVersion >= 21). A saveVersion 20
+      // save still has the old flat shape ({apartmentBlockBuilt,pendingUntil,pos} directly on
+      // .housing, always meaning the suburb building) -- migrate that into housing.suburb and
+      // default the two new districts (business/waterfront) to unbuilt, same pattern as the
+      // slice-1 migration that came before it.
+      const housingRaw = data.cityState.housing || {};
+      const legacyFlatHousing = 'apartmentBlockBuilt' in housingRaw;
+      cityState.housing = {};
+      for (const districtId of HOUSING_DISTRICT_IDS) {
+        const h = (legacyFlatHousing && districtId==='suburb') ? housingRaw : (housingRaw[districtId] || {});
+        const hPos = h.pos;
+        cityState.housing[districtId] = {
+          apartmentBlockBuilt: !!h.apartmentBlockBuilt,
+          pendingUntil: Number.isFinite(Number(h.pendingUntil)) ? Math.max(0, Number(h.pendingUntil)) : 0,
+          pos: (hPos && Number.isFinite(Number(hPos.x)) && Number.isFinite(Number(hPos.z)))
+            ? { x:Number(hPos.x), z:Number(hPos.z) } : null,
+        };
+      }
       const dsRaw = data.cityState.districtStats || {};
       for (const key of ['suburb','industrial','business','waterfront']) {
         const entry = dsRaw[key] || {};
