@@ -1644,7 +1644,12 @@ function createSawmillDropoff() {
     lang === 'ru' ? 'Принеси брёвна сюда' : 'Bring logs here',
   ]);
   label.position.y = 2.6;
-  label.scale.set(2.07, 0.83, 1);
+  // Recomputed from the actual camera math this time, not an arbitrary shrink factor: at
+  // CAM_MIN_DIST=3.5 and 55deg FOV, visible world-width is ~3.64 units tall; on a narrow
+  // portrait phone (aspect as low as ~0.43) that's only ~1.57 units *wide* -- a label still
+  // scaled at 2.0+ (the previous "fix") was mathematically guaranteed to overflow at minimum
+  // zoom regardless of the font-fit canvas logic. 1.45 leaves real margin below that limit.
+  label.scale.set(1.45, 0.582, 1);
   group.add(label);
   group.position.copy(SAWMILL_DROPOFF_POS);
   scene.add(group);
@@ -1683,7 +1688,7 @@ function refreshFieldUpgradePad(pad) {
   const lines = fieldUpgradeLabelLines(pad.cfg);
   const newSprite = regenerateSprite(pad.sprite, lines);
   newSprite.position.y = 2.55;
-  newSprite.scale.set(2.05, 0.82, 1);
+  newSprite.scale.set(1.45, 0.58, 1); // see makeSawmillDropoff's comment on the 1.45 target width
   pad.group.remove(pad.sprite);
   pad.group.add(newSprite);
   pad.sprite = newSprite;
@@ -1713,7 +1718,7 @@ function createFieldUpgradePads() {
     group.add(icon);
     const sprite = makeLabelSprite(fieldUpgradeLabelLines(cfg));
     sprite.position.y = 2.55;
-    sprite.scale.set(2.05, 0.82, 1);
+    sprite.scale.set(1.45, 0.58, 1);
     group.add(sprite);
     group.position.copy(cfg.pos);
     scene.add(group);
@@ -3451,7 +3456,7 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
 
   const phaseLabel = makeLabelSprite([lang === 'ru' ? 'ПОДГОТОВКА' : 'SITE PREP', '0%']);
   phaseLabel.position.set(0, 3.0 * Math.max(1, envH * 0.7), 0);
-  phaseLabel.scale.set(1.6, 0.63, 1);
+  phaseLabel.scale.set(1.45, 0.571, 1);
   group.add(phaseLabel);
 
   group.position.copy(pos);
@@ -3637,6 +3642,7 @@ function spawnUpgradePad(entry) {
   ];
   const groups = [];
   const rings = [];
+  const secondarySprites = [];
   const upgradeWood = buildingUpgradePlankCost(entry.index, entry.level);
   let primarySprite = null;
 
@@ -3663,13 +3669,23 @@ function spawnUpgradePad(entry) {
         `${fmt(buildingUpgradeCost(entry.index, entry.level))} 💰  •  ${upgradeWood} 🪵`,
       ]);
       sprite.position.y = 2.6;
-      sprite.scale.set(2.0, 0.82, 1);
+      sprite.scale.set(1.45, 0.5945, 1);
       group.add(sprite);
       primarySprite = sprite;
     } else {
-      const icon = makeIconSprite('⬆️', 0.62);
-      icon.position.y = 1.35;
+      // Used to be a bare arrow icon with no text at all -- a player walking up to one of
+      // these two side/rear approach pads had no way to tell what it was without already
+      // knowing (direct feedback: "не понимаю что эта галка вверх дает" -- didn't understand
+      // what this up-arrow checkmark-looking thing gives). A short label makes the intent
+      // readable from any approach angle without duplicating the full price tag three times.
+      const icon = makeIconSprite('⬆️', 0.5);
+      icon.position.y = 1.55;
       group.add(icon);
+      const hint = makeLabelSprite([lang === 'ru' ? '⬆️ Улучшить' : '⬆️ Upgrade']);
+      hint.position.y = 0.95;
+      hint.scale.set(1.0, 0.41, 1);
+      group.add(hint);
+      secondarySprites.push(hint);
     }
     group.position.copy(pos);
     scene.add(group);
@@ -3681,6 +3697,7 @@ function spawnUpgradePad(entry) {
     groups,
     rings,
     sprite: primarySprite,
+    secondarySprites,
     pos: positions[0],
     positions,
     insufficientShown: false,
@@ -4499,7 +4516,7 @@ function makeLabelSprite(lines) {
   texture.magFilter = THREE.LinearFilter;
   const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(2.55, safeLines.length >= 3 ? 1.21 : 1.05, 1);
+  sprite.scale.set(1.45, safeLines.length >= 3 ? 0.688 : 0.597, 1);
   sprite.renderOrder = 10;
   return sprite;
 }
@@ -4546,7 +4563,7 @@ function spawnPad(index) {
 
   const sprite = makeLabelSprite([`${stage.emoji} ${stageName(stage)}`, `${fmt(stage.cost)} 💰  •  ${buildingPlankCost(index)} 🪵`]);
   sprite.position.y = 6.9;
-  sprite.scale.set(2.72, 1.1, 1);
+  sprite.scale.set(1.45, 0.5864, 1);
   group.add(sprite);
 
   group.position.set(pos.x, 0, pos.z);
@@ -4901,10 +4918,14 @@ function applyLanguage() {
     const sprite = regenerateSprite(b.upgradePad.sprite, [
       t('upgrade_level_line', { level: b.level + 1 }),
       `${fmt(buildingUpgradeCost(b.index, b.level))} 💰  •  ${buildingUpgradePlankCost(b.index, b.level)} 🪵`,
-    ], 0.82);
+    ], 0.5945);
     b.upgradePad.group.remove(b.upgradePad.sprite);
     b.upgradePad.group.add(sprite);
     b.upgradePad.sprite = sprite;
+    // The two side/rear approach pads' short "Upgrade" hint also needs to re-translate.
+    for (const hint of b.upgradePad.secondarySprites || []) {
+      updateLabelSprite(hint, [lang === 'ru' ? '⬆️ Улучшить' : '⬆️ Upgrade']);
+    }
   }
 
   renderAchList();

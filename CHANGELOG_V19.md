@@ -532,6 +532,24 @@ tracks progress against.
 - Verified via scene traverse (1 lot + 4 divider lines at the expected
   geometry) and the full regression suite. Zero new failures.
 
+### 2026-09-20 — Fixed label clipping for real this time; explained the upgrade-pad icons
+- The earlier "shrink label scale ~0.68x" fix wasn't enough -- confirmed
+  by a real iPhone screenshot showing "Мотор лесопилки" still clipped.
+  Recomputed the true safe width from the camera's own FOV/min-distance
+  math (~1.57 units visible at worst case) instead of an arbitrary
+  multiplier, and set every label sprite to a uniform 1.45-unit target
+  width (aspect-preserved).
+- Reproduced the user's exact screenshot scenario (standing at the
+  Sawmill Motor pad at CAM_MIN_DIST) before/after -- confirmed the title
+  now renders fully inside its card.
+- The two secondary upgrade-pad positions (reachable from other
+  approach angles) used to show a bare `⬆️` icon with no explanation.
+  Gave them a short `⬆️ Улучшить`/`⬆️ Upgrade` text hint instead,
+  wired into the language-switch refresh path.
+- Verified via the full regression suite (zero new failures) and a
+  `page.evaluate()` check confirming both hint sprites exist per
+  building.
+
 ---
 
 ## Format for new entries

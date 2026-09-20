@@ -100,6 +100,39 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Two direct real-device-reported fixes this session**: (1) **Label
+clipping was NOT actually fixed by the earlier "reduce label scale by
+~0.68x" session** -- confirmed by the user's own iPhone screenshot
+showing "Мотор лесопилки" clipped mid-word inside its own card. Went
+back and did the math the earlier session skipped: at `CAM_MIN_DIST=3.5`
+and 55° FOV, visible world-height is ~3.64 units; on a narrow portrait
+phone (aspect as low as ~0.43, worse than the 390x844 this repo's tests
+use) that's only ~1.57 units of visible *width*. The earlier fix left
+most labels at 2.0-2.72 units wide -- mathematically guaranteed to
+overflow at minimum zoom regardless of the canvas-level font-fit logic,
+which only guarantees the text fits *within the sprite's own texture*,
+not that the sprite itself fits on screen. Recomputed every label
+sprite's world-scale against this real formula (not a guessed
+multiplier) and set them all to a uniform 1.45-unit target width
+(aspect-preserved per label), leaving real margin below the ~1.57 hard
+limit. Verified by reproducing the *exact* scenario from the user's
+screenshot (player standing at the Sawmill Motor pad at `CAM_MIN_DIST`)
+before and after -- confirmed the title now renders fully inside its
+card with room to spare. (2) **Unexplained bare up-arrow icons on
+upgrade pads** -- each building has 3 walkable upgrade-pad positions
+(so it's reachable from any approach angle), but only the primary one
+ever showed the price/level card; the other two were a lone `⬆️` icon
+with zero context, per direct feedback ("не понимаю что эта галка вверх
+дает"). Gave the two secondary pads a short `⬆️ Улучшить`/`⬆️ Upgrade`
+text hint (bilingual, refreshed on language switch via a new
+`secondarySprites` array on `entry.upgradePad`) instead of leaving them
+as bare icons, without duplicating the full price tag three times over.
+
+Verified: re-ran the full regression suite (boot, pinch-zoom, full-
+build lifecycle, camera-obstruction, milestone banner) with zero new
+failures; confirmed via `page.evaluate()` that both secondary hint
+sprites are created and wired into the language-refresh path.
+
 **Small parking lot near the sawmill camp** (this session, spec
 sections 14-15 -- the final "world density" checklist item). Added
 `addParkingLot()` (a marked paved rectangle with 4 divider lines
