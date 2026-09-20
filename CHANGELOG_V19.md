@@ -325,6 +325,32 @@ tracks progress against.
   entry, upgraded item 23 (label auto-fit) to `[x]` with the corrected
   root-cause note, and item 24 (camera tuning) to `[~]`.
 
+### 2026-09-20 — Progression-stage milestone banner
+- Added `MILESTONE_ERAS`, grouping the 10-stage `STAGES` array into 5
+  named eras two buildings at a time (Residential Quarter → Commercial
+  District → Industrial Zone → Corporate District → Metropolis), each
+  with an emoji/title/subtitle in both languages, addressing spec
+  section 18's "the player should always know the next big milestone"
+  which the plain `🏗️ N/10` HUD counter only covered loosely.
+- `eraIndexForCount(n)` is a pure function of `stageIndex`, so no
+  separate "already announced" flag is needed — prestige resetting
+  `stageIndex` to 0 naturally re-announces the same eras on the way back
+  up instead of requiring extra state to track.
+- `purchaseCurrentPad()` now compares the era before/after each purchase
+  and shows a centered, auto-dismissing banner (`#milestoneBanner`) only
+  on an actual era transition (5 of the 10 purchases) — kept as a
+  separate element from the existing toast system so it doesn't collide
+  with the "Construction started" toast firing in the same call.
+- Verified with a headless-browser pass: `eraIndexForCount()`'s output
+  checked for every count 0-10; bought all 10 buildings in sequence and
+  confirmed the banner's text only changes at the 5 correct transition
+  points; screenshotted the banner on a 390px mobile viewport and
+  confirmed it renders fully on-screen, legible, and non-overlapping
+  with the HUD. Re-ran the boot, pinch-zoom, and prior-session regression
+  tests with zero new failures.
+- Updated `TYCOON_V19_PLAN.md`: checked off item 18, removed it from the
+  "suggested next slice" list, updated the v22 release-line note.
+
 ---
 
 ## Format for new entries

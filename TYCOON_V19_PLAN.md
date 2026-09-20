@@ -100,6 +100,35 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Progression-stage milestone banner** (this session, spec section 18,
+top of the "suggested next slice" list). The 10-stage `STAGES` array
+already tracked raw progress (`🏗️ N/10` in the HUD), but there was no
+explicit "you've entered a new era" moment the spec calls out as
+important for always knowing the next big milestone. Added
+`MILESTONE_ERAS`, a 5-entry table grouping `STAGES` into named eras two
+buildings at a time (Residential Quarter → Commercial District →
+Industrial Zone → Corporate District → Metropolis, each with an
+emoji/title/subtitle in both languages), and `eraIndexForCount(n)`, a
+pure function of `stageIndex` (`Math.floor((n-1)/2)`, clamped) so no
+separate "have I announced this" flag is needed — prestige resetting
+`stageIndex` to 0 naturally re-announces the same eras on the way back
+up. `purchaseCurrentPad()` compares the era before/after each purchase
+and calls `showMilestone()` only on an actual transition (5 of the 10
+purchases, not all 10) -- a centered, auto-dismissing banner
+(`#milestoneBanner`, 3.4s) separate from the existing toast system so it
+doesn't fight with the "Construction started" toast that fires in the
+same call.
+
+Verified with a headless-browser pass: confirmed `eraIndexForCount()`'s
+output for every count 0-10 matches the intended 5 two-building eras;
+bought all 10 buildings in sequence and confirmed the banner's title/
+subtitle text only changes at the 5 correct transition points (indices
+0, 2, 4, 6, 8) and stays put on the other 5 purchases; screenshotted the
+banner on a 390px mobile viewport after the very first building and
+confirmed it's fully on-screen and legible, not clipped or colliding
+with the HUD. Zero new console errors; re-ran the boot, pinch-zoom, and
+the three-fixes regression tests with no failures.
+
 **Three direct user-reported fixes this session** (real gameplay feedback,
 not a plan-list item): (1) **joystick-driven camera auto-follow** --
 `updatePlayer()`'s camera-follow tail used to translate the camera by the
@@ -549,9 +578,10 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 - [x] **NPC worker roles** (section 17) — done this session: 4 visually
       distinct roles (helmet color + hand tool) plus stay-near-home-base
       idle behavior instead of roaming the whole map.
-- [~] **Progression stages** (section 18) — the 10-stage `STAGES` array
-      covers this loosely; no explicit "you are now in Stage 3:
-      Commercial Construction" milestone UI yet.
+- [x] **Progression stages** (section 18) — added a milestone banner
+      this session: `STAGES` grouped into 5 named eras (2 buildings each)
+      with a centered "you've entered a new era" announcement the first
+      time a building from it starts.
 - [x] **Contracts** (section 19) — done this session.
 - [ ] **Economy pacing re-check** (section 20) — not re-validated against
       the fuller feature set (contracts should help; worth simulating).
@@ -597,8 +627,8 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
   logistics. Not started.
 - **v21 — City Life**: road-node navigation now done; worker roles and
   city decor remain.
-- **v22 — Economy & Contracts**: contracts now done; milestone UI and a
-  fresh balance pass remain.
+- **v22 — Economy & Contracts**: contracts and milestone-era UI now done;
+  a fresh balance pass remains.
 - **v23 — Visual Polish**: models/textures/lighting/effects/animation/camera.
 - **v24 — Mobile & Performance**: the two previously-flagged mobile HUD
   items turned out not to need fixing (see audit above); a real
@@ -608,14 +638,13 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 ## Suggested next slice (pick one, don't do everything at once)
 
 In priority order, given what's already solid vs. genuinely missing:
-1. Progression-stage milestone UI (section 18) — the 10-stage `STAGES`
-   array covers this loosely; no explicit "you are now in Stage 3:
-   Commercial Construction" moment yet, which the spec calls out as
-   important for the player always knowing the next big milestone.
-2. Second raw resource (concrete) + a warehouse-as-storage mechanic
+1. Second raw resource (concrete) + a warehouse-as-storage mechanic
    (section 3) — only once the log→plank chain's existing sinks (planks
    already used for building cost, upgrades, and now nothing else
    pending) feel complete; check economy pacing (section 20) first.
+2. Economy pacing re-check (section 20) — not re-validated against the
+   fuller feature set (contracts + milestone eras should both help the
+   feel of it; worth simulating a full playthrough's cost/income curve).
 3. **Keep doing incidental audits, not just this one dedicated pass**:
    four sessions running have now found a real bug purely by reading code
    closely (`buildSawmillScenery()` called twice; the lift's platform

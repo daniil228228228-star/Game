@@ -82,6 +82,16 @@
            max-width: 80vw; }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(4px); }
 
+  #milestoneBanner { position: fixed; top: 42%; left: 50%; z-index: 35; pointer-events: none; text-align: center;
+                      opacity: 0; transform: translate(-50%, -50%) scale(0.9); transition: opacity .4s ease, transform .4s ease;
+                      max-width: min(480px, calc(100vw - 40px)); }
+  #milestoneBanner.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  #milestoneBanner .mbEmoji { font-size: 44px; filter: drop-shadow(0 6px 18px rgba(0,0,0,.45)); }
+  #milestoneBanner .mbTitle { margin-top: 6px; font-size: clamp(20px, 5.5vw, 30px); font-weight: 900; color: #fff;
+                               text-shadow: 0 4px 18px rgba(0,0,0,.6); letter-spacing: .02em; }
+  #milestoneBanner .mbSub { margin-top: 4px; font-size: 14px; font-weight: 600; color: #ffe6a8;
+                             text-shadow: 0 3px 12px rgba(0,0,0,.55); }
+
   /* Achievements panel */
   #achOverlay { position: fixed; inset: 0; background: rgba(5,8,12,.6); z-index: 40; display: none;
                 align-items: center; justify-content: center; padding: 20px; }
@@ -193,6 +203,7 @@
 <div id="contractsCard"></div>
 <button id="prestigeBtn" hidden></button>
 <div id="toast"></div>
+<div id="milestoneBanner"><div class="mbEmoji"></div><div class="mbTitle"></div><div class="mbSub"></div></div>
 <div id="compass"><div class="arrow"></div></div>
 <div id="staminaWrap"><div id="staminaFill"></div></div>
 <div id="actionPrompt"></div>
@@ -4324,11 +4335,14 @@ function purchaseCurrentPad() {
   planks -= woodCost;
   scene.remove(group);
   spawnBuilding(index, 1);
+  const prevEra = eraIndexForCount(stageIndex);
   stageIndex = index + 1;
   sfx.build();
   spawnBurst(pos, 0xffd479);
   triggerShake(0.16, 0.26);
   toast(lang === 'ru' ? `🚧 Строительство началось: ${stage.emoji} ${stageName(stage)}` : `🚧 Construction started: ${stage.emoji} ${stageName(stage)}`);
+  const newEra = eraIndexForCount(stageIndex);
+  if (newEra !== prevEra) showMilestone(newEra);
   currentPad = null;
   if (stageIndex < STAGES.length) spawnPad(stageIndex);
   updateHUD();
@@ -4683,6 +4697,46 @@ function toast(msg) {
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+/* ---------------------------------------------------------------------- */
+/*  MILESTONE ERAS — groups pairs of STAGES entries into a named "era" so   */
+/*  the player always knows the next big milestone, not just the next      */
+/*  single building (spec section 18). A banner announces each new era the */
+/*  first time a building from it is started; `eraIndexForCount()` is a    */
+/*  pure function of `stageIndex`, so prestige naturally re-announces the   */
+/*  same eras on the way back up instead of needing separate tracking.     */
+/* ---------------------------------------------------------------------- */
+const MILESTONE_ERAS = [
+  { emoji: '🏘️', ru: 'Жилой квартал', en: 'Residential Quarter',
+    ruSub: 'Первые дома заложены', enSub: 'The first houses are up' },
+  { emoji: '🏪', ru: 'Коммерческий район', en: 'Commercial District',
+    ruSub: 'Открываются магазины и склады', enSub: 'Shops and warehouses are opening' },
+  { emoji: '🏭', ru: 'Промышленная зона', en: 'Industrial Zone',
+    ruSub: 'Заводы начинают работу', enSub: 'Factories are coming online' },
+  { emoji: '🏢', ru: 'Деловой квартал', en: 'Corporate District',
+    ruSub: 'Растут офисы и бизнес-центры', enSub: 'Offices and business centers are rising' },
+  { emoji: '🏙️', ru: 'Метрополис', en: 'Metropolis',
+    ruSub: 'Небоскрёбы меняют горизонт', enSub: 'Skyscrapers are reshaping the skyline' },
+];
+
+function eraIndexForCount(n) {
+  if (n <= 0) return -1;
+  return Math.min(MILESTONE_ERAS.length - 1, Math.floor((n - 1) / 2));
+}
+
+let milestoneTimer = null;
+function showMilestone(eraIdx) {
+  const era = MILESTONE_ERAS[eraIdx];
+  if (!era) return;
+  const el = document.getElementById('milestoneBanner');
+  el.querySelector('.mbEmoji').textContent = era.emoji;
+  el.querySelector('.mbTitle').textContent = lang === 'ru' ? era.ru : era.en;
+  el.querySelector('.mbSub').textContent = lang === 'ru' ? era.ruSub : era.enSub;
+  el.classList.add('show');
+  clearTimeout(milestoneTimer);
+  milestoneTimer = setTimeout(() => el.classList.remove('show'), 3400);
+  sfx.achievement();
 }
 
 const hintOverlay = document.getElementById('hintOverlay');
