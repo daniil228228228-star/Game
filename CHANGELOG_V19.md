@@ -6,6 +6,45 @@ tracks progress against.
 
 ## Session log
 
+### 2026-09-20 — Fix an orphaned-construction-site bug in doPrestige() (autonomous loop, dedicated audit pass)
+- Followed through on the previous session's own suggestion to do a
+  focused "does this visibly do what it claims" audit rather than build
+  something new. Read `doPrestige()` together with `purchaseCurrentPad()`
+  and `upgradeBuilding()` and found a real, reachable bug:
+  `stageIndex` reaches `STAGES.length` (unlocking the prestige button)
+  the instant the **last** building's construction *starts*, not when it
+  finishes, and any building can have an upgrade in progress at prestige
+  time too. `doPrestige()` only ever cleared the `buildings` array --
+  never `growingMeshes` or `constructionSites`, the separate arrays
+  holding in-progress construction animation state and each site's
+  crane/scaffolding/fence group. Prestiging while anything was mid-build
+  left that site running in the scene forever (or until its own timer
+  happened to expire) with no building behind it anymore.
+- Fixed by clearing both arrays (and removing their scene objects) inside
+  `doPrestige()`, plus clearing any worker's `workBuild`/`target` if it
+  pointed at a now-gone site so they re-roll a sensible target instead of
+  playing their hammering animation forever next to an empty foundation.
+- Verified with a headless-browser pass: bought all 10 stages back-to-back
+  (cheated money/planks) so all 10 were simultaneously mid-construction --
+  the worst case -- then called the real `doPrestige()` (auto-accepting
+  its `confirm()` dialog) and confirmed every captured site/mesh reference
+  was detached from the scene afterward, both arrays were empty, and no
+  worker still targeted a stale build. Also verified the ordinary path
+  (let everything finish, then prestige) still resets money/stageIndex/
+  buildings and increments the prestige multiplier correctly. Re-ran the
+  full existing regression suite with zero new failures.
+- Incidental finding, not fixed (out of scope, noted in
+  `TYCOON_V19_PLAN.md` for the eventual performance pass): under the
+  10-simultaneous-construction stress case, the in-game construction
+  timer fell behind real wall-clock time by roughly 3x -- `animate()`'s
+  dt-clamp (0.1s/frame ceiling) means the simulation itself slows down
+  once real frame time exceeds that, not just dropped visual frames. Not
+  reachable in normal play given the steep cost curve, so a stress-test
+  data point rather than a live bug.
+- Checked off nothing new in the numbered spec checklist (this was a bug
+  fix, not a new feature), but the fix is folded into the existing
+  section 21 (Prestige) entry.
+
 ### 2026-09-20 — NPC worker roles + stay-near-base idle behavior (autonomous loop)
 - Audited `createWorkerNPC()`/`spawnAmbientLife()`/`chooseWorkerTarget()`
   against spec section 17 and found two real gaps: all 7 ambient workers

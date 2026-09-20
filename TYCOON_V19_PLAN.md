@@ -100,7 +100,58 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
-**NPC worker roles + stay-near-base idle behavior** (this session, spec
+**Dedicated audit pass: fixed an orphaned-construction-site bug in
+`doPrestige()`** (this session, following through on last session's own
+suggestion to do a focused "does this visibly do what it claims" pass
+rather than build something new). Read through `doPrestige()`,
+`purchaseCurrentPad()`, and `upgradeBuilding()` together and found a real,
+reachable bug: `stageIndex` reaches `STAGES.length` (which is what
+unlocks the prestige button) the instant the **last** building's
+construction *starts*, not when it finishes -- and any building can have
+an upgrade in progress at prestige time too. `doPrestige()` only ever
+cleared the `buildings` array; it never touched `growingMeshes` or
+`constructionSites`, which are separate arrays holding the in-progress
+construction animation state and the crane/scaffolding/fence site group
+for anything still building. A player who prestiges while any
+construction/upgrade is mid-flight would leave that site's crane and
+scaffolding running in the scene forever (or until its own timer
+happened to expire) with no building behind it anymore -- a textbook
+orphaned object, same bug family as the lift's disconnected platform and
+the duplicate sawmill, just in a different system.
+Fixed by clearing `growingMeshes` and `constructionSites` (removing their
+scene objects) inside `doPrestige()`, and clearing any NPC worker's
+`workBuild`/`target` if it pointed at one of the now-gone sites (so they
+re-roll a sensible target next frame instead of playing their "hammering"
+animation forever next to an empty foundation).
+
+Verified with a headless-browser pass: bought all 10 stages back-to-back
+with cheated money/planks (so all 10 were simultaneously mid-construction
+-- the worst case for this bug) and called the real `doPrestige()`
+(auto-accepting its `confirm()` dialog); captured direct references to
+every construction-site group and under-construction mesh *before*
+prestige and confirmed all of them were detached from the scene
+(`.parent === null`) afterward, `growingMeshes`/`constructionSites` were
+both empty, and no worker was still targeting a stale build. Also
+verified the ordinary path (let every construction actually finish, then
+prestige) still works correctly: money/stageIndex/buildings reset, prestige
+count and income multiplier increment, a fresh stage-0 pad spawns. Re-ran
+the full existing regression suite (boot, construction, contracts,
+road-node routing, the lift, worker roles) with zero new failures.
+
+Incidental finding, not fixed this session (out of scope for the slice,
+noted for later): while testing the 10-simultaneous-construction-sites
+edge case, the in-game construction timer visibly fell behind real wall-
+clock time under that load (roughly 3x slower) -- `animate()`'s `dt` is
+clamped to a 0.1s ceiling per frame, so when the software-rendered scene
+gets heavy enough that real frame time exceeds that, the simulation
+itself slows down rather than the game just skipping visual frames. This
+specific scenario (buying all 10 buildings simultaneously) is not
+reachable in ordinary economically-realistic play given the steep cost
+curve (the last building alone costs 200,000), so it's a synthetic
+stress-test finding rather than a live bug -- but it's a real data point
+for spec section 28 (performance pass), still `[ ]` not started.
+
+**NPC worker roles + stay-near-base idle behavior** (previous session, spec
 section 17). Audited `createWorkerNPC()`/`spawnAmbientLife()` and found the
 7 ambient workers were all the exact same model with only a random shirt
 color from a 7-color palette — no role distinction at all — and when idle
@@ -372,7 +423,13 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 - [~] **Sound** (section 27) — synthesized SFX system exists
       (`ensureAudio`/`sfx`); volume categories (SFX/Music/Ambient) and full
       sound list not audited.
-- [ ] **Performance pass** (section 28) — not profiled this session.
+- [ ] **Performance pass** (section 28) — not profiled directly, but a
+      synthetic stress test this session (10 simultaneous construction
+      sites) showed the game's own simulation timer falling behind real
+      time under heavy load (`dt` clamped at 0.1s/frame in `animate()`),
+      not just dropped visual frames. Not reachable in normal economically-
+      paced play, but worth keeping in mind once a real profiling pass
+      happens.
 - [ ] **File split into /src** (section 29) — intentionally not started;
       spec itself says do this only once the design has settled.
 - [x] **Save format / versioning** (section 30) — `saveVersion: 4` with
@@ -399,25 +456,26 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
 ## Suggested next slice (pick one, don't do everything at once)
 
 In priority order, given what's already solid vs. genuinely missing:
-1. **Worth a dedicated pass now, not just incidental findings**: three
-   sessions in a row have found a real bug purely by reading code while
-   planning something else (`buildSawmillScenery()` called twice; the
-   lift's platform never attached to its lifting mechanism; the old
-   ambient-worker wander target ignored home base entirely). A focused
-   audit session — read through the remaining vehicle/building/economy
-   code specifically asking "does this visibly do what it claims to do,"
-   not implementing anything new — would likely keep paying off.
-2. Delivery-vehicle status labels: name the specific resource + target
+1. Delivery-vehicle status labels: name the specific resource + target
    building (spec wants e.g. "Доски → Дом") instead of the current generic
    "MATERIALS" — small polish on top of the road-routing work.
+2. Progression-stage milestone UI (section 18) — the 10-stage `STAGES`
+   array covers this loosely; no explicit "you are now in Stage 3:
+   Commercial Construction" moment yet, which the spec calls out as
+   important for the player always knowing the next big milestone.
 3. Second raw resource (concrete) + a warehouse-as-storage mechanic
    (section 3) — only once the log→plank chain's existing sinks (planks
    already used for building cost, upgrades, and now nothing else
    pending) feel complete; check economy pacing (section 20) first.
-4. Progression-stage milestone UI (section 18) — the 10-stage `STAGES`
-   array covers this loosely; no explicit "you are now in Stage 3:
-   Commercial Construction" moment yet, which the spec calls out as
-   important for the player always knowing the next big milestone.
+4. **Keep doing incidental audits, not just this one dedicated pass**:
+   four sessions running have now found a real bug purely by reading code
+   closely (`buildSawmillScenery()` called twice; the lift's platform
+   never attached to its lifting mechanism; the old ambient-worker wander
+   target ignored home base; `doPrestige()` never cleaned up an
+   in-progress construction site). Whatever slice gets picked next, read
+   the surrounding code for this same "does this visibly do what it
+   claims" class of bug before assuming it's fine — it has paid off every
+   single time so far.
 
 ## Process reminder for future sessions
 

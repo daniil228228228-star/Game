@@ -4323,6 +4323,30 @@ function doPrestige() {
     removeUpgradePad(b);
   });
   buildings.length = 0;
+
+  // stageIndex reaches STAGES.length (unlocking the prestige button) the instant the LAST
+  // building's construction *starts*, not when it finishes -- and any building can have an
+  // upgrade in progress at click time too. Without this cleanup, a building still under
+  // construction/upgrading at the moment of prestige would leave its construction site
+  // (crane, scaffolding, fence) running in the scene as an orphaned ghost with no building
+  // behind it, since growingMeshes/constructionSites are separate arrays from `buildings`
+  // and prestige only ever cleared the latter. Every entry in both is invalid now that every
+  // building is gone, so clear both and their scene objects together.
+  for (const build of growingMeshes) {
+    if (build.site) scene.remove(build.site.group);
+  }
+  growingMeshes.length = 0;
+  for (const site of constructionSites) {
+    scene.remove(site.group);
+  }
+  constructionSites.length = 0;
+  // Workers that were mid-"help build" on one of those now-gone sites would otherwise keep
+  // playing their hammering animation forever next to an empty foundation; clearing their
+  // target makes them re-roll a sensible one on the very next animate() frame.
+  for (const worker of npcWorkers) {
+    if (worker.workBuild) { worker.workBuild = null; worker.target = null; }
+  }
+
   stageIndex = 0;
   money = 300;
   displayedMoney = money;
