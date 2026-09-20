@@ -602,10 +602,10 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
       path to get file bytes in (e.g. the user attaching the already-
       generated images, or re-attempting from an environment with
       broader network access).
-- [ ] **World density / roads** (sections 14-15) — decor props
-      (benches, streetlights, signs) already visible in playtest
-      screenshots; full checklist (curbs, sidewalks, crosswalks, parking,
-      hydrants, cones, etc.) not audited.
+- [~] **World density / roads** (sections 14-15) — benches, streetlights,
+      signs existed already; this session added curbs + sidewalks along
+      every road segment and scattered fire hydrants. Still missing:
+      crosswalks, parking, cones.
 - [x] **Road-node vehicle navigation** (section 16) — done this session
       (`ROAD_NODES` / `buildRoadRoute()`). See known limitation noted above
       (off-road bases don't get a dedicated driveway node yet).
@@ -680,9 +680,8 @@ In priority order, given what's already solid vs. genuinely missing:
    upgrades) now have a validated pacing model to extend (see the
    economy-pacing audit above); keep the same "does chopping actually
    matter" question in mind when adding a second resource loop.
-2. World density / roads polish (sections 14-15) — decor props exist;
-   full checklist (curbs, sidewalks, crosswalks, parking, hydrants,
-   cones) not audited.
+2. World density / roads polish (sections 14-15) — curbs/sidewalks/
+   hydrants done this session; crosswalks, parking, and cones remain.
 3. **Keep doing incidental audits, not just this one dedicated pass**:
    four sessions running have now found a real bug purely by reading code
    closely (`buildSawmillScenery()` called twice; the lift's platform

@@ -374,6 +374,16 @@ tracks progress against.
 - Updated `TYCOON_V19_PLAN.md`: checked off item 20, added the audit
   writeup, refreshed the "suggested next slice" list.
 
+### 2026-09-20 — Curbs, sidewalks, and fire hydrants along the road network
+- Added curb + sidewalk strips flanking both sides of every road segment
+  (reuses the existing road-building loop's direction/length math, no
+  separate pass needed) and scattered fire hydrants along the sidewalk
+  every third segment (spec sections 14-15).
+- Verified: no console errors on boot; screenshots confirm curbs/
+  sidewalks/hydrants are grounded correctly, not floating or clipping.
+- Updated `TYCOON_V19_PLAN.md`: item 14-15 upgraded to `[~]` (crosswalks/
+  parking/cones still remain).
+
 ---
 
 ## Format for new entries

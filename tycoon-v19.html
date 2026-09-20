@@ -723,6 +723,8 @@ scene.add(innerPlaza);
 
 const pathMaterial = new THREE.MeshStandardMaterial({ map: roadTexture, color: 0xf2f3f5, roughness: 0.9, bumpMap: getDetailBump('asphalt'), bumpScale: 0.025 });
 const lineMaterial = createConcreteMaterial(0xe7d28c, { emissive: 0x4b3b10, emissiveIntensity: 0.14, roughness: 0.7 });
+const curbMaterial = createConcreteMaterial(0xcfc8ba, { roughness: 0.9 });
+const sidewalkMaterial = createConcreteMaterial(0xd9d3c4, { roughness: 0.94 });
 const pathPoints = [new THREE.Vector3(0, 0, 0), ...STAGES.map((_, i) => stagePosition(i))];
 for (let i = 0; i < pathPoints.length - 1; i++) {
   const a = pathPoints[i];
@@ -730,12 +732,13 @@ for (let i = 0; i < pathPoints.length - 1; i++) {
   const dir = new THREE.Vector3().subVectors(b, a);
   const len = dir.length();
   const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
+  const angle = Math.atan2(dir.x, dir.z);
   const road = new THREE.Mesh(
     new THREE.BoxGeometry(2.3, 0.05, len + 1.5),
     pathMaterial
   );
   road.position.set(mid.x, 0.035, mid.z);
-  road.rotation.y = Math.atan2(dir.x, dir.z);
+  road.rotation.y = angle;
   road.receiveShadow = true;
   scene.add(road);
 
@@ -746,6 +749,33 @@ for (let i = 0; i < pathPoints.length - 1; i++) {
   lane.position.set(mid.x, 0.07, mid.z);
   lane.rotation.y = road.rotation.y;
   scene.add(lane);
+
+  // Curb + sidewalk along both edges (spec sections 14-15: "world density / roads" --
+  // this segment loop already knows the road's direction/length, so it's the cheapest
+  // place to flank it rather than a separate pass that has to re-derive the same geometry.
+  const tangent = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
+  for (const side of [-1, 1]) {
+    const curb = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, len + 1.2), curbMaterial);
+    curb.position.set(mid.x + tangent.x * side * 1.22, 0.07, mid.z + tangent.z * side * 1.22);
+    curb.rotation.y = angle;
+    curb.castShadow = true;
+    curb.receiveShadow = true;
+    scene.add(curb);
+
+    const sidewalk = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, len + 1.2), sidewalkMaterial);
+    sidewalk.position.set(mid.x + tangent.x * side * 1.72, 0.03, mid.z + tangent.z * side * 1.72);
+    sidewalk.rotation.y = angle;
+    sidewalk.receiveShadow = true;
+    scene.add(sidewalk);
+  }
+
+  // A fire hydrant every third segment, alternating sides, planted on the sidewalk.
+  if (i % 3 === 0) {
+    const side = (i % 6 === 0) ? 1 : -1;
+    const hydrant = makeFireHydrant();
+    hydrant.position.set(mid.x + tangent.x * side * 1.9, 0, mid.z + tangent.z * side * 1.9);
+    scene.add(hydrant);
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -951,6 +981,27 @@ function makeSignPost(textColor = 0x1c2430) {
   board.position.set(0, 1.18, 0); group.add(board);
   const face = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.18, 0.01), new THREE.MeshBasicMaterial({ color: textColor }));
   face.position.set(0, 1.18, 0.036); group.add(face);
+  return group;
+}
+
+function makeFireHydrant() {
+  const group = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xd23b2e, roughness: 0.55, metalness: 0.12 });
+  const capMat = new THREE.MeshStandardMaterial({ color: 0xf2c94c, roughness: 0.45, metalness: 0.2 });
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.1, 10), bodyMat);
+  base.position.y = 0.05; group.add(base);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.38, 10), bodyMat);
+  body.position.y = 0.29; body.castShadow = true; group.add(body);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), capMat);
+  cap.position.y = 0.48; group.add(cap);
+  const topNut = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.06, 6), capMat);
+  topNut.position.y = 0.55; group.add(topNut);
+  for (const side of [-1, 1]) {
+    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.1, 8), capMat);
+    nozzle.rotation.z = Math.PI / 2;
+    nozzle.position.set(side * 0.13, 0.3, 0);
+    group.add(nozzle);
+  }
   return group;
 }
 
