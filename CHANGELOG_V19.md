@@ -519,6 +519,19 @@ tracks progress against.
   enough to read as near the mill, and comfortably apart from each
   other. Zero new failures across the regression suite.
 
+### 2026-09-20 — Added a parking lot; closed out the world-density checklist
+- `addParkingLot()`: a marked rectangle with 4 divider lines (3 stalls)
+  near the sawmill camp, using the same rotation convention as the
+  road/crosswalk meshes.
+- Position checked against `distToNearestRoadSegment()` *before* being
+  placed (8.17 units clear), rather than discovered broken afterward
+  like the earlier field-upgrade pad fix this session.
+- This closes out spec sections 14-15 ("world density / roads") in
+  full: benches, signs, lamps, curbs, sidewalks, hydrants, crosswalks,
+  cones, and now parking.
+- Verified via scene traverse (1 lot + 4 divider lines at the expected
+  geometry) and the full regression suite. Zero new failures.
+
 ---
 
 ## Format for new entries

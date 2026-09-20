@@ -100,6 +100,20 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Small parking lot near the sawmill camp** (this session, spec
+sections 14-15 -- the final "world density" checklist item). Added
+`addParkingLot()` (a marked paved rectangle with 4 divider lines
+forming 3 stalls, using the same rotation convention the road/crosswalk
+meshes already use) at a hand-picked spot near `GENERATOR_POS`.
+Unlike the field-upgrade pads fixed earlier this session, this position
+was checked against `distToNearestRoadSegment()` *before* being
+finalized (8.17 units clear) rather than discovered broken after the
+fact. Verified via a scene traverse (exactly 1 lot mesh + 4 divider-line
+meshes at the expected geometry signature) and the full regression
+suite with zero new failures. This closes out sections 14-15 entirely
+(benches, signs, lamps, curbs, sidewalks, hydrants, crosswalks, cones,
+now parking); the "World density / roads" checklist item is `[x]`.
+
 **Found and fixed two field-upgrade pads sitting on the road** (this
 session, a follow-up audit using the `distToNearestRoadSegment()` helper
 from the previous fix -- checked every other static/hand-placed position
@@ -819,10 +833,12 @@ Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
       path to get file bytes in (e.g. the user attaching the already-
       generated images, or re-attempting from an environment with
       broader network access).
-- [~] **World density / roads** (sections 14-15) — benches, streetlights,
-      signs, curbs, sidewalks and hydrants already done; this session
-      added zebra crosswalks (3, at alternating road segments) and
-      traffic cones around every construction site's yard. Still
+- [x] **World density / roads** (sections 14-15) — benches, streetlights,
+      signs, curbs, sidewalks, hydrants, crosswalks and cones all done;
+      this session added a small marked parking lot near the sawmill
+      camp (verified clear of the road network before placing it, after
+      two earlier sessions found hand-placed positions that weren't).
+      Full checklist now covered.
       missing: parking.
 - [x] **Road-node vehicle navigation** (section 16) — done this session
       (`ROAD_NODES` / `buildRoadRoute()`). See known limitation noted above
@@ -897,9 +913,9 @@ In priority order, given what's already solid vs. genuinely missing:
    (section 3) — the log→plank chain's own sinks (building cost,
    upgrades) now have a validated pacing model to extend (see the
    economy-pacing audit above); keep the same "does chopping actually
-   matter" question in mind when adding a second resource loop.
-2. World density / roads polish (sections 14-15) — crosswalks and cones
-   done this session; only parking remains.
+   matter" question in mind when adding a second resource loop. This is
+   now the only fully unstarted item left on the whole checklist.
+2. World density / roads (sections 14-15) is now fully done.
 3. **Keep doing incidental audits, not just this one dedicated pass**:
    four sessions running have now found a real bug purely by reading code
    closely (`buildSawmillScenery()` called twice; the lift's platform
