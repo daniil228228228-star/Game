@@ -159,6 +159,46 @@ All notable changes to Tycoon 3D. Each session appends an entry here — see
   every frame, snapping the camera back — so anchor the *player's saved
   position* to the spot you want to screenshot instead.
 
+### 2026-09-20 — Hireable sawmill workers (VISION.md Phase 2, item 2, slice 2)
+- User-directed session, driven by an explicit design constraint: "I don't
+  want idle NPC workers — if you can hire them, they should do something."
+  Fed straight into the still-open "give planks a purpose" checklist item.
+- Added up to 3 hireable lumberjacks, bought one at a time from a new pad
+  next to the sawmill for money + planks (`workerHireCost(n)`, steeply
+  increasing per worker). Each is a real state machine, not a decoration:
+  `seekTree → toTree → chopping → toMill → seekTree`. A worker claims a
+  free source tree (`tree.claimedBy`), walks to it, chops it — triggering
+  the *same* fall/shrink/regrow tree animation and belt pipeline the
+  automatic generator timer already used — then hauls to the mill and
+  loops. If no tree is free it walks back toward the shed rather than
+  freezing in place, so it's always animating something. The automatic
+  timer's own tree search now also skips `claimedBy` trees, so a worker
+  en route and the timer can never fell the same tree.
+- Worker meshes reuse the player's existing `makeLimb()` limb-group rig
+  (a cheap procedural skeleton, no new asset pipeline) with a distinct
+  vest color per worker and a small axe on the swinging arm, so they read
+  as NPCs at a glance rather than clones of the player.
+- Two new achievements (`first_worker`, `full_crew`); worker count
+  persists across saves and is free-rehydrated on load (no double-charge
+  on reload). Added an onboarding hint bullet and full ru/en strings for
+  the new pad label and toasts.
+- Verified with a headless-browser pass: a save-data injection (per the
+  documented player-teleport technique) placed the player directly on the
+  hire pad with enough money/planks for all 3 workers — all three hired
+  automatically across consecutive frames with correct cost deduction
+  (money and planks) and both new achievements firing with their rewards;
+  a 20s soak with 3 active workers plus the base timer produced logs
+  steadily with zero console/page errors; `node --test` (15/15, including
+  the i18n suite against the new STRINGS/ACHIEVEMENTS entries) stayed
+  green.
+- Also used this session to look at a separate, more advanced variant of
+  this game the user shared (richer archetype materials, but still fully
+  closed buildings and a single-sine player animation) and turned their
+  feedback ("models feel simple/useless, can't enter them") into a new
+  open `VISION.md` Phase 1 item — enterable buildings + a player animation
+  state machine — with the new worker rig noted as a working reference
+  for the state-machine half of that item.
+
 ---
 
 ## Format for new entries

@@ -231,6 +231,10 @@ const ACHIEVEMENTS = [
     check: s => s.planksEarned >= 1 },
   { id: 'plank_baron', name: 'Лесной барон', nameEn: 'Plank Baron', desc: 'Накопите 50 досок с лесопилки', descEn: 'Collect 50 planks from the sawmill', reward: 200, emoji: '🌲',
     check: s => s.planksEarned >= 50 },
+  { id: 'first_worker', name: 'Первый найм', nameEn: 'First Hire', desc: 'Наймите первого лесоруба', descEn: 'Hire your first lumberjack', reward: 50, emoji: '🪓',
+    check: s => (s.workersHired || 0) >= 1 },
+  { id: 'full_crew', name: 'Полная бригада', nameEn: 'Full Crew', desc: 'Наймите всех 3 лесорубов', descEn: 'Hire all 3 lumberjacks', reward: 300, emoji: '👷',
+    check: s => (s.workersHired || 0) >= 3 },
 ];
 
 function achName(a) { return lang === 'ru' ? a.name : a.nameEn; }
@@ -253,6 +257,7 @@ const STRINGS = {
       'Держите <b>Shift</b> (или толкайте джойстик до упора) — спринт, следите за шкалой выносливости',
       '<b>Золотая площадка</b> — добегите до неё, чтобы построить здание рядом (если хватает денег). Стрелка сверху подскажет направление',
       '<b>Синяя площадка</b> у здания — прокачивает его до 3 уровней и повышает доход. Сами здания теперь твёрдые — сквозь них не пройти',
+      'Загляните к лесопилке 🪵 — там можно нанять <b>лесорубов</b>: они сами рубят деревья и носят брёвна на мельницу, пока вы заняты другим',
       'Следите за достижениями 🏆 — за них дают деньги. Построите весь тайкон — откроется <b>престиж</b> ✨',
     ],
     ach_title: 'Достижения',
@@ -270,7 +275,10 @@ const STRINGS = {
     toast_achievement: '🏆 Достижение: {name} (+{reward} 💰)',
     toast_need_more: 'Нужно ещё {amount} 💰',
     toast_need_more_upgrade: 'Нужно ещё {amount} 💰 на улучшение',
+    toast_need_more_worker: 'Нужно ещё {money} 💰 и {planks} 🪵 на лесоруба',
+    toast_worker_hired: 'Нанят лесоруб! ({n}/{max})',
     upgrade_level_line: '⬆️ Ур. {level}',
+    worker_pad_line: '🪓 Лесоруб {n}/{max}',
     doc_title: 'Tycoon 3D — Строительный тайкон',
   },
   en: {
@@ -283,6 +291,7 @@ const STRINGS = {
       'Hold <b>Shift</b> (or push the joystick to its edge) to sprint — watch the stamina bar',
       "<b>Gold pad</b> — run onto it to build a building nearby (if you can afford it). The arrow at the top points the way",
       "<b>Blue pad</b> next to a building — upgrades it up to level 3 and raises its income. Buildings are now solid — you can't walk through them",
+      "Visit the sawmill 🪵 — hire <b>lumberjacks</b> there and they'll chop trees and haul logs to the mill on their own",
       'Watch for achievements 🏆 — they pay out cash. Build the whole tycoon and <b>prestige</b> ✨ unlocks',
     ],
     ach_title: 'Achievements',
@@ -300,7 +309,10 @@ const STRINGS = {
     toast_achievement: '🏆 Achievement: {name} (+{reward} 💰)',
     toast_need_more: 'Need {amount} 💰 more',
     toast_need_more_upgrade: 'Need {amount} 💰 more to upgrade',
+    toast_need_more_worker: 'Need {money} 💰 and {planks} 🪵 more to hire a lumberjack',
+    toast_worker_hired: 'Hired a lumberjack! ({n}/{max})',
     upgrade_level_line: '⬆️ Lv. {level}',
+    worker_pad_line: '🪓 Lumberjack {n}/{max}',
     doc_title: 'Tycoon 3D — Building Tycoon',
   },
 };
@@ -319,7 +331,7 @@ let displayedMoney = money; // eased toward `money` each frame for a count-up fe
 let stageIndex = 0; // number of stages already built
 let stamina = STAMINA_MAX;
 let planks = 0; // secondary resource produced by the sawmill (see SAWMILL below)
-const stats = { totalEarned: 0, distanceRun: 0, prestige: 0, maxLevelHit: false, planksEarned: 0 };
+const stats = { totalEarned: 0, distanceRun: 0, prestige: 0, maxLevelHit: false, planksEarned: 0, workersHired: 0 };
 const unlockedAch = new Set();
 let currentPad = null; // { index, group, pos: THREE.Vector3 }
 const growingMeshes = []; // pop-in scale animation queue
@@ -641,7 +653,7 @@ function buildSawmillScenery() {
     const baseScale = 0.85 + Math.random() * 0.25;
     tree.scale.setScalar(baseScale);
     scene.add(tree);
-    sourceTrees.push({ mesh: tree, state: 'grown', timer: 0, baseScale });
+    sourceTrees.push({ mesh: tree, state: 'grown', timer: 0, baseScale, claimedBy: null });
   }
   // Purely decorative trees a little further out, so the grove doesn't look sparse once a
   // couple of source trees are mid-regrow.
@@ -755,7 +767,9 @@ function updateSawmill(dt) {
 
   woodSpawnTimer += dt;
   if (woodSpawnTimer >= WOOD_SPAWN_INTERVAL) {
-    const readyTree = sourceTrees.find(tr => tr.state === 'grown');
+    // Skip trees a lumberjack is already en route to, so the automatic timer and a worker
+    // can never both claim the same tree.
+    const readyTree = sourceTrees.find(tr => tr.state === 'grown' && !tr.claimedBy);
     if (readyTree) {
       woodSpawnTimer = 0;
       readyTree.state = 'chopping';
@@ -783,6 +797,203 @@ function updateSawmill(dt) {
       log.mesh.position.lerpVectors(log.from, SAWMILL_POS, log.t);
       log.mesh.position.y = 0.3;
       log.mesh.rotation.x += dt * 3;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/*  SAWMILL WORKERS — hireable lumberjacks (VISION.md Phase 2, item 2:    */
+/*  "give planks a purpose" + user request: no idle NPCs, hired workers   */
+/*  must visibly do something). Each worker walks to a free source tree,  */
+/*  chops it (feeding the same fall/shrink/regrow animation and belt      */
+/*  pipeline as the automatic timer), hauls to the mill, and repeats —    */
+/*  never stands around; with no tree free it heads back to the shed and  */
+/*  keeps animating there instead of freezing in place.                   */
+/* ---------------------------------------------------------------------- */
+const WORKER_MAX = 3;
+const WORKER_SPEED = 3.2;
+const WORKER_CHOP_DURATION = 1.1;
+const WORKER_ARRIVE_DIST = 0.35;
+const WORKER_COLORS = [0xd9822b, 0x3fae5c, 0xb14a4a];
+
+function workerHireCost(n) {
+  return { money: Math.round(400 * Math.pow(2.2, n)), planks: 20 + n * 20 };
+}
+
+const workers = []; // { mesh, state: 'seekTree'|'toTree'|'chopping'|'toMill'|'wander', target, treeRef, chopTimer, phase }
+let workerPad = null;
+
+function buildWorkerMesh(colorIdx) {
+  const color = WORKER_COLORS[colorIdx % WORKER_COLORS.length];
+  const group = new THREE.Group();
+
+  const torso = new THREE.Mesh(
+    new THREE.BoxGeometry(0.56, 0.72, 0.34),
+    new THREE.MeshStandardMaterial({ color, roughness: 0.75 })
+  );
+  torso.position.y = 0.95;
+  torso.castShadow = true;
+  group.add(torso);
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.25, 14, 14),
+    new THREE.MeshStandardMaterial({ color: 0xffcfa0, roughness: 0.7 })
+  );
+  head.position.y = 1.5;
+  head.castShadow = true;
+  group.add(head);
+
+  const legL = makeLimb(0x2b2f38); legL.position.set(-0.15, 0.56, 0); group.add(legL);
+  const legR = makeLimb(0x2b2f38); legR.position.set(0.15, 0.56, 0); group.add(legR);
+  const armL = makeLimb(color); armL.position.set(-0.38, 1.22, 0); group.add(armL);
+  const armR = makeLimb(color); armR.position.set(0.38, 1.22, 0); group.add(armR);
+
+  // A small axe riding the right arm marks these as lumberjacks at a glance.
+  const axeHandle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.025, 0.025, 0.5, 6),
+    new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.8 })
+  );
+  axeHandle.position.set(0, -0.55, 0.05);
+  axeHandle.rotation.x = 0.3;
+  armR.add(axeHandle);
+  const axeHead = new THREE.Mesh(
+    new THREE.BoxGeometry(0.16, 0.14, 0.04),
+    new THREE.MeshStandardMaterial({ color: 0xaab0bb, roughness: 0.4, metalness: 0.5 })
+  );
+  axeHead.position.set(0, -0.78, 0.12);
+  armR.add(axeHead);
+
+  group.userData = { legL, legR, armL, armR };
+  return group;
+}
+
+function spawnWorkerPad() {
+  const beltDir2 = new THREE.Vector3().subVectors(SAWMILL_POS, GENERATOR_POS).normalize();
+  const perp = new THREE.Vector3(-beltDir2.z, 0, beltDir2.x);
+  const pos = new THREE.Vector3().addVectors(GENERATOR_POS, SAWMILL_POS).multiplyScalar(0.5).addScaledVector(perp, 3.2);
+
+  const group = new THREE.Group();
+  const disc = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.85, 0.85, 0.13, 24),
+    new THREE.MeshStandardMaterial({ color: 0x8a5a34, emissive: 0x2a1a0a, emissiveIntensity: 0.5, roughness: 0.5 })
+  );
+  disc.position.y = 0.07;
+  disc.receiveShadow = true;
+  group.add(disc);
+
+  const cost = workerHireCost(workers.length);
+  const sprite = makeLabelSprite([
+    t('worker_pad_line', { n: workers.length, max: WORKER_MAX }),
+    `${fmt(cost.money)} 💰 ${fmt(cost.planks)} 🪵`,
+  ]);
+  sprite.position.y = 2.3;
+  sprite.scale.set(2.4, 1.15, 1);
+  group.add(sprite);
+
+  group.position.set(pos.x, 0, pos.z);
+  scene.add(group);
+  workerPad = { group, sprite, pos, insufficientShown: false };
+}
+
+function removeWorkerPad() {
+  if (!workerPad) return;
+  scene.remove(workerPad.group);
+  workerPad = null;
+}
+
+function hireWorker(opts = {}) {
+  if (workers.length >= WORKER_MAX) return;
+  if (!opts.free) {
+    const cost = workerHireCost(workers.length);
+    if (money < cost.money || planks < cost.planks) return;
+    money -= cost.money;
+    planks -= cost.planks;
+  }
+
+  const colorIdx = workers.length;
+  const mesh = buildWorkerMesh(colorIdx);
+  const spawnPos = GENERATOR_POS.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.4, 0, (Math.random() - 0.5) * 1.4));
+  mesh.position.copy(spawnPos);
+  scene.add(mesh);
+  workers.push({
+    mesh, state: 'seekTree', target: spawnPos.clone(), treeRef: null,
+    chopTimer: 0, phase: Math.random() * 10,
+  });
+  stats.workersHired = workers.length;
+
+  if (!opts.free) {
+    removeWorkerPad();
+    if (workers.length < WORKER_MAX) spawnWorkerPad();
+    spawnBurst(spawnPos, 0x8a5a34);
+    sfx.build();
+    toast(t('toast_worker_hired', { n: workers.length, max: WORKER_MAX }));
+    updateHUD();
+    checkAchievements();
+    save();
+  }
+}
+
+function updateWorkers(dt) {
+  for (const w of workers) {
+    w.phase += dt * 6;
+    const ud = w.mesh.userData;
+
+    if (w.state === 'seekTree') {
+      let best = null, bestD = Infinity;
+      for (const tr of sourceTrees) {
+        if (tr.state !== 'grown' || tr.claimedBy) continue;
+        const d = w.mesh.position.distanceTo(tr.mesh.position);
+        if (d < bestD) { bestD = d; best = tr; }
+      }
+      if (best) {
+        best.claimedBy = w;
+        w.treeRef = best;
+        w.target = best.mesh.position.clone();
+        w.state = 'toTree';
+      } else {
+        // No tree free right now — head back toward the shed instead of standing idle;
+        // it'll pick a fresh target as soon as one regrows.
+        w.target = GENERATOR_POS.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.6, 0, (Math.random() - 0.5) * 1.6));
+        w.state = 'wander';
+      }
+    }
+
+    if (w.state === 'toTree' || w.state === 'toMill' || w.state === 'wander') {
+      const dx = w.target.x - w.mesh.position.x, dz = w.target.z - w.mesh.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 0.02) {
+        const step = Math.min(dist, WORKER_SPEED * dt);
+        w.mesh.position.x += (dx / dist) * step;
+        w.mesh.position.z += (dz / dist) * step;
+        w.mesh.rotation.y = Math.atan2(dx, dz);
+        const swing = Math.sin(w.phase) * 0.5;
+        ud.legL.rotation.x = swing; ud.legR.rotation.x = -swing;
+        ud.armL.rotation.x = -swing; ud.armR.rotation.x = swing;
+      }
+      if (dist <= WORKER_ARRIVE_DIST) {
+        if (w.state === 'toTree') { w.state = 'chopping'; w.chopTimer = 0; }
+        else { w.state = 'seekTree'; }
+      }
+    } else if (w.state === 'chopping') {
+      w.chopTimer += dt;
+      const swing = Math.max(0, Math.sin(w.phase * 3)) * 0.9;
+      ud.armR.rotation.x = -0.4 - swing;
+      ud.armL.rotation.x = 0.15;
+      ud.legL.rotation.x = 0; ud.legR.rotation.x = 0;
+      if (w.chopTimer >= WORKER_CHOP_DURATION) {
+        const tr = w.treeRef;
+        if (tr) {
+          if (tr.state === 'grown') {
+            tr.state = 'chopping';
+            tr.timer = 0;
+            spawnLog(tr.mesh.position);
+          }
+          tr.claimedBy = null;
+        }
+        w.treeRef = null;
+        w.target = SAWMILL_POS.clone();
+        w.state = 'toMill';
+      }
     }
   }
 }
@@ -1530,6 +1741,16 @@ function applyLanguage() {
     b.upgradePad.group.add(sprite);
     b.upgradePad.sprite = sprite;
   }
+  if (workerPad) {
+    const cost = workerHireCost(workers.length);
+    const sprite = regenerateSprite(workerPad.sprite, [
+      t('worker_pad_line', { n: workers.length, max: WORKER_MAX }),
+      `${fmt(cost.money)} 💰 ${fmt(cost.planks)} 🪵`,
+    ], 1.15);
+    workerPad.group.remove(workerPad.sprite);
+    workerPad.group.add(sprite);
+    workerPad.sprite = sprite;
+  }
 
   renderAchList();
   updateHUD();
@@ -1657,6 +1878,7 @@ function save() {
     money, stageIndex, stats, unlocked: [...unlockedAch], planks,
     buildings: buildings.map(b => ({ index: b.index, level: b.level })),
     player: { x: player.position.x, z: player.position.z },
+    workerCount: workers.length,
   }));
 }
 
@@ -1685,6 +1907,8 @@ function load() {
         THREE.MathUtils.clamp(data.player.z || 0, -GROUND_HALF + 2, GROUND_HALF - 2)
       );
     }
+    const savedWorkers = Math.min(typeof data.workerCount === 'number' ? data.workerCount : 0, WORKER_MAX);
+    for (let i = 0; i < savedWorkers; i++) hireWorker({ free: true });
   } catch (e) {
     console.warn('save corrupted, ignoring', e);
   }
@@ -1825,6 +2049,26 @@ function updatePlayer(dt) {
     }
   }
 
+  // Worker-hire pad trigger check, same pattern as the building pads above.
+  if (workerPad) {
+    const dist = Math.hypot(player.position.x - workerPad.pos.x, player.position.z - workerPad.pos.z);
+    if (dist < PAD_TRIGGER_RADIUS) {
+      const cost = workerHireCost(workers.length);
+      if (money >= cost.money && planks >= cost.planks) {
+        hireWorker();
+      } else if (!workerPad.insufficientShown) {
+        workerPad.insufficientShown = true;
+        sfx.error();
+        toast(t('toast_need_more_worker', {
+          money: fmt(Math.max(0, cost.money - money)),
+          planks: fmt(Math.max(0, cost.planks - planks)),
+        }));
+      }
+    } else if (dist > PAD_TRIGGER_RADIUS * 1.6) {
+      workerPad.insufficientShown = false;
+    }
+  }
+
   // OrbitControls.update() recomputes its spherical offset from (camera.position - target)
   // on every call. Since target now teleports to the player each frame, the camera must be
   // shifted by the exact same delta first — otherwise the offset (and thus distance) balloons
@@ -1841,6 +2085,7 @@ function animate() {
 
   updatePlayer(dt);
   updateSawmill(dt);
+  updateWorkers(dt);
   updateSmoke(dt);
 
   for (let i = growingMeshes.length - 1; i >= 0; i--) {
@@ -1915,6 +2160,7 @@ function animate() {
 load();
 applyLanguage();
 if (stageIndex < STAGES.length && !currentPad) spawnPad(stageIndex);
+if (workers.length < WORKER_MAX && !workerPad) spawnWorkerPad();
 
 // Position the camera behind the player, facing the next objective pad (or a sensible
 // default direction once everything is built), so new/returning players immediately see where to run.

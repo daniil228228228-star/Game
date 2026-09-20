@@ -124,6 +124,26 @@ browser or publish as a static page.
       once (upgrade levels included) plus the factories' smoke — no console
       errors, no test regressions (`STAGES`'s new fields don't affect the
       cost/income/name checks in `tests/`).
+- [ ] **Enterable buildings + a real player animation state machine**
+      (user feedback on a follow-up variant of this game: archetype models
+      still read as closed boxes with a decorative flat "door," and the
+      player's run cycle is a single `Math.sin` swing with no idle/interact
+      state). Two related but separable pieces:
+      1. Pick 2-3 archetypes as a pilot (house, shop, factory) and give their
+         door a real trigger: either a lightweight "pocket" interior scene
+         swapped in on approach (own floor/walls/light + a couple of
+         archetype-appropriate props), or — simpler first cut — remove the
+         door's collision and extend the building's footprint with an actual
+         walk-in interior volume. Don't attempt all 10 archetypes in one
+         session.
+      2. Replace the player's one-sine-wave animation with a small named
+         state machine (`idle`, `walk`/`run` — already mostly there via
+         sprint, `interact`/`build` on purchase/upgrade) driven off the
+         existing `legL/legR/armL/armR` limb groups — no GLTF/AnimationMixer
+         needed, they're already a cheap procedural rig.
+      The sawmill workers added alongside this note (Phase 2 item 2) reuse
+      the same limb-group rig with a walk/chop state machine — a working
+      reference for what player state-machine animation should look like.
 
 ## Phase 2 — Content depth 🔷 (multi-session)
 
@@ -157,11 +177,24 @@ browser or publish as a static page.
             a game bug), and collision confirmed by spawning the player inside
             the sawmill's collider and checking it's pushed out on the very
             next frame.
-      - [ ] **Give planks a purpose.** Right now they accumulate with no sink.
-            Spend them on: a discount on the next main-path pad's money cost,
-            and/or gate a subset of building upgrades behind a plank cost
-            alongside money (needs its own UI affordance on the upgrade pad's
-            sprite label showing both costs).
+      - [x] **Give planks a purpose** — first sink: hireable lumberjack workers
+            (user-requested design constraint: no idle/decorative NPCs — a
+            hired worker must visibly do something). Up to `WORKER_MAX` (3)
+            workers, hired one at a time from a pad next to the sawmill for
+            money + planks (`workerHireCost(n)`, steep per-worker growth).
+            Each worker runs a real state machine (`seekTree → toTree →
+            chopping → toMill → seekTree`): it claims a free source tree
+            (`tree.claimedBy`, also respected by the automatic timer so the
+            two producers can't double-fell the same tree), walks to it,
+            chops it (feeding the *same* fall/shrink/regrow animation and
+            belt pipeline the automatic timer uses), hauls to the mill, and
+            repeats. With no tree free it walks back toward the shed and
+            keeps animating there — never freezes in place. Two new
+            achievements (`first_worker`, `full_crew`); worker count persists
+            across saves (`workerCount`, free-rehydrated on load). Still open:
+            a second plank sink (a build/upgrade discount) would make the
+            resource matter even before/without hiring workers — left as a
+            follow-up since this slice alone already gives planks a real use.
       - [x] **Make the generator feel legible** — user asked directly "where
             does the wood come from?" The grove around the shed IS the
             source now: 4 of its trees are interactive (chop → fall → shrink
