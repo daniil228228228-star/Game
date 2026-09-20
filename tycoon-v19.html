@@ -1628,8 +1628,13 @@ createSawmillDropoff();
 
 const FIELD_UPGRADE_CONFIGS = [
   { key: 'carry', emoji: '🎒', ru: 'Переноска', en: 'Carry Capacity', pos: GENERATOR_POS.clone().add(new THREE.Vector3(2.8, 0, -1.9)), max: 3, money: 250, wood: 4 },
-  { key: 'sawmill', emoji: '⚙️', ru: 'Мотор лесопилки', en: 'Sawmill Motor', pos: SAWMILL_POS.clone().add(new THREE.Vector3(-2.8, 0, 1.5)), max: 3, money: 450, wood: 6 },
-  { key: 'yield', emoji: '🪚', ru: 'Распил древесины', en: 'Wood Yield', pos: SAWMILL_POS.clone().add(new THREE.Vector3(-1.2, 0, -2.9)), max: 2, money: 650, wood: 8 },
+  // The spiral road segment connecting stage 3 to stage 4 happens to run almost due south
+  // right past x=-20, cutting straight through this corner of the sawmill camp -- the
+  // 'sawmill' and 'yield' pads' original offsets (-2.8 and -1.2 on X) put their discs only
+  // 0.69 and 0.94 units from that segment's centerline, i.e. sitting on the paved road
+  // itself (half-width 1.15). Pushed further out on X to clear the road + sidewalk.
+  { key: 'sawmill', emoji: '⚙️', ru: 'Мотор лесопилки', en: 'Sawmill Motor', pos: SAWMILL_POS.clone().add(new THREE.Vector3(-5.0, 0, 1.5)), max: 3, money: 450, wood: 6 },
+  { key: 'yield', emoji: '🪚', ru: 'Распил древесины', en: 'Wood Yield', pos: SAWMILL_POS.clone().add(new THREE.Vector3(-5.0, 0, -2.9)), max: 2, money: 650, wood: 8 },
   { key: 'construction', emoji: '🏗️', ru: 'Скорость стройки', en: 'Build Speed', pos: new THREE.Vector3(4.6, 0, -3.8), max: 3, money: 850, wood: 10 },
 ];
 

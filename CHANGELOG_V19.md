@@ -505,6 +505,20 @@ tracks progress against.
   staying similar to before. Zero new failures across the regression
   suite.
 
+### 2026-09-20 — Fixed two field-upgrade pads sitting directly on the road
+- The road segment connecting stage 3 to stage 4 runs almost due south
+  right past x=-20, cutting through a corner of the sawmill camp. The
+  'sawmill' and 'yield' field-upgrade pads' original positions put them
+  only 0.69 and 0.94 units from that segment's centerline -- sitting on
+  the paved road (half-width 1.15), not just near it. Permanent,
+  deterministic map geometry, so it affected every playthrough.
+- Pushed both pads' X offset out further so they clear the road +
+  sidewalk (now 2.89 and 2.86 units away).
+- Verified with the `distToNearestRoadSegment()` helper against every
+  hand-placed sawmill-area position; both pads now clear, still close
+  enough to read as near the mill, and comfortably apart from each
+  other. Zero new failures across the regression suite.
+
 ---
 
 ## Format for new entries

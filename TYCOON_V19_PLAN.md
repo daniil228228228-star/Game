@@ -100,6 +100,34 @@ grepping), so future sessions don't waste time re-building working systems:
 
 ## What recent sessions added (most recent first)
 
+**Found and fixed two field-upgrade pads sitting on the road** (this
+session, a follow-up audit using the `distToNearestRoadSegment()` helper
+from the previous fix -- checked every other static/hand-placed position
+in the game against it, not just the random scatter). The road segment
+connecting stage 3 to stage 4 happens to run almost due south right past
+`x=-20`, cutting straight through a corner of the sawmill camp. The
+'sawmill' (Sawmill Motor) and 'yield' (Wood Yield) field-upgrade pads'
+original offsets put their discs only 0.69 and 0.94 units from that
+segment's centerline -- sitting ON the paved road itself (half-width
+1.15), not just close to it. This is a permanent, deterministic map-
+geometry fact (not something random-seed-dependent like the scatter
+bug), so it affected every single playthrough. Pushed both pads' X
+offset from SAWMILL_POS out further (to -5.0) so they clear the road +
+sidewalk (now 2.89 and 2.86 units away) while staying close enough to
+read as "near the mill."
+
+Verified: re-ran the same `distToNearestRoadSegment()` check against
+`GENERATOR_POS`, `SAWMILL_POS`, `SAWMILL_DROPOFF_POS`, and all 4 field-
+upgrade pad positions -- both previously-flagged pads now clear;
+confirmed the two pads are still comfortably apart from each other
+(4.4 units). `SAWMILL_POS` itself sits at 2.12 (just inside the
+sidewalk-clearance zone but outside the actual paved road) -- left
+alone this session since moving the mill building itself would cascade
+into the conveyor belt, static colliders, and dropoff position, for a
+much smaller visual issue than a pad sitting mid-road. Re-ran the full
+regression suite (boot, pinch-zoom, full-build lifecycle, camera-
+obstruction, scatter-on-road) with zero new failures.
+
 **Found and fixed scattered decor spawning on the road** (this session,
 another incidental-audit find). `scatterScenery()`'s random tree/rock/
 bush placement only checked clearance against the 10 stage NODE
