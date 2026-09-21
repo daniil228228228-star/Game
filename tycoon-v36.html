@@ -10408,7 +10408,9 @@ function createResidentNPC(seed=0){
   g.scale.setScalar(.82);
   if(!VISUAL_MOBILE){head.castShadow=true;torso.castShadow=true;}
   scene.add(g);
-  return {group:g,legL,legR,armL,armR,districtId:null,currentDistrict:null,workDistrict:null,target:null,speed:.78+Math.random()*.28,phase:Math.random()*6.28,idle:0,scheduleStep:0,activity:'home',inTransitUntil:0};
+  return {group:g,legL,legR,armL,armR,districtId:null,currentDistrict:null,workDistrict:null,target:null,speed:.78+Math.random()*.28,phase:Math.random()*6.28,idle:0,scheduleStep:0,activity:'home',inTransitUntil:0,
+    // v36.9 footpath routing state -- see computeResidentFootRouteV369/updateLivingCity.
+    _footRouteTarget:null,pathFollowing:false,pathPoints:null,pathIndex:0};
 }
 
 function createLivingCityCar(kind='civilian', color=0x5a86c8){
@@ -10652,16 +10654,36 @@ function updateLivingCity(dt){
   for(const r of livingCityRuntime.residents){
     if(!r.group.visible||!r.districtId)continue;
     if(!r.target)chooseResidentTarget(r);
+    // v36.9: whenever chooseResidentTarget hands out a new r.target, decide (once, not every
+    // frame) whether this trip should follow the district's footpath loop instead of beelining.
+    if(r._footRouteTarget!==r.target){r._footRouteTarget=r.target;computeResidentFootRouteV369(r);}
     const dx=r.target.x-r.group.position.x,dz=r.target.z-r.group.position.z,dist=Math.hypot(dx,dz);
     if(dist<.18){
-      if(r.activity==='commute_depart'){const dest=districtTransitAnchor(r.workDistrict);r.group.position.set(dest.x,0,dest.z);r.currentDistrict=r.workDistrict;r.target=districtPrimaryWorkAnchor(r.workDistrict);r.activity='work';r.idle=.35;r.inTransitUntil=performance.now()+900+Math.random()*550;r.group.visible=false;continue;}
-      if(r.activity==='commute_return'){const dest=districtTransitAnchor(r.districtId);r.group.position.set(dest.x,0,dest.z);r.currentDistrict=r.districtId;r.target=districtShoppingAnchor(r.districtId);r.activity='shop';r.idle=.35;r.inTransitUntil=performance.now()+900+Math.random()*550;r.group.visible=false;continue;}
+      if(r.activity==='commute_depart'){const dest=districtTransitAnchor(r.workDistrict);r.group.position.set(dest.x,0,dest.z);r.currentDistrict=r.workDistrict;r.target=districtPrimaryWorkAnchor(r.workDistrict);r.activity='work';r.idle=.35;r.inTransitUntil=performance.now()+900+Math.random()*550;r.group.visible=false;r.pathFollowing=false;continue;}
+      if(r.activity==='commute_return'){const dest=districtTransitAnchor(r.districtId);r.group.position.set(dest.x,0,dest.z);r.currentDistrict=r.districtId;r.target=districtShoppingAnchor(r.districtId);r.activity='shop';r.idle=.35;r.inTransitUntil=performance.now()+900+Math.random()*550;r.group.visible=false;r.pathFollowing=false;continue;}
       r.idle-=stepDt;if(r.idle<=0)chooseResidentTarget(r);r.legL.rotation.x*=.82;r.legR.rotation.x*=.82;r.armL.rotation.x*=.82;r.armR.rotation.x*=.82;continue;
     }
-    const speed=r.speed;const sx=dx/dist*speed*stepDt,sz=dz/dist*speed*stepDt;
+    // Aim at the next waypoint of this trip's own curved footpath detour while path-following
+    // is active; otherwise (short hop, or once the last waypoint is reached) aim straight at
+    // the real target, same as before -- that last stretch is the short direct hop onto the
+    // exact target (a door, a bench...) the spec calls for.
+    let aimX=r.target.x,aimZ=r.target.z;
+    if(r.pathFollowing&&r.pathPoints){
+      const wp=r.pathPoints[r.pathIndex];
+      if(wp){
+        const wdist=Math.hypot(wp.x-r.group.position.x,wp.z-r.group.position.z);
+        if(wdist<.4){
+          r.pathIndex++;
+          if(r.pathIndex>=r.pathPoints.length-1)r.pathFollowing=false; // last point ~= r.target
+          else{const nwp=r.pathPoints[r.pathIndex];aimX=nwp.x;aimZ=nwp.z;}
+        } else {aimX=wp.x;aimZ=wp.z;}
+      } else r.pathFollowing=false;
+    }
+    const adx=aimX-r.group.position.x,adz=aimZ-r.group.position.z,adist=Math.max(.001,Math.hypot(adx,adz));
+    const speed=r.speed;const sx=adx/adist*speed*stepDt,sz=adz/adist*speed*stepDt;
     const solved=resolveAgentPosition(r.group.position.x+sx,r.group.position.z+sz,.18,obstacles);
     r.group.position.x=solved.x;r.group.position.z=solved.z;
-    const yaw=Math.atan2(dx,dz);const yd=Math.atan2(Math.sin(yaw-r.group.rotation.y),Math.cos(yaw-r.group.rotation.y));r.group.rotation.y+=yd*Math.min(1,stepDt*9);
+    const yaw=Math.atan2(adx,adz);const yd=Math.atan2(Math.sin(yaw-r.group.rotation.y),Math.cos(yaw-r.group.rotation.y));r.group.rotation.y+=yd*Math.min(1,stepDt*9);
     r.phase+=stepDt*(7+speed);const swing=Math.sin(r.phase)*.58;r.legL.rotation.x=swing;r.legR.rotation.x=-swing;r.armL.rotation.x=-swing*.75;r.armR.rotation.x=swing*.75;
   }
   for(const c of livingCityRuntime.cars)moveLivingCar(c,stepDt);
@@ -14391,6 +14413,211 @@ function refreshStageRoadsV367(){
 const _refreshV34CityWorldV367=refreshV34CityWorld;
 refreshV34CityWorld=function(){ _refreshV34CityWorldV367(); refreshStageRoadsV367(); };
 setTimeout(()=>{ try{refreshStageRoadsV367();}catch(err){console.error('v36.7 stage road reset failed',err);} }, 240);
+
+
+/* ====================================================================== */
+/* v36.9 — RESIDENT FOOTPATHS (separate pedestrian network, off the road)  */
+/* ====================================================================== */
+// Direct user complaint (translated): residents don't walk on roads like that, those are for
+// cars -- write a spec for roads vs. resident paths, and paths shouldn't be perfectly straight.
+// Root cause: chooseResidentTarget just sets r.target, and the old per-frame loop in
+// updateLivingCity moved straight toward it every frame -- no waypoints, no concept of a
+// sidewalk vs. a road, so residents beelined straight across the vehicle asphalt (arterial
+// grid, district streets, stage spokes) whenever a target sat on the far side of one. Roads
+// are not touched by any of this (ROAD_STYLE_V353/addRoadSegmentPremiumV353/
+// masterRoadSegmentsV362/the arterial grid stay exactly as they were). This section adds a
+// second, self-contained geometry layer -- short, gently-curved dirt/gravel footpaths
+// connecting each district's real pedestrian anchors -- and changes only the resident movement
+// loop (in updateLivingCity, above) to walk along it instead of beelining to r.target.
+
+cityWorldRuntime.footpaths=cityWorldRuntime.footpaths||new Map();
+cityWorldRuntime.footpathSpines=cityWorldRuntime.footpathSpines||new Map();
+
+// Cheap deterministic hash (not Math.random()) so a path's curve doesn't visibly jump every
+// time refreshResidentFootpathsV369 reruns after an unrelated district refresh.
+function footpathHashV369(n){ const x=Math.sin(n*12.9898)*43758.5453; return x-Math.floor(x); }
+
+// distToNearestRoadSegment only knows the original hub-to-stage spine (pathPoints) -- this
+// session's own audit notes it "works by a separate pathPoints" not linked to the arterial
+// grid/district streets built since. Footpaths need to steer clear of ALL of those, and the
+// Playwright verification pass below needs the same check, so this pulls the real road
+// geometry together from the functions that already build it (masterRoadSegmentsV362,
+// districtArterialPath, the district street rectangle+cross from makeCityStreetGroup) without
+// duplicating or touching any of the actual road-building code.
+function distToNearestRoadNetworkV369(x,z){
+  let best=distToNearestRoadSegment(x,z);
+  const segDist=(a,b)=>{const abx=b.x-a.x,abz=b.z-a.z,l2=abx*abx+abz*abz;const t=l2>0?THREE.MathUtils.clamp(((x-a.x)*abx+(z-a.z)*abz)/l2,0,1):0;return Math.hypot(x-(a.x+abx*t),z-(a.z+abz*t));};
+  for(const [a,b] of masterRoadSegmentsV362())best=Math.min(best,segDist(a,b));
+  for(const cfg of CITY_DISTRICTS){
+    if(!districtUnlocked(cfg)||districtLevel(cfg.id)<=0)continue;
+    const path=districtArterialPath(cfg.id);
+    for(let i=0;i<path.length-1;i++)best=Math.min(best,segDist(path[i],path[i+1]));
+    const d=districtBlockDimsV362(cfg.id),hw=d.hw,hh=d.hh,cx=cfg.pos.x,cz=cfg.pos.z,lv=districtLevel(cfg.id);
+    const C=(x2,z2)=>({x:cx+x2,z:cz+z2});
+    const pts=[C(-hw,-hh),C(hw,-hh),C(hw,hh),C(-hw,hh)];
+    for(let i=0;i<4;i++)best=Math.min(best,segDist(pts[i],pts[(i+1)%4]));
+    best=Math.min(best,segDist(C(-hw,0),C(hw,0)),segDist(C(0,-hh),C(0,hh)));
+    if(lv>=2)best=Math.min(best,segDist(C(-hw*.78,-hh*.55),C(hw*.78,-hh*.55)));
+    if(lv>=3)best=Math.min(best,segDist(C(-hw*.48,-hh*.78),C(-hw*.48,hh*.78)),segDist(C(hw*.48,-hh*.78),C(hw*.48,hh*.78)));
+  }
+  return best;
+}
+
+function footpathDistrictAnchorsV369(id){
+  const cfg=CITY_DISTRICTS.find(d=>d.id===id);if(!cfg)return [];
+  const out=[];
+  const add=(p)=>{if(p&&Number.isFinite(Number(p.x))&&Number.isFinite(Number(p.z))){const v=new THREE.Vector3(Number(p.x),0,Number(p.z));if(!out.some(q=>q.distanceTo(v)<0.7))out.push(v);}};
+  const homeAnchors=districtHomeAnchors(id);
+  if(homeAnchors.length)add(homeAnchors[0]);
+  if(homeAnchors.length>1)add(homeAnchors[homeAnchors.length-1]);
+  add(districtShoppingAnchor(id));
+  add(districtPrimaryWorkAnchor(id));
+  const park=cityState.parks?.[id]?.pos;if(park&&districtHasPark(id))add(park);
+  const school=cityState.school?.[id]?.pos;if(school&&districtHasSchool(id))add(school);
+  add(districtTransitAnchor(id));
+  add(cfg.pos);
+  return out;
+}
+
+// A short 2-4 point stand-in for the straight line between two anchors: picks a small
+// perpendicular offset (deterministic per pair, not re-rolled every frame) and, between the
+// two candidate sides, keeps whichever sits further from the road network -- so the path reads
+// as its own organic route instead of hugging or re-crossing the asphalt it runs beside. This
+// is deliberately NOT the road's own route between the same two points.
+// Target clearance from the road network: comfortably outside even the widest arterial
+// segment's half-width (~0.9-0.95) plus a real walking margin, so a bend doesn't just end up
+// grazing the shoulder of the same street it's meant to route away from.
+const FOOTPATH_ROAD_CLEARANCE_V369=1.7;
+function footpathCurvedSegmentV369(a,b,seedIdx){
+  const dx=b.x-a.x,dz=b.z-a.z,len=Math.hypot(dx,dz);
+  if(len<0.7){const out=[a.clone(),b.clone()];out.minClearance=Math.min(distToNearestRoadNetworkV369(a.x,a.z),distToNearestRoadNetworkV369(b.x,b.z));return out;}
+  const nx=-dz/len,nz=dx/len,seed=a.x*13.1+a.z*7.7+b.x*5.3+b.z*11.9+seedIdx*3.7;
+  const pts=[a.clone()];
+  let minClearance=Infinity;
+  const addBend=(t,sub)=>{
+    const bx=a.x+dx*t,bz=a.z+dz*t;
+    const r=footpathHashV369(seed+sub*2.13),jitter=0.8+r*0.5;
+    // Try both sides at increasing offsets until one actually clears the road network by
+    // FOOTPATH_ROAD_CLEARANCE_V369, rather than a small fixed bend that can end up running
+    // parallel and close to a nearby street (a district's ring road sits at roughly the same
+    // radius as its building anchors, so a small offset alone often isn't enough to separate
+    // the two). Falls back to the best of everything tried if nothing fully clears -- callers
+    // that need a real guarantee (not just decorative ground geometry) check `.minClearance` on
+    // the returned array and abandon the detour themselves if it stayed low.
+    let best=null,bestClearance=-Infinity;
+    for(const mag of [1.1,1.8,2.6,3.4]){
+      for(const side of [1,-1]){
+        const m=mag*jitter*side;
+        const cand={x:bx+nx*m,z:bz+nz*m};
+        const clearance=distToNearestRoadNetworkV369(cand.x,cand.z);
+        if(clearance>bestClearance){bestClearance=clearance;best=cand;}
+        if(clearance>=FOOTPATH_ROAD_CLEARANCE_V369){pts.push(new THREE.Vector3(cand.x,0,cand.z));minClearance=Math.min(minClearance,clearance);return;}
+      }
+    }
+    pts.push(new THREE.Vector3(best.x,0,best.z));minClearance=Math.min(minClearance,bestClearance);
+  };
+  if(len>7.5){addBend(0.32,1);addBend(0.68,2);}else addBend(0.5,1);
+  pts.push(b.clone());
+  pts.minClearance=minClearance;
+  return pts;
+}
+
+// One gently-curved closed loop per district, threading through its real pedestrian anchors in
+// angular order around the district center. Built once per district refresh (see
+// refreshResidentFootpathsV369/refreshV34CityWorld below), not per frame.
+function buildFootpathSpineV369(id){
+  const cfg=CITY_DISTRICTS.find(d=>d.id===id);if(!cfg)return null;
+  const nodes=footpathDistrictAnchorsV369(id);
+  if(nodes.length<2)return null;
+  nodes.sort((p,q)=>Math.atan2(p.z-cfg.pos.z,p.x-cfg.pos.x)-Math.atan2(q.z-cfg.pos.z,q.x-cfg.pos.x));
+  const loop=[...nodes,nodes[0]];
+  const spine=[loop[0].clone()];
+  for(let i=0;i<loop.length-1;i++){
+    const seg=footpathCurvedSegmentV369(loop[i],loop[i+1],i);
+    for(let k=1;k<seg.length;k++)spine.push(seg[k]);
+  }
+  return spine;
+}
+
+const FOOTPATH_STYLE_V369={
+  // Reuses the same dirt texture+bump the central plaza already uses (makeDirtTexture /
+  // getDetailBump('dirt')) -- no new assets -- but a duller, more worn tone so it doesn't just
+  // read as "another plaza", and nothing like ROAD_STYLE_V353's grey asphalt/lane markings.
+  surface:new THREE.MeshStandardMaterial({map:makeDirtTexture(),color:0xb2a07c,roughness:0.98,metalness:0,bumpMap:getDetailBump('dirt'),bumpScale:0.055}),
+};
+function addFootpathSegmentV369(group,a,b,seedIdx){
+  const dx=b.x-a.x,dz=b.z-a.z,len=Math.hypot(dx,dz);if(len<0.10)return;
+  const rot=Math.atan2(dx,dz);
+  // A slightly irregular width (0.40-0.62, always narrower than any road) instead of one
+  // engineered uniform width -- reads as a worn desire-path, not a paved lane. No centre-line,
+  // no curb.
+  const width=0.40+footpathHashV369(a.x*9.1+a.z*4.4+b.x*2.2+b.z*7.8+seedIdx)*0.22;
+  const mesh=new THREE.Mesh(new THREE.BoxGeometry(width,0.018,len+0.06),FOOTPATH_STYLE_V369.surface);
+  mesh.position.set((a.x+b.x)/2,0.024,(a.z+b.z)/2);mesh.rotation.y=rot;mesh.receiveShadow=true;group.add(mesh);
+}
+function refreshResidentFootpathsV369(){
+  for(const cfg of CITY_DISTRICTS){
+    const old=cityWorldRuntime.footpaths.get(cfg.id);
+    if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.footpaths.delete(cfg.id);}
+    cityWorldRuntime.footpathSpines.delete(cfg.id);
+    if(!districtUnlocked(cfg)||districtLevel(cfg.id)<=0)continue;
+    const spine=buildFootpathSpineV369(cfg.id);
+    if(!spine||spine.length<3)continue;
+    cityWorldRuntime.footpathSpines.set(cfg.id,spine);
+    const g=new THREE.Group();
+    for(let i=0;i<spine.length-1;i++)addFootpathSegmentV369(g,spine[i],spine[i+1],i);
+    if(g.children.length){scene.add(g);cityWorldRuntime.footpaths.set(cfg.id,g);}
+  }
+}
+// Same "wrap the existing refresh entrypoint" pattern every earlier v36.x world-geometry pass
+// in this file uses (v36.3/v36.4/v36.5/v36.6/v36.7 above) -- footpaths rebuild on exactly the
+// triggers that already rebuild district access roads/land plots (district level-ups, land
+// plot zoning/build), not on a per-frame timer.
+const _refreshV34CityWorldV369=refreshV34CityWorld;
+refreshV34CityWorld=function(){_refreshV34CityWorldV369();refreshResidentFootpathsV369();};
+setTimeout(()=>{try{refreshResidentFootpathsV369();}catch(err){console.error('v36.9 footpath build failed',err);}},260);
+
+// --- resident routing: walk a curved detour instead of beelining to r.target ----------------
+// Earlier version of this routed residents onto the shared district footpath LOOP (arc-length
+// walk toward the projection of r.target on it, via sampleClosedPathV365). Measured against a
+// deterministic sweep of every anchor pair in every district (home/work/shop/transit/plaza,
+// before vs. after, same start/target for both), that made things worse about as often as
+// better: the loop threads through every anchor in one angularly-sorted ring, and a district's
+// own street ring sits at roughly that same radius (buildings need driveways to the street) --
+// so two anchors that are close in a straight line could be forced the "long way round" through
+// unrelated nodes, often running past MORE of the road network than the original straight line
+// did, not less.
+//
+// This builds a short, self-contained curved detour for THIS ONE TRIP instead, directly between
+// the resident's current position and its target -- reusing footpathCurvedSegmentV369 (the same
+// bend-away-from-the-road-network helper the visual footpath loop is built from, so it reads as
+// the same style of path) rather than forcing the trip through the shared loop's other anchors.
+// It is still computed once per target change, not per frame, and the resident then just walks
+// its 2-4 waypoints in order (the same lightweight pattern civilian cars already use for
+// route-following, moveWaypointCityVehicle/c.routeIndex, adapted here instead of reused
+// directly since residents don't need lanes/turn-pauses).
+function computeResidentFootRouteV369(r){
+  r.pathFollowing=false;r.pathPoints=null;r.pathIndex=0;
+  const target=r.target;
+  if(!target)return;
+  const sx=r.group.position.x,sz=r.group.position.z;
+  const beeline=Math.hypot(target.x-sx,target.z-sz);
+  if(beeline<3.5)return; // short local hop -- straight line is fine, same as before
+  const seed=Math.floor(sx*31.7+sz*17.3+target.x*13.1+target.z*7.9);
+  const pts=footpathCurvedSegmentV369(new THREE.Vector3(sx,0,sz),new THREE.Vector3(target.x,0,target.z),seed);
+  if(pts.length<3)return; // too short a hop for the helper to have bent it at all
+  // If the bend search couldn't get real daylight from the road anywhere along this trip (e.g.
+  // the target sits right at a district's internal crossroads, like the plaza anchor -- there's
+  // no detour that clears a road with traffic arms radiating in four directions from the same
+  // point), a curved detour doesn't actually help and just adds walking distance for nothing --
+  // fall back to the straight line, same as before, rather than force a bad detour.
+  if(!(pts.minClearance>=1.35))return;
+  // Sanity clamp: don't take a detour that ends up a lot longer than just walking there.
+  let pathLen=0;for(let i=0;i<pts.length-1;i++)pathLen+=pts[i].distanceTo(pts[i+1]);
+  if(pathLen>beeline*1.6+2)return;
+  r.pathFollowing=true;r.pathPoints=pts;r.pathIndex=1;
+}
+window.__TYCOON_FOOTPATH_DEBUG__={distToRoadNetwork:distToNearestRoadNetworkV369,spines:()=>cityWorldRuntime.footpathSpines,refresh:refreshResidentFootpathsV369,computeRoute:computeResidentFootRouteV369};
 
 /* ---------------------------------------------------------------------- */
 /*  INIT                                                                   */
