@@ -944,6 +944,15 @@ let cityState = {
     business:{ schoolBuilt:false, pendingUntil:0, pos:null },
     waterfront:{ schoolBuilt:false, pendingUntil:0, pos:null },
   },
+  // v36 Stage B slice 5 (final civic building) — a kindergarten. Same "every district
+  // including industrial" reach as clinic/police/school, own top-level per-district
+  // object (own pendingUntil/pos), same pattern as `school` above rather than folding in.
+  kindergarten:{
+    suburb:{ kindergartenBuilt:false, pendingUntil:0, pos:null },
+    industrial:{ kindergartenBuilt:false, pendingUntil:0, pos:null },
+    business:{ kindergartenBuilt:false, pendingUntil:0, pos:null },
+    waterfront:{ kindergartenBuilt:false, pendingUntil:0, pos:null },
+  },
   // v33.0 — the city gets real mixed-use development, leisure and emergency services.
   commercial:{
     suburb:{ level:0, pendingUntil:0, pendingLevel:0, pos:null },
@@ -1691,8 +1700,12 @@ groundShadow.rotation.x = -Math.PI / 2;
 groundShadow.position.y = 0.02;
 scene.add(groundShadow);
 
+// v36.10 -- squared off into a proper city-block plaza (was a CircleGeometry disc). With the
+// stage-road spokes now bending onto the grid's own axes instead of radiating straight out of
+// this point, a circular pad read as a leftover roundabout poking out of a rectangular grid.
+// Same footprint size and material as before, just a square block instead of a disc.
 const innerPlaza = new THREE.Mesh(
-  new THREE.CircleGeometry(4.35, 48),
+  new THREE.PlaneGeometry(9, 9),
   new THREE.MeshStandardMaterial({ map: makeDirtTexture(), color: 0xdcc9a7, roughness: 0.94, bumpMap: getDetailBump('dirt'), bumpScale: 0.04 })
 );
 innerPlaza.rotation.x = -Math.PI / 2;
@@ -8958,6 +8971,7 @@ function applyLanguage() {
   if (typeof refreshCivicWorld === 'function') refreshCivicWorld();
   if (typeof refreshPoliceWorld === 'function') refreshPoliceWorld();
   if (typeof refreshSchoolWorld === 'function') refreshSchoolWorld();
+  if (typeof refreshKindergartenWorld === 'function') refreshKindergartenWorld();
   if (typeof refreshV33CityWorld === 'function') refreshV33CityWorld();
   if (typeof cityOverlay !== 'undefined' && cityOverlay?.classList.contains('show')) renderCityPanel();
   if (operationsOverlay?.classList.contains('show')) renderOperationsPanel();
@@ -9054,7 +9068,7 @@ const CITY_INITIATIVES = [
   { id:'modernization', emoji:'⬆️', kind:'upgrades', unlockRep:75, baseTarget:5, reward:5600, rep:27, ru:'Модернизация портфеля', en:'Portfolio Modernization', descRu:'Прокачай существующие объекты', descEn:'Upgrade existing properties' },
   { id:'flagship', emoji:'🏗️', kind:'strategic', unlockRep:120, baseTarget:1, reward:8000, rep:36, ru:'Флагманский проект', en:'Flagship Project', descRu:'Заверши спецпроект или крупный тендер', descEn:'Complete a special project or major tender' },
 ];
-const cityWorldRuntime = { hubs:new Map(), residential:new Map(), civic:new Map(), police:new Map(), school:new Map(), streets:new Map(), neighborhoods:new Map(), commercial:new Map(), parks:new Map(), fire:new Map(), landPlots:new Map(), arterialRoads:new Map(), districtAccessRoads:new Map(), transportAccessRoads:null, neighborhoodColliders:[], plotColliders:[] }; // city meshes keyed by district
+const cityWorldRuntime = { hubs:new Map(), residential:new Map(), civic:new Map(), police:new Map(), school:new Map(), kindergarten:new Map(), streets:new Map(), neighborhoods:new Map(), commercial:new Map(), parks:new Map(), fire:new Map(), landPlots:new Map(), arterialRoads:new Map(), districtAccessRoads:new Map(), transportAccessRoads:null, neighborhoodColliders:[], plotColliders:[] }; // city meshes keyed by district
 function districtLevel(id){ return Math.max(0,Math.min(3,Math.floor(Number(cityState?.districts?.[id])||0))); }
 function currentClientTier(){ let tier=CLIENT_TIERS[0]; for(const t of CLIENT_TIERS) if(cityState.reputation>=t.rep) tier=t; return tier; }
 function districtUnlocked(cfg){ return districtLevel(cfg.id)>0 || (cityState.reputation>=cfg.unlockRep && companyTierIndex()>=cfg.unlockTier); }
@@ -9173,9 +9187,16 @@ const RESIDENTIAL_BUILDING = {
 const HOUSING_DISTRICT_IDS = ['suburb','business','waterfront'];
 function residentialBuildCost(){ return { money:RESIDENTIAL_BUILDING.costMoney, wood:RESIDENTIAL_BUILDING.costWood, concrete:0, metal:0 }; }
 function neighborhoodLevel(districtId){ return Math.max(0,Math.min(3,Math.floor(Number(cityState.housing[districtId]?.neighborhoodLevel)||0))); }
+// v36 Stage B slice 5: a kindergarten's OTHER effect (besides the small education bump above)
+// is a flat housing-capacity bonus -- exactly the "makes a neighborhood attractive to families"
+// amenity a real kindergarten is, and a genuinely different lever than the growth-RATE stacking
+// clinic/police/school/fire/park already use in updateDistrictStats() (KINDERGARTEN_CAPACITY_BONUS
+// raises the CAP itself, not how fast population closes in on it) -- so it doesn't just become a
+// 6th decimal in that same additive list.
+const KINDERGARTEN_CAPACITY_BONUS = 20;
 function districtHousingCapacity(districtId){
   const h=cityState.housing[districtId];
-  return h?.apartmentBlockBuilt ? RESIDENTIAL_BUILDING.capacity + neighborhoodLevel(districtId)*45 : 0;
+  return h?.apartmentBlockBuilt ? RESIDENTIAL_BUILDING.capacity + neighborhoodLevel(districtId)*45 + (districtHasKindergarten(districtId)?KINDERGARTEN_CAPACITY_BONUS:0) : 0;
 }
 function populationCapacity(){ return CITY_DISTRICTS.reduce((sum,cfg)=>sum+(typeof districtTotalHousingCapacity==='function'?districtTotalHousingCapacity(cfg.id):districtHousingCapacity(cfg.id)),0); }
 // Same clearance check the decor scatter pass uses (distToNearestRoadSegment) -- this repo has
@@ -9264,8 +9285,9 @@ function buildResidentialBlock(districtId){
 function commercialLevel(id){ return Math.max(0,Math.min(3,Math.floor(Number(cityState.commercial?.[id]?.level)||0))); }
 function districtHasPark(id){ return !!cityState.parks?.[id]?.parkBuilt; }
 function districtHasFire(id){ return !!cityState.fire?.[id]?.stationBuilt; }
+function districtHasKindergarten(id){ return !!cityState.kindergarten?.[id]?.kindergartenBuilt; }
 function districtInfrastructureCount(id){
-  return (districtHasClinic(id)?1:0) + (districtHasPolice(id)?1:0) + (districtHasSchool(id)?1:0) + (districtHasFire(id)?1:0) + (districtHasPark(id)?1:0);
+  return (districtHasClinic(id)?1:0) + (districtHasPolice(id)?1:0) + (districtHasSchool(id)?1:0) + (districtHasFire(id)?1:0) + (districtHasPark(id)?1:0) + (districtHasKindergarten(id)?1:0);
 }
 function districtJobsTarget(cfg, lvl){
   const infra = districtInfrastructureCount(cfg.id);
@@ -9309,6 +9331,7 @@ function cityServiceExpensesPerSec(){
     if(districtHasSchool(id))fixed+=0.62;
     if(districtHasFire(id))fixed+=0.60;
     if(districtHasPark(id))fixed+=0.30;
+    if(districtHasKindergarten(id))fixed+=0.34;
     fixed+=commercialLevel(id)*0.10;
   }
   return fixed + finiteNonNegative(cityState.population,0)*0.006 + (typeof cityLandServiceExpensesPerSec==='function'?cityLandServiceExpensesPerSec():0);
@@ -9340,10 +9363,14 @@ function updateDistrictStats(){
     const hasSchool = districtHasSchool(cfg.id);
     const hasFire = districtHasFire(cfg.id);
     const hasPark = districtHasPark(cfg.id);
+    const hasKindergarten = districtHasKindergarten(cfg.id);
 
     const healthTarget = THREE.MathUtils.clamp((28 + lvl*7 + (hasClinic?42:0) + (hasPark?4:0))*budgetMult, 0, 100);
     const safetyTarget = THREE.MathUtils.clamp((30 + lvl*7 + (hasPolice?42:0) + (hasFire?5:0))*budgetMult, 0, 100);
-    const educationTarget = THREE.MathUtils.clamp((29 + lvl*7 + (hasSchool?42:0))*budgetMult, 0, 100);
+    // A kindergarten thematically overlaps with early-childhood education -- rather than a
+    // near-duplicate 6th stat, it's a smaller SECOND contributor stacking on top of the school's
+    // main +42 (see districtHousingCapacity() below for its other, non-redundant effect).
+    const educationTarget = THREE.MathUtils.clamp((29 + lvl*7 + (hasSchool?42:0) + (hasKindergarten?16:0))*budgetMult, 0, 100);
     const fireTarget = THREE.MathUtils.clamp((28 + lvl*6 + (hasFire?48:0) + (hasPolice?3:0))*budgetMult,0,100);
     ds.health = THREE.MathUtils.clamp((Number.isFinite(ds.health)?ds.health:50) + (healthTarget-(Number.isFinite(ds.health)?ds.health:50))*0.2, 0, 100);
     ds.safety = THREE.MathUtils.clamp((Number.isFinite(ds.safety)?ds.safety:50) + (safetyTarget-(Number.isFinite(ds.safety)?ds.safety:50))*0.2, 0, 100);
@@ -9418,6 +9445,7 @@ function updatePopulation(){
   updateCivicLabel();
   updatePoliceLabel();
   updateSchoolLabel();
+  updateKindergartenLabel();
   updateHUD();
 }
 
@@ -9496,6 +9524,19 @@ function renderCityPanel(){
         schoolLine=`<div class="resourceLine">${districtCostText(scost)}</div><button class="v30Btn ${saffordable?'primary':''}" data-school="${cfg.id}" ${!saffordable?'disabled':''}>${lang==='ru'?'Построить школу':'Build school'}</button>`;
       }
     }
+    let kindergartenLine='';
+    if (unlocked) {
+      const kg=cityState.kindergarten[cfg.id];
+      if (kg.kindergartenBuilt) {
+        kindergartenLine=`<div class="status">🧸 ${lang==='ru'?`Детский сад построен · +${KINDERGARTEN_CAPACITY_BONUS} к ёмкости жилья`:`Kindergarten built · +${KINDERGARTEN_CAPACITY_BONUS} housing capacity`}</div>`;
+      } else if (kg.pendingUntil>0) {
+        const buildLeft=Math.max(0,Math.ceil((kg.pendingUntil-Date.now())/1000));
+        kindergartenLine=`<div class="status">🏗️ ${lang==='ru'?'Стройка идёт':'Under construction'} · ⏱ ${buildLeft}${lang==='ru'?'с':'s'}</div>`;
+      } else {
+        const kcost=kindergartenBuildCost(); const kaffordable=canPayResources(kcost);
+        kindergartenLine=`<div class="resourceLine">${districtCostText(kcost)}</div><button class="v30Btn ${kaffordable?'primary':''}" data-kindergarten="${cfg.id}" ${!kaffordable?'disabled':''}>${lang==='ru'?'Построить детский сад':'Build kindergarten'}</button>`;
+      }
+    }
     let v33Line='';
     if(unlocked){
       const com=cityState.commercial[cfg.id], park=cityState.parks[cfg.id], fire=cityState.fire[cfg.id];
@@ -9513,7 +9554,7 @@ function renderCityPanel(){
       else fireHtml=`<div class="status">🚒 ${lang==='ru'?'Пожарная часть работает':'Fire station active'}</div>`;
       v33Line=`${comHtml}${parkHtml}${fireHtml}${typeof landDevelopmentHtml==='function'?landDevelopmentHtml(cfg.id):''}`;
     }
-    return `<div class="cityCard ${!unlocked?'locked':''} ${maxed?'maxed':''}"><div class="name">${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}</div><div class="desc">${lang==='ru'?cfg.bonusRu:cfg.bonusEn}</div><div class="status">${unlocked?(lang==='ru'?`Уровень ${lv}/3`:`Level ${lv}/3`):`🔒 ${lock}`}</div>${statsLine}${housingLine}${civicLine}${policeLine}${schoolLine}${v33Line}${!maxed&&unlocked?`<div class="resourceLine">${districtCostText(cost)}</div><button class="v30Btn ${affordable?'primary':''}" data-district="${cfg.id}" ${!affordable?'disabled':''}>${lang==='ru'?'Развить':'Upgrade'}</button>`:maxed?`<button class="v30Btn" disabled>✓ MAX</button>`:''}</div>`;
+    return `<div class="cityCard ${!unlocked?'locked':''} ${maxed?'maxed':''}"><div class="name">${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}</div><div class="desc">${lang==='ru'?cfg.bonusRu:cfg.bonusEn}</div><div class="status">${unlocked?(lang==='ru'?`Уровень ${lv}/3`:`Level ${lv}/3`):`🔒 ${lock}`}</div>${statsLine}${housingLine}${civicLine}${policeLine}${schoolLine}${kindergartenLine}${v33Line}${!maxed&&unlocked?`<div class="resourceLine">${districtCostText(cost)}</div><button class="v30Btn ${affordable?'primary':''}" data-district="${cfg.id}" ${!affordable?'disabled':''}>${lang==='ru'?'Развить':'Upgrade'}</button>`:maxed?`<button class="v30Btn" disabled>✓ MAX</button>`:''}</div>`;
   }).join('');
   document.getElementById('initiativeTitle').textContent=lang==='ru'?'Стратегический проект':'Strategic Initiative';
   const active=cityState.initiative,progress=cityInitiativeProgress();
@@ -9530,6 +9571,7 @@ function renderCityPanel(){
   document.querySelectorAll('[data-civic]').forEach(b=>b.onclick=()=>buildCivicBuilding(b.dataset.civic));
   document.querySelectorAll('[data-police]').forEach(b=>b.onclick=()=>buildPoliceStation(b.dataset.police));
   document.querySelectorAll('[data-school]').forEach(b=>b.onclick=()=>buildSchool(b.dataset.school));
+  document.querySelectorAll('[data-kindergarten]').forEach(b=>b.onclick=()=>buildKindergarten(b.dataset.kindergarten));
   document.querySelectorAll('[data-neighborhood]').forEach(b=>b.onclick=()=>expandNeighborhood(b.dataset.neighborhood));
   document.querySelectorAll('[data-commercial]').forEach(b=>b.onclick=()=>buildCommercial(b.dataset.commercial));
   document.querySelectorAll('[data-park]').forEach(b=>b.onclick=()=>buildDistrictPark(b.dataset.park));
@@ -9604,6 +9646,18 @@ function updateCityExpansion(dt){
       renderSystemsPanel(); save();
     }
   }
+  for (const districtId of KINDERGARTEN_DISTRICT_IDS) {
+    const kg = cityState.kindergarten[districtId];
+    if (kg.pendingUntil>0 && Date.now()>=kg.pendingUntil) {
+      kg.pendingUntil=0; kg.kindergartenBuilt=true;
+      awardCityReputation(3,'kindergarten');
+      refreshKindergartenWorld();
+      const kp=kg.pos; if(kp) spawnBurst(new THREE.Vector3(kp.x,0,kp.z), 0xff9fb0);
+      sfx.achievement(); haptic('heavy'); triggerImpactFlash(.22);
+      toast(lang==='ru'?`🧸 Построено: ${KINDERGARTEN_BUILDING.ru}! Образование и вместимость жилья района растут.`:`🧸 Built: ${KINDERGARTEN_BUILDING.en}! District education and housing capacity rise.`);
+      renderSystemsPanel(); save();
+    }
+  }
   // v33 completion pipeline: neighborhoods, commerce, parks and fire stations.
   for(const id of HOUSING_DISTRICT_IDS){const h=cityState.housing[id];if(h?.expansionUntil>0&&Date.now()>=h.expansionUntil){h.expansionUntil=0;h.neighborhoodLevel=Math.min(3,neighborhoodLevel(id)+1);awardCityReputation(3+h.neighborhoodLevel,'neighborhood');refreshNeighborhoodWorld();sfx.achievement();haptic('heavy');toast(lang==='ru'?`🏡 Квартал расширен · уровень ${h.neighborhoodLevel}/3`:`🏡 Neighborhood expanded · level ${h.neighborhoodLevel}/3`);save();}}
   for(const cfg of CITY_DISTRICTS){
@@ -9644,12 +9698,13 @@ function districtHasClinic(districtId){ return !!cityState.civic[districtId]?.cl
 // position, so a new building never lands on top of another one -- generalizes the
 // BUILDING_CLEAR distance check residentialBuildingPosition() already uses for
 // residential-vs-residential.
-function occupiedBuildingPositions(excludeCivicDistrict, excludePoliceDistrict, excludeSchoolDistrict, excludeLandKey=null){
+function occupiedBuildingPositions(excludeCivicDistrict, excludePoliceDistrict, excludeSchoolDistrict, excludeLandKey=null, excludeKindergartenDistrict=null){
   const positions=[];
   for (const id of HOUSING_DISTRICT_IDS){ const p=cityState.housing[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
   for (const id of CIVIC_DISTRICT_IDS){ if (id===excludeCivicDistrict) continue; const p=cityState.civic[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
   for (const id of POLICE_DISTRICT_IDS){ if (id===excludePoliceDistrict) continue; const p=cityState.police[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
   for (const id of SCHOOL_DISTRICT_IDS){ if (id===excludeSchoolDistrict) continue; const p=cityState.school[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
+  for (const id of KINDERGARTEN_DISTRICT_IDS){ if (id===excludeKindergartenDistrict) continue; const p=cityState.kindergarten[id]?.pos; if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) positions.push(p); }
   for (const cfg of CITY_DISTRICTS){
     const cp=cityState.commercial?.[cfg.id]?.pos;if(cp&&Number.isFinite(cp.x)&&Number.isFinite(cp.z))positions.push(cp);
     const pp=cityState.parks?.[cfg.id]?.pos;if(pp&&Number.isFinite(pp.x)&&Number.isFinite(pp.z))positions.push(pp);
@@ -9925,6 +9980,135 @@ function buildSchool(districtId){
   sc.pendingUntil = Date.now() + SCHOOL_BUILDING.buildDuration*1000;
   sfx.build(); haptic('medium'); triggerImpactFlash(.16);
   toast(lang==='ru'?`🏗️ Стройка начата: ${SCHOOL_BUILDING.ru}`:`🏗️ Construction started: ${SCHOOL_BUILDING.en}`);
+  renderCityPanel(); renderSystemsPanel(); save();
+}
+
+/* ---------------------------------------------------------------------- */
+/*  v36 STAGE B SLICE 5 — "городская инфраструктура": fifth and final civic  */
+/*  building, a kindergarten (детский сад). Same reach as the clinic/police/ */
+/*  school (every district including industrial), same construction         */
+/*  pipeline (spawnConstructionSite + createBuildingMesh + ring-search       */
+/*  placement + distToNearestRoadSegment clearance + occupiedBuildingPositions*/
+/*  overlap check). The other four civic archetypes are already claimed      */
+/*  (office=housing, shop=clinic, tower=police, house=school), so visual      */
+/*  distinctiveness here comes from a playful coral color plus a small       */
+/*  playground (sandbox + swing) added directly onto the mesh, rather than    */
+/*  a brand-new BUILDERS archetype. Real, measurable effect: a SMALLER        */
+/*  secondary contributor to the district's existing `education` stat (on    */
+/*  top of the school's main +42 -- genuine thematic overlap with            */
+/*  early-childhood education, deliberately not a near-duplicate 6th stat),   */
+/*  PLUS a flat housing-capacity bonus (KINDERGARTEN_CAPACITY_BONUS, see      */
+/*  districtHousingCapacity() above) -- a "makes the neighborhood attractive  */
+/*  to families" mechanic that raises the CAP itself, a genuinely different   */
+/*  lever than the growth-RATE stacking clinic/police/school/fire/park        */
+/*  already use, not just another decimal added to that same list.           */
+/* ---------------------------------------------------------------------- */
+const KINDERGARTEN_BUILDING = {
+  id:'kindergarten', ru:'Детский сад', en:'Kindergarten', emoji:'🧸',
+  archetype:'shop', color:0xff9fb0, height:2.75, baseSize:2.25,
+  costMoney:850, costWood:3, costConcrete:2, buildDuration:5.0,
+};
+// Every district can host a kindergarten too -- same civic reach as clinic/police/school.
+const KINDERGARTEN_DISTRICT_IDS = CITY_DISTRICTS.map(d=>d.id);
+function kindergartenBuildCost(){ return { money:KINDERGARTEN_BUILDING.costMoney, wood:KINDERGARTEN_BUILDING.costWood, concrete:KINDERGARTEN_BUILDING.costConcrete, metal:0 }; }
+function kindergartenBuildingPosition(districtId){
+  const hub = CITY_DISTRICTS.find(d=>d.id===districtId)?.pos || new THREE.Vector3(0,0,0);
+  const ROAD_CLEAR = 2.6, HUB_CLEAR = 4.4, BUILDING_CLEAR = 6.0;
+  const otherPositions = occupiedBuildingPositions(undefined, undefined, undefined, null, districtId);
+  for (let ring=0; ring<6; ring++){
+    const radius = 6 + ring*2.4;
+    for (let k=0;k<12;k++){
+      // A fifth angle offset (beyond residentialBuildingPosition's, civicBuildingPosition's,
+      // policeBuildingPosition's and schoolBuildingPosition's) so a kindergarten built alongside
+      // the other four in the same district doesn't compete for the same candidate ring spots.
+      const angle=(k/12)*Math.PI*2 + ring*0.37 + Math.PI/3;
+      const x=hub.x+Math.cos(angle)*radius, z=hub.z+Math.sin(angle)*radius;
+      if (Math.hypot(x,z) > GROUND_HALF-4) continue;
+      if (Math.hypot(x-hub.x,z-hub.z) < HUB_CLEAR) continue;
+      if (distToNearestRoadSegment(x,z) < ROAD_CLEAR || distanceToDistrictArterial(districtId,x,z) < Math.max(2.15,ROAD_CLEAR*.82)) continue;
+      if (otherPositions.some(p=>Math.hypot(x-p.x,z-p.z) < BUILDING_CLEAR)) continue;
+      return new THREE.Vector3(x,0,z);
+    }
+  }
+  return new THREE.Vector3(hub.x+9,0,hub.z+9);
+}
+// Small playground (sandbox + swing) added directly onto the archetype mesh so a kindergarten
+// reads as its own thing at a glance even though it reuses the 'shop' archetype shape -- same
+// low-poly-prop technique the district park already uses for its own visual identity.
+function addKindergartenPlaygroundPropsV3610(mesh, baseSize){
+  const sandbox = new THREE.Mesh(new THREE.BoxGeometry(baseSize*0.34, 0.10, baseSize*0.34), new THREE.MeshStandardMaterial({ color:0xe8b96a, roughness:0.92 }));
+  sandbox.position.set(-baseSize*0.62, 0.05, baseSize*0.58);
+  mesh.add(sandbox);
+  const sand = new THREE.Mesh(new THREE.CylinderGeometry(baseSize*0.14, baseSize*0.15, 0.05, 12), new THREE.MeshStandardMaterial({ color:0xf3d9a0, roughness:0.96 }));
+  sand.position.set(-baseSize*0.62, 0.11, baseSize*0.58);
+  mesh.add(sand);
+  const swingMat = new THREE.MeshStandardMaterial({ color:0xff6f61, roughness:0.6, metalness:0.15 });
+  for (const sx of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.62, 8), swingMat);
+    post.position.set(baseSize*0.58 + sx*0.28, 0.31, baseSize*0.6);
+    mesh.add(post);
+  }
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.035, 0.035), swingMat);
+  bar.position.set(baseSize*0.58, 0.60, baseSize*0.6);
+  mesh.add(bar);
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.025, 0.1), new THREE.MeshStandardMaterial({ color:0xffd23f, roughness:0.7 }));
+  seat.position.set(baseSize*0.58, 0.32, baseSize*0.6);
+  mesh.add(seat);
+  for (const bx of [-0.14, 0.14]) {
+    const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.28, 6), new THREE.MeshStandardMaterial({ color:0x9c8a6b, roughness:0.9 }));
+    rope.position.set(baseSize*0.58 + bx, 0.46, baseSize*0.6);
+    mesh.add(rope);
+  }
+}
+function createKindergartenBuildingMesh(districtId){
+  const mesh = createBuildingMesh(KINDERGARTEN_BUILDING, 1);
+  addKindergartenPlaygroundPropsV3610(mesh, KINDERGARTEN_BUILDING.baseSize);
+  const label = makeLabelSprite([
+    `${lang==='ru'?KINDERGARTEN_BUILDING.ru:KINDERGARTEN_BUILDING.en}`,
+    `${lang==='ru'?'ЖИЛАЯ ЁМКОСТЬ':'HOUSING CAP'} +${KINDERGARTEN_CAPACITY_BONUS}`,
+  ]);
+  label.position.set(0, KINDERGARTEN_BUILDING.height*1.5, 0);
+  label.scale.set(1.7, 0.68, 1);
+  mesh.add(label);
+  mesh.userData.kindergartenLabel = label;
+  mesh.userData.kindergartenDistrict = districtId;
+  return mesh;
+}
+function refreshKindergartenWorld(){
+  for (const districtId of KINDERGARTEN_DISTRICT_IDS) {
+    const old = cityWorldRuntime.kindergarten.get(districtId);
+    if (old) { scene.remove(old); disposeObject3D(old); cityWorldRuntime.kindergarten.delete(districtId); }
+    const kg = cityState.kindergarten[districtId];
+    if (!kg?.kindergartenBuilt) continue;
+    const saved = kg.pos;
+    const pos = (saved && Number.isFinite(saved.x) && Number.isFinite(saved.z)) ? new THREE.Vector3(saved.x,0,saved.z) : kindergartenBuildingPosition(districtId);
+    const mesh = createKindergartenBuildingMesh(districtId);
+    mesh.position.set(pos.x, 0, pos.z);
+    scene.add(mesh);
+    cityWorldRuntime.kindergarten.set(districtId, mesh);
+  }
+  refreshCameraSolidMeshes();
+}
+function updateKindergartenLabel(){
+  for (const [districtId, mesh] of cityWorldRuntime.kindergarten) {
+    if (!mesh.userData.kindergartenLabel) continue;
+    updateLabelSprite(mesh.userData.kindergartenLabel, [
+      `${lang==='ru'?KINDERGARTEN_BUILDING.ru:KINDERGARTEN_BUILDING.en}`,
+      `${lang==='ru'?'ЖИЛАЯ ЁМКОСТЬ':'HOUSING CAP'} +${KINDERGARTEN_CAPACITY_BONUS}`,
+    ]);
+  }
+}
+function buildKindergarten(districtId){
+  const kg = cityState.kindergarten[districtId]; if (!kg) return;
+  if (kg.kindergartenBuilt || kg.pendingUntil>0) return;
+  const cost = kindergartenBuildCost();
+  if (!tryPayResources(cost)) { sfx.error(); toast(lang==='ru'?'Не хватает ресурсов на детский сад':'Not enough resources for the kindergarten'); return; }
+  const pos = kindergartenBuildingPosition(districtId);
+  kg.pos = { x:pos.x, z:pos.z };
+  spawnConstructionSite(pos, { archetype:KINDERGARTEN_BUILDING.archetype, baseSize:KINDERGARTEN_BUILDING.baseSize, height:KINDERGARTEN_BUILDING.height, color:0xffb84d }, KINDERGARTEN_BUILDING.buildDuration);
+  kg.pendingUntil = Date.now() + KINDERGARTEN_BUILDING.buildDuration*1000;
+  sfx.build(); haptic('medium'); triggerImpactFlash(.16);
+  toast(lang==='ru'?`🏗️ Стройка начата: ${KINDERGARTEN_BUILDING.ru}`:`🏗️ Construction started: ${KINDERGARTEN_BUILDING.en}`);
   renderCityPanel(); renderSystemsPanel(); save();
 }
 
@@ -10873,7 +11057,7 @@ function save() {
   }));
   try {
     const payload = JSON.stringify({
-      saveVersion: 42, // v36.7 Stage Road Reset: removes legacy pale spiral roads and rebuilds the main stage network as clean dark spokes
+      saveVersion: 43, // v36 Stage B slice 5: adds cityState.kindergarten (fifth and final civic building)
       savedAt: Date.now(),
       money: finiteNonNegative(money),
       stageIndex: integerNonNegative(stageIndex),
@@ -11083,6 +11267,21 @@ function load() {
           pendingUntil: Number.isFinite(Number(sc.pendingUntil)) ? Math.max(0, Number(sc.pendingUntil)) : 0,
           pos: (scPos && Number.isFinite(Number(scPos.x)) && Number.isFinite(Number(scPos.z)))
             ? { x:Number(scPos.x), z:Number(scPos.z) } : null,
+        };
+      }
+      // v36 Stage B slice 5: fifth and final civic building (kindergarten), one per district
+      // including industrial. Absent entirely on saveVersion < 43 -- every district defaults to
+      // unbuilt, same pattern as the clinic/police/school migrations above.
+      const kindergartenRaw = data.cityState.kindergarten || {};
+      cityState.kindergarten = {};
+      for (const districtId of KINDERGARTEN_DISTRICT_IDS) {
+        const kg = kindergartenRaw[districtId] || {};
+        const kgPos = kg.pos;
+        cityState.kindergarten[districtId] = {
+          kindergartenBuilt: !!kg.kindergartenBuilt,
+          pendingUntil: Number.isFinite(Number(kg.pendingUntil)) ? Math.max(0, Number(kg.pendingUntil)) : 0,
+          pos: (kgPos && Number.isFinite(Number(kgPos.x)) && Number.isFinite(Number(kgPos.z)))
+            ? { x:Number(kgPos.x), z:Number(kgPos.z) } : null,
         };
       }
       // v33.0: mixed-use city state; old saves simply start these systems unbuilt.
@@ -11320,6 +11519,7 @@ function gatherPhysicsCircles() {
   for (const id of CIVIC_DISTRICT_IDS) { const c=cityState.civic[id]; if(c?.clinicBuilt&&c.pos) circles.push({pos:c.pos,radius:1.58,kind:'cityBuilding'}); }
   for (const id of POLICE_DISTRICT_IDS) { const q=cityState.police[id]; if(q?.stationBuilt&&q.pos) circles.push({pos:q.pos,radius:1.60,kind:'cityBuilding'}); }
   for (const id of SCHOOL_DISTRICT_IDS) { const sc=cityState.school[id]; if(sc?.schoolBuilt&&sc.pos) circles.push({pos:sc.pos,radius:1.60,kind:'cityBuilding'}); }
+  for (const id of KINDERGARTEN_DISTRICT_IDS) { const kg=cityState.kindergarten[id]; if(kg?.kindergartenBuilt&&kg.pos) circles.push({pos:kg.pos,radius:1.55,kind:'cityBuilding'}); }
   for(const cfg of CITY_DISTRICTS){const id=cfg.id,cm=cityState.commercial?.[id],fr=cityState.fire?.[id];if(cm?.level>0&&cm.pos)circles.push({pos:cm.pos,radius:1.58,kind:'cityBuilding'});if(fr?.stationBuilt&&fr.pos)circles.push({pos:fr.pos,radius:1.62,kind:'cityBuilding'});}
   for(const c of cityWorldRuntime.neighborhoodColliders||[])circles.push({pos:c.pos,radius:c.radius,kind:'cityHouse'});
   for(const c of cityWorldRuntime.plotColliders||[])circles.push({pos:c.pos,radius:c.radius,kind:'cityPlot'});
@@ -11411,6 +11611,7 @@ function agentObstacleCircles(ignoreVehicles = false, includeCityVehicles = fals
   for (const id of CIVIC_DISTRICT_IDS) { const c=cityState.civic[id]; if(c?.clinicBuilt&&c.pos) circles.push({pos:c.pos,radius:1.50}); }
   for (const id of POLICE_DISTRICT_IDS) { const q=cityState.police[id]; if(q?.stationBuilt&&q.pos) circles.push({pos:q.pos,radius:1.52}); }
   for (const id of SCHOOL_DISTRICT_IDS) { const sc=cityState.school[id]; if(sc?.schoolBuilt&&sc.pos) circles.push({pos:sc.pos,radius:1.52}); }
+  for (const id of KINDERGARTEN_DISTRICT_IDS) { const kg=cityState.kindergarten[id]; if(kg?.kindergartenBuilt&&kg.pos) circles.push({pos:kg.pos,radius:1.48}); }
   for(const cfg of CITY_DISTRICTS){const id=cfg.id,cm=cityState.commercial?.[id],fr=cityState.fire?.[id];if(cm?.level>0&&cm.pos)circles.push({pos:cm.pos,radius:1.50});if(fr?.stationBuilt&&fr.pos)circles.push({pos:fr.pos,radius:1.54});}
   for(const c of cityWorldRuntime.neighborhoodColliders||[])circles.push({pos:c.pos,radius:c.radius});
   for(const c of cityWorldRuntime.plotColliders||[])circles.push({pos:c.pos,radius:c.radius});
@@ -12600,6 +12801,7 @@ function cityBuildingRadiusAtV351(id,pos){
   if(near(cityState.school?.[id]?.pos))return 1.60;
   if(near(cityState.commercial?.[id]?.pos))return 1.68;
   if(near(cityState.fire?.[id]?.pos))return 1.78;
+  if(near(cityState.kindergarten?.[id]?.pos))return 1.55;
   return 1.55;
 }
 const _districtBuildingFrontV351=districtBuildingFront;
@@ -12627,7 +12829,7 @@ function addCityDrivewayV351(id,pos){
 }
 function drivewaySignatureNowV351(){
   const a=buildings.map(b=>`${b.index}:${b.level}:${b.underConstruction?1:0}:${b.pos.x.toFixed(2)},${b.pos.z.toFixed(2)}`);
-  for(const cfg of CITY_DISTRICTS){const id=cfg.id;for(const [k,obj,ok] of [['h',cityState.housing?.[id],cityState.housing?.[id]?.apartmentBlockBuilt],['c',cityState.civic?.[id],districtHasClinic(id)],['p',cityState.police?.[id],districtHasPolice(id)],['s',cityState.school?.[id],districtHasSchool(id)],['m',cityState.commercial?.[id],commercialLevel(id)>0],['f',cityState.fire?.[id],districtHasFire(id)]])if(ok&&obj?.pos)a.push(`${id}${k}:${Number(obj.pos.x).toFixed(2)},${Number(obj.pos.z).toFixed(2)}`);}return a.join('|');
+  for(const cfg of CITY_DISTRICTS){const id=cfg.id;for(const [k,obj,ok] of [['h',cityState.housing?.[id],cityState.housing?.[id]?.apartmentBlockBuilt],['c',cityState.civic?.[id],districtHasClinic(id)],['p',cityState.police?.[id],districtHasPolice(id)],['s',cityState.school?.[id],districtHasSchool(id)],['m',cityState.commercial?.[id],commercialLevel(id)>0],['f',cityState.fire?.[id],districtHasFire(id)],['k',cityState.kindergarten?.[id],districtHasKindergarten(id)]])if(ok&&obj?.pos)a.push(`${id}${k}:${Number(obj.pos.x).toFixed(2)},${Number(obj.pos.z).toFixed(2)}`);}return a.join('|');
 }
 refreshDrivewaysV35=function(force=false){
   const sig=drivewaySignatureNowV351();if(!force&&sig===drivewaySignatureV351)return;drivewaySignatureV351=sig;clearGroupChildren(drivewayGroupV35);
@@ -12786,14 +12988,14 @@ districtShoppingAnchor=function(id){
 };
 livingDistrictAnchors=function(id){
   const cfg=CITY_DISTRICTS.find(d=>d.id===id),out=[cfg?.pos].filter(Boolean);const add=(p)=>{if(p&&Number.isFinite(Number(p.x))&&Number.isFinite(Number(p.z)))out.push(pedestrianFrontV352(id,new THREE.Vector3(Number(p.x),0,Number(p.z))));};
-  if(cityState.housing[id]?.apartmentBlockBuilt)add(cityState.housing[id]?.pos);if(districtHasClinic(id))add(cityState.civic[id]?.pos);if(districtHasPolice(id))add(cityState.police[id]?.pos);if(districtHasSchool(id))add(cityState.school[id]?.pos);if(commercialLevel(id)>0)add(cityState.commercial?.[id]?.pos);if(districtHasFire(id))add(cityState.fire?.[id]?.pos);
+  if(cityState.housing[id]?.apartmentBlockBuilt)add(cityState.housing[id]?.pos);if(districtHasClinic(id))add(cityState.civic[id]?.pos);if(districtHasPolice(id))add(cityState.police[id]?.pos);if(districtHasSchool(id))add(cityState.school[id]?.pos);if(commercialLevel(id)>0)add(cityState.commercial?.[id]?.pos);if(districtHasFire(id))add(cityState.fire?.[id]?.pos);if(districtHasKindergarten(id))add(cityState.kindergarten[id]?.pos);
   const park=cityState.parks?.[id]?.pos;if(park&&districtHasPark(id))out.push(new THREE.Vector3(park.x,0,park.z));districtLandState(id).plots.forEach((p,i)=>{if(p.zone)out.push(pedestrianFrontV352(id,landPlotWorldPosition(id,i)));});return out;
 };
 
 /* Every occupied zoned plot now participates in the visible district access network too. */
 districtBuiltAccessTargets=function(id){
   const out=[],push=(pos,ok=true)=>{if(ok&&pos&&Number.isFinite(Number(pos.x))&&Number.isFinite(Number(pos.z)))out.push(new THREE.Vector3(Number(pos.x),0,Number(pos.z)));};
-  const h=cityState.housing?.[id];push(h?.pos,h?.apartmentBlockBuilt);const c=cityState.civic?.[id];push(c?.pos,c?.clinicBuilt);const p=cityState.police?.[id];push(p?.pos,p?.stationBuilt);const sc=cityState.school?.[id];push(sc?.pos,sc?.schoolBuilt);const cm=cityState.commercial?.[id];push(cm?.pos,(cm?.level||0)>0);const f=cityState.fire?.[id];push(f?.pos,f?.stationBuilt);
+  const h=cityState.housing?.[id];push(h?.pos,h?.apartmentBlockBuilt);const c=cityState.civic?.[id];push(c?.pos,c?.clinicBuilt);const p=cityState.police?.[id];push(p?.pos,p?.stationBuilt);const sc=cityState.school?.[id];push(sc?.pos,sc?.schoolBuilt);const cm=cityState.commercial?.[id];push(cm?.pos,(cm?.level||0)>0);const f=cityState.fire?.[id];push(f?.pos,f?.stationBuilt);const kg=cityState.kindergarten?.[id];push(kg?.pos,kg?.kindergartenBuilt);
   districtLandState(id).plots.forEach((plot,i)=>{if(plot.zone||plot.pendingZone||plot.pendingLevel)push(landPlotWorldPosition(id,i),true);});return out;
 };
 
@@ -12998,13 +13200,14 @@ function refreshDrivewaysAndApronsV353(force=false){
   // City buildings were previously drawn TWICE: once by districtAccessRoads and once here.
   // That duplication created the ugly overlapping stripes reported by playtest.
   for(const cfg of CITY_DISTRICTS){
-    const id=cfg.id, h=cityState.housing?.[id], c=cityState.civic?.[id], p=cityState.police?.[id], sc=cityState.school?.[id], cm=cityState.commercial?.[id], f=cityState.fire?.[id];
+    const id=cfg.id, h=cityState.housing?.[id], c=cityState.civic?.[id], p=cityState.police?.[id], sc=cityState.school?.[id], cm=cityState.commercial?.[id], f=cityState.fire?.[id], kg=cityState.kindergarten?.[id];
     if(h?.apartmentBlockBuilt&&h.pos) cityAccessApronV353(id,h.pos,drivewayGroupV35);
     if(districtHasClinic(id)&&c?.pos) cityAccessApronV353(id,c.pos,drivewayGroupV35);
     if(districtHasPolice(id)&&p?.pos) cityAccessApronV353(id,p.pos,drivewayGroupV35);
     if(districtHasSchool(id)&&sc?.pos) cityAccessApronV353(id,sc.pos,drivewayGroupV35);
     if(commercialLevel(id)>0&&cm?.pos) cityAccessApronV353(id,cm.pos,drivewayGroupV35);
     if(districtHasFire(id)&&f?.pos) cityAccessApronV353(id,f.pos,drivewayGroupV35);
+    if(districtHasKindergarten(id)&&kg?.pos) cityAccessApronV353(id,kg.pos,drivewayGroupV35);
 
     districtLandState(id).plots.forEach((plot,i)=>{
       if(!plot.zone) return;
@@ -14347,6 +14550,22 @@ function stageRoadEndpointV367(i){
   const dir=p.clone().sub(STAGE_HUB_V367);const len=Math.hypot(dir.x,dir.z)||1;const cut=Math.min(1.35,Math.max(.9,len*.08));
   return p.addScaledVector(dir.normalize(),-cut);
 }
+// v36.10 -- ROUTE SPOKES VIA THE GRID. This is the "riskier pass" the v36.8 declutter comment
+// below explicitly deferred: instead of one straight diagonal from the hub to each spiral
+// building (stagePosition: angle=i*SPIRAL_ANGLE_STEP, radius=SPIRAL_BASE_RADIUS+i*
+// SPIRAL_RADIUS_STEP -- i.e. NOT on the grid), each spoke now bends once at an axis-aligned
+// "knee": it runs along whichever grid axis (the x=0 N-S arterial or the z=0 E-W arterial,
+// whichever the building sits closer to end-on) out from the hub, then turns 90 degrees onto a
+// short perpendicular spur for the final approach. Same shape as the existing orthogonal
+// driveway helper (addOrthogonalDrivewayV366) already uses for district buildings -- one
+// computed bend per building, no pathfinding graph.
+function stageRoadKneeV367(i){
+  const end=stageRoadEndpointV367(i);
+  return Math.abs(end.x)>=Math.abs(end.z) ? new THREE.Vector3(end.x,0,0) : new THREE.Vector3(0,0,end.z);
+}
+function stageRoadPolylineV367(i){
+  return [STAGE_HUB_V367, stageRoadKneeV367(i), stageRoadEndpointV367(i)];
+}
 function distToSeg2V367(px,pz,ax,az,bx,bz){
   const vx=bx-ax,vz=bz-az,l2=vx*vx+vz*vz;const t=l2?Math.max(0,Math.min(1,((px-ax)*vx+(pz-az)*vz)/l2)):0;const sx=ax+vx*t,sz=az+vz*t,dx=px-sx,dz=pz-sz;return dx*dx+dz*dz;
 }
@@ -14374,12 +14593,20 @@ function removeLegacyStageRoadVisualsV367(){
   for(const obj of doomed){ scene.remove(obj); if(obj.geometry)obj.geometry.dispose?.(); if(obj.material){ if(Array.isArray(obj.material))obj.material.forEach(m=>m.dispose?.()); else obj.material.dispose?.(); } }
   return doomed.length;
 }
+// `segment` stays the STAGE index (0..9), exactly as before -- drivewayAnchorForPos (below, far
+// away in the file) reads `.segment` straight into ROAD_NODES to get a tangent direction, so
+// that field's meaning can't change here without breaking it. The new `leg`/`knee` fields are
+// additive: leg 0 = the trunk run from the hub to the knee (already axis-aligned, no bend
+// needed), leg 1 = the perpendicular spur from the knee to the building.
 function spokeProjectV367(pos){
-  let best={d2:Infinity,segment:0,t:0,point:STAGE_HUB_V367.clone(),s:0,index:0};
+  let best={d2:Infinity,segment:0,leg:0,t:0,point:STAGE_HUB_V367.clone(),s:0,index:0,knee:STAGE_HUB_V367.clone()};
   for(let i=0;i<STAGES.length;i++){
-    const a=STAGE_HUB_V367,b=stageRoadEndpointV367(i);const abx=b.x-a.x,abz=b.z-a.z;const len2=abx*abx+abz*abz;
-    const t=len2>0?THREE.MathUtils.clamp(((pos.x-a.x)*abx+(pos.z-a.z)*abz)/len2,0,1):0;const px=a.x+abx*t,pz=a.z+abz*t,dx=pos.x-px,dz=pos.z-pz,d2=dx*dx+dz*dz;
-    if(d2<best.d2){best={d2,segment:i,t,point:new THREE.Vector3(px,0,pz),s:Math.sqrt(len2)*t,index:i};}
+    const poly=stageRoadPolylineV367(i);
+    for(let leg=0;leg<poly.length-1;leg++){
+      const a=poly[leg],b=poly[leg+1];const abx=b.x-a.x,abz=b.z-a.z;const len2=abx*abx+abz*abz;
+      const t=len2>0?THREE.MathUtils.clamp(((pos.x-a.x)*abx+(pos.z-a.z)*abz)/len2,0,1):0;const px=a.x+abx*t,pz=a.z+abz*t,dx=pos.x-px,dz=pos.z-pz,d2=dx*dx+dz*dz;
+      if(d2<best.d2){best={d2,segment:i,leg,t,point:new THREE.Vector3(px,0,pz),s:Math.sqrt(len2)*t,index:i,knee:poly[1].clone()};}
+    }
   }
   return best;
 }
@@ -14396,8 +14623,17 @@ function buildSpokeRouteV367(fromPos,toPos){
   if(fromAccess){const chain=serviceNodeChain(fromAccess);appendTransportPoint(route,fromAccess.node.p);for(let i=1;i<chain.length;i++)appendTransportPoint(route,chain[i].p);a=chain[chain.length-1].p;}
   const pa=spokeProjectV367(a),pb=spokeProjectV367(toAccess?serviceNodeChain(toAccess).slice(-1)[0].p:b);
   appendTransportPoint(route,pa.point);
+  // v36.10 -- pa/pb now come off a bent (hub->knee->building) spoke instead of a straight one.
+  // A point on the spur leg (leg===1) is off-axis from the hub, so the route must pass through
+  // the knee before heading down the trunk to the hub, or it would cut a fresh diagonal right
+  // back to the old sunburst shape. A point already on the trunk leg (leg===0) is collinear with
+  // the hub, so no knee is needed there.
+  if(pa.leg===1)appendTransportPoint(route,pa.knee);
   if(pa.point.distanceTo(STAGE_HUB_V367)>.05)appendTransportPoint(route,STAGE_HUB_V367);
-  if(pb.point.distanceTo(STAGE_HUB_V367)>.05)appendTransportPoint(route,pb.point);
+  if(pb.point.distanceTo(STAGE_HUB_V367)>.05){
+    if(pb.leg===1)appendTransportPoint(route,pb.knee);
+    appendTransportPoint(route,pb.point);
+  }
   if(toAccess){const chain=serviceNodeChain(toAccess);for(let i=chain.length-2;i>=0;i--)appendTransportPoint(route,chain[i].p);} else appendTransportPoint(route,toPos);
   appendTransportPoint(route,toPos); return route;
 }
@@ -14416,16 +14652,35 @@ buildRoadRoute=function(fromPos,toPos){ return buildSpokeRouteV367(fromPos,toPos
 // language already used for district driveways and service-graph roads elsewhere in this file,
 // so they read as minor connectors instead of competing streets.
 const STAGE_ROAD_GRID_REACH_V368=24.5; // just past the master grid's own corner distance (~24.08)
-function makeStageRoadGroupV367(){
-  const g=new THREE.Group();
-  const round=new THREE.Mesh(new THREE.CircleGeometry(2.15,36),ROAD_STYLE_V353.asphaltDark);round.rotation.x=-Math.PI/2;round.position.y=.058;round.receiveShadow=true;g.add(round);
-  const island=new THREE.Mesh(new THREE.CircleGeometry(1.02,28),new THREE.MeshStandardMaterial({color:0x8db37a,roughness:.98}));island.rotation.x=-Math.PI/2;island.position.y=.07;g.add(island);
+// v36.10 -- one small dark joint cap per unique knee point (several stages sharing an axis can
+// share a knee), same decorative language as addMasterGridJointCapsV368. Purely cosmetic, not
+// used by routing/clearance.
+function addStageRoadKneeCapsV3610(group){
+  const seen=new Set();
   for(let i=0;i<STAGES.length;i++){
-    const end=stageRoadEndpointV367(i);
-    const insideGrid=Math.hypot(end.x,end.z)<=STAGE_ROAD_GRID_REACH_V368;
-    const width=insideGrid?(i<4?1.48:1.38):0.86;
-    addUnifiedRoadV365(g,STAGE_HUB_V367,end,width,{markings:insideGrid,edgeMarks:!insideGrid,dark:true});
+    const knee=stageRoadKneeV367(i);
+    if(STAGE_HUB_V367.distanceTo(knee)<.3)continue; // knee sits on the hub itself -- nothing to cap
+    const key=knee.x.toFixed(2)+'|'+knee.z.toFixed(2);
+    if(seen.has(key))continue; seen.add(key);
+    const cap=new THREE.Mesh(new THREE.CircleGeometry(.62,16),ROAD_STYLE_V353.asphaltDark);
+    cap.rotation.x=-Math.PI/2;cap.position.set(knee.x,.0585,knee.z);cap.receiveShadow=true;group.add(cap);
   }
+}
+function makeStageRoadGroupV367(){
+  // The old hub roundabout (asphalt ring + green island, both circular) is gone -- with the
+  // squared-off innerPlaza (see ground/plaza setup near the top of the file) now covering the
+  // hub, a second circular medallion on top of it would be exactly the "leftover circle poking
+  // out of a grid" this pass is meant to remove.
+  const g=new THREE.Group();
+  for(let i=0;i<STAGES.length;i++){
+    const knee=stageRoadKneeV367(i),end=stageRoadEndpointV367(i);
+    const insideGrid=Math.hypot(end.x,end.z)<=STAGE_ROAD_GRID_REACH_V368;
+    const trunkWidth=insideGrid?(i<4?1.48:1.38):0.86;
+    const spurWidth=insideGrid?1.02:0.86;
+    if(STAGE_HUB_V367.distanceTo(knee)>.3)addUnifiedRoadV365(g,STAGE_HUB_V367,knee,trunkWidth,{markings:insideGrid,edgeMarks:!insideGrid,dark:true});
+    if(knee.distanceTo(end)>.3)addUnifiedRoadV365(g,knee,end,spurWidth,{markings:false,edgeMarks:true,dark:true});
+  }
+  addStageRoadKneeCapsV3610(g);
   return g;
 }
 function refreshStageRoadsV367(){
@@ -14497,6 +14752,7 @@ function footpathDistrictAnchorsV369(id){
   add(districtPrimaryWorkAnchor(id));
   const park=cityState.parks?.[id]?.pos;if(park&&districtHasPark(id))add(park);
   const school=cityState.school?.[id]?.pos;if(school&&districtHasSchool(id))add(school);
+  const kindergarten=cityState.kindergarten?.[id]?.pos;if(kindergarten&&districtHasKindergarten(id))add(kindergarten);
   add(districtTransitAnchor(id));
   add(cfg.pos);
   return out;
@@ -14654,6 +14910,7 @@ refreshResidentialWorld();
 refreshCivicWorld();
 refreshPoliceWorld();
 refreshSchoolWorld();
+refreshKindergartenWorld();
 refreshV33CityWorld();
 refreshDrivewaysV35(true);
 if(auditV342LandIntegrity()>0){refreshNeighborhoodWorld();refreshV34CityWorld();}
