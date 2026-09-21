@@ -953,6 +953,16 @@ let cityState = {
     business:{ kindergartenBuilt:false, pendingUntil:0, pos:null },
     waterfront:{ kindergartenBuilt:false, pendingUntil:0, pos:null },
   },
+  // v36 "build everything through buttons" slice: real, player-paid streetlights per
+  // district -- the automatic decorative lamps scattered along the main road/plaza stay
+  // exactly as they were (pure scenery), this is a separate, explicit civic upgrade with
+  // its own gameplay effect. See districtHasStreetlights()/buildStreetlights() below.
+  streetlights:{
+    suburb:{ streetlightsBuilt:false, pendingUntil:0 },
+    industrial:{ streetlightsBuilt:false, pendingUntil:0 },
+    business:{ streetlightsBuilt:false, pendingUntil:0 },
+    waterfront:{ streetlightsBuilt:false, pendingUntil:0 },
+  },
   // v33.0 — the city gets real mixed-use development, leisure and emergency services.
   commercial:{
     suburb:{ level:0, pendingUntil:0, pendingLevel:0, pos:null },
@@ -980,6 +990,20 @@ let cityState = {
     industrial:{ plots:[{owned:false,zone:null,level:0,pendingZone:null,pendingLevel:0,pendingUntil:0,pos:null},{owned:false,zone:null,level:0,pendingZone:null,pendingLevel:0,pendingUntil:0,pos:null},{owned:false,zone:null,level:0,pendingZone:null,pendingLevel:0,pendingUntil:0,pos:null}] },
     business:{ plots:[{owned:false,zone:null,level:0,pendingZone:null,pendingLevel:0,pendingUntil:0,pos:null},{owned:false,zone:null,level:0,pendingZone:null,pendingLevel:0,pendingUntil:0,pos:null},{owned:false,zone:null,level:0,pendingZone:null,pendingLevel:0,pendingUntil:0,pos:null}] },
     waterfront:{ plots:[{owned:false,zone:null,level:0,pendingZone:null,pendingLevel:0,pendingUntil:0,pos:null},{owned:false,zone:null,level:0,pendingZone:null,pendingLevel:0,pendingUntil:0,pos:null},{owned:false,zone:null,level:0,pendingZone:null,pendingLevel:0,pendingUntil:0,pos:null}] },
+  },
+  // v36 "build everything through buttons" slice: the district's building-to-street
+  // connector roads (spurs + aprons that link a finished clinic/school/etc. to the district's
+  // ring road) used to appear for free the instant districtLevel(id)>0 and the building itself
+  // was finished. This turns that into an explicit, paid "Build district roads" action, decoupled
+  // from the generic "Develop district" button -- see districtRoadsBuilt()/buildDistrictRoads()
+  // below. Districts that already had these roads before this feature shipped keep them (see the
+  // load() migration -- it grandfathers roadsBuilt=true for any district already at level>=1 on a
+  // save written before this key existed) so nobody's city silently loses roads it already earned.
+  districtRoads:{
+    suburb:{ roadsBuilt:false, pendingUntil:0 },
+    industrial:{ roadsBuilt:false, pendingUntil:0 },
+    business:{ roadsBuilt:false, pendingUntil:0 },
+    waterfront:{ roadsBuilt:false, pendingUntil:0 },
   },
   treasury:0,
   revenuePerSec:0,
@@ -8994,7 +9018,7 @@ const CITY_INITIATIVES = [
   { id:'modernization', emoji:'⬆️', kind:'upgrades', unlockRep:75, baseTarget:5, reward:5600, rep:27, ru:'Модернизация портфеля', en:'Portfolio Modernization', descRu:'Прокачай существующие объекты', descEn:'Upgrade existing properties' },
   { id:'flagship', emoji:'🏗️', kind:'strategic', unlockRep:120, baseTarget:1, reward:8000, rep:36, ru:'Флагманский проект', en:'Flagship Project', descRu:'Заверши спецпроект или крупный тендер', descEn:'Complete a special project or major tender' },
 ];
-const cityWorldRuntime = { hubs:new Map(), residential:new Map(), civic:new Map(), police:new Map(), school:new Map(), kindergarten:new Map(), streets:new Map(), neighborhoods:new Map(), commercial:new Map(), parks:new Map(), fire:new Map(), landPlots:new Map(), arterialRoads:new Map(), districtAccessRoads:new Map(), transportAccessRoads:null, neighborhoodColliders:[], plotColliders:[] }; // city meshes keyed by district
+const cityWorldRuntime = { hubs:new Map(), residential:new Map(), civic:new Map(), police:new Map(), school:new Map(), kindergarten:new Map(), streetlights:new Map(), streets:new Map(), neighborhoods:new Map(), commercial:new Map(), parks:new Map(), fire:new Map(), landPlots:new Map(), arterialRoads:new Map(), districtAccessRoads:new Map(), transportAccessRoads:null, neighborhoodColliders:[], plotColliders:[] }; // city meshes keyed by district
 function districtLevel(id){ return Math.max(0,Math.min(3,Math.floor(Number(cityState?.districts?.[id])||0))); }
 function currentClientTier(){ let tier=CLIENT_TIERS[0]; for(const t of CLIENT_TIERS) if(cityState.reputation>=t.rep) tier=t; return tier; }
 function districtUnlocked(cfg){ return districtLevel(cfg.id)>0 || (cityState.reputation>=cfg.unlockRep && companyTierIndex()>=cfg.unlockTier); }
@@ -9290,9 +9314,11 @@ function updateDistrictStats(){
     const hasFire = districtHasFire(cfg.id);
     const hasPark = districtHasPark(cfg.id);
     const hasKindergarten = districtHasKindergarten(cfg.id);
+    const hasStreetlights = districtHasStreetlights(cfg.id);
 
     const healthTarget = THREE.MathUtils.clamp((28 + lvl*7 + (hasClinic?42:0) + (hasPark?4:0))*budgetMult, 0, 100);
-    const safetyTarget = THREE.MathUtils.clamp((30 + lvl*7 + (hasPolice?42:0) + (hasFire?5:0))*budgetMult, 0, 100);
+    // Streetlights are a real, if modest, safety contributor -- lit streets, safer streets.
+    const safetyTarget = THREE.MathUtils.clamp((30 + lvl*7 + (hasPolice?42:0) + (hasFire?5:0) + (hasStreetlights?10:0))*budgetMult, 0, 100);
     // A kindergarten thematically overlaps with early-childhood education -- rather than a
     // near-duplicate 6th stat, it's a smaller SECOND contributor stacking on top of the school's
     // main +42 (see districtHousingCapacity() below for its other, non-redundant effect).
@@ -9324,7 +9350,10 @@ function updateDistrictStats(){
     const hasPark = districtHasPark(cfg.id);
     const commerce=commercialLevel(cfg.id);
     const currentPop=Math.max(0,Number(ds.population)||0);
-    const roadRelief=Math.min(18,lvl*3 + (hasPark?1:0));
+    const hasDistrictRoads=districtRoadsBuilt(cfg.id);
+    // Paid district roads (proper building-to-street connectors) genuinely ease congestion,
+    // on top of the base relief the district's own ring road already provides at lvl>0.
+    const roadRelief=Math.min(18,lvl*3 + (hasPark?1:0) + (hasDistrictRoads?8:0));
     const zoningTraffic = typeof landTrafficForDistrict==='function' ? landTrafficForDistrict(cfg.id) : 0;
     const zoningBalance = typeof districtZoningBalance==='function' ? districtZoningBalance(cfg.id) : {satisfaction:0,landValue:0,traffic:0};
     const commutePressure = typeof districtCommutePressure==='function' ? districtCommutePressure(cfg.id) : 0;
@@ -9478,7 +9507,20 @@ function renderCityPanel(){
       if(fire.pendingUntil>0){const x=Math.max(0,Math.ceil((fire.pendingUntil-Date.now())/1000));fireHtml=`<div class="status">🚒 ${lang==='ru'?'Пожарная строится':'Fire station under construction'} · ⏱ ${x}${lang==='ru'?'с':'s'}</div>`;}
       else if(!fire.stationBuilt){const fc=fireBuildCost(cfg.id),fa=canPayResources(fc);fireHtml=`<div class="resourceLine">🚒 ${districtCostText(fc)}</div><button class="v30Btn ${fa?'primary':''}" data-fire="${cfg.id}" ${!fa?'disabled':''}>${lang==='ru'?'Построить пожарную часть':'Build fire station'}</button>`;}
       else fireHtml=`<div class="status">🚒 ${lang==='ru'?'Пожарная часть работает':'Fire station active'}</div>`;
-      v33Line=`${comHtml}${parkHtml}${fireHtml}${typeof landDevelopmentHtml==='function'?landDevelopmentHtml(cfg.id):''}`;
+      // v36 "build everything through buttons" slice: streetlights and district roads, both
+      // gated behind districtLevel(cfg.id)>=1 -- there's no street ring to light or extend yet
+      // before the district has been developed at least once.
+      let streetlightsHtml='';
+      const sl=cityState.streetlights[cfg.id];
+      if(sl.streetlightsBuilt){ streetlightsHtml=`<div class="status">💡 ${lang==='ru'?'Уличное освещение установлено':'Streetlights installed'}</div>`; }
+      else if(sl.pendingUntil>0){ const x=Math.max(0,Math.ceil((sl.pendingUntil-Date.now())/1000)); streetlightsHtml=`<div class="status">💡 ${lang==='ru'?'Освещение устанавливается':'Installing streetlights'} · ⏱ ${x}${lang==='ru'?'с':'s'}</div>`; }
+      else if(lv>=1){ const slc=streetlightsBuildCost(cfg.id),sla=canPayResources(slc); streetlightsHtml=`<div class="resourceLine">💡 ${districtCostText(slc)}</div><button class="v30Btn ${sla?'primary':''}" data-streetlights="${cfg.id}" ${!sla?'disabled':''}>${lang==='ru'?'Осветить улицы':'Build streetlights'}</button>`; }
+      let districtRoadsHtml='';
+      const dr=cityState.districtRoads[cfg.id];
+      if(dr.roadsBuilt){ districtRoadsHtml=`<div class="status">🚧 ${lang==='ru'?'Дороги района построены':'District roads built'}</div>`; }
+      else if(dr.pendingUntil>0){ const x=Math.max(0,Math.ceil((dr.pendingUntil-Date.now())/1000)); districtRoadsHtml=`<div class="status">🚧 ${lang==='ru'?'Дороги строятся':'Roads under construction'} · ⏱ ${x}${lang==='ru'?'с':'s'}</div>`; }
+      else if(lv>=1){ const drc=districtRoadsBuildCost(cfg.id),dra=canPayResources(drc); districtRoadsHtml=`<div class="resourceLine">🚧 ${districtCostText(drc)}</div><button class="v30Btn ${dra?'primary':''}" data-district-roads="${cfg.id}" ${!dra?'disabled':''}>${lang==='ru'?'Проложить дороги района':'Build district roads'}</button>`; }
+      v33Line=`${comHtml}${parkHtml}${fireHtml}${streetlightsHtml}${districtRoadsHtml}${typeof landDevelopmentHtml==='function'?landDevelopmentHtml(cfg.id):''}`;
     }
     return `<div class="cityCard ${!unlocked?'locked':''} ${maxed?'maxed':''}"><div class="name">${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}</div><div class="desc">${lang==='ru'?cfg.bonusRu:cfg.bonusEn}</div><div class="status">${unlocked?(lang==='ru'?`Уровень ${lv}/3`:`Level ${lv}/3`):`🔒 ${lock}`}</div>${statsLine}${housingLine}${civicLine}${policeLine}${schoolLine}${kindergartenLine}${v33Line}${!maxed&&unlocked?`<div class="resourceLine">${districtCostText(cost)}</div><button class="v30Btn ${affordable?'primary':''}" data-district="${cfg.id}" ${!affordable?'disabled':''}>${lang==='ru'?'Развить':'Upgrade'}</button>`:maxed?`<button class="v30Btn" disabled>✓ MAX</button>`:''}</div>`;
   }).join('');
@@ -9502,6 +9544,8 @@ function renderCityPanel(){
   document.querySelectorAll('[data-commercial]').forEach(b=>b.onclick=()=>buildCommercial(b.dataset.commercial));
   document.querySelectorAll('[data-park]').forEach(b=>b.onclick=()=>buildDistrictPark(b.dataset.park));
   document.querySelectorAll('[data-fire]').forEach(b=>b.onclick=()=>buildFireStation(b.dataset.fire));
+  document.querySelectorAll('[data-streetlights]').forEach(b=>b.onclick=()=>buildStreetlights(b.dataset.streetlights));
+  document.querySelectorAll('[data-district-roads]').forEach(b=>b.onclick=()=>buildDistrictRoads(b.dataset.districtRoads));
   document.querySelectorAll('[data-land-buy]').forEach(b=>b.onclick=()=>buyLandPlot(b.dataset.landBuy));
   document.querySelectorAll('[data-land-zone]').forEach(b=>b.onclick=()=>zoneLandPlot(b.dataset.landDistrict,Number(b.dataset.landIndex),b.dataset.landZone));
   document.querySelectorAll('[data-land-upgrade]').forEach(b=>b.onclick=()=>upgradeLandPlot(b.dataset.landDistrict,Number(b.dataset.landUpgrade)));
@@ -9581,6 +9625,30 @@ function updateCityExpansion(dt){
       const kp=kg.pos; if(kp) spawnBurst(new THREE.Vector3(kp.x,0,kp.z), 0xff9fb0);
       sfx.achievement(); haptic('heavy'); triggerImpactFlash(.22);
       toast(lang==='ru'?`🧸 Построено: ${KINDERGARTEN_BUILDING.ru}! Образование и вместимость жилья района растут.`:`🧸 Built: ${KINDERGARTEN_BUILDING.en}! District education and housing capacity rise.`);
+      renderSystemsPanel(); save();
+    }
+  }
+  // v36 "build everything through buttons" completion pipeline: streetlights and district roads.
+  for (const districtId of STREETLIGHT_DISTRICT_IDS) {
+    const s = cityState.streetlights[districtId];
+    if (s.pendingUntil>0 && Date.now()>=s.pendingUntil) {
+      s.pendingUntil=0; s.streetlightsBuilt=true;
+      refreshStreetlightsWorld();
+      const cfg=CITY_DISTRICTS.find(d=>d.id===districtId); if(cfg) spawnBurst(new THREE.Vector3(cfg.pos.x,0,cfg.pos.z), 0xffd88a);
+      sfx.achievement(); haptic('medium');
+      toast(lang==='ru'?'💡 Уличное освещение установлено! Район стал безопаснее.':'💡 Streetlights installed! The district is safer.');
+      renderSystemsPanel(); save();
+    }
+  }
+  for (const districtId of DISTRICT_ROADS_IDS) {
+    const r = cityState.districtRoads[districtId];
+    if (r.pendingUntil>0 && Date.now()>=r.pendingUntil) {
+      r.pendingUntil=0; r.roadsBuilt=true;
+      if (typeof refreshDistrictAccessRoads==='function') refreshDistrictAccessRoads();
+      if (typeof refreshDrivewaysV35==='function') refreshDrivewaysV35(true);
+      const cfg=CITY_DISTRICTS.find(d=>d.id===districtId); if(cfg) spawnBurst(new THREE.Vector3(cfg.pos.x,0,cfg.pos.z), 0xbfc4cc);
+      sfx.achievement(); haptic('heavy'); triggerImpactFlash(.14);
+      toast(lang==='ru'?'🚧 Дороги района построены! Трафик снижается.':'🚧 District roads built! Traffic eases.');
       renderSystemsPanel(); save();
     }
   }
@@ -10036,6 +10104,79 @@ function buildKindergarten(districtId){
   sfx.build(); haptic('medium'); triggerImpactFlash(.16);
   toast(lang==='ru'?`🏗️ Стройка начата: ${KINDERGARTEN_BUILDING.ru}`:`🏗️ Construction started: ${KINDERGARTEN_BUILDING.en}`);
   renderCityPanel(); renderSystemsPanel(); save();
+}
+
+/* ---------------------------------------------------------------------- */
+/*  v36 "build everything through buttons" slice -- the player asked for   */
+/*  roads and streetlights to become real, explicit, paid build actions    */
+/*  through the same City & Development panel as every other civic         */
+/*  building, instead of appearing for free whenever the game feels like   */
+/*  it. Scoped deliberately narrow (see TYCOON_V36_PLAN.md/CHANGELOG_V36): */
+/*  a per-district streetlight upgrade, and turning the district's         */
+/*  building-to-street connector roads into a paid tier. A full tile-based */
+/*  road editor is a different, much bigger feature and out of scope.      */
+/* ---------------------------------------------------------------------- */
+const STREETLIGHT_DISTRICT_IDS = CITY_DISTRICTS.map(d=>d.id);
+function streetlightsBuildCost(id){ const rank=CITY_DISTRICTS.findIndex(d=>d.id===id)+1; return { money:380+rank*90, wood:1, concrete:0, metal:0 }; }
+function districtHasStreetlights(id){ return !!cityState.streetlights?.[id]?.streetlightsBuilt; }
+// Lamps sit on the district's own sidewalk ring (radius 4.08-4.55 in makeCityStreetGroup), so
+// this deliberately requires districtLevel>=1 -- with no district street ring built yet there is
+// nothing for a "streetlights along your roads" upgrade to visually attach to.
+function buildStreetlights(id){
+  const cfg=CITY_DISTRICTS.find(d=>d.id===id); if(!cfg||!districtUnlocked(cfg)||districtLevel(id)<=0) return;
+  const s=cityState.streetlights[id]; if(!s||s.streetlightsBuilt||s.pendingUntil>0) return;
+  const cost=streetlightsBuildCost(id);
+  if(!tryPayResources(cost)){ sfx.error(); toast(lang==='ru'?'Не хватает ресурсов на освещение улиц':'Not enough resources for streetlights'); return; }
+  s.pendingUntil=Date.now()+2.6*1000;
+  sfx.build(); haptic('light');
+  toast(lang==='ru'?'💡 Устанавливаем уличное освещение':'💡 Installing streetlights');
+  renderCityPanel(); save();
+}
+// Six lamp posts evenly spaced around the district's sidewalk ring, reusing the same makeLamp()
+// prop as the automatic scenery lamps elsewhere -- just with a brighter, warmer emissive glow (no
+// new THREE.PointLight; mobile perf discipline keeps this to material tweaks + a cheap additive
+// glow-pool decal under each lamp) so a built district visibly reads as more deliberately lit.
+function createStreetlightsMesh(id){
+  const cfg=CITY_DISTRICTS.find(d=>d.id===id); if(!cfg) return null;
+  const g=new THREE.Group();
+  const glowMat=new THREE.MeshBasicMaterial({ color:0xffd88a, transparent:true, opacity:0.32, blending:THREE.AdditiveBlending, depthWrite:false });
+  const count=6;
+  for(let i=0;i<count;i++){
+    const a=(i/count)*Math.PI*2+0.3;
+    const p=districtRingRoadPoint(id,a,4.30);
+    const lamp=makeLamp();
+    lamp.position.copy(p);
+    lamp.rotation.y=a;
+    lamp.scale.setScalar(0.94);
+    lamp.traverse(o=>{ if(o.material && o.material.emissive) o.material.emissiveIntensity=1.35; });
+    g.add(lamp);
+    const pool=new THREE.Mesh(new THREE.CircleGeometry(0.62,14), glowMat);
+    pool.rotation.x=-Math.PI/2;
+    pool.position.set(p.x,0.032,p.z);
+    g.add(pool);
+  }
+  return g;
+}
+function refreshStreetlightsWorld(){
+  for(const cfg of CITY_DISTRICTS){
+    const old=cityWorldRuntime.streetlights.get(cfg.id); if(old){ scene.remove(old); disposeObject3D(old); cityWorldRuntime.streetlights.delete(cfg.id); }
+    if(!districtHasStreetlights(cfg.id)) continue;
+    const g=createStreetlightsMesh(cfg.id); if(g){ scene.add(g); cityWorldRuntime.streetlights.set(cfg.id,g); }
+  }
+}
+
+const DISTRICT_ROADS_IDS = CITY_DISTRICTS.map(d=>d.id);
+function districtRoadsBuildCost(id){ const rank=CITY_DISTRICTS.findIndex(d=>d.id===id)+1; return { money:520+rank*140, wood:1+Math.floor(rank/2), concrete:rank>=3?1:0, metal:0 }; }
+function districtRoadsBuilt(id){ return !!cityState.districtRoads?.[id]?.roadsBuilt; }
+function buildDistrictRoads(id){
+  const cfg=CITY_DISTRICTS.find(d=>d.id===id); if(!cfg||!districtUnlocked(cfg)||districtLevel(id)<=0) return;
+  const r=cityState.districtRoads[id]; if(!r||r.roadsBuilt||r.pendingUntil>0) return;
+  const cost=districtRoadsBuildCost(id);
+  if(!tryPayResources(cost)){ sfx.error(); toast(lang==='ru'?'Не хватает ресурсов на дороги района':'Not enough resources for district roads'); return; }
+  r.pendingUntil=Date.now()+3.4*1000;
+  sfx.build(); haptic('medium');
+  toast(lang==='ru'?'🚧 Прокладываем дороги района':'🚧 Building district roads');
+  renderCityPanel(); save();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -10983,7 +11124,7 @@ function save() {
   }));
   try {
     const payload = JSON.stringify({
-      saveVersion: 43, // v36 Stage B slice 5: adds cityState.kindergarten (fifth and final civic building)
+      saveVersion: 44, // v36 "build everything through buttons": adds cityState.streetlights + cityState.districtRoads
       savedAt: Date.now(),
       money: finiteNonNegative(money),
       stageIndex: integerNonNegative(stageIndex),
@@ -11224,6 +11365,37 @@ function load() {
       // v34.0: persistent land ownership/zoning; absent on older saves => three vacant unowned plots.
       const landRaw=data.cityState.land||{};cityState.land={};
       for(const cfg of CITY_DISTRICTS){const srcLand=landRaw[cfg.id]||{},rawPlots=Array.isArray(srcLand.plots)?srcLand.plots:[];cityState.land[cfg.id]={plots:[]};for(let i=0;i<LAND_PLOTS_PER_DISTRICT;i++){const p=rawPlots[i]||{},owned=!!p.owned,zone=owned&&LAND_ZONE_DEFS[p.zone]?p.zone:null,level=zone?Math.max(1,Math.min(3,Math.floor(Number(p.level)||1))):0,rawUntil=Number(p.pendingUntil),timerValid=Number.isFinite(rawUntil)&&rawUntil>0,pendingZone=owned&&!zone&&LAND_ZONE_DEFS[p.pendingZone]&&timerValid?p.pendingZone:null,rawPendingLevel=Math.floor(Number(p.pendingLevel)||0),pendingLevel=owned&&zone&&timerValid&&rawPendingLevel>level?Math.max(level+1,Math.min(3,rawPendingLevel)):0,rawPos=p.pos;cityState.land[cfg.id].plots.push({owned,zone,level,pendingZone,pendingLevel,pendingUntil:(pendingZone||pendingLevel)?Math.max(0,rawUntil):0,pos:(rawPos&&Number.isFinite(Number(rawPos.x))&&Number.isFinite(Number(rawPos.z)))?{x:Number(rawPos.x),z:Number(rawPos.z)}:null});}}
+      // v36 "build everything through buttons" slice: streetlights are a brand-new, purely
+      // additive per-district upgrade -- old saves never had any per-district streetlight state
+      // at all, so every district simply starts unbuilt (nothing to migrate or lose; the
+      // automatic decorative scenery lamps scattered by scatterScenery() are untouched).
+      const streetlightsRaw = data.cityState.streetlights || {};
+      cityState.streetlights = {};
+      for (const cfg of CITY_DISTRICTS) {
+        const sl = streetlightsRaw[cfg.id] || {};
+        cityState.streetlights[cfg.id] = {
+          streetlightsBuilt: !!sl.streetlightsBuilt,
+          pendingUntil: Number.isFinite(Number(sl.pendingUntil)) ? Math.max(0, Number(sl.pendingUntil)) : 0,
+        };
+      }
+      // v36 "build everything through buttons" slice: district building-to-street connector
+      // roads (spurs + aprons) become an explicit paid action instead of appearing automatically
+      // the instant a building finished. A save with NO `districtRoads` key at all predates this
+      // feature -- for that save only, grandfather roadsBuilt=true for any district already at
+      // level>=1 (cityState.districts was already migrated above), since that district's
+      // spurs/aprons were already visibly rendered under the old always-on system and must not
+      // silently disappear. A save that already has a `districtRoads` key (saveVersion >= 44) is
+      // trusted as-is -- it already went through this exact grandfathering once, when it was made.
+      const districtRoadsRaw = data.cityState.districtRoads;
+      const legacyRoadsSave = !districtRoadsRaw || typeof districtRoadsRaw !== 'object';
+      cityState.districtRoads = {};
+      for (const cfg of CITY_DISTRICTS) {
+        const dr = (districtRoadsRaw && districtRoadsRaw[cfg.id]) || {};
+        cityState.districtRoads[cfg.id] = {
+          roadsBuilt: legacyRoadsSave ? (districtLevel(cfg.id) >= 1) : !!dr.roadsBuilt,
+          pendingUntil: Number.isFinite(Number(dr.pendingUntil)) ? Math.max(0, Number(dr.pendingUntil)) : 0,
+        };
+      }
       cityState.treasury=finiteNonNegative(data.cityState.treasury,0);
       cityState.revenuePerSec=finiteNonNegative(data.cityState.revenuePerSec,0);
       cityState.expensesPerSec=finiteNonNegative(data.cityState.expensesPerSec,0);
@@ -14825,6 +14997,35 @@ function computeResidentFootRouteV369(r){
 window.__TYCOON_FOOTPATH_DEBUG__={distToRoadNetwork:distToNearestRoadNetworkV369,spines:()=>cityWorldRuntime.footpathSpines,refresh:refreshResidentFootpathsV369,computeRoute:computeResidentFootRouteV369};
 
 /* ---------------------------------------------------------------------- */
+/*  v36 "build everything through buttons" -- gate the district's          */
+/*  building-to-street connector spurs (districtBuiltAccessTargets, feeds  */
+/*  refreshDistrictAccessRoads) and their paved aprons (cityAccessApronV353,  */
+/*  feeds refreshDrivewaysV35/refreshDrivewaysAndApronsV353) behind the new */
+/*  paid districtRoadsBuilt() flag, wrapping the final active definition of */
+/*  each the same way every other version slice in this file does. Nothing  */
+/*  else changes: the district's own ring/spoke street (districtLevel-driven,  */
+/*  makeCityStreetGroup), the arterial connection to the main road          */
+/*  (refreshArterialRoads) and land-plot driveways are untouched -- only the */
+/*  spurs/aprons that connect individual civic/housing/commercial buildings  */
+/*  to that ring are gated. Confirmed via distToNearestRoadNetworkV369 (the  */
+/*  resident-footpath clearance helper) and the delivery/service road graph  */
+/*  (serviceAccessGraph/buildRoadRoute) that neither reads              */
+/*  cityWorldRuntime.districtAccessRoads or cityAccessApronV353's output --  */
+/*  those are purely cosmetic meshes, so this cannot affect civilian        */
+/*  traffic, resident footpaths or delivery logistics.                      */
+/* ---------------------------------------------------------------------- */
+const _districtBuiltAccessTargetsV370 = districtBuiltAccessTargets;
+districtBuiltAccessTargets = function(id){
+  if (typeof districtRoadsBuilt==='function' && !districtRoadsBuilt(id)) return [];
+  return _districtBuiltAccessTargetsV370(id);
+};
+const _cityAccessApronV353_v370 = cityAccessApronV353;
+cityAccessApronV353 = function(id, pos, targetGroup){
+  if (typeof districtRoadsBuilt==='function' && !districtRoadsBuilt(id)) return;
+  return _cityAccessApronV353_v370(id, pos, targetGroup);
+};
+
+/* ---------------------------------------------------------------------- */
 /*  INIT                                                                   */
 /* ---------------------------------------------------------------------- */
 load();
@@ -14837,6 +15038,7 @@ refreshCivicWorld();
 refreshPoliceWorld();
 refreshSchoolWorld();
 refreshKindergartenWorld();
+refreshStreetlightsWorld();
 refreshV33CityWorld();
 refreshDrivewaysV35(true);
 if(auditV342LandIntegrity()>0){refreshNeighborhoodWorld();refreshV34CityWorld();}
