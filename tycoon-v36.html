@@ -859,6 +859,10 @@ const SAVE_KEY = 'tycoon3d_save_v3';
 const SAVE_BACKUP_KEY = SAVE_KEY + '_backup';
 const MUTE_KEY = 'tycoon3d_muted';
 const HINT_KEY = 'tycoon3d_seen_hint_v4';
+// Guards the "reset progress" flow: location.reload() fires 'pagehide' (and often a transient
+// 'visibilitychange') on its way out, both of which normally autosave -- which would silently
+// re-write the save the reset button just deleted, right before the fresh page reads it back in.
+let suppressAutoSaveV36 = false;
 
 const V30_META_KEY = 'tycoon3d_v30_meta';
 const V30_SETTINGS_KEY = 'tycoon3d_v30_settings';
@@ -8828,6 +8832,11 @@ renderSystemsPanel = function() {
 /* ---------------------------------------------------------------------- */
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (!confirm(t('reset_confirm'))) return;
+  // location.reload() below fires 'pagehide' (and can flash 'visibilitychange' hidden) on the way
+  // out, and both normally autosave -- which would re-write the very save we're about to delete
+  // with the still-in-memory (unreset) state, so the fresh reload reads the old game right back in.
+  // Suppress those autosaves for this navigation only.
+  suppressAutoSaveV36 = true;
   localStorage.removeItem(SAVE_KEY);
   localStorage.removeItem(SAVE_BACKUP_KEY);
   localStorage.removeItem(V30_META_KEY);
@@ -10142,8 +10151,13 @@ function landUpgradeCost(id,index){
 }
 function upgradeLandPlot(id,index){
   index=Math.floor(Number(index));const cfg=CITY_DISTRICTS.find(d=>d.id===id);if(!cfg||!districtUnlocked(cfg)||index<0||index>=LAND_PLOTS_PER_DISTRICT)return;
-  const p=districtLandState(id).plots[index],level=landPlotLevel(p);if(!p?.zone||level>=3||p.pendingUntil>0)return;
+  const p0=districtLandState(id).plots[index],level=landPlotLevel(p0);if(!p0?.zone||level>=3||p0.pendingUntil>0)return;
   const cost=landUpgradeCost(id,index);if(!cost||!tryPayResources(cost)){sfx.error();toast(lang==='ru'?'Не хватает ресурсов на уплотнение участка':'Not enough resources for plot upgrade');return;}
+  // Same stale-reference trap as buyLandPlot: landUpgradeCost() above calls districtLandState(id)
+  // internally, which unconditionally rebuilds st.plots into brand-new objects -- so `p0` fetched
+  // before that call is already detached from the real array by the time we'd mutate it. Re-fetch
+  // fresh right before the mutation, same pattern as buyLandPlot/zoneLandPlot use.
+  const p=districtLandState(id).plots[index];if(!p)return;
   p.pendingLevel=level+1;p.pendingUntil=Date.now()+(5.4+level*1.25)*1000;
   sfx.build();haptic('medium');toast(lang==='ru'?`🏗️ Участок ${index+1}: развитие до уровня ${p.pendingLevel}`:`🏗️ Plot ${index+1}: upgrading to level ${p.pendingLevel}`);
   refreshV34CityWorld();renderCityPanel();updateHUD();save();
@@ -10842,6 +10856,11 @@ function sanitizeDeliveryPlan(rawPlan, fallbackBuild = null) {
   return clean.length ? clean : (fallbackBuild ? createBuildDeliveryPlan(fallbackBuild) : []);
 }
 function save() {
+  // The reset flow deletes the save keys and then calls location.reload(); a reload does not stop
+  // JS synchronously, so the periodic economy-tick autosave (and 'pagehide'/'visibilitychange') can
+  // still fire once more while the new document is loading and silently re-write the very save that
+  // was just cleared, undoing the reset. suppressAutoSaveV36 is the single choke point for that.
+  if (suppressAutoSaveV36) return false;
   const activeBuilds = growingMeshes.map(build => ({
     index: build.entry.index,
     level: build.entry.level,
