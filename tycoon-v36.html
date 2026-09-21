@@ -13307,11 +13307,22 @@ function refreshDrivewaysAndApronsV353(force=false){
     if(districtHasFire(id)&&f?.pos) cityAccessApronV353(id,f.pos,drivewayGroupV35);
     if(districtHasKindergarten(id)&&kg?.pos) cityAccessApronV353(id,kg.pos,drivewayGroupV35);
 
+    // v36.11 -- land-plot driveways used to run at Math.atan2(dx,dz), a raw diagonal from the
+    // plot's front to a point on the district's circular/rectangular ring (districtRingRoadPoint
+    // at the plot's own raw angle around the district, not snapped to any grid axis). Reuse the
+    // same orthogonal-knee helper already used for civic buildings (addOrthogonalDrivewayV366 +
+    // nearestDistrictStreetTargetV366, which targets the district's REAL street network -- the
+    // perimeter rectangle + center cross drawn by makeCityStreetGroup) instead of the abstract
+    // ring point, so plot driveways read as one axis-aligned run into the actual street. The
+    // pull-in bay decoration at the plot's own front is kept, but its yaw is snapped to whichever
+    // cardinal direction the driveway's first leg actually departs on, instead of the old diagonal.
     districtLandState(id).plots.forEach((plot,i)=>{
       if(!plot.zone) return;
-      const pos=landPlotWorldPosition(id,i), front=districtBuildingFront(id,pos), ring=districtRingRoadPoint(id,districtAngleToPoint(id,pos),3.78);
-      const dx=front.x-ring.x,dz=front.z-ring.z;
-      addPullInBayV353(plotDrivewayGroupV352,front,Math.atan2(dx,dz),plot.zone!=='residential');
+      const pos=landPlotWorldPosition(id,i), front=districtBuildingFront(id,pos);
+      addOrthogonalDrivewayV366(plotDrivewayGroupV352,cfg,front,plot.zone!=='residential'?0.92:0.8);
+      const t=nearestDistrictStreetTargetV366(cfg,front);
+      const yaw=t.kind==='v'?(t.wx>=front.x?Math.PI/2:-Math.PI/2):(t.wz>=front.z?0:Math.PI);
+      addPullInBayV353(plotDrivewayGroupV352,front,yaw,plot.zone!=='residential');
     });
   }
 };
@@ -14070,12 +14081,21 @@ function districtConnectorPathV362(id){
   const endMap={suburb:new THREE.Vector3(-18,0,-16),industrial:new THREE.Vector3(18,0,-16),business:new THREE.Vector3(18,0,16),waterfront:new THREE.Vector3(-18,0,16)};
   const hub=endMap[id]||new THREE.Vector3();
   const a=Math.atan2(hub.z-cfg.pos.z,hub.x-cfg.pos.x),start=districtRingRoadPoint(id,a,4.0);
-  const mid1=new THREE.Vector3((start.x+hub.x)*.5,0,start.z);
-  const mid2=new THREE.Vector3(hub.x,0,(start.z+hub.z)*.5);
+  // v36.11 -- ORTHOGONAL KNEE (same shape/mentality as stageRoadKneeV367). The old mid1/mid2
+  // pair still cut a real diagonal: mid1->mid2 changed x AND z in the same segment. Route via a
+  // single 90-degree bend instead -- trunk runs along whichever axis `start` sits further from
+  // the grid corner (`hub`) on, then a short perpendicular spur covers the final approach into
+  // the district's own ring point. `start`/`hub` themselves are unchanged, so every consumer
+  // that only cares about the endpoints (districtArterialEndpoints, the bus-stop bay maths) is
+  // unaffected; consumers that walk every segment (distanceToDistrictArterial placement
+  // clearance, distToNearestRoadNetworkV369 footpath clearance, refreshArterialRoads/
+  // refreshDistrictAccessRoads drawing) already iterate path[i]/path[i+1] generically and need
+  // no changes for the new shape.
+  const dx=start.x-hub.x,dz=start.z-hub.z;
+  const knee=Math.abs(dx)>=Math.abs(dz)?new THREE.Vector3(start.x,0,hub.z):new THREE.Vector3(hub.x,0,start.z);
   const out=[start];
-  if(start.distanceTo(mid1)>.7)out.push(mid1);
-  if(mid1.distanceTo(mid2)>.7)out.push(mid2);
-  out.push(hub.clone());
+  if(start.distanceTo(knee)>.7)out.push(knee);
+  if(out[out.length-1].distanceTo(hub)>.05)out.push(hub.clone());
   return out;
 }
 districtArterialPath=function(id){ return districtConnectorPathV362(id); };
