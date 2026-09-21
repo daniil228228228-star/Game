@@ -4327,7 +4327,7 @@ function addBollard(group, x, z, color = 0xffbf50) {
   group.add(post);
 }
 
-function makeIconSprite(symbol, size) {
+function makeIconCanvasV36(symbol) {
   // v36: custom line-art icons instead of platform emoji. Emoji glyphs were visually noisy,
   // inconsistent between iOS/Android, and made the interface feel generated rather than designed.
   const canvas=document.createElement('canvas');canvas.width=128;canvas.height=128;const ctx=canvas.getContext('2d');
@@ -4349,8 +4349,33 @@ function makeIconSprite(symbol, size) {
   else if(['🏪','🛍️'].includes(symbol)){rect(34,49,60,43,3);line(30,49,98,49);line(39,36,89,36);line(39,36,34,49);line(89,36,94,49);rect(57,67,16,25,1);}
   else if(['📦'].includes(symbol)){rect(37,39,54,51,3);line(37,57,91,57);line(64,39,64,90);line(52,49,76,49);}
   else if(['👑','⭐','✨'].includes(symbol)){line(35,78,93,78);line(40,46,52,64);line(52,64,64,42);line(64,42,76,64);line(76,64,89,46);line(40,78,44,88);line(89,78,85,88);line(44,88,85,88);}
+  // v36.2 world-nav pad icons: menu (☰), city/districts (🌆), staff (👷), fleet base (🏢
+  // already handled above), plans/tenders/ops/meta/bonus. Not part of the original emoji
+  // switch above -- added so buildWorldNavPadV362 gets real glyphs instead of falling
+  // through to the generic dot-cross placeholder for every one of its 10 icons.
+  else if(['☰'].includes(symbol)){line(38,45,90,45);line(38,64,90,64);line(38,83,90,83);}
+  else if(['🌆'].includes(symbol)){line(28,90,28,54);line(28,54,44,64);line(44,64,44,42);line(44,42,62,53);line(62,53,62,90);line(66,90,66,60);line(66,60,84,60);line(84,60,84,90);line(24,91,100,91);}
+  else if(['👷'].includes(symbol)){circle(64,44,15);ctx.beginPath();ctx.arc(64,40,17,Math.PI*1.08,Math.PI*1.92);ctx.stroke();rect(41,66,46,34,6);}
+  else if(['📋'].includes(symbol)){rect(38,32,52,66,4);rect(52,28,24,10,3);line(48,54,80,54);line(48,68,80,68);line(48,82,68,82);}
+  else if(['🛰️'].includes(symbol)){rect(52,52,24,24,3);line(52,58,34,46);line(76,58,94,46);line(58,52,46,34);line(70,76,82,94);circle(40,40,6);circle(88,40,6);}
+  else if(['🧬'].includes(symbol)){line(46,32,82,32);line(82,32,46,96);line(46,96,82,96);line(52,44,76,44);line(56,54,72,54);line(56,74,72,74);line(52,84,76,84);}
+  else if(['🎁'].includes(symbol)){rect(34,54,60,42,3);line(34,68,94,68);line(64,54,64,96);rect(50,38,28,16,4);line(64,38,64,54);}
   else {circle(64,64,23);line(64,48,64,80);line(48,64,80,64);}
+  return canvas;
+}
+function makeIconSprite(symbol, size) {
+  const canvas=makeIconCanvasV36(symbol);
   const texture=new THREE.CanvasTexture(canvas);texture.encoding=THREE.sRGBEncoding;const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,depthTest:false,transparent:true}));sprite.scale.set(size,size,1);sprite.renderOrder=5;return sprite;
+}
+// v36.2 fix: buildWorldNavPadV362 (introduced upstream, outside this session) called
+// createIconSpriteV36(cfg.icon) expecting a texture it could hand to its own SpriteMaterial,
+// but that function was never defined anywhere in the file -- confirmed via grep and via a
+// live ReferenceError thrown from inside createWorldNavPadsV362 on every boot. It shares the
+// exact same icon-drawing logic as makeIconSprite (now factored into makeIconCanvasV36 above)
+// but returns just the CanvasTexture instead of a ready-made Sprite, matching the call site.
+function createIconSpriteV36(symbol) {
+  const canvas=makeIconCanvasV36(symbol);
+  const texture=new THREE.CanvasTexture(canvas);texture.encoding=THREE.sRGBEncoding;return texture;
 }
 
 function buildHouse(stage, height, baseSize) {
@@ -9968,11 +9993,24 @@ function refreshNeighborhoodWorld(){
     const h=cityState.housing[id];if(!h?.apartmentBlockBuilt)continue;
     const cfg=CITY_DISTRICTS.find(d=>d.id===id),g=new THREE.Group();const nl=neighborhoodLevel(id);const count=Math.min(VISUAL_MOBILE?8:10,2+nl*2);
     const palette=[[0xe0bb91,0x8b4c39],[0xd7c3a8,0x5f6f83],[0xe3c9a0,0x7b5947],[0xcbbd9d,0x6d493e]];
+    const placedThisDistrict=[];
     for(let i=0;i<count;i++){
       const a=Math.PI*.25+(i/count)*Math.PI*2+(i%2)*.15,r=6.7+(i%3)*1.05+nl*.28;const x=cfg.pos.x+Math.cos(a)*r,z=cfg.pos.z+Math.sin(a)*r;
       if(distToNearestRoadSegment(x,z)<2.05||distanceToDistrictArterial(id,x,z)<1.85)continue;
-      const occupied=occupiedBuildingPositions();if(occupied.some(p=>Math.hypot(x-p.x,z-p.z)<2.3))continue;
-      const c=palette[i%palette.length],house=makeMiniHouse(c[0],c[1]);house.position.set(x,0,z);house.rotation.y=-a+Math.PI/2;g.add(house);cityWorldRuntime.neighborhoodColliders.push({pos:{x,z},radius:.92});
+      // v36 fix: 2.3 was measured from the *center* of other district buildings, but those
+      // buildings (clinic/school/police/commercial/fire) have real footprint radii up to ~1.62
+      // for most archetypes -- and up to ~3.0 for the fire station, whose 'warehouse' archetype
+      // is 1.92x/1.32x baseSize (much wider than tall) -- while this mini house itself has
+      // radius .92. 2.3 left as little as -0.24 of actual clearance, so a house could visibly
+      // clip into a commercial building, school or (confirmed via an actual THREE.Box3 overlap
+      // check against the rendered meshes, not just the proxy collision circles) the fire
+      // station's wide body. 4.3 covers the widest building's half-diagonal + house radius +
+      // a small margin.
+      const occupied=occupiedBuildingPositions();if(occupied.some(p=>Math.hypot(x-p.x,z-p.z)<4.3))continue;
+      // Also keep mini houses from overlapping each other -- they were only spaced by the angle
+      // formula above, with no actual distance check between already-placed houses in this ring.
+      if(placedThisDistrict.some(p=>Math.hypot(x-p.x,z-p.z)<2.05))continue;
+      const c=palette[i%palette.length],house=makeMiniHouse(c[0],c[1]);house.position.set(x,0,z);house.rotation.y=-a+Math.PI/2;g.add(house);cityWorldRuntime.neighborhoodColliders.push({pos:{x,z},radius:.92});placedThisDistrict.push({x,z});
       if(i%2===0){const bush=makeBush();bush.position.set(x+Math.cos(a+.8)*1.05,0,z+Math.sin(a+.8)*1.05);bush.scale.setScalar(.48);g.add(bush);}
     }
     scene.add(g);cityWorldRuntime.neighborhoods.set(id,g);
