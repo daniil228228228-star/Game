@@ -1720,97 +1720,23 @@ const roadJointMaterial = new THREE.MeshStandardMaterial({ color: 0x343a41, roug
 const curbMaterial = createConcreteMaterial(0xc9c3b7, { roughness: 0.94 });
 const sidewalkMaterial = createConcreteMaterial(0xd8d1c4, { roughness: 0.96 });
 const pathPoints = [new THREE.Vector3(0, 0, 0), ...STAGES.map((_, i) => stagePosition(i))];
-for (let i = 0; i < pathPoints.length - 1; i++) {
-  const a = pathPoints[i];
-  const b = pathPoints[i + 1];
-  const dir = new THREE.Vector3().subVectors(b, a);
-  const len = dir.length();
-  const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
-  const angle = Math.atan2(dir.x, dir.z);
-  const road = new THREE.Mesh(
-    new THREE.BoxGeometry(2.3, 0.05, Math.max(0.5, len + 0.12)),
-    pathMaterial
-  );
-  road.position.set(mid.x, 0.035, mid.z);
-  road.rotation.y = angle;
-  road.receiveShadow = true;
-  scene.add(road);
-
-  const dirN = dir.clone().normalize();
-  const tangent = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
-
-  // Broken center line instead of one short slab: this reads as an actual road even from
-  // the default elevated camera and makes vehicle direction much easier to parse.
-  const dashStep = 2.15;
-  const usable = Math.max(0, len - 1.15);
-  const dashCount = Math.max(1, Math.floor(usable / dashStep));
-  for (let d = 0; d < dashCount; d++) {
-    const along = (d - (dashCount - 1) / 2) * dashStep;
-    const dash = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.025, 0.86), lineMaterial);
-    dash.position.set(mid.x + dirN.x * along, 0.073, mid.z + dirN.z * along);
-    dash.rotation.y = road.rotation.y;
-    scene.add(dash);
-  }
-
-  // Thin edge markings give the road a clean premium-mobile silhouette without expensive
-  // decals or post-processing.
-  for (const side of [-1, 1]) {
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.02, Math.max(0.45, len - 1.10)), roadEdgeMaterial);
-    edge.position.set(mid.x + tangent.x * side * 0.99, 0.071, mid.z + tangent.z * side * 0.99);
-    edge.rotation.y = road.rotation.y;
-    scene.add(edge);
-  }
-
-  // Sparse dark repair joints stop the asphalt from reading as a perfectly clean plastic strip.
-  if (i % 2 === 1 && len > 4.5) {
-    const seam = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.018, 0.035), roadJointMaterial);
-    seam.position.set(mid.x + dirN.x * len * 0.16, 0.073, mid.z + dirN.z * len * 0.16);
-    seam.rotation.y = road.rotation.y;
-    scene.add(seam);
-  }
-
-  // Curb + sidewalk along both edges (spec sections 14-15: "world density / roads" --
-  // this segment loop already knows the road's direction/length, so it's the cheapest
-  // place to flank it rather than a separate pass that has to re-derive the same geometry.
-  for (const side of [-1, 1]) {
-    const curb = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, Math.max(0.45, len - 0.92)), curbMaterial);
-    curb.position.set(mid.x + tangent.x * side * 1.22, 0.07, mid.z + tangent.z * side * 1.22);
-    curb.rotation.y = angle;
-    curb.castShadow = true;
-    curb.receiveShadow = true;
-    scene.add(curb);
-
-    const sidewalk = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, Math.max(0.45, len - 0.98)), sidewalkMaterial);
-    sidewalk.position.set(mid.x + tangent.x * side * 1.72, 0.03, mid.z + tangent.z * side * 1.72);
-    sidewalk.rotation.y = angle;
-    sidewalk.receiveShadow = true;
-    scene.add(sidewalk);
-  }
-
-  // A fire hydrant every third segment, alternating sides, planted on the sidewalk.
-  if (i % 3 === 0) {
-    const side = (i % 6 === 0) ? 1 : -1;
-    const hydrant = makeFireHydrant();
-    hydrant.position.set(mid.x + tangent.x * side * 1.9, 0, mid.z + tangent.z * side * 1.9);
-    scene.add(hydrant);
-  }
-}
-
-// Compact asphalt-only corner fillers. The previous RingGeometry + TorusGeometry solution
-// looked like giant white hoops lying on the road on portrait/mobile cameras. The road slabs
-// already overlap enough to cover most of each turn; this small flat asphalt patch only seals
-// the center gap and stays visually invisible as a separate object.
-for (let i = 1; i < pathPoints.length - 1; i++) {
-  const p = pathPoints[i];
-  const asphaltJoint = new THREE.Mesh(
-    new THREE.CircleGeometry(1.31, 32),
-    pathMaterial
-  );
-  asphaltJoint.rotation.x = -Math.PI / 2;
-  asphaltJoint.position.set(p.x, 0.058, p.z);
-  asphaltJoint.receiveShadow = true;
-  scene.add(asphaltJoint);
-}
+// v36.10 -- the two loops that used to run here (each building two loops down) drew a THICK,
+// permanently-visible road (2.3 wide, full dashes/edges/curbs/sidewalks/hydrants) along this
+// exact pathPoints chain: hub -> stage0 -> stage1 -> ... -> stage9, i.e. a diagonal zigzag
+// following the spiral (stagePosition: angle=i*SPIRAL_ANGLE_STEP, radius=SPIRAL_BASE_RADIUS+i*
+// SPIRAL_RADIUS_STEP -- not grid-aligned). It was added directly to `scene` at module scope, so
+// it was never covered by any refresh*/override pass, including the v36.7 "Stage Road Reset"
+// whose own saveVersion comment says it "removes legacy pale spiral roads" -- its cleanup
+// (removeLegacyStageRoadVisualsV367) only catches meshes near a straight hub-to-ONE-stage line,
+// and most of this chain's segments run stage-to-stage instead, so they survived every prior
+// declutter pass untouched. Confirmed via a live scan of scene.children before this change: this
+// loop was still there, still the widest road on the map, still cutting the grid at arbitrary
+// angles -- almost certainly the biggest single contributor to the "street diarrhea" complaint,
+// bigger than the hub-spoke system fixed above. It's purely visual: `pathPoints`/ROAD_NODES/
+// ROAD_CUM/distToNearestRoadSegment (scenery clearance) and the civilian-traffic driving loop
+// still read the `pathPoints` array itself below, unchanged -- only the two mesh-drawing loops
+// that used to sit here are gone. Real delivery routing was already off this array entirely
+// (buildRoadRoute/projectToRoad are overridden to spokeProjectV367 further down).
 
 /* ---------------------------------------------------------------------- */
 /*  ROAD NETWORK — service vehicles route along the actual road centerline */
