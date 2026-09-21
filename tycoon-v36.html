@@ -14196,10 +14196,23 @@ refreshDistrictAccessRoads=function(){
     if(g.children.length){scene.add(g);cityWorldRuntime.districtAccessRoads.set(cfg.id,g);}
   }
 };
+// v36.8 -- junction caps at the master grid's own corner/T-node points. addRoadNodeCapV353
+// was nulled out in v36.5 (addUnifiedRoadV365 has no cap concept), so every place two grid
+// segments met was just two raw box edges poking through each other -- a small but real part
+// of the "roads crossing with no shared junction" mess. Purely decorative (coplanar disc,
+// doesn't touch ROAD_NODES/distToNearestRoadSegment/routing), so this is safe to add.
+const MASTER_GRID_JOINTS_V368=[[-18,-16],[18,-16],[18,16],[-18,16],[0,-16],[0,16],[-18,0],[18,0]];
+function addMasterGridJointCapsV368(group){
+  for(const [x,z] of MASTER_GRID_JOINTS_V368){
+    const cap=new THREE.Mesh(new THREE.CircleGeometry(1.05,20),ROAD_STYLE_V353.asphaltDark);
+    cap.rotation.x=-Math.PI/2;cap.position.set(x,0.0585,z);cap.receiveShadow=true;group.add(cap);
+  }
+}
 refreshArterialRoads=function(){
   if(cityWorldRuntime.masterRoads){scene.remove(cityWorldRuntime.masterRoads);disposeObject3D(cityWorldRuntime.masterRoads);cityWorldRuntime.masterRoads=null;}
   const master=new THREE.Group();
   for(const [a,b,w] of masterRoadSegmentsV362())addUnifiedRoadV365(master,a,b,w,{markings:true,edgeMarks:false,dark:true});
+  addMasterGridJointCapsV368(master);
   scene.add(master);cityWorldRuntime.masterRoads=master;
   for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.arterialRoads.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.arterialRoads.delete(cfg.id);}if(!districtUnlocked(cfg)||districtLevel(cfg.id)<=0)continue;const path=districtArterialPath(cfg.id);if(path.length<2)continue;const g=new THREE.Group();for(let i=0;i<path.length-1;i++)addUnifiedRoadV365(g,path[i],path[i+1],1.46,{markings:i===path.length-2,edgeMarks:false,dark:true});scene.add(g);cityWorldRuntime.arterialRoads.set(cfg.id,g);}
 };
@@ -14344,12 +14357,29 @@ function buildSpokeRouteV367(fromPos,toPos){
   appendTransportPoint(route,toPos); return route;
 }
 buildRoadRoute=function(fromPos,toPos){ return buildSpokeRouteV367(fromPos,toPos); };
+// v36.8 -- STAGE ROAD DECLUTTER. Every stage spoke was drawn full-width with bright dashed
+// lane markings, all converging on one point -- with 10 stages spiralling out to increasing
+// radius/angle (SPIRAL_ANGLE_STEP/SPIRAL_RADIUS_STEP), that's up to 10 equally-bright "streets"
+// fanning out at arbitrary angles, several of them shooting straight past the master grid's own
+// footprint and slicing across it -- exactly the "sunburst vs. grid" clash the user is reacting
+// to, and it got much more visible once ROAD_STYLE_V353 got its bright markings back. The spoke
+// ENDPOINTS/projection (stageRoadEndpointV367/spokeProjectV367) are untouched -- delivery
+// routing and distToNearestRoadSegment-style clearance both key off those, not off how a spoke
+// is painted. Only the paint job changes: spokes that stay inside the master grid's own
+// footprint (roughly the first few stages) still read as real streets; spokes that reach past it
+// (the later, larger-radius stages) drop to a thin, unmarked "access road" style -- same visual
+// language already used for district driveways and service-graph roads elsewhere in this file,
+// so they read as minor connectors instead of competing streets.
+const STAGE_ROAD_GRID_REACH_V368=24.5; // just past the master grid's own corner distance (~24.08)
 function makeStageRoadGroupV367(){
   const g=new THREE.Group();
   const round=new THREE.Mesh(new THREE.CircleGeometry(2.15,36),ROAD_STYLE_V353.asphaltDark);round.rotation.x=-Math.PI/2;round.position.y=.058;round.receiveShadow=true;g.add(round);
   const island=new THREE.Mesh(new THREE.CircleGeometry(1.02,28),new THREE.MeshStandardMaterial({color:0x8db37a,roughness:.98}));island.rotation.x=-Math.PI/2;island.position.y=.07;g.add(island);
   for(let i=0;i<STAGES.length;i++){
-    const end=stageRoadEndpointV367(i); const width=i<4?1.48:1.38; addUnifiedRoadV365(g,STAGE_HUB_V367,end,width,{markings:true,edgeMarks:false,dark:true});
+    const end=stageRoadEndpointV367(i);
+    const insideGrid=Math.hypot(end.x,end.z)<=STAGE_ROAD_GRID_REACH_V368;
+    const width=insideGrid?(i<4?1.48:1.38):0.86;
+    addUnifiedRoadV365(g,STAGE_HUB_V367,end,width,{markings:insideGrid,edgeMarks:!insideGrid,dark:true});
   }
   return g;
 }
