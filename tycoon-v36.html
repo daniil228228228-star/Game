@@ -10150,8 +10150,12 @@ function upgradeLandPlot(id,index){
 }
 function buyLandPlot(id){
   const cfg=CITY_DISTRICTS.find(d=>d.id===id);if(!cfg||!districtUnlocked(cfg))return;
-  const st=districtLandState(id),index=st.plots.findIndex(p=>!p.owned),plot=st.plots[index];if(index<0||!plot)return;
+  const st=districtLandState(id),index=st.plots.findIndex(p=>!p.owned);if(index<0)return;
   const cost=landPlotPurchaseCost(id);if(money<cost){sfx.error();toast(lang==='ru'?'Не хватает денег на участок':'Not enough money for the land plot');return;}
+  // districtLandState() unconditionally rebuilds st.plots into fresh objects on every call (needed to
+  // sanitize old saves), so a `plot` reference captured before landPlotPurchaseCost()'s own internal
+  // districtLandState() call above would already be detached from the real array — re-fetch it fresh.
+  const plot=districtLandState(id).plots[index];if(!plot)return;
   money-=cost;plot.owned=true;landPlotWorldPosition(id,index);awardCityReputation(2,'land');sfx.purchase();haptic('medium');toast(lang==='ru'?`🗺️ Участок ${index+1} куплен в районе «${cfg.ru}»`:`🗺️ Plot ${index+1} acquired in ${cfg.en}`);refreshV34CityWorld();renderCityPanel();updateHUD();save();
 }
 function zoneLandPlot(id,index,zone){
