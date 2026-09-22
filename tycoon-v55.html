@@ -743,25 +743,25 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
     <div class="v30Section">
       <div class="v30SectionTitle" id="companySectionTitle">Прогресс компании</div>
       <div id="companySummary"></div>
-      <div class="v30Row"><div><b>🧬 Мета-прогрессия</b><div class="sub" id="metaSummaryText"></div></div><button class="v30Btn primary" id="openMetaBtn">Открыть</button></div>
-      <div class="v30Row"><div><b>👷 Команда</b><div class="sub" id="staffSummaryText"></div></div><button class="v30Btn" id="openStaffBtn">Управлять</button></div>
-      <div class="v30Row"><div><b>🏗️ Спецпроекты</b><div class="sub" id="projectSummaryText"></div></div><button class="v30Btn" id="openProjectsBtn">Открыть</button></div>
-      <div class="v30Row"><div><b>🚚 Автопарк</b><div class="sub" id="fleetSummaryText"></div></div><button class="v30Btn" id="openFleetBtn">Управлять</button></div>
-      <div class="v30Row"><div><b>🏢 База компании</b><div class="sub" id="baseSummaryText"></div></div><button class="v30Btn" id="openBaseBtn">Развивать</button></div>
-      <div class="v30Row"><div><b>🛰️ Операционный центр</b><div class="sub" id="operationsSummaryText"></div></div><button class="v30Btn" id="openOperationsBtn">Открыть</button></div>
-      <div class="v30Row"><div><b>🌆 Город и развитие</b><div class="sub" id="citySummaryText"></div></div><button class="v30Btn primary" id="openCityBtn">Развивать</button></div>
-      <div class="v30Row"><div><b>📋 Крупные тендеры</b><div class="sub" id="tenderSummaryText"></div></div><button class="v30Btn" id="openTendersBtn">Открыть</button></div>
-      <div class="v30Row" id="bonusMenuRow" hidden><div><b>🎁 Бонусы</b><div class="sub" id="bonusSummaryText"></div></div><button class="v30Btn" id="openBonusBtn">Открыть</button></div>
+      <div class="v30Row"><div><b id="rowLabelMeta">🧬 Мета-прогрессия</b><div class="sub" id="metaSummaryText"></div></div><button class="v30Btn primary" id="openMetaBtn">Открыть</button></div>
+      <div class="v30Row"><div><b id="rowLabelStaff">👷 Команда</b><div class="sub" id="staffSummaryText"></div></div><button class="v30Btn" id="openStaffBtn">Управлять</button></div>
+      <div class="v30Row"><div><b id="rowLabelProjects">🏗️ Спецпроекты</b><div class="sub" id="projectSummaryText"></div></div><button class="v30Btn" id="openProjectsBtn">Открыть</button></div>
+      <div class="v30Row"><div><b id="rowLabelFleet">🚚 Автопарк</b><div class="sub" id="fleetSummaryText"></div></div><button class="v30Btn" id="openFleetBtn">Управлять</button></div>
+      <div class="v30Row"><div><b id="rowLabelBase">🏢 База компании</b><div class="sub" id="baseSummaryText"></div></div><button class="v30Btn" id="openBaseBtn">Развивать</button></div>
+      <div class="v30Row"><div><b id="rowLabelOperations">🛰️ Операционный центр</b><div class="sub" id="operationsSummaryText"></div></div><button class="v30Btn" id="openOperationsBtn">Открыть</button></div>
+      <div class="v30Row"><div><b id="rowLabelCity">🌆 Город и развитие</b><div class="sub" id="citySummaryText"></div></div><button class="v30Btn primary" id="openCityBtn">Развивать</button></div>
+      <div class="v30Row"><div><b id="rowLabelTenders">📋 Крупные тендеры</b><div class="sub" id="tenderSummaryText"></div></div><button class="v30Btn" id="openTendersBtn">Открыть</button></div>
+      <div class="v30Row" id="bonusMenuRow" hidden><div><b id="rowLabelBonus">🎁 Бонусы</b><div class="sub" id="bonusSummaryText"></div></div><button class="v30Btn" id="openBonusBtn">Открыть</button></div>
     </div>
     <div class="v30Section">
       <div class="v30SectionTitle" id="settingsSectionTitle">Настройки</div>
-      <div class="v30Row"><div><b>🔊 Звуки</b><div class="sub">Эффекты строительства и интерфейса</div></div><button class="v30Btn v30Toggle" id="soundToggle"></button></div>
-      <div class="v30Row"><div><b>🎵 Музыка</b><div class="sub">Редкие фоновые музыкальные акценты</div></div><button class="v30Btn v30Toggle" id="musicToggle"></button></div>
-      <div class="v30Row"><div><b>📳 Вибрация</b><div class="sub">Короткий отклик на важные действия</div></div><button class="v30Btn v30Toggle" id="hapticToggle"></button></div>
+      <div class="v30Row"><div><b id="rowLabelSound">🔊 Звуки</b><div class="sub" id="rowSubSound">Эффекты строительства и интерфейса</div></div><button class="v30Btn v30Toggle" id="soundToggle"></button></div>
+      <div class="v30Row"><div><b id="rowLabelMusic">🎵 Музыка</b><div class="sub" id="rowSubMusic">Редкие фоновые музыкальные акценты</div></div><button class="v30Btn v30Toggle" id="musicToggle"></button></div>
+      <div class="v30Row"><div><b id="rowLabelHaptic">📳 Вибрация</b><div class="sub" id="rowSubHaptic">Короткий отклик на важные действия</div></div><button class="v30Btn v30Toggle" id="hapticToggle"></button></div>
     </div>
     <div class="v30Section">
       <div class="v30SectionTitle">Yandex Games Ready</div>
-      <div class="sub" style="line-height:1.55">В сборке есть безопасные SDK-обёртки для rewarded/interstitial рекламы, облачного сохранения и лидерборда. Без подключённого SDK они ничего не ломают.</div>
+      <div class="sub" id="yandexReadyText" style="line-height:1.55">В сборке есть безопасные SDK-обёртки для rewarded/interstitial рекламы, облачного сохранения и лидерборда. Без подключённого SDK они ничего не ломают.</div>
     </div>
   </div>
 </div>
@@ -8210,9 +8210,9 @@ function renderBonusPanel(){
   document.getElementById('bonusHint').textContent=lang==='ru'?'Полностью опционально: обычное прохождение не требует рекламы.':'Completely optional: normal progression never requires ads.';
   const inc=rewardBoostRemaining(rewardBoostState.incomeUntil), build=rewardBoostRemaining(rewardBoostState.constructionUntil);
   grid.innerHTML=`
-    <div class="bonusCard"><div class="name">💰 x2 доход</div><div class="desc">${lang==='ru'?'Удваивает весь доход на 3 минуты.':'Doubles all income for 3 minutes.'}</div><div class="status">${inc?`<span class="boostTimer">${inc}s</span>`:(lang==='ru'?'Готово':'Ready')}</div><button class="v30Btn primary" data-bonus="income">${lang==='ru'?'Получить':'Claim'}</button></div>
-    <div class="bonusCard"><div class="name">🏗️ Быстрая стройка</div><div class="desc">${lang==='ru'?'+50% скорости строительства на 2 минуты.' : '+50% construction speed for 2 minutes.'}</div><div class="status">${build?`<span class="boostTimer">${build}s</span>`:(lang==='ru'?'Готово':'Ready')}</div><button class="v30Btn primary" data-bonus="construction">${lang==='ru'?'Получить':'Claim'}</button></div>
-    <div class="bonusCard"><div class="name">📦 Пакет снабжения</div><div class="desc">${lang==='ru'?'Небольшой пакет денег и доступных ресурсов.' : 'A small package of cash and unlocked resources.'}</div><div class="status">${lang==='ru'?'Мгновенно':'Instant'}</div><button class="v30Btn primary" data-bonus="resources">${lang==='ru'?'Получить':'Claim'}</button></div>`;
+    <div class="bonusCard"><div class="name">💰 ${lang==='ru'?'x2 доход':'x2 Income'}</div><div class="desc">${lang==='ru'?'Удваивает весь доход на 3 минуты.':'Doubles all income for 3 minutes.'}</div><div class="status">${inc?`<span class="boostTimer">${inc}s</span>`:(lang==='ru'?'Готово':'Ready')}</div><button class="v30Btn primary" data-bonus="income">${lang==='ru'?'Получить':'Claim'}</button></div>
+    <div class="bonusCard"><div class="name">🏗️ ${lang==='ru'?'Быстрая стройка':'Fast Construction'}</div><div class="desc">${lang==='ru'?'+50% скорости строительства на 2 минуты.' : '+50% construction speed for 2 minutes.'}</div><div class="status">${build?`<span class="boostTimer">${build}s</span>`:(lang==='ru'?'Готово':'Ready')}</div><button class="v30Btn primary" data-bonus="construction">${lang==='ru'?'Получить':'Claim'}</button></div>
+    <div class="bonusCard"><div class="name">📦 ${lang==='ru'?'Пакет снабжения':'Supply Package'}</div><div class="desc">${lang==='ru'?'Небольшой пакет денег и доступных ресурсов.' : 'A small package of cash and unlocked resources.'}</div><div class="status">${lang==='ru'?'Мгновенно':'Instant'}</div><button class="v30Btn primary" data-bonus="resources">${lang==='ru'?'Получить':'Claim'}</button></div>`;
   grid.querySelectorAll('[data-bonus]').forEach(btn=>btn.addEventListener('click',()=>claimRewardedBonus(btn.dataset.bonus)));
 }
 
@@ -8262,6 +8262,35 @@ function renderSystemsPanel(){
   document.getElementById('systemsTitle').textContent=lang==='ru'?'Компания':'Company';
   document.getElementById('companySectionTitle').textContent=lang==='ru'?'Прогресс компании':'Company progression';
   document.getElementById('settingsSectionTitle').textContent=lang==='ru'?'Настройки':'Settings';
+  // v55 i18n fix: these row/setting labels were hardcoded Russian-only in the static markup
+  // and never got a lang-aware textContent update anywhere, so they stayed Russian even in
+  // English mode next to already-translated headers/buttons. Terminology matches the panel
+  // titles set elsewhere in this function (fleetTitle/baseTitle/cityTitle/etc.) and metaGrid.
+  const rowLabels={
+    rowLabelMeta:['🧬 Мета-прогрессия','🧬 Meta-progression'],
+    rowLabelStaff:['👷 Команда','👷 Team'],
+    rowLabelProjects:['🏗️ Спецпроекты','🏗️ Special Projects'],
+    rowLabelFleet:['🚚 Автопарк','🚚 Fleet'],
+    rowLabelBase:['🏢 База компании','🏢 Company Base'],
+    rowLabelOperations:['🛰️ Операционный центр','🛰️ Operations Center'],
+    rowLabelCity:['🌆 Город и развитие','🌆 City & Development'],
+    rowLabelTenders:['📋 Крупные тендеры','📋 Major Tenders'],
+    rowLabelBonus:['🎁 Бонусы','🎁 Bonuses'],
+    rowLabelSound:['🔊 Звуки','🔊 Sound'],
+    rowLabelMusic:['🎵 Музыка','🎵 Music'],
+    rowLabelHaptic:['📳 Вибрация','📳 Vibration'],
+  };
+  for(const id in rowLabels){ const el=document.getElementById(id); if(el) el.textContent=lang==='ru'?rowLabels[id][0]:rowLabels[id][1]; }
+  const rowSubs={
+    rowSubSound:['Эффекты строительства и интерфейса','Construction and interface effects'],
+    rowSubMusic:['Редкие фоновые музыкальные акценты','Occasional background music cues'],
+    rowSubHaptic:['Короткий отклик на важные действия','Short response on important actions'],
+  };
+  for(const id in rowSubs){ const el=document.getElementById(id); if(el) el.textContent=lang==='ru'?rowSubs[id][0]:rowSubs[id][1]; }
+  const yandexText=document.getElementById('yandexReadyText');
+  if(yandexText) yandexText.textContent=lang==='ru'
+    ? 'В сборке есть безопасные SDK-обёртки для rewarded/interstitial рекламы, облачного сохранения и лидерборда. Без подключённого SDK они ничего не ломают.'
+    : 'The build includes safe SDK wrappers for rewarded/interstitial ads, cloud saves and the leaderboard. With no SDK connected, they don’t break anything.';
   document.getElementById('openMetaBtn').textContent=lang==='ru'?'Открыть':'Open';
   document.getElementById('openStaffBtn').textContent=lang==='ru'?'Управлять':'Manage';
   document.getElementById('openProjectsBtn').textContent=lang==='ru'?'Открыть':'Open';
@@ -9540,7 +9569,7 @@ function renderCityPanel(){
   document.getElementById('cityMarketText').innerHTML=`${market.emoji} <b>${lang==='ru'?market.ru:market.en}</b> · ${lang==='ru'?market.descRu:market.descEn} · ⏱ ${left}${lang==='ru'?'с':'s'}`;
   document.getElementById('cityPopulationText').innerHTML=`🏘️ <b>${lang==='ru'?'Население города':'City population'}</b> · ${fmt(Math.round(cityState.population))}/${fmt(populationCapacity())}`;
   const cityEconomyEl=document.getElementById('cityEconomyText');
-  if(cityEconomyEl) cityEconomyEl.innerHTML=`🏦 <b>${lang==='ru'?'Экономика города':'City economy'}</b> · 💰 ${fmt(cityState.treasury||0)} · ${lang==='ru'?'доход':'revenue'} +${fmt(cityState.revenuePerSec||cityTaxIncomePerSec())}/с · ${lang==='ru'?'расход':'expense'} -${fmt(cityState.expensesPerSec||cityServiceExpensesPerSec())}/с · <b>${(cityState.netPerSec||cityNetIncomePerSec())>=0?'+':''}${fmt(cityState.netPerSec||cityNetIncomePerSec())}/с</b><br>💼 ${lang==='ru'?'Рабочие места':'Jobs'} ${fmt(Math.round(cityJobsTotal()))} · 🏷️ ${lang==='ru'?'Цена земли':'Land value'} ${Math.round(cityAverageLandValue())}% · 🏪 ${lang==='ru'?'коммерция':'commerce'} ${cityCommercialLevels()} · 🗺️ ${lang==='ru'?'участки':'plots'} ${typeof ownedLandPlotCount==='function'?ownedLandPlotCount():0}/${CITY_DISTRICTS.length*3}`;
+  if(cityEconomyEl) cityEconomyEl.innerHTML=`🏦 <b>${lang==='ru'?'Экономика города':'City economy'}</b> · 💰 ${fmt(cityState.treasury||0)} · ${lang==='ru'?'доход':'revenue'} +${fmt(cityState.revenuePerSec||cityTaxIncomePerSec())}/${lang==='ru'?'с':'s'} · ${lang==='ru'?'расход':'expense'} -${fmt(cityState.expensesPerSec||cityServiceExpensesPerSec())}/${lang==='ru'?'с':'s'} · <b>${(cityState.netPerSec||cityNetIncomePerSec())>=0?'+':''}${fmt(cityState.netPerSec||cityNetIncomePerSec())}/${lang==='ru'?'с':'s'}</b><br>💼 ${lang==='ru'?'Рабочие места':'Jobs'} ${fmt(Math.round(cityJobsTotal()))} · 🏷️ ${lang==='ru'?'Цена земли':'Land value'} ${Math.round(cityAverageLandValue())}% · 🏪 ${lang==='ru'?'коммерция':'commerce'} ${cityCommercialLevels()} · 🗺️ ${lang==='ru'?'участки':'plots'} ${typeof ownedLandPlotCount==='function'?ownedLandPlotCount():0}/${CITY_DISTRICTS.length*3}`;
   document.getElementById('districtsTitle').textContent=lang==='ru'?'Районы города':'City Districts';
   document.getElementById('districtsHint').textContent=lang==='ru'?'Районы остаются развитыми после престижа и постепенно меняют город.':'District development persists through prestige and gradually transforms the city.';
   document.getElementById('cityGrid').innerHTML=CITY_DISTRICTS.map(cfg=>{
