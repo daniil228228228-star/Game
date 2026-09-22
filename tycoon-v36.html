@@ -6689,7 +6689,26 @@ function moveWorkVehicle(vehicle, dt) {
     ud._auditStuck = auditMoved < 0.018 ? (ud._auditStuck || 0) + dt : 0;
     if (ud._auditStuck > 2.6) {
       const destination = ud.state === 'to_source' ? ud.cargoSource : (ud.state === 'returning' ? ud.home : ud.jobTarget);
-      if (destination) {
+      // v37 player-deadlock fix: recomputing the same road route does nothing when the real
+      // cause is a live, motionless obstacle (the player) sitting on/near the truck's path --
+      // the fresh route lands on the same blocked point. When the player is the one holding
+      // the truck back, sidestep around their current position first (a short lateral nudge,
+      // off to whichever side already clears them) and route on from there instead. Any other
+      // stall cause (e.g. a genuinely bad path) still gets the plain reroute as before.
+      const auditPlayerDist = Math.hypot(player.position.x - vehicle.position.x, player.position.z - vehicle.position.z);
+      if (destination && auditPlayerDist < 2.6) {
+        const toDestX = destination.x - vehicle.position.x, toDestZ = destination.z - vehicle.position.z;
+        const toDestLen = Math.max(0.01, Math.hypot(toDestX, toDestZ));
+        const perpX = -toDestZ / toDestLen, perpZ = toDestX / toDestLen;
+        const awayX = vehicle.position.x - player.position.x, awayZ = vehicle.position.z - player.position.z;
+        const side = (perpX * awayX + perpZ * awayZ) >= 0 ? 1 : -1;
+        const sidestep = new THREE.Vector3(vehicle.position.x + perpX * side * 2.2, 0, vehicle.position.z + perpZ * side * 2.2);
+        ud.path = [sidestep, ...buildRoadRoute(sidestep, destination)];
+        ud.pathIndex = 0;
+        // Briefly relax the player stop/fade radii (see below) so the truck can actually
+        // execute the nudge instead of re-freezing the instant it starts moving.
+        ud._playerEscapeTimer = 1.6;
+      } else if (destination) {
         ud.path = buildRoadRoute(vehicle.position, destination);
         ud.pathIndex = 0;
       }
@@ -6841,8 +6860,21 @@ function moveWorkVehicle(vehicle, dt) {
   // waypoints, the player and nearby service vehicles. This prevents visible clipping.
   let avoidance = 1;
   const playerDist = Math.hypot(player.position.x - vehicle.position.x, player.position.z - vehicle.position.z);
-  if (playerDist < 1.15) avoidance = 0;
-  else if (playerDist < 2.35) avoidance = Math.min(avoidance, (playerDist - 1.15) / 1.20);
+  // v37 player-deadlock fix: an AFK player standing on the route within the 1.15 stop radius
+  // used to freeze the truck forever -- it settles just outside that radius (avoidance fades
+  // to ~0 rather than hard-stopping) so it never even reaches the plain playerDist<1.15 case,
+  // it just asymptotically grinds to a standstill. The recovery watchdog above now detects
+  // that stall (by lack of real movement, same as any other stall cause) and, when the player
+  // is the nearby obstacle, splices in a lateral sidestep around them and arms this escape
+  // timer. While armed, shrink the stop/fade radii so the truck can actually execute that
+  // sidestep instead of re-freezing on itself the instant it starts moving. The normal
+  // 1.15/2.35 clipping-prevention radii are restored the instant the escape window ends.
+  const escaping = (ud._playerEscapeTimer || 0) > 0;
+  if (escaping) ud._playerEscapeTimer -= dt;
+  const playerStopRadius = escaping ? 0.45 : 1.15;
+  const playerFadeRadius = escaping ? 1.15 : 2.35;
+  if (playerDist < playerStopRadius) avoidance = 0;
+  else if (playerDist < playerFadeRadius) avoidance = Math.min(avoidance, (playerDist - playerStopRadius) / (playerFadeRadius - playerStopRadius));
   for (const other of serviceVehicles) {
     if (other === vehicle || !other.visible) continue;
     const od = Math.hypot(other.position.x - vehicle.position.x, other.position.z - vehicle.position.z);
