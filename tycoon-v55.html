@@ -8576,13 +8576,22 @@ renderSystemsPanel=function(){
   document.getElementById('openTendersBtn').textContent=lang==='ru'?'Открыть':'Open';
 };
 const _updateHUDV301=updateHUD;
+/* v55 audit fix: updateHUD() polls at ~5/s on mobile (goalHudAccumulator, 0.20s tick) and used
+   to unconditionally rebuild the whole Fleet/Base/Tenders grid innerHTML every single tick while
+   the overlay was open, even though nothing in the list had changed. This is a call-site-only
+   throttle (does not touch renderFleetPanel/renderBasePanel/renderTendersPanel themselves, which
+   are reused from many other places — see click handlers below that still call them directly and
+   immediately after a real purchase/upgrade/dispatch, unaffected by this throttle). */
+const _panelRenderThrottleV55={fleet:0,base:0,tenders:0};
+const PANEL_RENDER_THROTTLE_MS_V55=350;
 updateHUD=function(){
   _updateHUDV301();
   refreshBaseWorld();
   checkMajorTenderProgress();
-  if(fleetOverlay?.classList.contains('show'))renderFleetPanel();
-  if(baseOverlay?.classList.contains('show'))renderBasePanel();
-  if(tendersOverlay?.classList.contains('show'))renderTendersPanel();
+  const _nowV55=performance.now();
+  if(fleetOverlay?.classList.contains('show')&&_nowV55-_panelRenderThrottleV55.fleet>=PANEL_RENDER_THROTTLE_MS_V55){_panelRenderThrottleV55.fleet=_nowV55;renderFleetPanel();}
+  if(baseOverlay?.classList.contains('show')&&_nowV55-_panelRenderThrottleV55.base>=PANEL_RENDER_THROTTLE_MS_V55){_panelRenderThrottleV55.base=_nowV55;renderBasePanel();}
+  if(tendersOverlay?.classList.contains('show')&&_nowV55-_panelRenderThrottleV55.tenders>=PANEL_RENDER_THROTTLE_MS_V55){_panelRenderThrottleV55.tenders=_nowV55;renderTendersPanel();}
 };
 
 /* ---------------------------------------------------------------------- */
