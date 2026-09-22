@@ -14149,7 +14149,12 @@ toast=function(msg){
     v361ToastQueue=v361ToastQueue.filter(x=>x.important);
     v361ToastQueue.unshift({msg,important:true});
   }else{
-    if(v361ToastQueue.length>=4)v361ToastQueue.shift();
+    if(v361ToastQueue.length>=4){
+      // Prefer evicting the oldest ambient (non-important) item over an important one
+      // that hasn't been shown yet; only drop the true oldest if all 4 slots are important.
+      const dropIdx=v361ToastQueue.findIndex(x=>!x.important);
+      v361ToastQueue.splice(dropIdx>=0?dropIdx:0,1);
+    }
     v361ToastQueue.push({msg,important});
   }
   v361PumpToast();
