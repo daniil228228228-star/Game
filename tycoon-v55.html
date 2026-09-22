@@ -7928,6 +7928,7 @@ function buyMetaUpgrade(key){
   metaState.upgrades[key] = level + 1;
   saveV30Meta();
   sfx.purchase(); haptic('light');
+  toast(lang === 'ru' ? `${cfg.emoji} ${cfg.ru} → ур. ${level + 1}` : `${cfg.emoji} ${cfg.en} → lv. ${level + 1}`);
   renderMetaPanel(); renderSystemsPanel(); updateHUD();
 }
 
@@ -8077,7 +8078,9 @@ function buyStaffUpgrade(key){
   }
   staffState[key]=level+1;
   for(const w of npcWorkers){ if(w && Number.isFinite(w._v301BaseSpeed)) w.speed=w._v301BaseSpeed*workerSpeedMultiplier(); }
-  sfx.purchase(); haptic('light'); updateHUD(); renderStaffPanel(); renderSystemsPanel(); save();
+  sfx.purchase(); haptic('light');
+  toast(lang==='ru'?`${cfg.emoji} ${cfg.ru} → ур. ${level+1}`:`${cfg.emoji} ${cfg.en} → lv. ${level+1}`);
+  updateHUD(); renderStaffPanel(); renderSystemsPanel(); save();
 }
 function renderStaffPanel(){
   const grid=document.getElementById('staffGrid'); if(!grid)return;
@@ -8389,7 +8392,9 @@ function buyFleetUpgrade(key){
   const cost=fleetUpgradeCost(key);
   if(!tryPayResources(cost)){ sfx.error(); toast(lang==='ru'?'Не хватает ресурсов для модернизации техники':'Not enough resources for the fleet upgrade'); return; }
   fleetState[key]=lv+1;
-  sfx.purchase(); haptic('light'); renderFleetPanel(); renderSystemsPanel(); updateHUD(); save();
+  sfx.purchase(); haptic('light');
+  toast(lang==='ru'?`${cfg.emoji} ${cfg.ru} → ур. ${lv+1}`:`${cfg.emoji} ${cfg.en} → lv. ${lv+1}`);
+  renderFleetPanel(); renderSystemsPanel(); updateHUD(); save();
 }
 function buyBaseUpgrade(key){
   const cfg=baseConfig(key); if(!cfg || stageIndex<cfg.unlock) return;
@@ -8399,7 +8404,9 @@ function buyBaseUpgrade(key){
   baseState[key]=lv+1;
   refreshBaseWorld(true);
   const safe=nearestSafePlayerPosition(player.position); player.position.x=safe.x; player.position.z=safe.z;
-  sfx.purchase(); haptic('medium'); renderBasePanel(); renderSystemsPanel(); updateHUD(); save();
+  sfx.purchase(); haptic('medium');
+  toast(lang==='ru'?`${cfg.emoji} ${cfg.ru} → ур. ${lv+1}`:`${cfg.emoji} ${cfg.en} → lv. ${lv+1}`);
+  renderBasePanel(); renderSystemsPanel(); updateHUD(); save();
 }
 function fleetVehicleForKey(key){ return serviceVehicles.find(v=>vehicleFleetKey(v)===key) || null; }
 function fleetVehicleStateText(key){
@@ -8660,7 +8667,9 @@ function buyUniversalTruck(){
   if(owned>=cap){ toast(lang==='ru'?'Нужен более высокий уровень гаража':'Upgrade the garage for another vehicle'); return; }
   const cost=universalTruckPurchaseCost(owned+1);
   if(!tryPayResources(cost)){ sfx.error(); toast(lang==='ru'?'Не хватает ресурсов на новый грузовик':'Not enough resources for a new truck'); return; }
-  fleetOpsState.universalTrucks=owned+1; syncUniversalFleet(); sfx.purchase(); haptic('medium'); renderFleetPanel(); renderSystemsPanel(); updateHUD(); save();
+  fleetOpsState.universalTrucks=owned+1; syncUniversalFleet(); sfx.purchase(); haptic('medium');
+  toast(lang==='ru'?`🚚 Новый универсальный грузовик (${owned+1}/${cap})`:`🚚 New utility truck (${owned+1}/${cap})`);
+  renderFleetPanel(); renderSystemsPanel(); updateHUD(); save();
 }
 function cycleDispatchPriority(cargo){
   if(!['planks','concrete','metal'].includes(cargo)) return;
@@ -8676,7 +8685,10 @@ function serviceFleetKey(key){
   const cost=fleetServiceCost(key);
   if(cost<=0){ toast(lang==='ru'?'Техника уже в отличном состоянии':'Vehicle is already in excellent condition'); return; }
   if(money<cost){ sfx.error(); toast(lang==='ru'?`Нужно ещё ${fmt(cost-money)} 💰 на обслуживание`:`Need ${fmt(cost-money)} 💰 more for service`); return; }
-  money-=cost; fleetOpsState.condition[key]=100; sfx.purchase(); haptic('light'); renderFleetPanel(); updateHUD(); save();
+  money-=cost; fleetOpsState.condition[key]=100; sfx.purchase(); haptic('light');
+  const vcfg=fleetConfig(key); const vname=vcfg?(lang==='ru'?vcfg.ru:vcfg.en):(lang==='ru'?'Универсальный грузовик':'Utility truck');
+  toast(lang==='ru'?`🔧 ${vname}: техобслуживание завершено`:`🔧 ${vname}: service complete`);
+  renderFleetPanel(); updateHUD(); save();
 }
 function priorityButton(cargo){
   const lv=dispatchPriorityLevel(cargo), label=PRIORITY_LABELS[lang]?.[lv]||PRIORITY_LABELS.ru[lv];
