@@ -8295,6 +8295,12 @@ function renderSystemsPanel(){
   document.getElementById('openStaffBtn').textContent=lang==='ru'?'Управлять':'Manage';
   document.getElementById('openProjectsBtn').textContent=lang==='ru'?'Открыть':'Open';
   document.getElementById('openBonusBtn').textContent=lang==='ru'?'Открыть':'Open';
+  // v55 i18n fix: openCityBtn kept the static Russian markup ("Развивать") even though every
+  // other row's button text is lang-aware (see openMetaBtn/openStaffBtn/... above and
+  // openFleetBtn/openBaseBtn/openTendersBtn/openOperationsBtn elsewhere in this render chain) --
+  // this one alone was never touched, so it stayed Russian even in English mode. "Develop"
+  // matches openBaseBtn's verb for the same "level up this system" action.
+  document.getElementById('openCityBtn').textContent=lang==='ru'?'Развивать':'Develop';
   document.getElementById('metaTitle').textContent=lang==='ru'?'Развитие компании':'Company development';
 }
 function renderCompanyChip(){
@@ -8374,8 +8380,8 @@ updateHUD=function(){
 /* ---------------------------------------------------------------------- */
 const FLEET_CONFIG = [
   { key:'planks', emoji:'🪵🚚', unlock:1, baseCost:700, ru:'Лесовоз', en:'Lumber truck', ruDesc:'+8% скорость и -12% время погрузки/разгрузки за уровень', enDesc:'+8% speed and -12% turnaround per level' },
-  { key:'concrete', emoji:'🧱🚛', unlock:CONCRETE_UNLOCK_STAGE, baseCost:1800, ru:'Бетономешалка', en:'Concrete mixer', ruDesc:'+8% скорость и -12% turnaround за уровень', enDesc:'+8% speed and -12% turnaround per level' },
-  { key:'metal', emoji:'🔩🚚', unlock:METAL_UNLOCK_STAGE, baseCost:3200, ru:'Металловоз', en:'Steel truck', ruDesc:'+8% скорость и -12% turnaround за уровень', enDesc:'+8% speed and -12% turnaround per level' },
+  { key:'concrete', emoji:'🧱🚛', unlock:CONCRETE_UNLOCK_STAGE, baseCost:1800, ru:'Бетономешалка', en:'Concrete mixer', ruDesc:'+8% скорость и -12% время погрузки/разгрузки за уровень', enDesc:'+8% speed and -12% turnaround per level' },
+  { key:'metal', emoji:'🔩🚚', unlock:METAL_UNLOCK_STAGE, baseCost:3200, ru:'Металловоз', en:'Steel truck', ruDesc:'+8% скорость и -12% время погрузки/разгрузки за уровень', enDesc:'+8% speed and -12% turnaround per level' },
   { key:'lift', emoji:'🏗️', unlock:5, baseCost:2500, ru:'Подъёмник', en:'Work lift', ruDesc:'+8% скорость и +12% помощь на отделке за уровень', enDesc:'+8% speed and +12% finishing support per level' },
 ];
 const BASE_CONFIG = [
@@ -8451,7 +8457,7 @@ function renderFleetPanel(){
   document.getElementById('fleetHint').textContent=lang==='ru'?'Модернизация действует на конкретную машину и сохраняется до престижа.':'Upgrades affect a specific vehicle and last until prestige.';
   grid.innerHTML=FLEET_CONFIG.map(cfg=>{
     const lv=fleetLevel(cfg.key), locked=stageIndex<cfg.unlock, done=lv>=3, cost=fleetUpgradeCost(cfg.key);
-    const bonus=cfg.key==='lift'?`+${lv*8}% ${lang==='ru'?'скорость':'speed'} · +${lv*12}% ${lang==='ru'?'работа':'work'}`:`+${lv*8}% ${lang==='ru'?'скорость':'speed'} · -${Math.round((1-1/(1+lv*.12))*100)}% turnaround`;
+    const bonus=cfg.key==='lift'?`+${lv*8}% ${lang==='ru'?'скорость':'speed'} · +${lv*12}% ${lang==='ru'?'работа':'work'}`:`+${lv*8}% ${lang==='ru'?'скорость':'speed'} · -${Math.round((1-1/(1+lv*.12))*100)}% ${lang==='ru'?'время погрузки/разгрузки':'turnaround'}`;
     const condition=Math.round(fleetConditionValue(cfg.key)), serviceCost=fleetServiceCost(cfg.key);
     return `<div class="fleetCard ${locked?'locked':'active'}"><div class="name">${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}</div><div class="desc">${lang==='ru'?cfg.ruDesc:cfg.enDesc}</div><div class="status">${locked?(lang==='ru'?`Откроется после ${cfg.unlock} строек`:`Unlocks after ${cfg.unlock} builds`):`${lang==='ru'?'Уровень':'Level'} ${lv}/3 · ${fleetVehicleStateText(cfg.key)}`}</div><div class="resourceLine">${bonus}</div>${locked?'':`<div class="fleetCondition"><i style="width:${condition}%"></i></div><div class="resourceLine">${lang==='ru'?'Состояние':'Condition'} ${condition}%</div>`}<button class="v30Btn ${!locked&&!done?'primary':''}" data-fleet="${cfg.key}" ${locked||done||!canPayResources(cost)?'disabled':''}>${done?'MAX':locked?'🔒':`${lang==='ru'?'Модернизировать':'Upgrade'} · ${opsCostText(cost)}`}</button>${!locked&&condition<99?`<button class="v30Btn" data-service="${cfg.key}" ${money<serviceCost?'disabled':''}>🔧 ${lang==='ru'?'Обслужить':'Service'} · ${fmt(serviceCost)} 💰</button>`:''}</div>`;
   }).join('');
@@ -8735,7 +8741,7 @@ function renderFleetOperations(){
   grid.innerHTML=`
     <div class="fleetOpsCard"><div class="name">🚛 ${lang==='ru'?'Универсальные грузовики':'Utility trucks'}</div><div class="desc">${lang==='ru'?'Подхватывают дерево, бетон или металл, когда профильная машина занята.':'Pick up lumber, concrete or steel while dedicated trucks are busy.'}</div><div class="status">${owned}/${cap} · ${lang==='ru'?'состояние':'condition'} ${universalCond}%</div><div class="fleetCondition"><i style="width:${universalCond}%"></i></div><button class="v30Btn primary" id="buyUniversalTruckBtn" ${buyDisabled?'disabled':''}>${cap<=owned?(lang==='ru'?'Лимит гаража':'Garage limit'):`${lang==='ru'?'Купить машину':'Buy truck'} · ${opsCostText(buyCost)}`}</button>${owned>0&&universalCond<99?`<button class="v30Btn" id="serviceUniversalBtn" ${money<fleetServiceCost('universal')?'disabled':''}>🔧 ${lang==='ru'?'Обслужить':'Service'} · ${fmt(fleetServiceCost('universal'))} 💰</button>`:''}</div>
     <div class="fleetOpsCard"><div class="name">📡 ${lang==='ru'?'Приоритет диспетчера':'Dispatch priority'}</div><div class="desc">${lang==='ru'?'Высокий приоритет заставляет универсальную машину раньше брать этот ресурс.':'High priority makes utility trucks pick that cargo sooner.'}</div><div class="priorityRow">${priorityButton('planks')}${stageIndex>=CONCRETE_UNLOCK_STAGE?priorityButton('concrete'):''}${stageIndex>=METAL_UNLOCK_STAGE?priorityButton('metal'):''}</div></div>
-    <div class="fleetOpsCard"><div class="name">🔧 ${lang==='ru'?'Обслуживание':'Maintenance'}</div><div class="desc">${lang==='ru'?'Износ растёт с пробегом и постепенно снижает скорость и turnaround. Мастерская уменьшает износ.':'Wear increases with mileage and gradually reduces speed and turnaround. The workshop reduces wear.'}</div><div class="tiny">${['planks','concrete','metal','lift'].filter(k=>k==='planks'||k==='lift'||(k==='concrete'&&stageIndex>=CONCRETE_UNLOCK_STAGE)||(k==='metal'&&stageIndex>=METAL_UNLOCK_STAGE)).map(k=>`${cargoServiceName(k)} ${Math.round(fleetConditionValue(k))}%`).join(' · ')}</div></div>`;
+    <div class="fleetOpsCard"><div class="name">🔧 ${lang==='ru'?'Обслуживание':'Maintenance'}</div><div class="desc">${lang==='ru'?'Износ растёт с пробегом и постепенно снижает скорость и время погрузки/разгрузки. Мастерская уменьшает износ.':'Wear increases with mileage and gradually reduces speed and turnaround. The workshop reduces wear.'}</div><div class="tiny">${['planks','concrete','metal','lift'].filter(k=>k==='planks'||k==='lift'||(k==='concrete'&&stageIndex>=CONCRETE_UNLOCK_STAGE)||(k==='metal'&&stageIndex>=METAL_UNLOCK_STAGE)).map(k=>`${cargoServiceName(k)} ${Math.round(fleetConditionValue(k))}%`).join(' · ')}</div></div>`;
   document.getElementById('buyUniversalTruckBtn')?.addEventListener('click',buyUniversalTruck);
   document.getElementById('serviceUniversalBtn')?.addEventListener('click',()=>serviceFleetKey('universal'));
   grid.querySelectorAll('[data-priority]').forEach(btn=>btn.addEventListener('click',()=>cycleDispatchPriority(btn.dataset.priority)));
