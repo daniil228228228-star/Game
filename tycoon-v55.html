@@ -15638,7 +15638,17 @@ function postProcessCityPanelV38(){
     for(const el of card.querySelectorAll('.infraStatusV37,.infraMaxV37,.infraLockedV37,.infraUpgradeV37,[data-district-roads],[data-streetlights]')){el.classList.add('infraHiddenV38');if((el.matches('[data-district-roads],[data-streetlights]'))&&el.previousElementSibling?.classList.contains('resourceLine'))el.previousElementSibling.classList.add('infraHiddenV38');}
     const need=requiredInfrastructureLevelV38(cfg.id),ready=infrastructureReadyV38(cfg.id),road=districtRoadLevelV37(cfg.id),light=districtStreetlightLevelV37(cfg.id),required=road<need||light<need,p=document.createElement('div');p.className='infraPanelV38'+(required?' required':'');p.innerHTML=`<div class="infraHeadV38"><b>${lang==='ru'?'ОБЯЗАТЕЛЬНАЯ ИНФРАСТРУКТУРА':'REQUIRED INFRASTRUCTURE'}</b><span>${ready?(lang==='ru'?`Готово для района L${need}`:`Ready for district L${need}`):(lang==='ru'?`Подтяни до L${need}, затем строй`:`Reach L${need}, then develop`)}</span></div>${infraControlHtmlV38(cfg.id,'road')}${infraControlHtmlV38(cfg.id,'light')}`;
     const statuses=card.querySelectorAll(':scope > .status'),anchor=statuses[0]||card.querySelector('.desc');anchor?.insertAdjacentElement('afterend',p);p.querySelector('[data-v38-road]')?.addEventListener('click',e=>buildDistrictRoads(e.currentTarget.dataset.v38Road));p.querySelector('[data-v38-light]')?.addEventListener('click',e=>buildStreetlights(e.currentTarget.dataset.v38Light));
-    card.classList.toggle('infraBlockedV38',!ready);if(!ready){card.querySelectorAll('button').forEach(btn=>{if(btn.matches('[data-district],[data-v38-road],[data-v38-light]'))return;if(btn.disabled)return;btn.disabled=true;btn.classList.remove('primary');btn.title=lang==='ru'?`Сначала дороги и освещение L${need}`:`Roads and lighting L${need} required`;});}
+    // v55 fix: `ready` is `need>0 && road>=need && light>=need` (see infrastructureReadyV38
+    // above), so at a freshly-unlocked, still-undeveloped district (districtLevel 0, need===0)
+    // `ready` is false even though nothing is actually missing yet -- there is no requirement
+    // at L0. That used to blanket-disable every button in the card except data-district/
+    // data-v38-road/data-v38-light, which also caught data-land-buy (buyLandPlot() has no
+    // road/light dependency of its own) with a nonsensical "Roads and lighting L0 required"
+    // tooltip, permanently blocking land purchases in any district the player had not yet
+    // leveled up at least once. Guarded on `need>0` so the lockout only ever fires once there
+    // is a real, unmet requirement, matching how applyUtilityPanelV41 below already guards its
+    // own equivalent pass (it skips entirely while districtLevel(id)<=0).
+    card.classList.toggle('infraBlockedV38',!ready);if(need>0&&!ready){card.querySelectorAll('button').forEach(btn=>{if(btn.matches('[data-district],[data-v38-road],[data-v38-light]'))return;if(btn.disabled)return;btn.disabled=true;btn.classList.remove('primary');btn.title=lang==='ru'?`Сначала дороги и освещение L${need}`:`Roads and lighting L${need} required`;});}
   });
 }
 const _renderCityPanelV38=renderCityPanel;renderCityPanel=function(){const r=_renderCityPanelV38.apply(this,arguments);postProcessCityPanelV38();return r;};
@@ -24860,8 +24870,22 @@ body{
   }
 
   function decorateConstructionSiteV45(site){
-    if(!site||site.userData?.v45Site)return site;
-    site.userData.v45Site=true;
+    // v55 fix: spawnConstructionSite() (defined far above this patch layer, ~line 5281)
+    // returns a plain descriptor object {group, jibPivot, hook, ...}, not a THREE.Object3D --
+    // the real scene node lives at site.group. This function originally called site.userData/
+    // site.add() directly on that plain object, which has no .userData, throwing a TypeError
+    // ("Cannot set properties of undefined (setting 'v45Site')") on every single call. Because
+    // spawnConstructionSite is invoked from spawnBuilding() *before* the new mesh is added to
+    // the scene or registered in `buildings`, and *after* the in-progress entry is already
+    // pushed onto `growingMeshes`, the uncaught exception silently broke the entire core build
+    // loop end-to-end: purchaseCurrentPad() aborted before advancing stageIndex or clearing
+    // currentPad, money was already deducted, and interactRequested (reset only after a
+    // successful purchase) was left `true` -- so the very next frame replayed the same build
+    // attempt again, draining money repeatedly until the construction-slot cap was hit. Fixed
+    // by decorating the real Object3D at site.group instead of the descriptor itself.
+    const root=site&&site.group;
+    if(!root||root.userData?.v45Site)return site;
+    root.userData.v45Site=true;
     const hazardMat=new THREE.MeshStandardMaterial({color:0xf0b348,roughness:.58,metalness:.08});
     const darkMat=new THREE.MeshStandardMaterial({color:0x24292f,roughness:.72,metalness:.12});
     const beaconMat=()=>new THREE.MeshStandardMaterial({color:0xffa84d,emissive:0xff6a22,emissiveIntensity:.7,roughness:.25});
@@ -24871,14 +24895,14 @@ body{
         const stripe=new THREE.Mesh(new THREE.BoxGeometry(.32,.09,.055),i%2?darkMat:hazardMat);
         stripe.position.x=(i-2)*.26;stripe.rotation.z=i%2?.16:-.16;board.add(stripe);
       }
-      site.add(board);
+      root.add(board);
       const beacon=new THREE.Mesh(new THREE.SphereGeometry(.055,8,8),beaconMat());
-      beacon.position.set(sx*1.62,.61,-1.61);beacon.userData.v45SiteBeacon=true;site.add(beacon);
+      beacon.position.set(sx*1.62,.61,-1.61);beacon.userData.v45SiteBeacon=true;root.add(beacon);
     }
     const sign=new THREE.Mesh(new THREE.BoxGeometry(.74,.42,.035),new THREE.MeshStandardMaterial({color:0x313841,roughness:.72}));
-    sign.position.set(-1.55,.72,1.63);site.add(sign);
+    sign.position.set(-1.55,.72,1.63);root.add(sign);
     const inset=new THREE.Mesh(new THREE.BoxGeometry(.61,.29,.012),new THREE.MeshStandardMaterial({color:0xe1b75b,roughness:.62}));
-    inset.position.set(-1.55,.72,1.651);site.add(inset);
+    inset.position.set(-1.55,.72,1.651);root.add(inset);
     return site;
   }
   function installConstructionFactoryV45(){
@@ -24893,8 +24917,8 @@ body{
     if(!Array.isArray(typeof growingMeshes!=='undefined'?growingMeshes:null))return;
     const t=performance.now()*.001;
     for(const b of growingMeshes){
-      const site=b?.site;if(!site)continue;decorateConstructionSiteV45(site);
-      site.traverse(o=>{if(o.userData?.v45SiteBeacon&&o.material){o.material.emissiveIntensity=.55+(Math.sin(t*5+o.id*.07)+1)*.48;}});
+      const site=b?.site;if(!site||!site.group)continue;decorateConstructionSiteV45(site);
+      site.group.traverse(o=>{if(o.userData?.v45SiteBeacon&&o.material){o.material.emissiveIntensity=.55+(Math.sin(t*5+o.id*.07)+1)*.48;}});
     }
   }
 
