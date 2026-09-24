@@ -24675,14 +24675,17 @@ function v44Curve(name,value){
     };
     if(typeof roadMaintenanceCostV40==='function'){const old=roadMaintenanceCostV40;roadMaintenanceCostV40=function(id){const c=old(id),damage=100-roadConditionV40(id),lv=Math.max(1,districtRoadLevelV37(id));const efficiency=.94-(lv-1)*.035;return Object.assign({},c,{money:Math.max(90,Math.round((c.money||0)*efficiency*(.94+damage*.0014))),concrete:damage<20?0:Math.max(0,c.concrete||0)});};}
     if(typeof transitBuildCostV40==='function'){const old=transitBuildCostV40;transitBuildCostV40=function(id){const c=old(id),lv=transitLevelV40(id)+1;const scaler=[1,.94,.97,1.02][lv]||1;return Object.assign({},c,{money:Math.round(c.money*scaler),concrete:Math.max(0,c.concrete-(lv===1?1:0))});};}
-    if(typeof densityUpgradeCostV41==='function'){const old=densityUpgradeCostV41;densityUpgradeCostV41=function(id){const c=old(id),rank=densityRankV41(id)+1;const road=typeof roadConditionV40==='function'?roadConditionV40(id):100;const scaler=(rank===2?.94:1)*(road>=85?.96:1);return Object.assign({},c,{money:Math.max(1,Math.round(c.money*scaler))});};}
-    if(typeof powerUpgradeCostV41==='function'){const old=powerUpgradeCostV41;powerUpgradeCostV41=function(id){const c=old(id),next=powerLevelV41(id)+1;return Object.assign({},c,{money:Math.round(c.money*(next===1?.92:next===2?.97:1.02))});};}
-    if(typeof waterUpgradeCostV41==='function'){const old=waterUpgradeCostV41;waterUpgradeCostV41=function(id){const c=old(id),next=waterLevelV41(id)+1;return Object.assign({},c,{money:Math.round(c.money*(next===1?.92:next===2?.97:1.02))});};}
-    if(typeof incidentResolveCostV41==='function'){const old=incidentResolveCostV41;incidentResolveCostV41=function(inc=v41State.incident){const c=old(inc);if(!c)return c;const support=inc&&typeof incidentSupportV41==='function'?incidentSupportV41(inc):1;return Object.assign({},c,{money:Math.max(120,Math.round((c.money||0)*(.96+.08*(1-support))))});};}
-    if(typeof utilitySupplyRatioV42==='function'){const raw=utilitySupplyRatioV42;utilitySupplyRatioV42=function(type){const target=raw(type),prev=v44Runtime.supplyEMA[type];const next=prev==null?target:v44Lerp(prev,target,.23);v44Runtime.supplyEMA[type]=next;return v44Clamp(next,0,1);};window.v42UtilitySupplyRatio=(id,type)=>utilitySupplyRatioV42(type);}
-    if(typeof plantCostV42==='function'){const old=plantCostV42;plantCostV42=function(type,next){const c=old(type,next);const mode=typeof plantModeV42==='function'?plantModeV42(type):null;const scaler=next===1?.94:next===2?.98:1.03;return Object.assign({},c,{money:Math.round((c.money||0)*scaler),concrete:Math.max(0,c.concrete||0),metal:Math.max(0,c.metal||0)});};}
-    if(typeof generateContractOffersV42==='function'){const old=generateContractOffersV42;generateContractOffersV42=function(force=false){old(force);if(!Array.isArray(v42State.offers))return;const complexity=v44Clamp((stageIndex||0)/10,0,1);for(const o of v42State.offers){if(o.v44Balanced)continue;const risk=v44Clamp(o.risk||1,1,3);o.reward=Math.round(o.reward*v44Curve('reward',complexity)*(.97+risk*.025));o.penalty=Math.round(o.penalty*(.92+risk*.02));o.time=Math.round(o.time*(1.04+v42State.equipmentLevel*.015));o.v44Balanced=true;}}
-    }
+    // v63 1.1 (P2-25 / group #1): the 7 wrappers below (V41 density/power/water/incident cost,
+    // V42 supply ratio/plant cost/contract offers) were dead on arrival -- densityUpgradeCostV41,
+    // powerUpgradeCostV41, waterUpgradeCostV41, incidentResolveCostV41, utilitySupplyRatioV42,
+    // plantCostV42 and generateContractOffersV42 are all declared inside the V41/V42 IIFEs
+    // (16617/17051), never global, so every `typeof X==='function'` check here was always false
+    // and the reassignment bodies never ran (confirmed live: base V41/V42 prices are what
+    // actually charges the player, unchanged by this removal). Re-wiring them to really apply
+    // would shift prices 3-8% and belongs to Stage 2.3 (one balance table, no coefficient-
+    // wrappers over foreign IIFE functions -- see TYCOON_V63_PLAN.md 1.1/2.3), not this pass;
+    // removing the dead attempt here converges toward "one live version" without a hidden
+    // economy change riding along with an architecture cleanup.
   }
 
   function v44RebuildExistingBuildings(){
