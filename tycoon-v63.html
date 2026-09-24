@@ -6318,6 +6318,18 @@ function workerPhaseTargetOffset(role, phase) {
   return new THREE.Vector3(0.7, 0, 1.1);
 }
 
+/* v63 1.1 (item 9): bootstrap-only hoisted declaration. Deleting this outright (as first
+   tried) broke the page harder than items 1/2/3/4/5's bootstrap bugs -- not a racy
+   setTimeout, but a deterministic, unconditional top-level call: `spawnAmbientLife();`
+   (further down this same script) runs synchronously during initial parse and calls
+   chooseWorkerTarget(worker) directly to give each starting NPC worker a first target. An
+   uncaught ReferenceError there aborts the rest of this whole <script> block, which is why
+   the live test then showed dozens of unrelated cascading errors (CITY_DISTRICTS,
+   cityWorldRuntime, ROAD_STYLE_V353, ... all declared later in the same block that never
+   got to run). The single steady-state live implementation for the rest of the session is
+   the v60+v61 pair further down the file (v61 wraps v60 by name, already a correct
+   "safe wrap" -- the plan's own note on this function -- so it is left as two cooperating
+   pieces rather than force-merged into one). This is the original body verbatim. */
 function chooseWorkerTarget(worker) {
   const activeBuilds = growingMeshes.filter(build => {
     if (!build?.entry?.underConstruction || build.waitingForDelivery) return false;
