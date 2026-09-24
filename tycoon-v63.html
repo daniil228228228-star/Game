@@ -1880,6 +1880,14 @@ for (let i = 1; i < ROAD_NODES.length; i++) {
   ROAD_CUM[i] = ROAD_CUM[i - 1] + ROAD_NODES[i].distanceTo(ROAD_NODES[i - 1]);
 }
 
+/* v63 1.1 (item 5): projectToRoad and buildRoadRoute (below) are kept as bootstrap-only
+   hoisted declarations, same reasoning as items 1/3/4 -- both are reachable from the early
+   v36.x setTimeout road-init cascade (transitively, e.g. via item 4's bootstrap
+   refreshArterialRoads -> districtArterialPath -> projectToRoad) before the v61 <script>
+   layer near the end of the file assigns the real live versions (which project onto the
+   stage-hub spoke system via projectStage61 instead of this original ROAD_NODES spine --
+   a legitimate later system, not restored here; this file's few remaining ROAD_NODES/
+   ROAD_CUM readers are content with either). */
 function projectToRoad(pos) {
   let best = { d2: Infinity, segment: 0, t: 0, point: ROAD_NODES[0].clone(), s: 0 };
   for (let i = 0; i < ROAD_NODES.length - 1; i++) {
@@ -14983,6 +14991,13 @@ function stageRoadEndpointV367(i){
 // short perpendicular spur for the final approach. Same shape as the existing orthogonal
 // driveway helper (addOrthogonalDrivewayV366) already uses for district buildings -- one
 // computed bend per building, no pathfinding graph.
+/* v63 1.1 (item 5): stageRoadKneeV367/stageRoadPolylineV367 (here) and spokeProjectV367
+   (below) are kept as bootstrap-only hoisted declarations, same reasoning as items 1/3/4 --
+   item 3's own bootstrap makeStageRoadGroupV367 calls stageRoadKneeV367 directly, and the
+   v36.3-v36.9 setTimeout road-init cascade can reach all of these before the v61 <script>
+   layer near the end of the file assigns the real live versions (which use planStageRoute61/
+   projectStage61 -- an obstacle-routed path around STATIC_COLLIDERS instead of this simple
+   straight hub-knee-endpoint line, a legitimate later improvement, not restored here). */
 function stageRoadKneeV367(i){
   const end=stageRoadEndpointV367(i);
   return Math.abs(end.x)>=Math.abs(end.z) ? new THREE.Vector3(end.x,0,0) : new THREE.Vector3(0,0,end.z);
@@ -15034,34 +15049,6 @@ function spokeProjectV367(pos){
   }
   return best;
 }
-projectToRoad=function(pos){ return spokeProjectV367(pos); };
-function buildSpokeRouteV367(fromPos,toPos){
-  const route=[]; appendTransportPoint(route,fromPos);
-  const fromAccess=serviceAccessDescriptor(fromPos),toAccess=serviceAccessDescriptor(toPos);
-  if(fromAccess&&toAccess){
-    const cf=serviceNodeChain(fromAccess),ct=serviceNodeChain(toAccess),toIndex=new Map(ct.map((n,i)=>[n.id,i])); let commonF=cf.length-1,commonT=ct.length-1;
-    for(let i=0;i<cf.length;i++){if(toIndex.has(cf[i].id)){commonF=i;commonT=toIndex.get(cf[i].id);break;}}
-    for(let i=1;i<commonF;i++)appendTransportPoint(route,cf[i].p); appendTransportPoint(route,cf[commonF].p); for(let i=commonT-1;i>=0;i--)appendTransportPoint(route,ct[i].p); appendTransportPoint(route,toPos); return route;
-  }
-  let a=fromPos,b=toPos;
-  if(fromAccess){const chain=serviceNodeChain(fromAccess);appendTransportPoint(route,fromAccess.node.p);for(let i=1;i<chain.length;i++)appendTransportPoint(route,chain[i].p);a=chain[chain.length-1].p;}
-  const pa=spokeProjectV367(a),pb=spokeProjectV367(toAccess?serviceNodeChain(toAccess).slice(-1)[0].p:b);
-  appendTransportPoint(route,pa.point);
-  // v36.10 -- pa/pb now come off a bent (hub->knee->building) spoke instead of a straight one.
-  // A point on the spur leg (leg===1) is off-axis from the hub, so the route must pass through
-  // the knee before heading down the trunk to the hub, or it would cut a fresh diagonal right
-  // back to the old sunburst shape. A point already on the trunk leg (leg===0) is collinear with
-  // the hub, so no knee is needed there.
-  if(pa.leg===1)appendTransportPoint(route,pa.knee);
-  if(pa.point.distanceTo(STAGE_HUB_V367)>.05)appendTransportPoint(route,STAGE_HUB_V367);
-  if(pb.point.distanceTo(STAGE_HUB_V367)>.05){
-    if(pb.leg===1)appendTransportPoint(route,pb.knee);
-    appendTransportPoint(route,pb.point);
-  }
-  if(toAccess){const chain=serviceNodeChain(toAccess);for(let i=chain.length-2;i>=0;i--)appendTransportPoint(route,chain[i].p);} else appendTransportPoint(route,toPos);
-  appendTransportPoint(route,toPos); return route;
-}
-buildRoadRoute=function(fromPos,toPos){ return buildSpokeRouteV367(fromPos,toPos); };
 // v36.8 -- STAGE ROAD DECLUTTER. Every stage spoke was drawn full-width with bright dashed
 // lane markings, all converging on one point -- with 10 stages spiralling out to increasing
 // radius/angle (SPIRAL_ANGLE_STEP/SPIRAL_RADIUS_STEP), that's up to 10 equally-bright "streets"
@@ -27684,45 +27671,6 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     const valid=candidates.filter(p=>routeClear(p,w));
     return (valid.length?valid:candidates).sort((a,b)=>polyLength(a)-polyLength(b))[0];
   }
-  stageRoadPolylineV367=function(i){return safeStagePolyline(i);};
-  stageRoadKneeV367=function(i){const p=safeStagePolyline(i);return (p[1]||STAGE_HUB_V367).clone();};
-
-  function projectStageRoad(pos){
-    let best={d2:Infinity,segment:0,leg:0,t:0,point:STAGE_HUB_V367.clone(),path:[STAGE_HUB_V367.clone()],knee:STAGE_HUB_V367.clone()};
-    for(let i=0;i<STAGES.length;i++){
-      const poly=safeStagePolyline(i);
-      for(let leg=0;leg<poly.length-1;leg++){
-        const a=poly[leg],b=poly[leg+1],vx=b.x-a.x,vz=b.z-a.z,l2=vx*vx+vz*vz,t=l2?THREE.MathUtils.clamp(((pos.x-a.x)*vx+(pos.z-a.z)*vz)/l2,0,1):0;
-        const px=a.x+vx*t,pz=a.z+vz*t,d2=(pos.x-px)**2+(pos.z-pz)**2;
-        if(d2<best.d2)best={d2,segment:i,leg,t,point:new THREE.Vector3(px,0,pz),path:poly,knee:(poly[1]||STAGE_HUB_V367).clone()};
-      }
-    }return best;
-  }
-  spokeProjectV367=function(pos){return projectStageRoad(pos);};
-  projectToRoad=function(pos){return projectStageRoad(pos);};
-
-  function smoothPolyline(points,radius=.72){
-    const src=cleanPolyline(points);if(src.length<3)return src;
-    const out=[src[0].clone()];
-    for(let i=1;i<src.length-1;i++){
-      const a=src[i-1],b=src[i],c=src[i+1];const v1=a.clone().sub(b),v2=c.clone().sub(b),l1=Math.hypot(v1.x,v1.z),l2=Math.hypot(v2.x,v2.z);
-      if(l1<.35||l2<.35){out.push(b.clone());continue;}
-      v1.normalize();v2.normalize();const cut=Math.min(radius,l1*.28,l2*.28);const p1=b.clone().addScaledVector(v1,cut),p2=b.clone().addScaledVector(v2,cut);out.push(p1);
-      for(let s=1;s<=4;s++){const t=s/5,omt=1-t;out.push(new THREE.Vector3(omt*omt*p1.x+2*omt*t*b.x+t*t*p2.x,0,omt*omt*p1.z+2*omt*t*b.z+t*t*p2.z));}
-      out.push(p2);
-    }out.push(src[src.length-1].clone());return cleanPolyline(out);
-  }
-  function roadPathToHub(proj){const p=[proj.point.clone()];for(let j=proj.leg;j>=1;j--)p.push(proj.path[j].clone());p.push(proj.path[0].clone());return cleanPolyline(p);}
-  function roadPathFromHub(proj){const p=[proj.path[0].clone()];for(let j=1;j<=proj.leg;j++)p.push(proj.path[j].clone());p.push(proj.point.clone());return cleanPolyline(p);}
-  buildRoadRoute=function(fromPos,toPos){
-    const route=[];appendTransportPoint(route,fromPos);const fa=serviceAccessDescriptor(fromPos),ta=serviceAccessDescriptor(toPos);
-    if(fa&&ta){const cf=serviceNodeChain(fa),ct=serviceNodeChain(ta),toIndex=new Map(ct.map((n,i)=>[n.id,i]));let fi=cf.length-1,ti=ct.length-1;for(let i=0;i<cf.length;i++){if(toIndex.has(cf[i].id)){fi=i;ti=toIndex.get(cf[i].id);break;}}appendTransportPoint(route,fa.node.p);for(let i=1;i<=fi;i++)appendTransportPoint(route,cf[i].p);for(let i=ti-1;i>=0;i--)appendTransportPoint(route,ct[i].p);appendTransportPoint(route,toPos);return smoothPolyline(route,.54);}
-    let fp=fromPos,tp=toPos;
-    if(fa){const ch=serviceNodeChain(fa);appendTransportPoint(route,fa.node.p);for(let i=1;i<ch.length;i++)appendTransportPoint(route,ch[i].p);fp=ch[ch.length-1].p;}
-    const pa=projectStageRoad(fp);for(const p of roadPathToHub(pa))appendTransportPoint(route,p);
-    const targetAccess=ta?serviceNodeChain(ta):null;if(ta)tp=targetAccess[targetAccess.length-1].p;const pb=projectStageRoad(tp);for(const p of roadPathFromHub(pb))appendTransportPoint(route,p);
-    if(ta){for(let i=targetAccess.length-2;i>=0;i--)appendTransportPoint(route,targetAccess[i].p);}appendTransportPoint(route,toPos);return smoothPolyline(route,.68);
-  };
 
   /* --------------------------------------------------------------
      4. WORKERS: work at perimeter points, never at the building centre.
