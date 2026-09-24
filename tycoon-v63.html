@@ -5,6 +5,36 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Tycoon City 3D — v61 Final Polish</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0f14'/%3E%3Crect x='7' y='14' width='8' height='13' fill='%236fcf6f'/%3E%3Cpolygon points='6,14 11,9 16,14' fill='%238a3b2b'/%3E%3Crect x='17' y='8' width='8' height='19' fill='%235ab0ff'/%3E%3C/svg%3E">
+<script id="v63-layout-mode">
+/* v63 1.2: single point of truth for HUD screen mode. Computed once here (before any
+   layout-dependent CSS can paint), then recomputed on resize/orientationchange -- nowhere
+   else in the file decides "is this mobile?" anymore. Every zone rule in the
+   v63-hud-zones stylesheet reads only html[data-layout], not its own media query, so
+   there is exactly one owner of "which layout are we in" (closes P0-2 group, P1-28..33). */
+(function(){
+  function computeLayoutModeV63(){
+    try{
+      var touch = (window.matchMedia && matchMedia('(pointer:coarse)').matches) || (navigator.maxTouchPoints||0) > 0;
+      if(!touch) return 'desktop';
+      var w = window.innerWidth||0, h = window.innerHeight||0;
+      if(Math.min(w,h) >= 560) return 'tablet';
+      return w >= h ? 'phone-landscape' : 'phone-portrait';
+    }catch(e){ return 'desktop'; }
+  }
+  function applyLayoutModeV63(){
+    var mode = computeLayoutModeV63();
+    document.documentElement.setAttribute('data-layout', mode);
+    return mode;
+  }
+  window.__tycoonLayoutMode = computeLayoutModeV63;
+  window.__tycoonApplyLayoutMode = applyLayoutModeV63;
+  applyLayoutModeV63();
+  var raf = 0;
+  function scheduleV63(){ if(raf) return; raf = setTimeout(function(){ raf = 0; applyLayoutModeV63(); }, 120); }
+  addEventListener('resize', scheduleV63, {passive:true});
+  addEventListener('orientationchange', function(){ setTimeout(applyLayoutModeV63, 80); }, {passive:true});
+})();
+</script>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0f14; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -292,14 +322,22 @@
 
 
 /* v35.0 Guided progression + UI waypoint markers */
-.guide-primary, .guide-secondary { position: relative !important; overflow: visible !important; isolation: isolate; }
-/* v63 hotfix 0.2: #nextCard must stay viewport-fixed even when the guide marks it
-   (updateGuideMarkers() adds .guide-primary to #nextCard whenever there's a currentPad
-   but no active multi-step quest) — otherwise it drops out of fixed positioning into
-   normal flow and the left/right-inset mobile rule (v62-qa-style) no longer has a
-   containing block to size against. #nextCard.guide-primary has higher specificity than
-   the class-only rule above, so this wins regardless of source order. */
-#nextCard.guide-primary, #nextCard.guide-secondary { position: fixed !important; }
+/* v63 1.2 (real fix for P0-2/P1-28, replacing the Stage-0 hotfix below): the guide marker
+   used to force `position:relative` on whatever it highlighted. On a `position:fixed`
+   element (#nextCard) that swapped its containing block from the viewport to normal
+   document flow -- the card dropped into the page, and since the WebGL canvas sits right
+   after it in the DOM with no positioning of its own, the canvas (and the whole 3D view)
+   got pushed down by the card's height every time a guide state changed (Pass 9 #3, 59-102px
+   jump). The fix is architectural, not a patch: the marker class below never touches
+   `position` or `transform` at all, on any element. Every element the guide can ever target
+   (#nextCard, .v30Btn, .iconBtn, #hud .stat, and the guide-card container classes further
+   down) instead carries its own permanent, unconditional `position:relative` as part of its
+   normal box (see v63-hud-zones stylesheet) -- harmless with no offsets set, and it gives the
+   ::after badge a stable containing block that never changes with guide state. `overflow` and
+   `isolation` are the only things this class still sets: `overflow:visible!important` has to
+   stay `!important` because some guide targets (.v30Btn) set `overflow:hidden` for their own
+   ripple effect later in the cascade and would otherwise clip the corner badge. */
+.guide-primary, .guide-secondary { overflow: visible !important; isolation: isolate; }
 .guide-primary {
   box-shadow: 0 0 0 2px rgba(255,212,121,.92), 0 0 18px rgba(255,199,107,.55), 0 0 0 8px rgba(255,212,121,.14) !important;
   animation: guidePulsePrimary 1.15s ease-in-out infinite;
@@ -397,7 +435,7 @@ body.guided-mode #nextCard.guideActive{
 }
 body.guided-mode #contractsCard{opacity:.54;filter:saturate(.72);transition:opacity .22s ease,filter .22s ease}
 body.guided-mode #contractsCard:hover{opacity:.9;filter:none}
-.guide-card{position:relative!important;border-color:rgba(255,216,137,.42)!important;background:linear-gradient(180deg,rgba(255,217,137,.075),rgba(255,255,255,.025))!important;box-shadow:0 12px 30px rgba(0,0,0,.18),inset 0 0 0 1px rgba(255,226,170,.035)!important}
+.guide-card{border-color:rgba(255,216,137,.42)!important;background:linear-gradient(180deg,rgba(255,217,137,.075),rgba(255,255,255,.025))!important;box-shadow:0 12px 30px rgba(0,0,0,.18),inset 0 0 0 1px rgba(255,226,170,.035)!important}
 .guide-card::before{content:'★';position:absolute;right:8px;top:7px;font-size:11px;color:#ffd479;filter:drop-shadow(0 2px 5px rgba(0,0,0,.38))}
 #coachChip.guideMain{font-weight:760;box-shadow:0 10px 28px rgba(0,0,0,.22);line-height:1.35}
 .v30Panel{box-shadow:0 30px 90px rgba(0,0,0,.52),inset 0 1px 0 rgba(255,255,255,.045)}
@@ -585,33 +623,23 @@ html[lang="ru"] #nextCard::before{content:'ТЕКУЩАЯ ЦЕЛЬ'}
   #topRightBtns{gap:4px!important}
   .iconBtn{width:32px!important;height:32px!important;border-radius:8px!important}
   .iconBtn .ui-svg{width:15px!important;height:15px!important}
+  /* v63 1.2: #nextCard/#toast/#contractsCard position (top/bottom/width/max-width/right) is
+     owned by v63-hud-zones now -- only #nextCard's own padding/radius cosmetics are left. */
   #nextCard{
-    top:calc(94px + env(safe-area-inset-top))!important;
-    width:min(91vw,470px)!important;
-    max-width:min(91vw,470px)!important;
     padding:10px 11px!important;
     border-radius:11px!important;
   }
   #nextCard .goalTitle{font-size:11.5px!important}
   #nextCard .goalHint{-webkit-line-clamp:2!important;font-size:9.5px!important}
-  #secondaryObjectiveV36{width:min(88vw,430px)!important;padding:6px 8px!important;font-size:8.5px!important}
-  body.guided-mode #contractsCard{display:none!important}
-  #contractsCard{top:calc(146px + env(safe-area-inset-top))!important;right:7px!important;max-width:34vw!important}
   .contractRow{font-size:8.5px!important;padding:5px 6px!important}
   .v30Panel{width:100%!important;max-height:88vh!important;border-radius:13px!important;padding:12px!important}
   .v30Section{padding:8px!important}
   .v30Row{min-height:46px!important}
   .v30Row b{font-size:10.5px!important}.v30Row .sub{font-size:9px!important}
   .v30Btn{min-height:34px!important;font-size:9.5px!important}
-  #toast{
-    top:auto!important;
-    bottom:calc(96px + env(safe-area-inset-bottom))!important;
-    max-width:calc(100vw - 28px)!important;
-  }
 }
 @media(max-width:390px){
   #hud .stats{max-width:calc(100vw - 140px)!important}
-  #nextCard{top:calc(104px + env(safe-area-inset-top))!important}
   #secondaryObjectiveV36 .secText{max-width:72vw}
 }
 
@@ -663,7 +691,7 @@ html[lang="ru"] #nextCard::before{content:'ТЕКУЩАЯ ЦЕЛЬ'}
 .infraUpgradeV37{color:#d9c58f!important;font-weight:780!important}.infraLockedV37{color:#8b929c!important}.infraStatusV37{color:#d6c28a!important}.infraMaxV37{color:#86b49a!important}.infraPrereqV37{color:#d7b16f!important;font-weight:800!important}
 .guide-primary{overflow:visible!important;z-index:8!important;box-shadow:0 0 0 3px rgba(255,216,124,.98),0 0 0 9px rgba(255,197,77,.20),0 0 36px rgba(255,190,62,.78)!important;animation:v37RequiredPulse .82s ease-in-out infinite!important}
 .guide-primary::before{content:attr(data-guide-action);position:absolute;left:50%;top:-31px;transform:translateX(-50%);white-space:nowrap;padding:5px 8px;border-radius:7px;background:#e8c36a;color:#17130c;border:1px solid #f8dfa0;font-size:8px;font-weight:950;letter-spacing:.10em;box-shadow:0 8px 22px rgba(0,0,0,.36);pointer-events:none;z-index:7}
-.guide-card-v37{position:relative!important;border-color:rgba(232,195,106,.62)!important;box-shadow:0 0 0 2px rgba(232,195,106,.12),0 14px 36px rgba(0,0,0,.28)!important;background:linear-gradient(180deg,rgba(232,195,106,.075),rgba(255,255,255,.018))!important}
+.guide-card-v37{border-color:rgba(232,195,106,.62)!important;box-shadow:0 0 0 2px rgba(232,195,106,.12),0 14px 36px rgba(0,0,0,.28)!important;background:linear-gradient(180deg,rgba(232,195,106,.075),rgba(255,255,255,.018))!important}
 body.guided-mode .v30Panel .v30Btn:not(.guide-primary):not(.guide-secondary){opacity:.48;filter:saturate(.55)}
 body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!important}
 @keyframes v37RequiredPulse{0%,100%{box-shadow:0 0 0 3px rgba(255,216,124,.9),0 0 0 8px rgba(255,197,77,.14),0 0 22px rgba(255,190,62,.42)}50%{box-shadow:0 0 0 4px rgba(255,232,164,1),0 0 0 13px rgba(255,197,77,.24),0 0 45px rgba(255,190,62,.92)}}
@@ -683,10 +711,10 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 .cityCard.infraBlockedV38>.resourceLine:not(.infraUpgradeV37),.cityCard.infraBlockedV38>.status~.resourceLine{opacity:.52}.cityCard.infraBlockedV38 .infraPanelV38{opacity:1!important}
 .cityCard .infraHiddenV38{display:none!important}
 .guide-primary[data-guide-action]::before{content:attr(data-guide-action);position:absolute;left:50%;top:auto;bottom:-22px;transform:translateX(-50%);z-index:12;white-space:nowrap;padding:3px 7px;border-radius:5px;background:#e4bd61;color:#16130d;font-size:7.5px;font-weight:950;letter-spacing:.10em;box-shadow:0 5px 14px rgba(0,0,0,.30)}
-#requiredActionV38{position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:29;display:none;align-items:center;gap:9px;width:min(460px,calc(100vw - 170px));padding:8px 9px 8px 11px;border-radius:11px;background:rgba(15,18,23,.96);border:1px solid rgba(239,195,91,.42);box-shadow:0 14px 40px rgba(0,0,0,.32),0 0 22px rgba(239,195,91,.08);backdrop-filter:blur(14px);color:#f3eee2}
-#requiredActionV38.show{display:flex}.requiredCopyV38{min-width:0;flex:1}.requiredTagV38{font-size:7px;font-weight:950;letter-spacing:.16em;color:#d6b76c}.requiredTitleV38{font-size:10.5px;font-weight:820;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}.requiredActionBtnV38{border:1px solid rgba(239,213,141,.48);border-radius:8px;background:#c6a253;color:#15130e;min-height:32px;padding:7px 10px;font-size:9px;font-weight:900;cursor:pointer;white-space:nowrap}.requiredActionBtnV38:active{transform:scale(.97)}
+/* v63 1.2 (P1-29): #requiredActionV38 removed as a standalone element -- its CTA now lives
+   inside #nextCard (.goalRequiredTag, defined in the v63-hud-zones stylesheet). */
 .infraPendingV38{color:#d7c48f!important}.infraReadyV38{color:#9bbba8!important}
-@media(max-width:680px){.infraPanelV38{padding:8px}.infraRowV38{grid-template-columns:1fr;gap:6px}.infraPanelV38 .v30Btn{width:100%;min-width:0}.infraHeadV38 span{max-width:52%}#requiredActionV38{bottom:calc(130px + env(safe-area-inset-bottom));width:min(480px,calc(100vw - 138px));padding:7px 8px}.requiredTitleV38{font-size:9.5px}.requiredActionBtnV38{padding:6px 8px;font-size:8px}}
+@media(max-width:680px){.infraPanelV38{padding:8px}.infraRowV38{grid-template-columns:1fr;gap:6px}.infraPanelV38 .v30Btn{width:100%;min-width:0}.infraHeadV38 span{max-width:52%}}
 </style>
 
 </head>
@@ -714,10 +742,17 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
   </div>
 </div>
 
-<div id="nextCard"></div>
+<!-- v63 1.2: one zone for objective + messages (top-center). #nextCard, #toast and
+     #eventBanner used to each own a fixed top: px value computed by JS (v46) so they would
+     not overlap; now they are plain flow children of one fixed, flex-column zone, so the
+     browser stacks them and there is nothing left to compute (closes P0-2, P1-28, part of P2-3). -->
+<div id="hudCenterZone">
+  <div id="nextCard"></div>
+  <div id="toast"></div>
+  <div id="eventBanner"></div>
+</div>
 <div id="contractsCard"></div>
 <button id="prestigeBtn" hidden></button>
-<div id="toast"></div>
 <div id="milestoneBanner"><div class="mbEmoji"></div><div class="mbTitle"></div><div class="mbSub"></div></div>
 <div id="compass"><div class="arrow"></div><div class="compassDistance" id="compassDistance"></div></div>
 <div id="staminaWrap"><div id="staminaFill"></div></div>
@@ -741,7 +776,6 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 </div>
 
 <div id="companyChip"></div>
-<div id="eventBanner"></div>
 <div id="coachChip"></div>
 
 <div id="systemsOverlay">
@@ -13333,7 +13367,10 @@ function premiumGuideCardV351(q){
   const base=goalCardHtml(q.title,q.hint,{progress:q.progress??.2,ready:true,status:q.status,meta:q.meta});
   const waited=(performance.now()-guideQuestRuntimeV351.since)/1000;
   const side=q.secondary||(waited>70?(lang==='ru'?'Застрял? Нажми «Показать».':'Stuck? Tap “Show me”.'):(lang==='ru'?'Главная цель выделена золотым.':'The main objective is highlighted in gold.'));
-  return base+`<div class="guideJourney"><div><span class="chapter">${q.chapter||''}</span>${guideChapterDotsV351(q)}</div><span class="unlock">${q.nextUnlock||''}</span></div><div class="guideActionRow"><button class="guideShowBtn" id="guideShowBtnV351">${lang==='ru'?'👁 Показать':'👁 Show me'}</button><span class="guideSideHint">${side}</span></div>`;
+  // v63 1.2 (P1-29): the required-step badge that used to live in the separate
+  // #requiredActionV38 element is now part of the objective card itself.
+  const requiredBadge=typeof requiredStepBadgeV38==='function'?requiredStepBadgeV38():'';
+  return requiredBadge+base+`<div class="guideJourney"><div><span class="chapter">${q.chapter||''}</span>${guideChapterDotsV351(q)}</div><span class="unlock">${q.nextUnlock||''}</span></div><div class="guideActionRow"><button class="guideShowBtn" id="guideShowBtnV351">${lang==='ru'?'👁 Показать':'👁 Show me'}</button><span class="guideSideHint">${side}</span></div>`;
 }
 function showGuideTargetV351(q=currentGuideQuest()){
   if(!q)return;
@@ -15689,8 +15726,24 @@ infrastructureGuideQuestV37=function(){
   return null;
 };
 
-function ensureRequiredActionV38(){let el=document.getElementById('requiredActionV38');if(el)return el;el=document.createElement('div');el.id='requiredActionV38';el.innerHTML='<div class="requiredCopyV38"><div class="requiredTagV38"></div><div class="requiredTitleV38"></div></div><button class="requiredActionBtnV38"></button>';document.body.appendChild(el);el.querySelector('button').onclick=()=>{const q=currentGuideQuest();if(q)showGuideTargetV351(q);};return el;}
-function updateRequiredActionV38(){const el=ensureRequiredActionV38(),q=currentGuideQuest(),isInfra=!!q&&(/^(district-foundation|road-network-|lighting-)/.test(q.id||''));if(!isInfra){el.classList.remove('show');return;}el.querySelector('.requiredTagV38').textContent=lang==='ru'?'ОБЯЗАТЕЛЬНЫЙ ШАГ':'REQUIRED STEP';el.querySelector('.requiredTitleV38').textContent=q.title||'';el.querySelector('button').textContent=lang==='ru'?'ПОКАЗАТЬ →':'SHOW →';el.classList.add('show');}
+// v63 1.2 (P1-29): #requiredActionV38 removed as a separate floating element -- it always
+// duplicated #nextCard's own objective+CTA, and in landscape v46's stack put it dead center,
+// over the player (up to 81% of them hidden, Pass 9 #4). Its one distinct job -- flagging a
+// quest as the mandatory next step -- is now a small badge rendered inside the objective card
+// itself (see premiumGuideCardV351 / requiredStepBadgeV38 below), reusing the card's existing
+// "Показать" CTA (guideShowBtnV351) instead of a second button. This single definition folds
+// in the two later redefinitions v41 (16886, widened the id pattern to power-/water-) and v42
+// (17280-17281, a distinct tag text for plant-power-/plant-water- quests) used to add on top
+// of this same function -- same pattern as the 1.1 multi-redefinition cleanups, just found
+// while removing the element those redefinitions used to update.
+let requiredStepV38=false,requiredStepTagV38='';
+function updateRequiredActionV38(){
+  const q=currentGuideQuest(),id=q?.id||'';
+  if(q&&/^plant-(power|water)-/.test(id)){requiredStepV38=true;requiredStepTagV38=lang==='ru'?'ОБЯЗАТЕЛЬНАЯ МОЩНОСТЬ':'REQUIRED CAPACITY';}
+  else if(q&&/^(district-foundation|road-network-|lighting-|power-|water-)/.test(id)){requiredStepV38=true;requiredStepTagV38=lang==='ru'?'ОБЯЗАТЕЛЬНЫЙ ШАГ':'REQUIRED STEP';}
+  else{requiredStepV38=false;requiredStepTagV38='';}
+}
+function requiredStepBadgeV38(){return requiredStepV38?`<span class="goalRequiredTag">${requiredStepTagV38}</span>`:'';}
 const _updateGuideMarkersV38=updateGuideMarkers;updateGuideMarkers=function(){_updateGuideMarkersV38();updateRequiredActionV38();};
 
 // Refresh the small construction-cone layer only when pending infrastructure changes.
@@ -16829,7 +16882,8 @@ infrastructureGuideQuestV37=function(){
 };
 const _v361QuestCostBeforeV41=v361QuestCost;
 v361QuestCost=function(q){const id=q?.id||'';if(/^power-/.test(id))return powerUpgradeCostV41(id.replace('power-',''));if(/^water-/.test(id))return waterUpgradeCostV41(id.replace('water-',''));return _v361QuestCostBeforeV41(q);};
-updateRequiredActionV38=function(){const el=ensureRequiredActionV38(),q=currentGuideQuest(),isInfra=!!q&&(/^(district-foundation|road-network-|lighting-|power-|water-)/.test(q.id||''));if(!isInfra){el.classList.remove('show');return;}el.querySelector('.requiredTagV38').textContent=lang==='ru'?'ОБЯЗАТЕЛЬНЫЙ ШАГ':'REQUIRED STEP';el.querySelector('.requiredTitleV38').textContent=q.title||'';el.querySelector('button').textContent=lang==='ru'?'ПОКАЗАТЬ →':'SHOW →';el.classList.add('show');};
+// v63 1.2: this v41 redefinition of updateRequiredActionV38 (widening the id pattern to
+// power-/water-) is folded into the single definition above -- removed here, not left orphaned.
 
 /* ------------------------------ Runtime ------------------------------- */
 let v41Accum=0;
@@ -17223,8 +17277,9 @@ infrastructureGuideQuestV37=function(){
 };
 const _v361QuestCostBeforeV42=v361QuestCost;
 v361QuestCost=function(q){const id=q?.id||'';if(/^plant-power-/.test(id))return plantCostV42('power',Number(id.split('-').pop())||1);if(/^plant-water-/.test(id))return plantCostV42('water',Number(id.split('-').pop())||1);return _v361QuestCostBeforeV42(q);};
-const _updateRequiredActionV38BeforeV42=updateRequiredActionV38;
-updateRequiredActionV38=function(){const q=currentGuideQuest();if(q&&/^plant-(power|water)-/.test(q.id||'')){const el=ensureRequiredActionV38();el.querySelector('.requiredTagV38').textContent=lang==='ru'?'ОБЯЗАТЕЛЬНАЯ МОЩНОСТЬ':'REQUIRED CAPACITY';el.querySelector('.requiredTitleV38').textContent=q.title||'';el.querySelector('button').textContent=lang==='ru'?'ПОКАЗАТЬ →':'SHOW →';el.classList.add('show');return;}return _updateRequiredActionV38BeforeV42();};
+// v63 1.2: this v42 redefinition of updateRequiredActionV38 (the "REQUIRED CAPACITY" tag for
+// plant-power-/plant-water- quests) is folded into the single definition near line 15750 --
+// removed here, not left orphaned.
 
 /* ------------------------------- Runtime ------------------------------ */
 function migrateV42AfterCoreLoad(){ensureV42State();if(v42State.migrated)return;const api=v41Api();if(api){let maxP=0,maxW=0;for(const cfg of CITY_DISTRICTS){maxP=Math.max(maxP,powerNetworkV42(cfg.id));maxW=Math.max(maxW,waterNetworkV42(cfg.id));}if(maxP>0)v42State.powerPlantLevel=Math.max(v42State.powerPlantLevel,maxP);if(maxW>0)v42State.waterPlantLevel=Math.max(v42State.waterPlantLevel,maxW);}v42State.migrated=true;generateContractOffersV42(true);saveV42State();}
@@ -25103,36 +25158,21 @@ body{
 <style id="v46-ux-style">
 /* ====================================================================== */
 /* v46 — RESPONSIVE UX / CONTROL / MECHANICS QA                           */
-/* ====================================================================== */
+/* v63 1.2: the JS layout/stack manager (layoutTopV46/layoutBottomV46 and the
+   ResizeObserver+MutationObserver pair that drove them) is gone -- every
+   position/top/left/right/bottom/width value it used to compute for the HUD is now a plain,
+   static rule in the v63-hud-zones stylesheet, keyed off html[data-layout] instead of a
+   runtime measurement loop. What's left here is the parts of this layer that were never
+   about HUD position: safe-area-aware panel sizing, sticky panel headers, touch-target
+   hygiene, and the "hide the background HUD while a modal is open" behavior (now driven by
+   a small dedicated sync instead of the full stack manager -- see the script below). */
 :root{
   --v46-safe-top:env(safe-area-inset-top,0px);
   --v46-safe-right:env(safe-area-inset-right,0px);
   --v46-safe-bottom:env(safe-area-inset-bottom,0px);
   --v46-safe-left:env(safe-area-inset-left,0px);
-  --v46-gap:8px;
-  --v46-edge:10px;
 }
 html,body{overscroll-behavior:none}
-#actionBtn,#prestigeBtn{position:fixed!important}
-#hud,#topRightBtns,#nextCard,#secondaryObjectiveV36,#contractsCard,#companyChip,#eventBanner,#toast,#prestigeBtn,#requiredActionV38,#coachChip,#actionPrompt,#actionBtn,#joyBase,#staminaWrap{
-  will-change:transform,top,bottom,left,right;
-}
-#nextCard,#secondaryObjectiveV36,#toast,#eventBanner,#coachChip,#actionPrompt,#requiredActionV38{
-  max-width:min(560px,calc(100vw - max(24px,calc(var(--v46-safe-left) + var(--v46-safe-right) + 20px))))!important;
-}
-#nextCard{top:var(--v46-next-top,66px)!important}
-#secondaryObjectiveV36{top:var(--v46-secondary-top,206px)!important}
-#contractsCard{top:var(--v46-contracts-top,66px)!important;right:max(8px,calc(var(--v46-safe-right) + 8px))!important}
-#companyChip{top:var(--v46-company-top,72px)!important;left:max(8px,calc(var(--v46-safe-left) + 8px))!important}
-#prestigeBtn{top:var(--v46-prestige-top,108px)!important}
-#eventBanner{top:var(--v46-event-top,154px)!important}
-#toast{top:var(--v46-toast-top,106px)!important;bottom:auto!important}
-#requiredActionV38{bottom:var(--v46-required-bottom,78px)!important}
-#coachChip{bottom:var(--v46-coach-bottom,118px)!important}
-#actionPrompt{bottom:var(--v46-prompt-bottom,168px)!important}
-#actionBtn{right:max(12px,calc(var(--v46-safe-right) + 12px))!important;bottom:max(14px,calc(var(--v46-safe-bottom) + 14px))!important}
-#joyBase{left:max(14px,calc(var(--v46-safe-left) + 14px))!important;bottom:max(14px,calc(var(--v46-safe-bottom) + 14px))!important;touch-action:none!important}
-#staminaWrap{left:max(14px,calc(var(--v46-safe-left) + 14px))!important}
 .v30Panel,#achPanel,#hintCard{
   width:min(620px,calc(100vw - max(24px,calc(var(--v46-safe-left) + var(--v46-safe-right) + 20px))))!important;
   max-height:calc(100dvh - max(26px,calc(var(--v46-safe-top) + var(--v46-safe-bottom) + 20px)))!important;
@@ -25149,7 +25189,7 @@ html,body{overscroll-behavior:none}
   backdrop-filter:blur(12px);
 }
 .v30Close{flex:0 0 auto!important;touch-action:manipulation!important}
-.v30Btn,.iconBtn,#actionBtn,#prestigeBtn,.requiredActionBtnV38{
+.v30Btn,.iconBtn,#actionBtn,#prestigeBtn{
   touch-action:manipulation!important;
   -webkit-user-select:none;user-select:none;
 }
@@ -25158,16 +25198,15 @@ html,body{overscroll-behavior:none}
 :is(.staffGrid,.projectGrid,.bonusGrid,.fleetGrid,.baseGrid,.tenderGrid,.fleetOpsGrid,.cityGrid,.initiativeGrid,.capacityGridV42,.offerGridV42,.metaGrid,.demandGridV40,.cityPulseV40){grid-template-columns:repeat(2,minmax(0,1fr))!important}
 .v30Row>*{min-width:0}
 .v30Row b,.v30Row .sub,.name,.desc,.status,.resourceLine{overflow-wrap:anywhere}
+/* Background HUD is hidden (not just covered) while a panel is open -- kept from v46, driven
+   by the small syncModalStateV46() below instead of the full stack-manager loop. */
 body.v46-modal-open #hud,
-body.v46-modal-open #nextCard,
-body.v46-modal-open #secondaryObjectiveV36,
+body.v46-modal-open #hudCenterZone,
 body.v46-modal-open #contractsCard,
 body.v46-modal-open #companyChip,
-body.v46-modal-open #eventBanner,
 body.v46-modal-open #coachChip,
 body.v46-modal-open #actionPrompt,
 body.v46-modal-open #actionBtn,
-body.v46-modal-open #requiredActionV38,
 body.v46-modal-open #prestigeBtn,
 body.v46-modal-open #joyBase,
 body.v46-modal-open #staminaWrap{
@@ -25175,68 +25214,38 @@ body.v46-modal-open #staminaWrap{
   pointer-events:none!important;
 }
 body.v46-modal-open #toast{z-index:120!important}
-body.v46-tight #contractsCard{display:none!important}
-body.v46-tight #secondaryObjectiveV36{display:none!important}
-body.v46-tight #companyChip{display:none!important}
-body.v46-tight #nextCard .guideJourney,
-body.v46-tight #nextCard .guideActionRow,
-body.v46-tight #nextCard .goalMeta{display:none!important}
-body.v46-tight #nextCard .goalHint{-webkit-line-clamp:1!important;line-clamp:1!important}
-body.v46-tight #coachChip{display:none!important}
-body.v46-tight #eventBanner{max-width:min(420px,calc(100vw - 24px))!important}
-body.v46-ultra-tight #nextCard .goalHint{display:none!important}
-body.v46-ultra-tight #nextCard{padding:8px 10px!important}
-body.v46-ultra-tight #prestigeBtn{display:none!important}
 #joyBase.v46-active{border-color:rgba(143,205,255,.25)!important;box-shadow:0 12px 34px rgba(0,0,0,.18),0 0 0 3px rgba(127,185,231,.055),inset 0 0 28px rgba(255,255,255,.03)!important}
 #joyKnob{left:50%!important;top:50%!important;transform:translate(-50%,-50%) translate3d(var(--v46-joy-x,0px),var(--v46-joy-y,0px),0)!important;transition:transform .07s linear,box-shadow .12s ease!important}
 #joyBase:not(.v46-active) #joyKnob{transition:transform .16s cubic-bezier(.2,.8,.2,1),box-shadow .12s ease!important}
-#actionBtn{min-width:108px;max-width:min(220px,42vw)!important}
-#actionPrompt{width:max-content;max-width:min(480px,calc(100vw - 32px))!important;text-align:center}
-#requiredActionV38{width:min(480px,calc(100vw - 32px))!important}
 @media(max-width:820px){
   :is(.staffGrid,.projectGrid,.bonusGrid,.fleetGrid,.baseGrid,.tenderGrid,.fleetOpsGrid,.cityGrid,.initiativeGrid,.capacityGridV42,.offerGridV42,.metaGrid,.demandGridV40,.cityPulseV40){grid-template-columns:1fr!important}
   .v30Panel,#achPanel,#hintCard{width:calc(100vw - max(16px,calc(var(--v46-safe-left) + var(--v46-safe-right) + 12px)))!important;padding:13px!important}
-  #topRightBtns{right:max(7px,calc(var(--v46-safe-right) + 7px))!important}
-  #actionBtn{max-width:38vw!important;min-width:96px!important}
-  #requiredActionV38{max-width:calc(100vw - max(24px,calc(var(--v46-safe-left) + var(--v46-safe-right) + 18px)))!important}
 }
 @media(max-width:520px){
-  #hud .stats{max-width:calc(100vw - 146px)!important}
-  #nextCard{width:min(94vw,470px)!important}
-  #contractsCard{max-width:38vw!important}
   .v30Btn{min-height:38px!important}
   .policyGridV40,.loanBtnsV42{grid-template-columns:1fr!important}
 }
 @media(max-height:680px){
   .v30Panel,#achPanel,#hintCard{max-height:calc(100dvh - max(14px,calc(var(--v46-safe-top) + var(--v46-safe-bottom) + 10px)))!important}
-  #nextCard{padding:8px 10px!important}
-  #nextCard::before{margin-bottom:3px!important}
-  #nextCard .goalHint{margin-top:2px!important}
-}
-@media(max-height:520px) and (orientation:landscape){
-  #hud .stat{min-height:29px!important;padding:4px 6px!important}
-  .iconBtn{width:30px!important;height:30px!important}
-  #topRightBtns{width:auto!important;max-width:210px!important;flex-wrap:nowrap!important}
-  #hud .stats{max-width:calc(100vw - 230px)!important}
-  #nextCard{max-width:48vw!important;left:50%!important}
-  #actionBtn{max-width:26vw!important}
-  #joyBase{width:92px!important;height:92px!important}
-  #joyKnob{width:42px!important;height:42px!important}
-  #requiredActionV38{max-width:44vw!important}
 }
 </style>
 <script>
 (function(){
   'use strict';
-  const V46={raf:0,resizeObs:null,mutObs:null,lastSig:'',modal:false,lastEsc:0,focusedOverlay:null,returnFocus:null};
+  // v63 1.2: V46 used to be the HUD's JS stack manager (layoutTopV46/layoutBottomV46,
+  // driven by a ResizeObserver + MutationObserver pair watching 15 elements, `resize`,
+  // `orientationchange` and `visualViewport`). All of that is gone -- HUD position is now
+  // static CSS keyed off html[data-layout] (see v63-hud-zones). What's left below is
+  // everything V46 did that was NOT about HUD position: modal focus/inert handling, the
+  // joystick's own input math, freezing player movement while a panel is open, Escape/Tab
+  // trap, disabled-button click guarding and the manual-interaction prompt.
+  const V46={modal:false,focusedOverlay:null,returnFocus:null};
   const $=id=>document.getElementById(id);
   const visible=el=>{
     if(!el||el.hidden)return false;
     const s=getComputedStyle(el);if(s.display==='none'||s.visibility==='hidden'||Number(s.opacity)===0)return false;
     const r=el.getBoundingClientRect();return r.width>1&&r.height>1;
   };
-  const rect=el=>visible(el)?el.getBoundingClientRect():null;
-  const px=n=>`${Math.max(0,Math.round(n))}px`;
   function currentOverlayV46(){return [...document.querySelectorAll('#systemsOverlay.show,#metaOverlay.show,#staffOverlay.show,#projectsOverlay.show,#bonusOverlay.show,#fleetOverlay.show,#baseOverlay.show,#tendersOverlay.show,#operationsOverlay.show,#cityOverlay.show,#achOverlay.show,#hintOverlay.show')].pop()||null;}
   function modalOpenV46(){return !!currentOverlayV46()||document.body.classList.contains('modal-open');}
   function syncModalFocusV46(){
@@ -25249,69 +25258,19 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
       const back=V46.returnFocus;V46.focusedOverlay=null;V46.returnFocus=null;if(back&&document.contains(back))requestAnimationFrame(()=>back.focus({preventScroll:true}));
     }
   }
-  function requestLayoutV46(){if(V46.raf)return;V46.raf=requestAnimationFrame(()=>{V46.raf=0;layoutV46();});}
-  function intersects(a,b,pad=4){return !!a&&!!b&&a.left<b.right+pad&&a.right+pad>b.left&&a.top<b.bottom+pad&&a.bottom+pad>b.top;}
-  function setVar(name,value){document.documentElement.style.setProperty(name,px(value));}
-  function layoutTopV46(){
-    const vw=innerWidth,vh=innerHeight;
-    const hud=rect($('hud'));let base=(hud?.bottom||8)+7;
-    const next=$('nextCard');setVar('--v46-next-top',base);
-    let nr=rect(next);let centerBottom=nr?.bottom||base;
-    const sec=$('secondaryObjectiveV36');
-    if(visible(sec)){setVar('--v46-secondary-top',centerBottom+6);const sr=rect(sec);centerBottom=sr?.bottom||centerBottom;}
-    const prestige=$('prestigeBtn');
-    if(visible(prestige)){setVar('--v46-prestige-top',centerBottom+7);const pr=rect(prestige);centerBottom=pr?.bottom||centerBottom;}
-    const company=$('companyChip');setVar('--v46-company-top',base);
-    const contracts=$('contractsCard');setVar('--v46-contracts-top',base);
-    let cr=rect(contracts),cor=rect(company);nr=rect(next);
-    if(intersects(cr,nr,7)){setVar('--v46-contracts-top',(nr?.bottom||base)+7);cr=rect(contracts);}
-    if(intersects(cor,nr,7)){setVar('--v46-company-top',(nr?.bottom||base)+7);cor=rect(company);}
-    let topOccupied=Math.max(centerBottom,cr?.bottom||0,cor?.bottom||0,hud?.bottom||0);
-    const event=$('eventBanner');
-    if(visible(event)){setVar('--v46-event-top',topOccupied+7);topOccupied=rect(event)?.bottom||topOccupied;}
-    const toast=$('toast');
-    if(visible(toast)&&toast.classList.contains('show')){setVar('--v46-toast-top',topOccupied+7);topOccupied=rect(toast)?.bottom||topOccupied;}
-    return topOccupied;
-  }
-  function layoutBottomV46(){
-    const vh=innerHeight;let reserve=12;
-    for(const id of ['actionBtn','joyBase','staminaWrap']){
-      const r=rect($(id));if(r)reserve=Math.max(reserve,vh-r.top+8);
-    }
-    const required=$('requiredActionV38');
-    if(visible(required)&&required.classList.contains('show')){setVar('--v46-required-bottom',reserve);const r=rect(required);reserve+=r?r.height+7:48;}
-    const coach=$('coachChip');
-    if(visible(coach)&&coach.classList.contains('show')){setVar('--v46-coach-bottom',reserve);const r=rect(coach);reserve+=r?r.height+7:40;}
-    const prompt=$('actionPrompt');
-    if(visible(prompt)&&prompt.classList.contains('show')){setVar('--v46-prompt-bottom',reserve);const r=rect(prompt);reserve+=r?r.height+7:42;}
-    return vh-reserve;
-  }
-  function layoutV46(){
-    V46.modal=modalOpenV46();syncModalFocusV46();
+  // Small, single-purpose modal-state sync: toggles the class body.v46-modal-open (which
+  // visually hides the background HUD, see v46-ux-style above) and syncs a11y focus. This
+  // replaces the "modal" half of the old requestLayoutV46/layoutV46 loop without any of the
+  // position measurement that loop also did.
+  function syncModalStateV46(){
+    V46.modal=modalOpenV46();
     document.body.classList.toggle('v46-modal-open',V46.modal);
-    document.body.classList.toggle('v46-tight',innerHeight<680||innerWidth<390);
-    document.body.classList.toggle('v46-ultra-tight',innerHeight<520);
-    if(V46.modal)return;
-    let top=layoutTopV46();let bottom=layoutBottomV46();
-    if(bottom-top<92&&!document.body.classList.contains('v46-tight')){document.body.classList.add('v46-tight');top=layoutTopV46();bottom=layoutBottomV46();}
-    if(bottom-top<58)document.body.classList.add('v46-ultra-tight');
-    const sig=[innerWidth,innerHeight,Math.round(top),Math.round(bottom),V46.modal?1:0].join('|');V46.lastSig=sig;
+    syncModalFocusV46();
   }
-  function installObserversV46(){
-    window.addEventListener('resize',requestLayoutV46,{passive:true});
-    window.addEventListener('orientationchange',()=>setTimeout(requestLayoutV46,80),{passive:true});
-    if(window.visualViewport){visualViewport.addEventListener('resize',requestLayoutV46,{passive:true});visualViewport.addEventListener('scroll',requestLayoutV46,{passive:true});}
-    if('ResizeObserver'in window){
-      V46.resizeObs=new ResizeObserver(requestLayoutV46);
-      for(const id of ['hud','nextCard','secondaryObjectiveV36','contractsCard','companyChip','eventBanner','toast','prestigeBtn','requiredActionV38','coachChip','actionPrompt','actionBtn','joyBase','staminaWrap']){const el=$(id);if(el)V46.resizeObs.observe(el);}
-      document.querySelectorAll('.v30Panel,#achPanel,#hintCard').forEach(el=>V46.resizeObs.observe(el));
-    }
-    V46.mutObs=new MutationObserver(requestLayoutV46);
-    const layoutWatchIds=['hud','topRightBtns','nextCard','secondaryObjectiveV36','contractsCard','companyChip','eventBanner','toast','prestigeBtn','requiredActionV38','coachChip','actionPrompt','actionBtn','joyBase','staminaWrap'];
-    for(const id of layoutWatchIds){const el=$(id);if(el)V46.mutObs.observe(el,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['class','hidden','disabled']});}
-    // v51: per-frame inline style churn (joystick/progress bars) no longer wakes the layout manager.
-    for(const ov of document.querySelectorAll('[id$="Overlay"]'))V46.mutObs.observe(ov,{attributes:true,attributeFilter:['class','style','hidden']});
-    V46.mutObs.observe(document.body,{childList:true});
+  function installModalWatchV46(){
+    const mo=new MutationObserver(syncModalStateV46);
+    for(const ov of document.querySelectorAll('[id$="Overlay"]'))mo.observe(ov,{attributes:true,attributeFilter:['class','hidden']});
+    syncModalStateV46();
   }
   function installJoystickV46(){
     try{
@@ -25356,7 +25315,7 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
   function installEscapeCloseV46(){
     addEventListener('keydown',e=>{
       const overlay=currentOverlayV46();if(!overlay)return;
-      if(e.key==='Escape'&&!e.repeat){const close=overlay.querySelector('.v30Close,.close,button[data-close]');if(close){e.preventDefault();e.stopPropagation();close.click();requestLayoutV46();}return;}
+      if(e.key==='Escape'&&!e.repeat){const close=overlay.querySelector('.v30Close,.close,button[data-close]');if(close){e.preventDefault();e.stopPropagation();close.click();syncModalStateV46();}return;}
       if(e.key==='Tab'){
         const focusables=[...overlay.querySelectorAll('button:not(:disabled),.v30Btn:not(:disabled),.v30Close,.close,[href],[tabindex]:not([tabindex=\"-1\"])')].filter(x=>visible(x));if(!focusables.length)return;
         const first=focusables[0],last=focusables[focusables.length-1];
@@ -25367,13 +25326,12 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
   }
   function installInteractionSafetyV46(){
     document.addEventListener('click',e=>{
-      const btn=e.target.closest?.('.v30Btn,#actionBtn,.requiredActionBtnV38,.iconBtn');if(!btn)return;
+      const btn=e.target.closest?.('.v30Btn,#actionBtn,.iconBtn');if(!btn)return;
       if(btn.matches(':disabled')||btn.getAttribute('aria-disabled')==='true'){e.preventDefault();e.stopImmediatePropagation();return;}
-      requestLayoutV46();
     },true);
     document.addEventListener('pointerdown',e=>{
       const overlay=currentOverlayV46();if(!overlay||e.target!==overlay)return;
-      const close=overlay.querySelector('.v30Close,.close,button[data-close]');if(close){e.preventDefault();close.click();requestLayoutV46();}
+      const close=overlay.querySelector('.v30Close,.close,button[data-close]');if(close){e.preventDefault();close.click();syncModalStateV46();}
     },{capture:true});
   }
   function nearestManualActionV46(){
@@ -25397,7 +25355,6 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
             prompt.textContent=ready?(lang==='ru'?`🔧 Улучшение: ${name}`:`🔧 Upgrade: ${name}`):(lang==='ru'?`📦 Нужно: ${fmt(cost.money)} 💰 · ${cost.wood} 🪵`:`📦 Need: ${fmt(cost.money)} 💰 · ${cost.wood} 🪵`);
             btn.hidden=false;btn.textContent=ready?(lang==='ru'?'Улучшить':'Upgrade'):(lang==='ru'?'Не хватает ресурсов':'Resources needed');prompt.classList.add('show');
           }
-          requestLayoutV46();
         };
         wrapped.__v46=true;updateTreeInteraction=wrapped;
       }
@@ -25411,7 +25368,7 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
     for(const el of document.querySelectorAll('.v30Close')){el.tabIndex=0;el.setAttribute('role','button');if(!el.getAttribute('aria-label'))el.setAttribute('aria-label',typeof lang!=='undefined'&&lang==='ru'?'Закрыть':'Close');el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();el.click();}});}
     for(const panel of document.querySelectorAll('.v30Panel,#achPanel,#hintCard'))panel.setAttribute('role','dialog');
   }
-  function bootV46(){window.requestLayoutV46=requestLayoutV46;window.modalOpenV46=modalOpenV46;window.currentOverlayV46=currentOverlayV46;installObserversV46();installJoystickV46();installModalMovementGuardV46();installEscapeCloseV46();installInteractionSafetyV46();installPanelA11yV46();installManualPromptV46();requestLayoutV46();setTimeout(requestLayoutV46,250);setTimeout(requestLayoutV46,900);}
+  function bootV46(){window.modalOpenV46=modalOpenV46;window.currentOverlayV46=currentOverlayV46;installModalWatchV46();installJoystickV46();installModalMovementGuardV46();installEscapeCloseV46();installInteractionSafetyV46();installPanelA11yV46();installManualPromptV46();}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootV46,{once:true});else bootV46();
 })();
 </script>
@@ -25438,15 +25395,17 @@ body{user-select:none;-webkit-user-select:none}
 #joyKnob{box-shadow:0 8px 20px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.12)}
 #staminaWrap{box-shadow:0 5px 16px rgba(0,0,0,.16)}
 #staminaFill{transition:width .14s linear,filter .2s ease!important}
-body.v47-moving #contractsCard,body.v47-moving #companyChip,body.v47-moving #secondaryObjectiveV36{opacity:.28!important;filter:saturate(.65);transition:opacity .24s ease,filter .24s ease}
-body:not(.v47-moving) #contractsCard,body:not(.v47-moving) #companyChip,body:not(.v47-moving) #secondaryObjectiveV36{transition:opacity .28s ease,filter .28s ease}
-body.v47-moving #nextCard{opacity:.92}
-body.v47-moving #coachChip:not(.show){opacity:0!important}
-body.v47-action-focus #requiredActionV38,body.v47-action-focus #coachChip{display:none!important}
+/* v63 1.2: body.v47-moving and body.v47-action-focus removed. Both only ever dimmed elements
+   that are now permanently hidden (#contractsCard/#companyChip/#secondaryObjectiveV36/
+   #coachChip) or a removed element (#requiredActionV38); installMovementComfortV47 and
+   installActionFocusV47, the two functions that set them, are removed below rather than
+   left setting classes nothing reads any more. */
 #nextCard.v47-goal-change{animation:v47GoalChange .44s cubic-bezier(.2,.8,.2,1)}
 #hud .stat.v47-stat-pulse{animation:v47StatPulse .42s cubic-bezier(.2,.8,.2,1)}
 .v30Btn.v47-click-lock{pointer-events:none!important;filter:brightness(.96)!important}
-@keyframes v47GoalChange{0%{transform:translateX(-50%) translateY(-3px);border-color:rgba(255,221,142,.55)}100%{transform:translateX(-50%) translateY(0)}}
+/* v63 1.2: no more translateX(-50%) -- #nextCard is a plain flow child of #hudCenterZone now,
+   not a self-centered fixed element, so the goal-change pulse only needs the vertical part. */
+@keyframes v47GoalChange{0%{transform:translateY(-3px);border-color:rgba(255,221,142,.55)}100%{transform:translateY(0)}}
 @keyframes v47StatPulse{0%{transform:scale(1)}38%{transform:scale(1.055);border-color:rgba(150,220,255,.28)}100%{transform:scale(1)}}
 @media(pointer:coarse){
   .v30Btn{min-height:44px!important;padding:9px 11px!important}
@@ -25461,11 +25420,11 @@ body.v47-action-focus #requiredActionV38,body.v47-action-focus #coachChip{displa
   #nextCard .goalBar{margin-top:5px!important}
   #actionBtn{min-height:48px!important}
 }
-@media(max-width:520px){#contractsCard,#companyChip{display:none!important}#requiredActionV38{left:auto!important;right:max(12px,calc(env(safe-area-inset-right,0px) + 12px))!important;transform:none!important;width:min(330px,calc(100vw - 150px))!important}}
-body.v46-ultra-tight #eventBanner{display:none!important}
+/* v63 1.2: #contractsCard/#companyChip are hidden unconditionally now (v63-hud-zones), and
+   #requiredActionV38 no longer exists -- both handled elsewhere, removed here rather than
+   left as dead selectors for a removed element and a class nothing sets any more. */
 @media(max-width:420px){
   #hud .stats{row-gap:3px!important}
-  #nextCard{width:min(94vw,470px)!important}
   .v30Panel{font-size:12px}
   .v30Row{gap:8px!important}
   .v30Row>div:first-child{min-width:0}
@@ -25494,16 +25453,11 @@ body.v46-ultra-tight #eventBanner{display:none!important}
     updateHUD=function(){const r=old.apply(this,arguments);snapshotStatsV47();goalFeedbackV47();return r;};updateHUD.__v47=true;
     try{updateHUD();}catch(_){}
   }
-  function installMovementComfortV47(){
-    if(updatePlayer.__v47)return;const old=updatePlayer;
-    updatePlayer=function(dt){const r=old.apply(this,arguments);try{
-      const speed=(typeof playerVelocity!=='undefined'&&playerVelocity)?Math.hypot(playerVelocity.x||0,playerVelocity.z||0):0;
-      const moving=speed>.42;
-      if(moving!==V47.moving){V47.moving=moving;document.body.classList.toggle('v47-moving',moving);}
-    }catch(_){}return r;};updatePlayer.__v47=true;
-  }
+  // v63 1.2: installMovementComfortV47 (toggled body.v47-moving off player speed) removed --
+  // its only effects were dimming elements that are now permanently hidden and a 0.92 opacity
+  // dip on #nextCard while walking, which is gone now (see the CSS note above).
   function installInputHygieneV47(){
-    const reset=()=>{try{keys.clear();}catch(_){}try{if(typeof joyReset==='function')joyReset();if(typeof joyPointerId!=='undefined')joyPointerId=null;}catch(_){}document.body.classList.remove('v47-moving');V47.moving=false;};
+    const reset=()=>{try{keys.clear();}catch(_){}try{if(typeof joyReset==='function')joyReset();if(typeof joyPointerId!=='undefined')joyPointerId=null;}catch(_){}};
     addEventListener('blur',reset,{passive:true});document.addEventListener('visibilitychange',()=>{if(document.hidden)reset();},{passive:true});
     addEventListener('keydown',e=>{
       const tag=e.target?.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||e.target?.isContentEditable)return;
@@ -25540,11 +25494,9 @@ body.v46-ultra-tight #eventBanner{display:none!important}
       }catch(_){}return r;};updateDayNightV40.__v47=true;
     }catch(_){}
   }
-  function installActionFocusV47(){
-    const prompt=$('actionPrompt'),btn=$('actionBtn');if(!prompt||!btn)return;
-    const sync=()=>{const active=prompt.classList.contains('show')&&!btn.hidden&&getComputedStyle(btn).display!=='none';document.body.classList.toggle('v47-action-focus',active);try{if(typeof requestLayoutV46==='function')requestLayoutV46();}catch(_){};};
-    const mo=new MutationObserver(sync);mo.observe(prompt,{attributes:true,attributeFilter:['class','style']});mo.observe(btn,{attributes:true,attributeFilter:['hidden','style','class']});sync();
-  }
+  // v63 1.2: installActionFocusV47 (toggled body.v47-action-focus to hide #requiredActionV38/
+  // #coachChip while the action button was active) removed -- #requiredActionV38 no longer
+  // exists and #coachChip is permanently hidden, so it had nothing left to do.
   function installPanelComfortV47(){
     const apply=root=>{if(!(root instanceof Element||root instanceof Document))return;root.querySelectorAll?.('.v30Panel,#achPanel,#hintCard').forEach(p=>{p.style.scrollbarGutter='stable';});root.querySelectorAll?.('.v30Btn').forEach(b=>{if(!b.hasAttribute('type'))b.setAttribute('type','button');});if(root instanceof Element){if(root.matches('.v30Panel,#achPanel,#hintCard'))root.style.scrollbarGutter='stable';if(root.matches('.v30Btn')&&!root.hasAttribute('type'))root.setAttribute('type','button');}};
     apply(document);
@@ -25555,9 +25507,7 @@ body.v46-ultra-tight #eventBanner{display:none!important}
     if(V47.ready)return;
     if(!safeCoreV47()){if(++V47.bootTries<80)setTimeout(bootV47,75);return;}
     V47.ready=true;
-    installHUDV47();installMovementComfortV47();installInputHygieneV47();installClickComfortV47();installAccessibilityV47();installCozyLightV47();installActionFocusV47();installPanelComfortV47();
-    try{if(typeof requestLayoutV46==='function')requestLayoutV46();}catch(_){}
-    setTimeout(()=>{try{if(typeof requestLayoutV46==='function')requestLayoutV46();}catch(_){}},400);
+    installHUDV47();installInputHygieneV47();installClickComfortV47();installAccessibilityV47();installCozyLightV47();installPanelComfortV47();
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootV47,{once:true});else bootV47();
 })();
@@ -25587,14 +25537,10 @@ body.v46-ultra-tight #eventBanner{display:none!important}
   42%{transform:translateY(-1px);border-color:rgba(151,218,255,.28);box-shadow:0 13px 30px rgba(0,0,0,.24),0 0 18px rgba(105,187,236,.08)}
   100%{transform:translateY(0)}
 }
-/* Calm mode: preserve resources + the primary goal, lower only secondary noise. */
-body.v48-calm #companyChip,
-body.v48-calm #contractsCard,
-body.v48-calm #secondaryObjectiveV36{opacity:.32!important;filter:saturate(.68);transition:opacity .65s var(--v48-ease),filter .65s var(--v48-ease)}
-body.v48-calm #coachChip:not(.show){opacity:.16!important}
-body:not(.v48-calm) #companyChip,
-body:not(.v48-calm) #contractsCard,
-body:not(.v48-calm) #secondaryObjectiveV36{transition:opacity .24s var(--v48-ease),filter .24s var(--v48-ease)}
+/* v63 1.2: body.v48-calm removed -- it only ever dimmed #companyChip/#contractsCard/
+   #secondaryObjectiveV36/#coachChip, all permanently hidden now; installCalmMode() (which set
+   it, and read the also-removed body.v47-moving) is removed below rather than left running a
+   700ms interval to toggle a class with nothing left to affect. */
 /* Context action should visually communicate ready vs informational/blocked. */
 #actionPrompt.v48-ready{border-color:rgba(239,200,116,.22)!important;background:linear-gradient(180deg,rgba(35,31,24,.94),rgba(20,22,25,.94))!important}
 #actionPrompt.v48-blocked{border-color:rgba(155,169,184,.12)!important;color:#aeb8c4!important}
@@ -25626,7 +25572,6 @@ body:not(.v48-calm) #secondaryObjectiveV36{transition:opacity .24s var(--v48-eas
 @media(max-width:390px){
   #topRightBtns{gap:4px!important}
   .iconBtn{min-width:36px!important;min-height:36px!important}
-  #nextCard{max-width:calc(100vw - 20px)!important}
   .v30Panel{width:min(96vw,720px)!important}
 }
 
@@ -25640,7 +25585,7 @@ body.v46-modal-open #toast{opacity:0!important;visibility:hidden!important;trans
 }
 @media(prefers-reduced-motion:reduce){
   #hud .stat.v48-stat-feedback{animation:none!important}
-  #eventBanner,body.v48-calm #companyChip,body.v48-calm #contractsCard,body.v48-calm #secondaryObjectiveV36{transition:none!important}
+  #eventBanner{transition:none!important}
 }
 </style>
 <script>
@@ -25654,18 +25599,8 @@ body.v46-modal-open #toast{opacity:0!important;visibility:hidden!important;trans
   const now=()=>performance.now();
   function coreReady(){try{return typeof updateHUD==='function'&&typeof updatePlayer==='function'&&typeof THREE!=='undefined'&&typeof toast==='function';}catch(_){return false;}}
   function visible(el){if(!el||el.hidden)return false;const s=getComputedStyle(el);return s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity||1)>.01;}
-  function markInput(){V48.lastInput=now();if(V48.calm){V48.calm=false;document.body.classList.remove('v48-calm');}}
-  function installCalmMode(){
-    ['pointerdown','pointermove','touchstart','wheel','keydown'].forEach(type=>addEventListener(type,markInput,{passive:type!=='keydown',capture:type==='keydown'}));
-    setInterval(()=>{
-      if(document.hidden)return;
-      let modal=false,action=false,moving=document.body.classList.contains('v47-moving');
-      try{modal=typeof modalOpenV46==='function'?modalOpenV46():document.body.classList.contains('v46-modal-open');}catch(_){}
-      try{action=$('actionPrompt')?.classList.contains('show')&&!$('actionBtn')?.hidden;}catch(_){}
-      const calm=!modal&&!action&&!moving&&(now()-V48.lastInput>6500);
-      if(calm!==V48.calm){V48.calm=calm;document.body.classList.toggle('v48-calm',calm);}
-    },700);
-  }
+  // v63 1.2: installCalmMode (set body.v48-calm after 6.5s of no input) removed -- see the CSS
+  // note above; markInput()/V48.lastInput/V48.calm existed only to feed it.
   function pulseStat(el){
     if(!el)return;el.classList.remove('v48-stat-feedback');void el.offsetWidth;el.classList.add('v48-stat-feedback');
     setTimeout(()=>el.classList.remove('v48-stat-feedback'),540);
@@ -25813,10 +25748,8 @@ body.v46-modal-open #toast{opacity:0!important;visibility:hidden!important;trans
     if(V48.ready)return;
     if(!coreReady()){if(++V48.tries<100)setTimeout(boot,80);return;}
     V48.ready=true;
-    installCalmMode();installMeaningfulHUDFeedback();installToastComfort();installActionSemantics();installPanelMemory();installSofterWorldEvents();installSmoothWeather();installPanelDensityComfort();
+    installMeaningfulHUDFeedback();installToastComfort();installActionSemantics();installPanelMemory();installSofterWorldEvents();installSmoothWeather();installPanelDensityComfort();
     try{updateHUD();}catch(_){}
-    try{if(typeof requestLayoutV46==='function')requestLayoutV46();}catch(_){}
-    setTimeout(()=>{try{if(typeof requestLayoutV46==='function')requestLayoutV46();}catch(_){}},350);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();
@@ -25843,22 +25776,17 @@ body.v46-modal-open #toast{opacity:0!important;visibility:hidden!important;trans
 /* Background controls are not merely transparent while a dialog is open;
    they are removed from interaction/a11y by JS as well. */
 body.v49-modal-isolated canvas{pointer-events:none!important}
-/* Emergency compaction is only entered when measured elements actually
-   collide. It sacrifices secondary information before primary actions. */
-body.v49-emergency-compact #secondaryObjectiveV36,
-body.v49-emergency-compact #companyChip,
-body.v49-emergency-compact #contractsCard,
-body.v49-emergency-compact #coachChip{display:none!important}
-body.v49-emergency-compact #eventBanner{max-width:min(380px,calc(100vw - 24px))!important;font-size:9px!important;padding:5px 8px!important}
-body.v49-emergency-compact #nextCard .goalHint,
-body.v49-emergency-compact #nextCard .goalJourney,
-body.v49-emergency-compact #nextCard .guideJourney{display:none!important}
+/* v63 1.2: the emergency-compaction system (body.v49-emergency-compact, driven by a runtime
+   collision audit that measured HUD rectangles and hid things when they overlapped) is
+   removed -- the zone table in v63-hud-zones is sized to hold at all 5 test profiles without
+   ever needing to detect and react to a collision at runtime (closes P2-3's "emergency mode"
+   contribution and the associated MutationObserver/ResizeObserver pair in the script below). */
 /* Compact landscape previously shrank top icons to 30x30. Raise the hit area
-   while keeping the glyph visually compact. */
+   while keeping the glyph visually compact. Width reservations for #topRightBtns/#hud .stats
+   used to assume the full 6-icon toolbar and are handled by data-layout now instead
+   (v63-hud-zones) -- phone-landscape only ever shows the single menu icon. */
 @media(max-height:520px) and (orientation:landscape){
   .iconBtn{width:40px!important;height:40px!important;min-width:40px!important;min-height:40px!important;font-size:12px!important}
-  #topRightBtns{gap:4px!important;max-width:272px!important}
-  #hud .stats{max-width:calc(100vw - 286px)!important}
 }
 /* Coarse pointers get comfortable hit heights. Width remains flexible so the
    HUD can still fit on 360px screens. */
@@ -25881,14 +25809,8 @@ body.v49-emergency-compact #nextCard .guideJourney{display:none!important}
 /* Selection is useful in long informational panels even though the world is
    intentionally non-selectable. */
 .v30Panel :is(.desc,.sub,.status,.resourceLine,.tinyV40),#hintCard,#achPanel{user-select:text!important;-webkit-user-select:text!important}
-/* If the visual viewport becomes very short, preserve the action before any
-   decorative banner. */
-body.v49-very-short #eventBanner,
-body.v49-very-short #secondaryObjectiveV36,
-body.v49-very-short #companyChip,
-body.v49-very-short #contractsCard{display:none!important}
-body.v49-very-short #nextCard .goalHint{display:none!important}
-body.v49-action-tight #toast{display:none!important}
+/* v63 1.2: body.v49-very-short / body.v49-action-tight (both part of the removed
+   emergency-compaction system) are gone; see the note above canvas{pointer-events}. */
 @media(prefers-reduced-motion:reduce){
   .v45-click-flash,.guide-primary,.infraPanelV38 .mustV38{animation:none!important}
 }
@@ -25896,11 +25818,18 @@ body.v49-action-tight #toast{display:none!important}
 <script>
 (function(){
   'use strict';
-  const V49={ready:false,tries:0,raf:0,modal:false,lastAudit:0,isolated:new Map(),reduceMotion:matchMedia('(prefers-reduced-motion: reduce)').matches};
+  // v63 1.2: V49 used to also run a runtime "emergency compaction" audit -- a ResizeObserver +
+  // MutationObserver pair (installObserversV49) measuring 13 elements' rectangles on every
+  // resize/mutation and adding body.v49-emergency-compact/v49-very-short/v49-action-tight when
+  // they collided. The zone table (v63-hud-zones) is now sized to never collide at the 5 test
+  // profiles in the first place, so that whole audit loop (auditV49/requestAuditV49/
+  // criticalRects/hasBadCollision) is removed rather than kept as a safety net nothing should
+  // ever trip. What's kept: making the background HUD `inert` (not just visually hidden) while
+  // a panel is open -- a real a11y/input feature, not a layout fix -- now driven by a small
+  // dedicated watcher instead of the same loop that used to also do the audit.
+  const V49={ready:false,modal:false,isolated:new Map(),reduceMotion:matchMedia('(prefers-reduced-motion: reduce)').matches};
   const $=id=>document.getElementById(id);
   const vis=el=>{if(!el||el.hidden)return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity||1)>.02&&r.width>1&&r.height>1;};
-  const rect=el=>vis(el)?el.getBoundingClientRect():null;
-  const overlap=(a,b,p=2)=>!!a&&!!b&&a.left<b.right-p&&a.right>b.left+p&&a.top<b.bottom-p&&a.bottom>b.top+p;
   function modalNow(){try{return typeof modalOpenV46==='function'?modalOpenV46():document.body.classList.contains('v46-modal-open');}catch(_){return document.body.classList.contains('v46-modal-open');}}
   function resetWorldInputV49(){
     try{if(typeof keys!=='undefined')keys.clear();}catch(_){}
@@ -25909,49 +25838,16 @@ body.v49-action-tight #toast{display:none!important}
     try{if(typeof worldNavRuntimeV362!=='undefined')worldNavRuntimeV362.interact=false;}catch(_){}
   }
   function isolateBackgroundV49(on){
-    const ids=['hud','nextCard','secondaryObjectiveV36','contractsCard','companyChip','eventBanner','toast','prestigeBtn','requiredActionV38','coachChip','actionPrompt','actionBtn','joyBase','staminaWrap'];
+    const ids=['hud','hudCenterZone','contractsCard','companyChip','coachChip','actionPrompt','actionBtn','joyBase','staminaWrap'];
     for(const id of ids){const el=$(id);if(!el)continue;if(on){if(!V49.isolated.has(el))V49.isolated.set(el,{aria:el.getAttribute('aria-hidden'),inert:el.inert});el.inert=true;el.setAttribute('aria-hidden','true');}else{const prev=V49.isolated.get(el);if(!prev)continue;el.inert=!!prev.inert;if(prev.aria==null)el.removeAttribute('aria-hidden');else el.setAttribute('aria-hidden',prev.aria);V49.isolated.delete(el);}}
     document.body.classList.toggle('v49-modal-isolated',on);
     if(on)resetWorldInputV49();
   }
-  function syncModalV49(){const m=modalNow();if(m===V49.modal)return;V49.modal=m;isolateBackgroundV49(m);if(!m)requestAuditV49();}
-  function criticalRects(){
-    const ids=['hud','nextCard','secondaryObjectiveV36','contractsCard','companyChip','eventBanner','toast','requiredActionV38','coachChip','actionPrompt','actionBtn','joyBase','staminaWrap'];
-    const out={};for(const id of ids){const r=rect($(id));if(r)out[id]=r;}return out;
-  }
-  function hasBadCollision(r){
-    const pairs=[
-      ['nextCard','eventBanner'],['nextCard','toast'],['secondaryObjectiveV36','eventBanner'],['secondaryObjectiveV36','toast'],
-      ['contractsCard','nextCard'],['companyChip','nextCard'],['requiredActionV38','actionPrompt'],['requiredActionV38','actionBtn'],
-      ['coachChip','actionPrompt'],['coachChip','actionBtn'],['actionPrompt','actionBtn'],['joyBase','requiredActionV38'],['joyBase','coachChip'],
-      ['staminaWrap','requiredActionV38'],['staminaWrap','coachChip']
-    ];
-    return pairs.some(([a,b])=>overlap(r[a],r[b],2));
-  }
-  function auditV49(){
-    V49.raf=0;syncModalV49();if(V49.modal)return;
-    const vv=window.visualViewport;const vh=vv?.height||innerHeight;
-    document.body.classList.toggle('v49-very-short',vh<430);
-    document.body.classList.remove('v49-emergency-compact');
-    try{if(typeof requestLayoutV46==='function')requestLayoutV46();}catch(_){}
-    requestAnimationFrame(()=>{
-      let r=criticalRects();
-      const actionConflict=!!r.actionPrompt&&(overlap(r.toast,r.actionPrompt,1)||overlap(r.eventBanner,r.actionPrompt,1));
-      document.body.classList.toggle('v49-action-tight',actionConflict);
-      if(actionConflict){try{if(typeof requestLayoutV46==='function')requestLayoutV46();}catch(_){};r=criticalRects();}
-      if(hasBadCollision(r)){document.body.classList.add('v49-emergency-compact');try{if(typeof requestLayoutV46==='function')requestLayoutV46();}catch(_){};}
-      V49.lastAudit=performance.now();
-    });
-  }
-  function requestAuditV49(){if(V49.raf)return;V49.raf=requestAnimationFrame(auditV49);}
-  function installObserversV49(){
-    const ro='ResizeObserver'in window?new ResizeObserver(requestAuditV49):null;
-    for(const id of ['hud','nextCard','secondaryObjectiveV36','contractsCard','companyChip','eventBanner','toast','requiredActionV38','coachChip','actionPrompt','actionBtn','joyBase','staminaWrap']){const el=$(id);if(el)ro?.observe(el);}
-    const mo=new MutationObserver(requestAuditV49);
-    for(const id of ['nextCard','secondaryObjectiveV36','contractsCard','companyChip','eventBanner','toast','requiredActionV38','coachChip','actionPrompt','actionBtn']){const el=$(id);if(el)mo.observe(el,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['class','hidden','disabled']});}
+  function syncModalV49(){const m=modalNow();if(m===V49.modal)return;V49.modal=m;isolateBackgroundV49(m);}
+  function installModalWatchV49(){
+    const mo=new MutationObserver(syncModalV49);
     document.querySelectorAll('[id$="Overlay"]').forEach(ov=>mo.observe(ov,{attributes:true,attributeFilter:['class','hidden']}));
-    addEventListener('resize',requestAuditV49,{passive:true});addEventListener('orientationchange',()=>setTimeout(requestAuditV49,80),{passive:true});
-    if(window.visualViewport){visualViewport.addEventListener('resize',requestAuditV49,{passive:true});visualViewport.addEventListener('scroll',requestAuditV49,{passive:true});}
+    syncModalV49();
   }
   function installInputSanityV49(){
     const clear=()=>resetWorldInputV49();
@@ -25983,8 +25879,8 @@ body.v49-action-tight #toast{display:none!important}
   }
   function bootV49(){
     if(V49.ready)return;
-    if(!document.body){if(++V49.tries<120)setTimeout(bootV49,75);return;}
-    V49.ready=true;installObserversV49();installInputSanityV49();installBlockedActionGuardV49();installPanelQualityV49();syncModalV49();requestAuditV49();setTimeout(requestAuditV49,450);
+    if(!document.body){setTimeout(bootV49,75);return;}
+    V49.ready=true;installModalWatchV49();installInputSanityV49();installBlockedActionGuardV49();installPanelQualityV49();
     let motionTries=0;const lateMotion=()=>{installMotionComfortV49();if(typeof triggerShake!=='function'&&motionTries++<100)setTimeout(lateMotion,100);};lateMotion();
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootV49,{once:true});else bootV49();
@@ -26108,10 +26004,9 @@ body[data-v50-weather="fog"]::before{background:radial-gradient(ellipse at 50% 4
 @keyframes v50ActionSheen{0%,72%{left:-55%;opacity:0}78%{opacity:.55}92%{left:125%;opacity:0}100%{left:125%;opacity:0}}
 #actionPrompt{box-shadow:0 14px 30px rgba(0,0,0,.21),inset 0 1px 0 rgba(255,255,255,.035)!important}
 
-/* Compact contextual focus: when an action is at hand, secondary HUD backs off. */
-body.v50-action-focus #secondaryObjectiveV36,
-body.v50-action-focus #companyChip,
-body.v50-action-focus #contractsCard{opacity:.20!important;filter:saturate(.55)!important}
+/* v63 1.2: body.v50-action-focus removed -- it only dimmed #secondaryObjectiveV36/
+   #companyChip/#contractsCard, all permanently hidden now; syncActionFocus() (which set it) is
+   removed below rather than left running every 700ms for no visible effect. */
 body.v50-near-target #compass{opacity:.34!important;transform:scale(.92)!important}
 #compass{transition:opacity .24s var(--v50-ease),transform .24s var(--v50-ease)!important}
 
@@ -26170,12 +26065,7 @@ body.v50-near-target #compass{opacity:.34!important;transform:scale(.92)!importa
     document.body.dataset.v50Weather=weather;
   }
 
-  function syncActionFocus(){
-    const prompt=$('actionPrompt'),btn=$('actionBtn');
-    const active=!gameModalOpen()&&isVisible(prompt)&&isVisible(btn);
-    document.body.classList.toggle('v50-action-focus',active);
-  }
-
+  // v63 1.2: syncActionFocus (set body.v50-action-focus) removed -- see the CSS note above.
   function syncCompass(){
     const el=$('compassDistance');
     let near=false;
@@ -26279,10 +26169,10 @@ body.v50-near-target #compass{opacity:.34!important;transform:scale(.92)!importa
   function init(){
     if(V50.started)return;V50.started=true;
     installPressFeedback();installObjectivePolish();installAccessibility();installKeyboardTopButtons();installLate();
-    syncMood();syncActionFocus();syncCompass();syncLowResources();
-    setInterval(()=>{if(document.hidden)return;syncMood();syncActionFocus();syncCompass();syncLowResources();},700);
-    addEventListener('resize',()=>{syncActionFocus();syncCompass();},{passive:true});
-    addEventListener('visibilitychange',()=>{if(!document.hidden){syncMood();syncActionFocus();syncCompass();}});
+    syncMood();syncCompass();syncLowResources();
+    setInterval(()=>{if(document.hidden)return;syncMood();syncCompass();syncLowResources();},700);
+    addEventListener('resize',()=>{syncCompass();},{passive:true});
+    addEventListener('visibilitychange',()=>{if(!document.hidden){syncMood();syncCompass();}});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
@@ -26329,28 +26219,15 @@ body.v51-perf-low body::after{display:none!important}
 body.v51-panel-open #toast{filter:saturate(.92)}
 body.v51-action-ready #actionPrompt{border-color:rgba(158,220,196,.12)!important}
 body.v51-action-blocked #actionPrompt{border-color:rgba(224,140,117,.14)!important}
+/* v63 1.2: #actionBtn/#actionPrompt max-width (all breakpoints below) and #requiredActionV38
+   entirely (element removed) are owned by v63-hud-zones now, keyed off data-layout instead of
+   raw width/height breakpoints -- removed here rather than left able to out-rank it via
+   !important regardless of source order. */
 @media(max-width:680px){
-  #actionBtn{max-width:calc(100vw - 122px)!important}
-  #actionPrompt{max-width:calc(100vw - 126px)!important}
   .v30Panel{scroll-padding-bottom:calc(18px + env(safe-area-inset-bottom))}
 }
 @media(max-width:360px){
-  #actionBtn{max-width:calc(100vw - 112px)!important;padding-left:12px!important;padding-right:12px!important}
-  #actionPrompt{max-width:calc(100vw - 116px)!important}
-}
-@media(max-width:420px){
-  #requiredActionV38.show{
-    left:50%!important;right:auto!important;transform:translateX(-50%)!important;
-    width:min(360px,calc(100vw - 24px))!important;max-width:calc(100vw - 24px)!important;
-    flex-direction:column!important;align-items:stretch!important;gap:7px!important;padding:9px 10px!important;
-  }
-  #requiredActionV38 .requiredCopyV38{width:100%!important;text-align:left!important}
-  #requiredActionV38 .requiredTitleV38{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;line-height:1.28!important;font-size:9.7px!important}
-  #requiredActionV38 .requiredActionBtnV38{width:100%!important;min-height:38px!important;font-size:9px!important}
-}
-@media(max-height:430px) and (orientation:landscape){
-  #actionBtn{max-width:min(310px,44vw)!important}
-  #actionPrompt{max-width:min(360px,50vw)!important}
+  #actionBtn{padding-left:12px!important;padding-right:12px!important}
 }
 @media(hover:none){
   .v30Panel :is(.v30Row,.districtCard,.staffCard,.projectCard,.fleetCard,.baseCard,.tenderCard,.metaCard):hover{border-color:var(--v51-soft-line)!important}
@@ -27608,9 +27485,10 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
 .v60UtilityRow .v30Btn{min-width:42px;flex:1 1 54px;font-size:14px!important}
 .v60UtilityRow .dangerV60{color:#e1a29e!important;border-color:rgba(188,112,108,.26)!important;background:rgba(73,37,39,.72)!important}
 @media (pointer:coarse),(max-width:760px){
-  #topRightBtns{width:auto!important;right:9px!important;top:calc(9px + env(safe-area-inset-top))!important;display:block!important}
-  #topRightBtns .iconBtn{display:none!important}
-  #topRightBtns #systemsBtn{display:grid!important;width:38px!important;height:38px!important;border-radius:11px!important;font-size:0!important;background:rgba(14,18,24,.92)!important;border:1px solid rgba(255,255,255,.12)!important;box-shadow:0 8px 24px rgba(0,0,0,.24)!important;backdrop-filter:none!important}
+  /* v63 1.2: which icons show in #topRightBtns is decided once, by data-layout, in
+     v63-hud-zones -- not duplicated here via a second `(pointer:coarse),(max-width:760px)`
+     media query. What's left is the visible systemsBtn's own mobile look (size/cosmetics). */
+  #topRightBtns #systemsBtn{width:38px;height:38px;border-radius:11px!important;font-size:0!important;background:rgba(14,18,24,.92)!important;border:1px solid rgba(255,255,255,.12)!important;box-shadow:0 8px 24px rgba(0,0,0,.24)!important;backdrop-filter:none!important}
   #topRightBtns #systemsBtn::after{content:'☰';font-size:18px;line-height:1;color:#e8ebef}
   .v44-ripple{display:none!important}
   .iconBtn,.v30Btn,#actionBtn{backdrop-filter:none!important;filter:none!important;animation:none!important}
@@ -27806,9 +27684,10 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
   #hud .stat{min-width:0!important;min-height:31px!important;padding:5px 7px!important;border-radius:9px!important;font-size:11px!important;gap:5px!important;box-shadow:0 4px 12px rgba(0,0,0,.16)!important;transition:none!important}
   #hud #moneyStat{flex:0 1 auto!important}
   #hud #populationStat{display:none!important}
-  #topRightBtns{right:8px!important;top:calc(8px + env(safe-area-inset-top))!important}
+  /* v63 1.2: #topRightBtns/#nextCard position (right/top/width/max-width) is owned by
+     v63-hud-zones now -- only cosmetics (size, radius, shadow, padding) are left here. */
   #topRightBtns #systemsBtn{width:36px!important;height:36px!important;border-radius:10px!important;box-shadow:0 5px 14px rgba(0,0,0,.20)!important}
-  #nextCard{top:calc(48px + env(safe-area-inset-top))!important;width:calc(100vw - 16px)!important;max-width:none!important;padding:8px 10px!important;border-radius:11px!important;box-shadow:0 7px 20px rgba(0,0,0,.22)!important}
+  #nextCard{padding:8px 10px!important;border-radius:11px!important;box-shadow:0 7px 20px rgba(0,0,0,.22)!important}
   #nextCard .goalBar{margin-top:4px!important}
   #contractsCard{max-width:calc(100vw - 18px)!important}
   .v30Panel,.v30Section,.v30Row,.staffCard,.projectCard,.fleetCard,.baseCard,.tenderCard,.fleetOpsCard,.cityCard,.initiativeCard,.operationsCard,.metaCard,.bonusCard,.capacityCardV42,.contractCardV42,.requestCardV40{transition:none!important;animation:none!important;filter:none!important}
@@ -28035,17 +27914,16 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
 
 <style id="v62-qa-style">
 /* v62 — final mobile declutter: one toolbar action, one primary objective, no floating helper soup. */
+/* v63 1.2: #secondaryObjectiveV36/#companyChip/#coachChip/#contractsCard are hidden
+   unconditionally now (v63-hud-zones), and #topRightBtns/#nextCard/#actionPrompt/#toast
+   position+width is owned there too -- only #hud's own cosmetics and the mobile systemsBtn
+   size are left here. */
 @media (pointer:coarse),(max-width:760px){
-  #secondaryObjectiveV36,#companyChip,#coachChip{display:none!important}
-  #contractsCard{display:none!important}
-  #hud{padding:calc(8px + env(safe-area-inset-top)) 8px 7px!important;background:linear-gradient(180deg,rgba(7,10,14,.92),rgba(7,10,14,.48),transparent)!important}
-  #hud .stats{display:flex!important;gap:5px!important;row-gap:5px!important;max-width:calc(100vw - 56px)!important;flex-wrap:wrap!important}
+  #hud{background:linear-gradient(180deg,rgba(7,10,14,.92),rgba(7,10,14,.48),transparent)!important}
+  #hud .stats{gap:5px!important;row-gap:5px!important}
   #hud .stat{min-height:32px!important;padding:5px 8px!important;border-radius:9px!important;font-size:13px!important;box-shadow:none!important;backdrop-filter:none!important}
-  #topRightBtns{right:8px!important;top:calc(8px + env(safe-area-inset-top))!important}
   #topRightBtns #systemsBtn{width:40px!important;height:40px!important}
-  #nextCard{left:8px!important;right:8px!important;width:auto!important;max-width:none!important;margin:0!important;transform:none!important}
-  #actionPrompt{max-width:min(330px,calc(100vw - 110px))!important;font-size:11px!important;line-height:1.28!important}
-  #toast{max-width:min(330px,calc(100vw - 28px))!important}
+  #actionPrompt{font-size:11px!important;line-height:1.28!important}
 }
 </style>
 <script id="v62-final-qa-script">
@@ -28140,6 +28018,122 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init62,{once:true});else init62();
 })();
 </script>
+
+<style id="v63-hud-zones">
+/* ======================================================================
+   v63 1.2 -- ONE HUD ZONE TABLE. Closes P0-2, P1-28, P1-29, P1-30, P1-31 (part),
+   P1-32 (top-level menu), P1-33, part of P2-3.
+
+   This is the single place that decides where every persistent HUD element sits. It is the
+   last <style> block in the document, so it wins every property it sets over the ~20 older
+   layers above without needing !important (a few !important lines remain, each with a
+   one-line reason -- z-index stacking and the joystick's own per-frame transform var, not
+   position/top/left/right/bottom/width).
+
+   Screen mode is read from html[data-layout] (phone-portrait / phone-landscape / tablet /
+   desktop), written once by the v63-layout-mode script in <head> and recomputed only on
+   resize/orientationchange -- nothing here has its own raw @media breakpoint for "is this
+   mobile", so there is exactly one owner of that question.
+
+   Zones: top-left = resources (#hud .stats), top-right = menu (#topRightBtns), top-center =
+   objective + messages (#hudCenterZone: #nextCard, #toast, #eventBanner stacked by normal
+   flex-column flow, not by JS measuring rectangles), bottom-left = joystick (#joyBase),
+   bottom-right = action button (#actionBtn). #contractsCard/#companyChip/#coachChip/
+   #secondaryObjectiveV36 are retired from the persistent HUD entirely (Pass 9 #8/#3's own
+   recommendation for the first two; the other two only ever duplicated the objective card).
+   ====================================================================== */
+
+/* The 3D view no longer participates in document flow at all, so nothing before it in the
+   DOM (a guide-highlighted card switching position, a taller HUD row) can ever push it around
+   -- the root cause of P1-28's 59-102px canvas jump. */
+canvas{position:fixed;inset:0;z-index:0}
+
+/* Guide-card containers (.guide-card/.guide-card-v37, applied to whichever menu/panel card
+   contains a guide-highlighted control) get a permanent position:relative here -- harmless,
+   no offsets set, so it never moves them -- purely so their ::before star badge (position:
+   absolute) always has a stable containing block. Same principle as #nextCard/.v30Btn/
+   .iconBtn/#hud .stat above: position is a fixed property of the element, guide classes only
+   ever add visual styling. */
+.v30Section,.cityCard,.initiativeCard,.staffCard,.projectCard,.bonusCard,.fleetCard,.baseCard,
+.tenderCard,.fleetOpsCard,.operationsCard,.metaCard,.operationsQueueRow,.contractRow{position:relative}
+
+/* ---------- retired from the persistent HUD (P1-23, P1-33) ---------- */
+#contractsCard,#companyChip,#coachChip,#secondaryObjectiveV36{display:none}
+
+/* ---------- top bar: resources (left) + menu (right), one flex row, one owner ---------- */
+#hud{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;flex-wrap:nowrap;align-items:flex-start;justify-content:space-between;gap:8px;pointer-events:none;padding:10px 10px calc(10px + env(safe-area-inset-top)) 10px;padding-top:calc(10px + env(safe-area-inset-top))}
+#hud .stats{display:flex;flex-wrap:wrap;gap:6px;pointer-events:none;min-width:0}
+#hud .stat{pointer-events:auto}
+#topRightBtns{position:static;display:flex;gap:6px;pointer-events:none;flex:0 0 auto}
+#topRightBtns .iconBtn{pointer-events:auto}
+/* Phone/tablet: one menu button. The other icons (camera, sound, language, reset) move into
+   the settings section of the Company panel (addMenuUtilities(), v60) instead of disappearing
+   -- same destination the game already used, just driven by data-layout now instead of a
+   `(pointer:coarse),(max-width:760px)` media query duplicated across three later layers. */
+html[data-layout="phone-portrait"] #topRightBtns .iconBtn:not(#systemsBtn),
+html[data-layout="phone-landscape"] #topRightBtns .iconBtn:not(#systemsBtn),
+html[data-layout="tablet"] #topRightBtns .iconBtn:not(#systemsBtn){display:none}
+
+/* ---------- objective + messages: one flex column, browser does the stacking ---------- */
+#hudCenterZone{position:fixed;left:50%;transform:translateX(-50%);z-index:9;display:flex;flex-direction:column;align-items:stretch;gap:8px;pointer-events:none}
+#hudCenterZone>*{position:relative;pointer-events:none}
+/* Reset the older, JS-measured top/left/transform/width these three elements used to carry
+   as viewport-fixed elements -- they are plain flow children of #hudCenterZone now, and the
+   flex column (not JS, not each element's own transform) does the centering and stacking. */
+#nextCard,#toast,#eventBanner{top:auto;left:auto;right:auto;bottom:auto;margin:0}
+#nextCard{transform:none;width:auto;max-width:none}
+#toast,#eventBanner{align-self:center;width:max-content;max-width:100%}
+#toast{transform:none}
+#toast.show{transform:translateY(4px)}
+#eventBanner{transform:translateY(-8px)}
+#eventBanner.show{transform:translateY(0)}
+/* #toast/#eventBanner are flex-column children now (not independently fixed-positioned), so
+   when hidden they must collapse to zero height -- otherwise their invisible (opacity:0) box
+   would permanently hold open a gap in the column and push #nextCard/#eventBanner down by a
+   toast's height even when no toast is showing. box-sizing:border-box (global, base
+   stylesheet) means max-height:0 + padding:0 collapses the whole box, border included. */
+#toast,#eventBanner{max-height:0;padding-top:0;padding-bottom:0;overflow:hidden;transition:opacity .25s,transform .25s,max-height .22s ease,padding .22s ease}
+#toast.show{max-height:60px;padding-top:8px;padding-bottom:8px}
+#eventBanner.show{max-height:70px;padding-top:9px;padding-bottom:9px}
+#nextCard .guideShowBtn,#nextCard #guideShowBtnV351{pointer-events:auto}
+.goalRequiredTag{display:inline-block;margin-bottom:5px;padding:3px 8px;border-radius:999px;background:rgba(239,195,91,.16);border:1px solid rgba(239,195,91,.38);color:#f0d99a;font-size:12px;font-weight:900;letter-spacing:.04em}
+
+html[data-layout="phone-portrait"] #hudCenterZone{top:calc(96px + env(safe-area-inset-top));width:min(92vw,470px)}
+html[data-layout="phone-landscape"] #hudCenterZone{top:calc(60px + env(safe-area-inset-top));width:min(46vw,420px)}
+html[data-layout="tablet"] #hudCenterZone{top:calc(84px + env(safe-area-inset-top));width:min(70vw,520px)}
+html[data-layout="desktop"] #hudCenterZone{top:96px;width:min(60vw,560px)}
+
+/* ---------- joystick: bottom-left; hidden on desktop (mouse/keyboard drive the player) ---------- */
+#joyBase{position:fixed;left:max(16px,env(safe-area-inset-left));bottom:max(16px,env(safe-area-inset-bottom));display:none}
+html[data-layout="phone-portrait"] #joyBase,
+html[data-layout="phone-landscape"] #joyBase,
+html[data-layout="tablet"] #joyBase{display:block}
+html[data-layout="phone-landscape"] #joyBase{width:92px;height:92px}
+html[data-layout="phone-landscape"] #joyKnob{width:42px;height:42px}
+
+/* ---------- action button: bottom-right ---------- */
+#actionBtn{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));z-index:20;max-width:min(260px,40vw)}
+#actionPrompt{position:fixed;left:auto;right:max(16px,env(safe-area-inset-right));bottom:calc(16px + env(safe-area-inset-bottom));transform:none;text-align:right;max-width:min(300px,42vw)}
+#actionPrompt.show{transform:translateY(-4px)}
+html[data-layout="phone-portrait"] #actionBtn,html[data-layout="phone-landscape"] #actionBtn,html[data-layout="tablet"] #actionBtn{bottom:calc(16px + env(safe-area-inset-bottom))}
+html[data-layout="phone-portrait"] #actionPrompt{max-width:min(280px,48vw)}
+html[data-layout="phone-landscape"] #actionBtn{max-width:34vw}
+html[data-layout="phone-landscape"] #actionPrompt{max-width:40vw}
+/* actionPrompt sits directly above actionBtn -- pushed up by the button's own reserved
+   height instead of a JS-measured gap. */
+#actionBtn{min-height:52px}
+#actionPrompt{margin-bottom:calc(52px + 10px)}
+html[data-layout="phone-portrait"] #actionBtn,html[data-layout="phone-landscape"] #actionBtn,html[data-layout="tablet"] #actionBtn{min-height:52px}
+
+/* ---------- milestone banner: upper third instead of screen-center (P3-16) ---------- */
+#milestoneBanner{top:20%}
+
+/* ---------- pointer-events: only real controls are clickable; everything else lets drag
+   reach the 3D view underneath (closes P1-30's "22-25% of the screen is a dead zone") ---------- */
+#nextCard.guideActive{pointer-events:none}
+
+@media(prefers-reduced-motion:reduce){#nextCard{transition:none}}
+</style>
 
 </body>
 </html>
