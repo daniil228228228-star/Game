@@ -10794,6 +10794,13 @@ function landPlotWorldPosition(id,index){
 }
 
 /* v34.3 — visible roads now match the routes used by logistics and city-service traffic. */
+/* v63 1.1 (item 4): refreshTransportAccessRoads/refreshDistrictAccessRoads (below)/
+   refreshArterialRoads (further down) are each kept here as a bootstrap-only hoisted
+   declaration, same reasoning as items 1 and 3 -- the v36.3-v36.9 setTimeout road-init
+   cascade calls all three directly and can run before the v59 <script> layer near the end
+   of the file assigns the real live version. The single steady-state live implementation
+   for the rest of the session is v59's (uses renderNetwork59/ROAD59, matches the audit's
+   as-built road-class table exactly -- no accidental feature loss found for these three). */
 function refreshTransportAccessRoads(){
   if(cityWorldRuntime.transportAccessRoads){scene.remove(cityWorldRuntime.transportAccessRoads);disposeObject3D(cityWorldRuntime.transportAccessRoads);cityWorldRuntime.transportAccessRoads=null;}
   const nodes=serviceAccessGraph(),byId=new Map(nodes.map(n=>[n.id,n])),g=new THREE.Group();
@@ -13613,51 +13620,6 @@ districtBuiltAccessTargets=function(id){
   try{ return _districtBuiltAccessTargetsV353(id); }catch(e){ return []; }
 };
 
-refreshTransportAccessRoads=function(){
-  if(cityWorldRuntime.transportAccessRoads){scene.remove(cityWorldRuntime.transportAccessRoads);disposeObject3D(cityWorldRuntime.transportAccessRoads);cityWorldRuntime.transportAccessRoads=null;}
-  const nodes=serviceAccessGraph(), byId=new Map(nodes.map(n=>[n.id,n])), g=new THREE.Group(), seen=new Set();
-  for(const n of nodes){ if(!n.parent) continue; const p=byId.get(n.parent); if(!p) continue; const w=(n.id==='garage'||n.id==='garageMid')?1.18:1.10; const key=roadSignatureKeyV353(n.p,p.p,w); if(seen.has(key)) continue; seen.add(key); addRoadSegmentPremiumV353(g,n.p,p.p,w,{markings:false,edgeMarks:true,kind:'service'}); }
-  for(const n of nodes.filter(n=>['plankBay','plankHome','concreteBay','concreteHome','metalBay','metalHome','liftHome','garage','garage2'].includes(n.id))){
-    const bay=new THREE.Mesh(new THREE.CircleGeometry(0.78,18),ROAD_STYLE_V353.asphaltDark); bay.rotation.x=-Math.PI/2; bay.position.set(n.p.x,0.058,n.p.z); bay.scale.set(1.28,0.74,1); g.add(bay);
-  }
-  scene.add(g); cityWorldRuntime.transportAccessRoads=g;
-};
-
-refreshDistrictAccessRoads=function(){
-  for(const cfg of CITY_DISTRICTS){
-    const old=cityWorldRuntime.districtAccessRoads.get(cfg.id); if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.districtAccessRoads.delete(cfg.id);} if(districtLevel(cfg.id)<=0) continue;
-    const g=new THREE.Group(), seen=new Set();
-    for(const pos of districtBuiltAccessTargets(cfg.id)){
-      const angle=districtAngleToPoint(cfg.id,pos), gate=districtRingRoadPoint(cfg.id,angle,3.78), front=districtBuildingFront(cfg.id,pos);
-      if(gate.distanceTo(front)<=0.30) continue;
-      const key=roadSignatureKeyV353(gate,front,0.98); if(seen.has(key)) continue; seen.add(key);
-      addRoadSegmentPremiumV353(g,gate,front,0.98,{markings:false,edgeMarks:true,kind:'service'});
-    }
-    if(districtLevel(cfg.id)>=2){
-      const ep=districtArterialEndpoints(cfg.id), p0=ep?.path?.[0], p1=ep?.path?.[1];
-      if(p0&&p1){
-        const dx=p1.x-p0.x,dz=p1.z-p0.z,l=Math.hypot(dx,dz)||1, nx=-dz/l, nz=dx/l;
-        const bayA=p0.clone().add(new THREE.Vector3(nx*0.62,0,nz*0.62)), bayB=bayA.clone().add(new THREE.Vector3((dx/l)*1.42,0,(dz/l)*1.42));
-        addRoadSegmentPremiumV353(g,bayA,bayB,0.76,{markings:false,edgeMarks:false,kind:'service'});
-        const post=new THREE.Mesh(new THREE.BoxGeometry(.07,.72,.07),new THREE.MeshStandardMaterial({color:0x4f7fb6,roughness:.7})); post.position.set(bayA.x,.40,bayA.z); g.add(post);
-      }
-    }
-    if(g.children.length){ scene.add(g); cityWorldRuntime.districtAccessRoads.set(cfg.id,g); }
-  }
-};
-
-refreshArterialRoads=function(){
-  for(const cfg of CITY_DISTRICTS){
-    const old=cityWorldRuntime.arterialRoads.get(cfg.id); if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.arterialRoads.delete(cfg.id);} if(!districtUnlocked(cfg)||districtLevel(cfg.id)<=0) continue;
-    const path=districtArterialPath(cfg.id); if(path.length<2) continue;
-    const g=new THREE.Group(), width=districtLevel(cfg.id)>=3?1.58:1.36;
-    for(let i=0;i<path.length-1;i++) addRoadSegmentPremiumV353(g,path[i],path[i+1],width,{markings:true,edgeMarks:false,kind:'street'});
-    for(let i=1;i<path.length-1;i++) addRoadNodeCapV353(g,path[i],width,'street');
-    const end=path[path.length-1]; const join=new THREE.Mesh(new THREE.CircleGeometry(width*0.53,18),ROAD_STYLE_V353.asphalt); join.rotation.x=-Math.PI/2; join.position.set(end.x,0.058,end.z); g.add(join);
-    scene.add(g); cityWorldRuntime.arterialRoads.set(cfg.id,g);
-  }
-};
-
 function refreshDrivewaysAndApronsV353(force=false){
   const sig=drivewaySignatureNowV351()+`|plots:`+CITY_DISTRICTS.map(d=>districtLandState(d.id).plots.map((p,i)=>`${d.id}:${i}:${p.zone||''}:${p.level||0}:${p.owned?1:0}`).join(',')).join('|');
   if(!force&&sig===drivewaySignatureV351) return;
@@ -14468,14 +14430,6 @@ function districtConnectorPathV362(id){
   return out;
 }
 districtArterialPath=function(id){ return districtConnectorPathV362(id); };
-refreshArterialRoads=function(){
-  if(cityWorldRuntime.masterRoads){scene.remove(cityWorldRuntime.masterRoads);disposeObject3D(cityWorldRuntime.masterRoads);cityWorldRuntime.masterRoads=null;}
-  const master=new THREE.Group();
-  for(const [a,b,w] of masterRoadSegmentsV362())addRoadSegmentPremiumV353(master,a,b,w,{markings:true,kind:'street'});
-  const civicSquare=new THREE.Mesh(new THREE.CircleGeometry(2.5,32),ROAD_STYLE_V353.walk);civicSquare.rotation.x=-Math.PI/2;civicSquare.position.set(0,.064,0);master.add(civicSquare);
-  scene.add(master);cityWorldRuntime.masterRoads=master;
-  for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.arterialRoads.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.arterialRoads.delete(cfg.id);}if(!districtUnlocked(cfg)||districtLevel(cfg.id)<=0)continue;const path=districtArterialPath(cfg.id);if(path.length<2)continue;const g=new THREE.Group();for(let i=0;i<path.length-1;i++)addRoadSegmentPremiumV353(g,path[i],path[i+1],1.48,{markings:i===path.length-2,edgeMarks:i!==path.length-2,kind:'street'});scene.add(g);cityWorldRuntime.arterialRoads.set(cfg.id,g);}
-};
 
 setTimeout(()=>{
   try{
@@ -14930,21 +14884,6 @@ refreshLivingDistrictStreets=function(){
   for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.streets.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.streets.delete(cfg.id);}if(!districtUnlocked(cfg)||districtLevel(cfg.id)<=0)continue;const g=makeCityStreetGroup(cfg);scene.add(g);cityWorldRuntime.streets.set(cfg.id,g);}if(typeof refreshTransitStopsV364==='function')refreshTransitStopsV364();
 };
 
-refreshTransportAccessRoads=function(){
-  if(cityWorldRuntime.transportAccessRoads){scene.remove(cityWorldRuntime.transportAccessRoads);disposeObject3D(cityWorldRuntime.transportAccessRoads);cityWorldRuntime.transportAccessRoads=null;}
-  const nodes=serviceAccessGraph(),byId=new Map(nodes.map(n=>[n.id,n])),g=new THREE.Group(),seen=new Set();
-  for(const n of nodes){if(!n.parent)continue;const p=byId.get(n.parent);if(!p)continue;const w=(n.id==='garage'||n.id==='garageMid')?1.10:1.02;const key=[n.p.x.toFixed(2),n.p.z.toFixed(2),p.p.x.toFixed(2),p.p.z.toFixed(2),w].sort().join('|');if(seen.has(key))continue;seen.add(key);addUnifiedRoadV365(g,n.p,p.p,w,{markings:false,edgeMarks:w<1.08});}
-  for(const n of nodes.filter(n=>['plankBay','plankHome','concreteBay','concreteHome','metalBay','metalHome','liftHome','garage','garage2'].includes(n.id))){addPullInBayV353(g,new THREE.Vector3(n.p.x,0,n.p.z),0,1.04,1.38);}
-  scene.add(g);cityWorldRuntime.transportAccessRoads=g;
-};
-refreshDistrictAccessRoads=function(){
-  for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.districtAccessRoads.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.districtAccessRoads.delete(cfg.id);}if(districtLevel(cfg.id)<=0)continue;
-    const g=new THREE.Group();
-    for(const pos of districtBuiltAccessTargets(cfg.id)){const angle=districtAngleToPoint(cfg.id,pos),gate=districtRingRoadPoint(cfg.id,angle,3.84),front=districtBuildingFront(cfg.id,pos);if(gate.distanceTo(front)>.3)addUnifiedRoadV365(g,gate,front,.88,{markings:false,edgeMarks:false});}
-    if(districtLevel(cfg.id)>=2){const ep=districtArterialEndpoints(cfg.id),p0=ep?.path?.[0],p1=ep?.path?.[1];if(p0&&p1){const dx=p1.x-p0.x,dz=p1.z-p0.z,l=Math.hypot(dx,dz)||1,nx=-dz/l,nz=dx/l;const bayCenter=p0.clone().add(new THREE.Vector3(nx*.72,0,nz*.72)).add(new THREE.Vector3((dx/l)*.65,0,(dz/l)*.65));addPullInBayV353(g,bayCenter,Math.atan2(dx,dz),1.10,1.66);}}
-    if(g.children.length){scene.add(g);cityWorldRuntime.districtAccessRoads.set(cfg.id,g);}
-  }
-};
 // v36.8 -- junction caps at the master grid's own corner/T-node points. addRoadNodeCapV353
 // was nulled out in v36.5 (addUnifiedRoadV365 has no cap concept), so every place two grid
 // segments met was just two raw box edges poking through each other -- a small but real part
@@ -14957,14 +14896,6 @@ function addMasterGridJointCapsV368(group){
     cap.rotation.x=-Math.PI/2;cap.position.set(x,0.0585,z);cap.receiveShadow=true;group.add(cap);
   }
 }
-refreshArterialRoads=function(){
-  if(cityWorldRuntime.masterRoads){scene.remove(cityWorldRuntime.masterRoads);disposeObject3D(cityWorldRuntime.masterRoads);cityWorldRuntime.masterRoads=null;}
-  const master=new THREE.Group();
-  for(const [a,b,w] of masterRoadSegmentsV362())addUnifiedRoadV365(master,a,b,w,{markings:true,edgeMarks:false,dark:true});
-  addMasterGridJointCapsV368(master);
-  scene.add(master);cityWorldRuntime.masterRoads=master;
-  for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.arterialRoads.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.arterialRoads.delete(cfg.id);}if(!districtUnlocked(cfg)||districtLevel(cfg.id)<=0)continue;const path=districtArterialPath(cfg.id);if(path.length<2)continue;const g=new THREE.Group();for(let i=0;i<path.length-1;i++)addUnifiedRoadV365(g,path[i],path[i+1],1.46,{markings:i===path.length-2,edgeMarks:false,dark:true});scene.add(g);cityWorldRuntime.arterialRoads.set(cfg.id,g);}
-};
 const _refreshV34CityWorldV365=refreshV34CityWorld;
 refreshV34CityWorld=function(){_refreshV34CityWorldV365();refreshArterialRoads();refreshDistrictAccessRoads();refreshTransportAccessRoads();refreshLivingDistrictStreets();};
 setTimeout(()=>{try{refreshLivingDistrictStreets();refreshArterialRoads();refreshDistrictAccessRoads();refreshTransportAccessRoads();refreshDrivewaysV35(true);}catch(err){console.error('v36.5 road cleanup init failed',err);}},120);
@@ -15027,14 +14958,6 @@ createLandPlotMesh=function(id,index,plot){
 refreshLandPlotWorld=function(){
   cityWorldRuntime.plotColliders.length=0;
   for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.landPlots.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.landPlots.delete(cfg.id);}const root=new THREE.Group();for(let i=0;i<LAND_PLOTS_PER_DISTRICT;i++){const p=createLandPlotMesh(cfg.id,i,districtLandState(cfg.id).plots[i]);if(p)root.add(p);}if(root.children.length){scene.add(root);cityWorldRuntime.landPlots.set(cfg.id,root);}}
-};
-refreshDistrictAccessRoads=function(){
-  for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.districtAccessRoads.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.districtAccessRoads.delete(cfg.id);}if(districtLevel(cfg.id)<=0)continue;
-    const g=new THREE.Group();
-    for(const pos of districtBuiltAccessTargets(cfg.id)){const front=districtBuildingFront(cfg.id,pos);addOrthogonalDrivewayV366(g,cfg,front,.86);}    
-    if(districtLevel(cfg.id)>=2){const stop=districtStopWorldPointV364?districtStopWorldPointV364(cfg.id):null;if(stop?.ring)addPullInBayV353(g,stop.ring,stop.angle,1.10,1.62);}
-    if(g.children.length){scene.add(g);cityWorldRuntime.districtAccessRoads.set(cfg.id,g);}
-  }
 };
 const _refreshV34CityWorldV366=refreshV34CityWorld;
 refreshV34CityWorld=function(){_refreshV34CityWorldV366();refreshLandPlotWorld();refreshDistrictAccessRoads();refreshLivingDistrictStreets();};
@@ -15525,19 +15448,6 @@ refreshLivingDistrictStreets=function(){
   for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.streets.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.streets.delete(cfg.id);}if(districtRoadLevelV37(cfg.id)<=0)continue;const g=makeCityStreetGroup(cfg);scene.add(g);cityWorldRuntime.streets.set(cfg.id,g);}if(typeof refreshTransitStopsV364==='function')refreshTransitStopsV364();
 };
 
-refreshArterialRoads=function(){
-  if(cityWorldRuntime.masterRoads){scene.remove(cityWorldRuntime.masterRoads);disposeObject3D(cityWorldRuntime.masterRoads);cityWorldRuntime.masterRoads=null;}
-  const segs=districtMasterSegmentsV37(),master=new THREE.Group();
-  for(const [a,b,lv] of segs){const w=[0,1.18,1.42,1.62][lv];addUnifiedRoadV365(master,a,b,w,{markings:lv>=2,edgeMarks:lv===1,dark:true});}
-  addInfrastructureJointsV37(master,segs);if(master.children.length){scene.add(master);cityWorldRuntime.masterRoads=master;}
-  for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.arterialRoads.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.arterialRoads.delete(cfg.id);}const lv=districtRoadLevelV37(cfg.id);if(lv<=0)continue;const path=districtArterialPath(cfg.id);if(path.length<2)continue;const g=new THREE.Group(),w=[0,1.10,1.34,1.52][lv];for(let i=0;i<path.length-1;i++)addUnifiedRoadV365(g,path[i],path[i+1],w,{markings:lv>=2&&i===path.length-2,edgeMarks:lv===1,dark:true});scene.add(g);cityWorldRuntime.arterialRoads.set(cfg.id,g);}
-};
-
-const _refreshTransportAccessRoadsV37=refreshTransportAccessRoads;
-refreshTransportAccessRoads=function(){
-  if(maxRoadLevelV37()<=0){if(cityWorldRuntime.transportAccessRoads){scene.remove(cityWorldRuntime.transportAccessRoads);disposeObject3D(cityWorldRuntime.transportAccessRoads);cityWorldRuntime.transportAccessRoads=null;}return;}
-  return _refreshTransportAccessRoadsV37();
-};
 const _refreshDrivewaysV35V37=refreshDrivewaysV35;
 refreshDrivewaysV35=function(force=false){
   if(maxRoadLevelV37()<=0){while(drivewayGroupV35.children.length){const o=drivewayGroupV35.children.pop();disposeObject3D(o);}return;}
@@ -15673,23 +15583,6 @@ function masterInfrastructureRecordsV38(){
   return [...m.values()];
 }
 districtMasterSegmentsV37=function(){return masterInfrastructureRecordsV38().map(x=>[x.a,x.b,x.roadLv]);};
-
-refreshArterialRoads=function(){
-  if(cityWorldRuntime.masterRoads){scene.remove(cityWorldRuntime.masterRoads);disposeObject3D(cityWorldRuntime.masterRoads);cityWorldRuntime.masterRoads=null;}
-  const records=masterInfrastructureRecordsV38(),master=new THREE.Group(),joint=new Map();
-  for(const rec of records){const w=[0,1.08,1.30,1.50][rec.roadLv];addInfrastructureRoadV38(master,rec.a,rec.b,w,rec.roadLv,{center:rec.roadLv>=3,edges:rec.roadLv>=2});for(const p of [rec.a,rec.b]){const k=p.x.toFixed(2)+'|'+p.z.toFixed(2),v=joint.get(k)||{p:p.clone(),n:0,lv:1,w:1};v.n++;v.lv=Math.max(v.lv,rec.roadLv);v.w=Math.max(v.w,w);joint.set(k,v);}}
-  for(const v of joint.values())if(v.n>=2)addRoadJointV38(master,v.p,v.lv,v.w);if(master.children.length){scene.add(master);cityWorldRuntime.masterRoads=master;}
-  for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.arterialRoads.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.arterialRoads.delete(cfg.id);}const lv=districtRoadLevelV37(cfg.id);if(lv<=0)continue;const path=districtInfrastructureConnectorPathV37(cfg.id);if(path.length<2)continue;const g=new THREE.Group(),w=[0,1.02,1.24,1.44][lv];for(let i=0;i<path.length-1;i++)addInfrastructureRoadV38(g,path[i],path[i+1],w,lv,{center:lv>=3,edges:lv>=2});for(let i=1;i<path.length-1;i++)addRoadJointV38(g,path[i],lv,w);scene.add(g);cityWorldRuntime.arterialRoads.set(cfg.id,g);}
-};
-
-refreshDistrictAccessRoads=function(){
-  for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.districtAccessRoads.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.districtAccessRoads.delete(cfg.id);}const lv=districtRoadLevelV37(cfg.id);if(lv<=0)continue;const g=new THREE.Group();for(const pos of districtBuiltAccessTargets(cfg.id)){const angle=districtAngleToPoint(cfg.id,pos),gate=districtRingRoadPoint(cfg.id,angle,3.84),front=districtBuildingFront(cfg.id,pos);if(gate.distanceTo(front)>.3)addInfrastructureRoadV38(g,gate,front,.78,lv,{sidewalk:false,center:false,edges:false});}if(g.children.length){scene.add(g);cityWorldRuntime.districtAccessRoads.set(cfg.id,g);}}
-};
-
-refreshTransportAccessRoads=function(){
-  if(cityWorldRuntime.transportAccessRoads){scene.remove(cityWorldRuntime.transportAccessRoads);disposeObject3D(cityWorldRuntime.transportAccessRoads);cityWorldRuntime.transportAccessRoads=null;}const lv=maxRoadLevelV37();if(lv<=0)return;
-  const nodes=serviceAccessGraph(),byId=new Map(nodes.map(n=>[n.id,n])),g=new THREE.Group(),seen=new Set();for(const n of nodes){if(!n.parent)continue;const p=byId.get(n.parent);if(!p)continue;const w=(n.id==='garage'||n.id==='garageMid')?1.02:.86,key=[n.p.x.toFixed(2),n.p.z.toFixed(2),p.p.x.toFixed(2),p.p.z.toFixed(2)].sort().join('|');if(seen.has(key))continue;seen.add(key);addInfrastructureRoadV38(g,n.p,p.p,w,lv,{sidewalk:false,center:false,edges:lv>=2});}if(g.children.length){scene.add(g);cityWorldRuntime.transportAccessRoads=g;}
-};
 
 // Lighting follows the district that actually paid for it instead of borrowing the highest
 // lighting level from some other district across the map.
@@ -24577,10 +24470,15 @@ function v44Curve(name,value){
     if(typeof createBuildingMesh!=='function'||createBuildingMesh.__v44Wrapped)return;const old=createBuildingMesh;const wrapped=function(stage,level=1){const g=old(stage,level),idx=Math.max(0,STAGES.indexOf(stage)),profile=v44BuildProfile(idx,level);return v44AddBuildingMicroDetails(g,stage,level,profile);};wrapped.__v44Wrapped=true;createBuildingMesh=wrapped;
   }
 
+  // v63 1.1 (item 4): the three wrap-and-call-v44EnhanceAllRoadGroups lines that used to be
+  // here are removed -- same reasoning as the makeCityStreetGroup v44 wrapper removed in item
+  // 2. Each captured whatever refreshArterialRoads/refreshDistrictAccessRoads/
+  // refreshTransportAccessRoads was live at the time this function ran, but the v59 layer
+  // later does a full reassignment (not a wrap) of all three, so the capture -- and the
+  // v44EnhanceAllRoadGroups() call chained after it -- never fires for the live game. The
+  // enhancement itself is not lost: v44EnhanceAllRoadGroups() also runs independently via
+  // v44Tick()'s setInterval(1300ms), reading the current live road groups directly.
   function v44WrapStreetFactory(){
-    if(typeof refreshArterialRoads==='function'){const r=refreshArterialRoads;refreshArterialRoads=function(){const x=r.apply(this,arguments);v44EnhanceAllRoadGroups();return x;};}
-    if(typeof refreshDistrictAccessRoads==='function'){const r=refreshDistrictAccessRoads;refreshDistrictAccessRoads=function(){const x=r.apply(this,arguments);v44EnhanceAllRoadGroups();return x;};}
-    if(typeof refreshTransportAccessRoads==='function'){const r=refreshTransportAccessRoads;refreshTransportAccessRoads=function(){const x=r.apply(this,arguments);v44EnhanceAllRoadGroups();return x;};}
   }
 
   function v44WorldSignature(){
@@ -27434,23 +27332,6 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     addInfrastructureRoadV38(group,a,b,w,lv,Object.assign({openStart:true,openEnd:true},opts));
     addAsphaltWear58(group,a,b,w,seedKey,opts);
   }
-
-
-  refreshArterialRoads=function(){
-    if(cityWorldRuntime.masterRoads){scene.remove(cityWorldRuntime.masterRoads);disposeObject3D(cityWorldRuntime.masterRoads);cityWorldRuntime.masterRoads=null;}
-    const records=masterInfrastructureRecordsV38(),master=new THREE.Group(),segments=[];
-    for(let i=0;i<records.length;i++){const rec=records[i],w=[0,1.12,1.34,1.56][rec.roadLv],s={a:rec.a,b:rec.b,w,lv:rec.roadLv};segments.push(s);addRoadSeg58(master,s.a,s.b,s.w,s.lv,{center:s.lv>=3,edges:s.lv===2,sidewalk:s.lv>=2},`master:${i}`);}
-    const nodes=nodeGraph58(segments);for(const n of nodes.values()){const lv=Math.max(1,...segments.filter(s=>key58(s.a)===key58(n.p)||key58(s.b)===key58(n.p)).map(s=>s.lv));addIntersection58(master,n,lv,'master');}
-    master.userData.v58RoadAudit={segments:segments.length,nodes:nodes.size,kinds:Array.from(nodes.values()).reduce((o,n)=>(o[nodeKind58(n)]=(o[nodeKind58(n)]||0)+1,o),{})};
-    if(master.children.length){scene.add(master);cityWorldRuntime.masterRoads=master;}
-    for(const cfg of CITY_DISTRICTS){
-      const old=cityWorldRuntime.arterialRoads.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.arterialRoads.delete(cfg.id);}const lv=districtRoadLevelV37(cfg.id);if(lv<=0)continue;
-      const path=districtInfrastructureConnectorPathV37(cfg.id);if(path.length<2)continue;const g=new THREE.Group(),w=[0,1.06,1.28,1.48][lv],segs=[];
-      for(let i=0;i<path.length-1;i++){const s={a:path[i],b:path[i+1],w,lv};segs.push(s);addRoadSeg58(g,s.a,s.b,w,lv,{center:lv>=3,edges:lv===2,sidewalk:lv>=2},`arterial:${cfg.id}:${i}`);}
-      const ns=nodeGraph58(segs);for(const n of ns.values())addIntersection58(g,n,lv,'arterial:'+cfg.id);
-      g.userData.v58RoadAudit={segments:segs.length,nodes:ns.size};scene.add(g);cityWorldRuntime.arterialRoads.set(cfg.id,g);
-    }
-  };
 
   // v63 1.1 (P2-5 / Pass 14 cleanup #2): rebuildOuterRingV58() removed for the same reason as
   // rebuildOuterRingDetailsV57() above -- a ~51-mesh ring group (2 edges + 36 dashes + curb +

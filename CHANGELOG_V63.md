@@ -549,3 +549,42 @@ STAGE-дорог не имеет ни тротуара, ни бордюра — 
 +~55 строк восстановление бордюра/тротуара в `addStraight61`/`addCorner61` плюс
 bootstrap-копия базовой версии).
 Коммит следует.
+
+## 2026-09-24 — Этап 1.1, часть 2, пункт 4: `refreshArterialRoads`, `refreshDistrictAccessRoads`, `refreshTransportAccessRoads`
+
+Сборщики сети (не примитивы) — сведены после того, как п.1-3 уже стабилизировали
+примитивы, которые эти три функции вызывают (`addRoadSegment`/`addInfrastructureRoadV38`/
+`addUnifiedRoadV365`) и `masterInfrastructureRecordsV38`/`distToNearestRoadNetworkV369`.
+6 определений каждая (база + 4 до-v56 + один финальный v59) — у `refreshArterialRoads`
+дополнительно была одна v58-версия (`addRoadSeg58`/`nodeGraph58`), у двух других после базы
+сразу шёл v59, без v56/v57/v58 слоёв (подтверждено грепом текущего файла, не по старой карте
+Прохода 2 — номера строк файла сместились после п.1-3).
+
+Чек-лист фич по аудиту (справочная таблица классов дорог, Проход 3, раздел 4) выполнен:
+живая v59-версия для всех трёх в точности совпадает с задокументированным «as-built»
+поведением — arterial (`sidewalk:lv>=2, center:true, curb:true`), district access/driveway
+(`sidewalk:false, center:false, curb:true`), transport/service access
+(`sidewalk:false, center:false, curb:false` — совпадает с явной находкой аудита «curb:false
+явно»). Ни одной находки о потере фичи именно у этих трёх функций в аудите нет — восстанавливать
+нечего, чистая консолидация.
+
+Удалено 15 мёртвых определений (5×3 включая базу-как-единственную-версию-минус-1... точнее:
+4 до-v56 переопределения ×3 функции = 12, плюс единственная v58-версия `refreshArterialRoads`
+= 13, плюс 3 строки мёртвой v44-обёртки в `v44WrapStreetFactory()`, подтверждённо избыточной
+той же проверкой, что и в п.2 — `v44EnhanceAllRoadGroups()` уже работает независимо через
+`v44Tick()`/`setInterval(1300)`). Базовые (до-патчевые) объявления всех трёх оставлены как
+явно прокомментированный bootstrap-блок — та же регрессия, что в п.1/3 (ранний
+`setTimeout`-каскад вызывает эти три функции напрямую), учтена сразу, без промежуточного
+сломанного коммита в этот раз.
+
+**Тесты** (`scratchpad/p17/`, не в репозитории):
+- `t_item4_road_diff.mjs` — road-diff на снапшоте предыдущего коммита (`fc15cd8`) против
+  рабочей копии, чистая загрузка и «развитый город»: все поля идентичны байт-в-байт
+  (`masterRoadsMeshes:94`, `arterialRoadsMeshTotal:128`, `transportAccessRoadsMeshes:20`,
+  `stageRoadsMeshes:202`, `districtStreetMeshTotal:852`), `typeof` всех трёх функций —
+  `'function'` до и после, 0 pageerror в обоих состояниях.
+- `t6_oldsave.mjs`, `t7_stage0_regress.mjs`, `t_vehicles_on_road.mjs` — 0 регрессий.
+- `t1_reloads.mjs` — 10/10 десктоп + 10/10 iPhone 13, 0 новых `ReferenceError`/`TypeError`.
+- 22/22 `<script>`-блока проходят `node --check`.
+
+Изменение файла: 15 добавлено / 134 убрано строк (net −119). Коммит следует.
