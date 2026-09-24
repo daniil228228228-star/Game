@@ -14918,12 +14918,6 @@ addPullInBayV353=function(group,pos,yaw,w=1.02,l=1.48){
   const bay=new THREE.Mesh(new THREE.BoxGeometry(w,0.028,l),ROAD_STYLE_V353.asphaltDark);bay.position.set(pos.x,.058,pos.z);bay.rotation.y=yaw;bay.receiveShadow=true;group.add(bay);
   const stop=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.56,w-.26),0.008,.06),ROAD_STYLE_V353.edge);stop.position.set(pos.x,.073,pos.z+Math.cos(yaw)*(l*.34));stop.rotation.y=yaw;group.add(stop);
 };
-function addCrosswalkV365(g,x,z,rot){
-  for(let i=-2;i<=2;i++){
-    const stripe=new THREE.Mesh(new THREE.BoxGeometry(.20,.008,.46),ROAD_STYLE_V353.edge);
-    stripe.position.set(x+Math.cos(rot+Math.PI/2)*i*.28,.073,z+Math.sin(rot+Math.PI/2)*i*.28);stripe.rotation.y=rot;g.add(stripe);
-  }
-}
 function districtLoopPathV365(id){
   const cfg=CITY_DISTRICTS.find(d=>d.id===id);if(!cfg)return [];
   const d=districtBlockDimsV362(id),pad=.16,hw=d.hw-pad,hh=d.hh-pad,cx=cfg.pos.x,cz=cfg.pos.z;
@@ -27136,14 +27130,6 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     stop.position.set(pos.x+Math.sin(yaw)*(l*0.30),0.076,pos.z+Math.cos(yaw)*(l*0.30));
     stop.rotation.y=yaw;
     group.add(stop);
-  };
-
-  addCrosswalkV365 = function(g,x,z,rot){
-    for(let i=-2;i<=2;i++){
-      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.22,0.008,0.44),ROAD_STYLE_V353.edge);
-      stripe.position.set(x+Math.cos(rot+Math.PI/2)*i*0.28,0.076,z+Math.sin(rot+Math.PI/2)*i*0.28);
-      stripe.rotation.y=rot;g.add(stripe);
-    }
   };
 
   if(typeof ROAD_V38!=='undefined'){
