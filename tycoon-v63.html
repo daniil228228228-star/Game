@@ -25110,7 +25110,7 @@ body{
   function uiPassV45(root=document){
     if(root instanceof HTMLElement)decorateUiElementV45(root);
     root.querySelectorAll?.('.v30Btn,#actionBtn,#prestigeBtn,.requiredActionBtnV38,.iconBtn')?.forEach(decorateUiElementV45);
-    root.querySelectorAll?.('.v30Panel,.v30Section,.staffCard,.projectCard,.fleetCard,.baseCard,.tenderCard,.operationsCard,.metaCard,.cityCard,.capacityCardV42,.contractCardV42,.requestCardV40')?.forEach(el=>el.classList.add('v45-ui-sheen'));
+    root.querySelectorAll?.('.v30Panel,.v30Section,.staffCard,.projectCard,.fleetCard,.baseCard,.tenderCard,.operationsCard,.metaCard,.cityCard,.capacityCardV42,.contractCardV42,.requestCardV40')?.forEach(el=>{if(!el.classList.contains('v45-ui-sheen'))el.classList.add('v45-ui-sheen');});
     for(const overlay of root.querySelectorAll?.('#systemsOverlay.show,#metaOverlay.show,#staffOverlay.show,#projectsOverlay.show,#bonusOverlay.show,#fleetOverlay.show,#baseOverlay.show,#tendersOverlay.show,#operationsOverlay.show,#cityOverlay.show,#achOverlay.show,#hintOverlay.show')||[]){
       const panel=overlay.querySelector('.v30Panel,#achPanel,#hintCard');if(panel&&!panel.dataset.v45Entered){panel.dataset.v45Entered='1';panel.classList.add('v45-panel-enter');setTimeout(()=>panel.classList.remove('v45-panel-enter'),260);}
     }
