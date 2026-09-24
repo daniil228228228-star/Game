@@ -1205,6 +1205,19 @@ const SPIRAL_BASE_RADIUS = 7;
 const SPIRAL_RADIUS_STEP = 4.6;
 const SPIRAL_ANGLE_STEP = 0.95; // radians per stage
 
+// v63 hotfix 0.3(a): the road hub (pathPoints[0], where every stage spoke from
+// spokeProjectV367 converges) sits at the world origin. moveWorkVehicle() fully stops any
+// service vehicle within 1.15 units of the player (playerDist < 1.15 => avoidance = 0), so a
+// player standing exactly at the hub -- where it used to spawn -- freezes every delivery/lift
+// vehicle whose route passes through or starts at that point, forever (P0-3a). This constant
+// places spawn on the same 9x9 plaza, just off the hub point itself: angle 190.5 deg is the
+// midpoint of the widest gap between consecutive stage spokes (stage3 at 163.3 deg and stage4
+// at 217.7 deg, a 54.4 deg gap -- verified against every stagePosition(0..9) spoke line), at
+// radius 2.7, giving 1.23 units of clearance to the NEAREST spoke centerline -- safely outside
+// the 1.15 hard-stop radius (unlike, e.g., the same radius on the X or Z axis, which sits right
+// on top of a spoke and re-creates the same freeze).
+const PLAYER_SPAWN_POS = new THREE.Vector3(-2.656, 0, -0.489);
+
 /* v29.2 pacing pass: the old late-game cash curve produced ~25 minutes of passive-only
    waiting before resource/logistics gates were even counted. This curve keeps early choices
    meaningful but brings a clean first prestige into a healthier mobile-session range. */
@@ -3988,7 +4001,7 @@ const legR = makeLimb(0x2b2f38); legR.position.set(0.17, 0.62, 0); player.add(le
 const armL = makeLimb(0x3f7fe0); armL.position.set(-0.42, 1.35, 0); player.add(armL);
 const armR = makeLimb(0x3f7fe0); armR.position.set(0.42, 1.35, 0); player.add(armR);
 
-player.position.set(0, 0, 0);
+player.position.copy(PLAYER_SPAWN_POS); // v63 hotfix 0.3(a): off the road hub, see PLAYER_SPAWN_POS
 scene.add(player);
 
 const carriedLogRack = new THREE.Group();
@@ -6799,6 +6812,22 @@ function moveWorkVehicle(vehicle, dt) {
   const auditMovingState = ['to_source','outbound','returning'].includes(ud.state);
   if (auditMovingState) {
     ud._auditStuck = auditMoved < 0.018 ? (ud._auditStuck || 0) + dt : 0;
+    // v63 hotfix 0.3(b): the reroute above resets _auditStuck every 2.6s, so it can never by
+    // itself detect a PERSISTENT standoff (e.g. a loaded truck permanently yielding to an idle
+    // truck parked on its own depot route, or any vehicle stopped near the player) -- it just
+    // recomputes the same doomed route forever. _ticketStallTime tracks the same "barely moving"
+    // condition WITHOUT being reset by the reroute, so it keeps growing across repeated failed
+    // reroute attempts. Once a delivery vehicle holding a live ticket has made no real progress
+    // for TICKET_STALL_TIMEOUT_S, release the ticket's assignedVehicle lock (P0-3b) so any other
+    // idle vehicle's next assignVehicleJob() can pick it up instead -- this vehicle keeps its own
+    // ud.deliveryTicket reference and, if it recovers, the delivered-flag check in moveWorkVehicle
+    // still prevents it from double-crediting a ticket someone else already delivered.
+    ud._ticketStallTime = auditMoved < 0.018 ? (ud._ticketStallTime || 0) + dt : 0;
+    const TICKET_STALL_TIMEOUT_S = 9;
+    if (ud.role === 'delivery' && ud.deliveryTicket && !ud.deliveryTicket.delivered && ud._ticketStallTime > TICKET_STALL_TIMEOUT_S) {
+      releaseVehicleReservation(ud);
+      ud._ticketStallTime = 0;
+    }
     if (ud._auditStuck > 2.6) {
       const destination = ud.state === 'to_source' ? ud.cargoSource : (ud.state === 'returning' ? ud.home : ud.jobTarget);
       if (destination) {
@@ -6810,6 +6839,7 @@ function moveWorkVehicle(vehicle, dt) {
     }
   } else {
     ud._auditStuck = 0;
+    ud._ticketStallTime = 0;
   }
   ud._auditLastPos.copy(vehicle.position);
   if (ud.role === 'delivery' && ud.assignedBuild && !ud.assignedBuild.entry?.underConstruction && !['idle','returning'].includes(ud.state)) {
@@ -7520,11 +7550,27 @@ function goalCardHtml(title, hint, opts = {}) {
     `<div class="goalBar"><div class="goalBarFill" style="width:${Math.round(pct * 100)}%"></div></div>`;
 }
 
+// v63 hotfix 0.3(c): P0-3's third leg -- the guide previously held the player at "Unload"
+// indefinitely while a delivery was in transit, with no fallback even when there was a
+// perfectly playable next build available the whole time (Pass 8's "гид держит у 'Разгрузки'").
+// DELIVERY_TRIP_FALLBACK_S is deliberately a good deal longer than the vehicle-side stall
+// timeout in moveWorkVehicle (9s, 0.3b) -- that one exists to get an actual truck moving again
+// quickly; this one is about not stranding the PLAYER with nothing to do, so it only kicks in
+// once a wait has clearly outlasted a normal round trip (loading + travel + unloading), not
+// during a delivery that's simply still in progress.
+const DELIVERY_TRIP_FALLBACK_S = 25;
+function deliveryWaitExceedsOneTrip(build) {
+  return !!(build?.waitingSince && (performance.now() - build.waitingSince) / 1000 > DELIVERY_TRIP_FALLBACK_S);
+}
+function nextBuildFallbackAvailable() {
+  return !!currentPad && stageIndex < STAGES.length && constructionSlotAvailable() && canAffordStage(stageIndex);
+}
 function currentGuidanceTarget() {
   const logisticsBuild = growingMeshes.find(b => b?.entry?.underConstruction && nextPendingDelivery(b));
   if (logisticsBuild) {
     const ticket = nextPendingDelivery(logisticsBuild);
-    if (ticket && logisticsBuild.waitingForDelivery === ticket.cargo) {
+    if (ticket && logisticsBuild.waitingForDelivery === ticket.cargo
+      && !(deliveryWaitExceedsOneTrip(logisticsBuild) && nextBuildFallbackAvailable())) {
       return { pos: logisticsBuild.entry.pos.clone(), label: lang === 'ru' ? 'Разгрузка' : 'Unload' };
     }
   }
@@ -7573,7 +7619,12 @@ function updateHUD() {
   const nextCard = document.getElementById('nextCard');
   const prestigeBtn = document.getElementById('prestigeBtn');
   const logisticsBuild = growingMeshes.find(b => b?.entry?.underConstruction && nextPendingDelivery(b));
-  if (logisticsBuild) {
+  // v63 hotfix 0.3(c): keep this card in sync with currentGuidanceTarget()'s fallback -- once a
+  // wait has outlasted one delivery trip and a next build is affordable, the "next stage" card
+  // below takes over as primary; the wait itself is still visible in the Operations panel and on
+  // the truck's own in-world status label, just no longer the only thing the HUD points at.
+  const logisticsCardBlocked = logisticsBuild && deliveryWaitExceedsOneTrip(logisticsBuild) && nextBuildFallbackAvailable();
+  if (logisticsBuild && !logisticsCardBlocked) {
     const ticket = nextPendingDelivery(logisticsBuild);
     const target = stageName(STAGES[logisticsBuild.entry.index]);
     const waiting = logisticsBuild.waitingForDelivery === ticket?.cargo;
@@ -11753,11 +11804,21 @@ function load() {
     concrete = THREE.MathUtils.clamp(concrete, 0, concreteCapacity());
     metal = THREE.MathUtils.clamp(metal, 0, metalCapacity());
     if (data.player) {
-      player.position.set(
-        THREE.MathUtils.clamp(data.player.x || 0, -GROUND_HALF + 2, GROUND_HALF - 2),
-        0,
-        THREE.MathUtils.clamp(data.player.z || 0, -GROUND_HALF + 2, GROUND_HALF - 2)
-      );
+      // v63 hotfix 0.3(a): a save written before this fix (or by this exact bug) can have the
+      // player parked right on the road hub at/near (0,0) -- restoring that literally would
+      // silently re-plant the player back on the exact point that freezes every service vehicle
+      // whose route passes through it (P0-3a). If the saved spot is within 1.5 units of the hub,
+      // treat it the same as "no saved position" and use the safe spawn instead of trusting it.
+      const savedX = data.player.x || 0, savedZ = data.player.z || 0;
+      if (Math.hypot(savedX, savedZ) < 1.5) {
+        player.position.copy(PLAYER_SPAWN_POS);
+      } else {
+        player.position.set(
+          THREE.MathUtils.clamp(savedX, -GROUND_HALF + 2, GROUND_HALF - 2),
+          0,
+          THREE.MathUtils.clamp(savedZ, -GROUND_HALF + 2, GROUND_HALF - 2)
+        );
+      }
       const safe = nearestSafePlayerPosition(player.position);
       player.position.x = safe.x;
       player.position.z = safe.z;
@@ -12394,7 +12455,7 @@ function auditRuntimeIntegrity(dt) {
   integrityAuditTimer = 1.75;
 
   if (!Number.isFinite(player.position.x) || !Number.isFinite(player.position.z)) {
-    player.position.set(0, 0, 0);
+    player.position.copy(PLAYER_SPAWN_POS); // v63 hotfix 0.3(a): not the hub -- see PLAYER_SPAWN_POS
     playerVelocity.set(0, 0, 0);
   }
   player.position.y = 0;
@@ -12462,6 +12523,7 @@ function animate() {
         proposedTimer = Math.max(build.timer, gateTimer - 0.002);
         if (build.waitingForDelivery !== pendingDelivery.cargo) {
           build.waitingForDelivery = pendingDelivery.cargo;
+          build.waitingSince = performance.now(); // v63 hotfix 0.3(c): see deliveryWaitExceedsOneTrip()
           toast(lang === 'ru'
             ? '🚚 ' + stageName(STAGES[build.entry.index]) + ' ждёт доставку: ' + cargoName(pendingDelivery.cargo)
             : '🚚 ' + stageName(STAGES[build.entry.index]) + ' is waiting for: ' + cargoName(pendingDelivery.cargo));
@@ -12470,6 +12532,7 @@ function animate() {
       }
     } else {
       build.waitingForDelivery = null;
+      build.waitingSince = 0;
     }
     refreshSiteUnloadZone(build, pendingDelivery);
     build.timer = proposedTimer;
