@@ -27600,7 +27600,7 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     report.notes.push('Intersection caps are asphalt-only seam covers, not curbed circular islands.');
     return report;
   }
-  window.__TYCOON_ROAD_AUDIT_V57__={run:roadAuditV57,refresh:refreshAllRoadsV57};
+  window.__TYCOON_ROAD_AUDIT_V57__={run:roadAuditV57,refresh:refreshAllRoadsV57,refreshMaterials:refreshRoadMaterialsV57};
 
   function init(){
     refreshAllRoadsV57();
@@ -27784,7 +27784,7 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
   }
 
   function refreshAllRoadsV58(){
-    safe58(()=>refreshRoadMaterialsV57?.());
+    safe58(()=>window.__TYCOON_ROAD_AUDIT_V57__?.refreshMaterials?.());
     safe58(()=>refreshLivingDistrictStreets?.());
     safe58(()=>refreshArterialRoads?.());
     safe58(()=>refreshDistrictAccessRoads?.());
