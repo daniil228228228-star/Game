@@ -943,6 +943,9 @@ const HINT_KEY = 'tycoon3d_seen_hint_v4';
 // 'visibilitychange') on its way out, both of which normally autosave -- which would silently
 // re-write the save the reset button just deleted, right before the fresh page reads it back in.
 let suppressAutoSaveV36 = false;
+// v63 hotfix 0.4: set once this tab sees SAVE_KEY change from another tab (see the 'storage'
+// listener near load()/save()). save() checks this and refuses to write until the page reloads.
+let otherTabSaveLockV63 = false;
 
 const V30_META_KEY = 'tycoon3d_v30_meta';
 const V30_SETTINGS_KEY = 'tycoon3d_v30_settings';
@@ -11357,6 +11360,11 @@ function save() {
   // still fire once more while the new document is loading and silently re-write the very save that
   // was just cleared, undoing the reset. suppressAutoSaveV36 is the single choke point for that.
   if (suppressAutoSaveV36) return false;
+  // v63 hotfix 0.4: another tab wrote SAVE_KEY more recently than this tab knows about — every
+  // autosave path in the file (economy tick, pagehide, visibilitychange, the v52 debounced
+  // coordinator) ultimately calls this function, so this single guard stops this tab from
+  // silently clobbering the other tab's newer progress. Player must reload to resume saving here.
+  if (otherTabSaveLockV63) return false;
   const activeBuilds = growingMeshes.map(build => ({
     index: build.entry.index,
     level: build.entry.level,
@@ -11782,6 +11790,19 @@ document.addEventListener('visibilitychange', () => {
   } else {
     clock.getDelta(); // discard the long hidden-tab delta before the next animation step
   }
+});
+
+// v63 hotfix 0.4: two open tabs previously stomped on each other's saves silently (last tab to
+// autosave always won, no matter which one had the newer progress). This is the minimal fix —
+// warn the player and stop THIS tab's autosave the moment another tab writes SAVE_KEY, so at
+// least one of the two copies (whichever tab the player reloads) survives intact. Full save
+// versioning/merge is a later stage; this only prevents the silent, unannounced data loss.
+addEventListener('storage', (e) => {
+  if (e.key !== SAVE_KEY || !e.newValue || otherTabSaveLockV63) return;
+  otherTabSaveLockV63 = true;
+  toast(lang === 'ru'
+    ? '⚠️ Игра открыта в другой вкладке. Сохранение здесь остановлено — перезагрузите страницу'
+    : '⚠️ Game is open in another tab. Autosave paused here — reload this page');
 });
 
 /* ---------------------------------------------------------------------- */
