@@ -15167,11 +15167,17 @@ function addStageRoadKneeCapsV3610(group){
     cap.rotation.x=-Math.PI/2;cap.position.set(knee.x,.0585,knee.z);cap.receiveShadow=true;group.add(cap);
   }
 }
+/* v63 1.1 (item 3): bootstrap-only hoisted declaration, same reason and same pattern as
+   addRoadSegment/addRoadSegmentPremiumV353/addUnifiedRoadV365/addInfrastructureRoadV38 in
+   item 1 -- deleting every non-final definition outright reproduced the same class of bug
+   here (a live `ReferenceError: makeStageRoadGroupV367 is not defined`, caught by
+   scratchpad/p17/t_item3_road_diff.mjs) because the unconditional v36.7 setTimeout(240ms)
+   road-init cascade earlier in this script can call refreshStageRoadsV367() -> this function
+   before the v61 <script> layer near the end of the file has assigned the real live version.
+   This is the original base body verbatim; the single steady-state live implementation for
+   the rest of the session is still v61's (near the end of the file), which additionally has
+   the curb/sidewalk restoration (see addStraight61/addCorner61). */
 function makeStageRoadGroupV367(){
-  // The old hub roundabout (asphalt ring + green island, both circular) is gone -- with the
-  // squared-off innerPlaza (see ground/plaza setup near the top of the file) now covering the
-  // hub, a second circular medallion on top of it would be exactly the "leftover circle poking
-  // out of a grid" this pass is meant to remove.
   const g=new THREE.Group();
   for(let i=0;i<STAGES.length;i++){
     const knee=stageRoadKneeV367(i),end=stageRoadEndpointV367(i);
@@ -15538,13 +15544,6 @@ refreshDrivewaysV35=function(force=false){
   return _refreshDrivewaysV35V37(force);
 };
 
-const _makeStageRoadGroupV367V37=makeStageRoadGroupV367;
-makeStageRoadGroupV367=function(){
-  const roadLv=maxRoadLevelV37(),g=new THREE.Group();if(roadLv<=0)return g;const count=Math.min(STAGES.length,Math.max(0,stageIndex));
-  for(let i=0;i<count;i++){const knee=stageRoadKneeV367(i),end=stageRoadEndpointV367(i),inside=Math.hypot(end.x,end.z)<=STAGE_ROAD_GRID_REACH_V368;const trunk=[0,1.02,1.25,1.44][roadLv],spur=[0,.82,.94,1.04][roadLv];if(STAGE_HUB_V367.distanceTo(knee)>.3)addUnifiedRoadV365(g,STAGE_HUB_V367,knee,inside?trunk:Math.min(trunk,.92),{markings:roadLv>=3&&inside,edgeMarks:roadLv===2||!inside,dark:true});if(knee.distanceTo(end)>.3)addUnifiedRoadV365(g,knee,end,spur,{markings:false,edgeMarks:roadLv>=2,dark:true});}
-  if(roadLv>=2)addStageRoadKneeCapsV3610(g);return g;
-};
-
 function addLampAlongSegmentV37(group,a,b,level){
   const dx=b.x-a.x,dz=b.z-a.z,len=Math.hypot(dx,dz);if(len<2)return;const ux=dx/len,uz=dz/len,nx=-uz,nz=ux,spacing=[99,12,8,6][level],count=Math.max(1,Math.floor(len/spacing));
   for(let i=1;i<=count;i++){const t=i/(count+1),side=(i%2?1:-1),lamp=makeLamp();lamp.position.set(a.x+dx*t+nx*side*1.05,0,a.z+dz*t+nz*side*1.05);lamp.rotation.y=Math.atan2(-nx*side,-nz*side);lamp.scale.setScalar(level===1?.82:level===2?.90:.98);lamp.traverse(o=>{if(o.material?.emissive)o.material.emissiveIntensity=.65+level*.34;});group.add(lamp);if(level>=3&&i%2===0){const mirror=makeLamp();mirror.position.set(a.x+dx*t-nx*side*1.05,0,a.z+dz*t-nz*side*1.05);mirror.rotation.y=lamp.rotation.y+Math.PI;mirror.scale.setScalar(.96);mirror.traverse(o=>{if(o.material?.emissive)o.material.emissiveIntensity=1.55;});group.add(mirror);}}
@@ -15690,21 +15689,6 @@ refreshDistrictAccessRoads=function(){
 refreshTransportAccessRoads=function(){
   if(cityWorldRuntime.transportAccessRoads){scene.remove(cityWorldRuntime.transportAccessRoads);disposeObject3D(cityWorldRuntime.transportAccessRoads);cityWorldRuntime.transportAccessRoads=null;}const lv=maxRoadLevelV37();if(lv<=0)return;
   const nodes=serviceAccessGraph(),byId=new Map(nodes.map(n=>[n.id,n])),g=new THREE.Group(),seen=new Set();for(const n of nodes){if(!n.parent)continue;const p=byId.get(n.parent);if(!p)continue;const w=(n.id==='garage'||n.id==='garageMid')?1.02:.86,key=[n.p.x.toFixed(2),n.p.z.toFixed(2),p.p.x.toFixed(2),p.p.z.toFixed(2)].sort().join('|');if(seen.has(key))continue;seen.add(key);addInfrastructureRoadV38(g,n.p,p.p,w,lv,{sidewalk:false,center:false,edges:lv>=2});}if(g.children.length){scene.add(g);cityWorldRuntime.transportAccessRoads=g;}
-};
-
-makeStageRoadGroupV367=function(){
-  // v55 fix (direct user complaint: "houses get built with no roads at all -- shouldn't the
-  // road come first?"): this used to return an EMPTY group whenever maxRoadLevelV37()<=0, i.e.
-  // whenever no district had yet paid for road infrastructure -- true for the entire early game,
-  // since district roads are a much later, separate unlock from the main STAGES spiral. Every
-  // stage building (spawnBuilding/buildingPosition, no clearance/road check of its own -- see
-  // the placement-clearance fix earlier in this file) was going up in an open field with no road
-  // in sight until the player happened to reach city districts and bought roads there. Flooring
-  // `lv` at 1 instead of bailing out draws a base-tier access road to every already-built stage
-  // building unconditionally, and it still upgrades to the higher paid tiers exactly as before
-  // once maxRoadLevelV37() rises. Purely visual (which geometry is drawn) -- stageIndex, cost,
-  // reward and build order are untouched.
-  const lv=Math.max(1,maxRoadLevelV37()),g=new THREE.Group();const count=Math.min(STAGES.length,Math.max(0,stageIndex));for(let i=0;i<count;i++){const knee=stageRoadKneeV367(i),end=stageRoadEndpointV367(i),inside=Math.hypot(end.x,end.z)<=STAGE_ROAD_GRID_REACH_V368,trunk=[0,.96,1.16,1.34][lv],spur=[0,.72,.84,.94][lv];if(STAGE_HUB_V367.distanceTo(knee)>.3)addInfrastructureRoadV38(g,STAGE_HUB_V367,knee,inside?trunk:Math.min(trunk,.88),lv,{sidewalk:false,center:lv>=3&&inside,edges:lv>=2});if(knee.distanceTo(end)>.3)addInfrastructureRoadV38(g,knee,end,spur,lv,{sidewalk:false,center:false,edges:lv>=2});if(inside)addRoadJointV38(g,knee,lv,Math.max(trunk,spur));}return g;
 };
 
 // Lighting follows the district that actually paid for it instead of borrowing the highest
@@ -27308,22 +27292,6 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
   // Verified live: 0 ReferenceError across 10 reloads (desktop + iPhone 13) after removal, ring
   // road and all road views unchanged (see p16/t3_roads.mjs).
 
-  /* Stage roads: keep the central trunks as streets, but later building spurs become subdued
-     access lanes with no pointless sidewalk/curb treatment. */
-  makeStageRoadGroupV367=function(){
-    const lv=Math.max(1,maxRoadLevelV37()),g=new THREE.Group(),count=Math.min(STAGES.length,Math.max(0,stageIndex));
-    const seenKnee=new Set();
-    for(let i=0;i<count;i++){
-      const knee=stageRoadKneeV367(i),end=stageRoadEndpointV367(i),inside=Math.hypot(end.x,end.z)<=STAGE_ROAD_GRID_REACH_V368;
-      const trunk=[0,1.00,1.18,1.38][lv],spur=[0,.76,.86,.96][lv];
-      if(STAGE_HUB_V367.distanceTo(knee)>.3)addInfrastructureRoadV38(g,STAGE_HUB_V367,knee,inside?trunk:Math.min(trunk,.90),lv,{sidewalk:inside&&lv>=2,curb:inside,center:lv>=3&&inside,edges:lv===2&&inside});
-      if(knee.distanceTo(end)>.3)addInfrastructureRoadV38(g,knee,end,spur,lv,{sidewalk:false,curb:false,center:false,edges:false});
-      if(STAGE_HUB_V367.distanceTo(knee)>.3){const k=knee.x.toFixed(2)+'|'+knee.z.toFixed(2);if(!seenKnee.has(k)){seenKnee.add(k);addRoadJointV38(g,knee,lv,Math.max(trunk,spur));}}
-    }
-    addRoadJointV38(g,STAGE_HUB_V367,lv,[0,1.10,1.28,1.48][lv]);
-    g.userData.v57StageRoadGrid=true;return g;
-  };
-
   // v63 1.1 (P2-5 / Pass 14 cleanup #2): rebuildOuterRingDetailsV57() removed -- it built a
   // ~4-mesh ring-detail group that rebuildOuterRingV58() (below) immediately hid with
   // `.visible=false` on every load and never disposed, and v59's rebuildOuter59() shows the
@@ -27482,17 +27450,6 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
       const ns=nodeGraph58(segs);for(const n of ns.values())addIntersection58(g,n,lv,'arterial:'+cfg.id);
       g.userData.v58RoadAudit={segments:segs.length,nodes:ns.size};scene.add(g);cityWorldRuntime.arterialRoads.set(cfg.id,g);
     }
-  };
-
-  makeStageRoadGroupV367=function(){
-    const lv=Math.max(1,maxRoadLevelV37()),g=new THREE.Group(),count=Math.min(STAGES.length,Math.max(0,stageIndex)),segments=[];
-    for(let i=0;i<count;i++){
-      const knee=stageRoadKneeV367(i),end=stageRoadEndpointV367(i),inside=Math.hypot(end.x,end.z)<=STAGE_ROAD_GRID_REACH_V368,trunk=[0,1.02,1.20,1.40][lv],spur=[0,.76,.86,.96][lv];
-      if(STAGE_HUB_V367.distanceTo(knee)>.3){const s={a:STAGE_HUB_V367.clone(),b:knee.clone(),w:inside?trunk:Math.min(trunk,.92),lv,inside};segments.push(s);addRoadSeg58(g,s.a,s.b,s.w,lv,{sidewalk:inside&&lv>=2,curb:inside,center:lv>=3&&inside,edges:lv===2&&inside},`stage:${i}:trunk`);}
-      if(knee.distanceTo(end)>.3){const s={a:knee.clone(),b:end.clone(),w:spur,lv,inside:false};segments.push(s);addRoadSeg58(g,s.a,s.b,s.w,lv,{sidewalk:false,curb:false,center:false,edges:false},`stage:${i}:spur`);}
-    }
-    const nodes=nodeGraph58(segments);for(const n of nodes.values())addIntersection58(g,n,lv,'stage');
-    g.userData.v58RoadAudit={segments:segments.length,nodes:nodes.size,kinds:Array.from(nodes.values()).reduce((o,n)=>(o[nodeKind58(n)]=(o[nodeKind58(n)]||0)+1,o),{})};return g;
   };
 
   // v63 1.1 (P2-5 / Pass 14 cleanup #2): rebuildOuterRingV58() removed for the same reason as
@@ -27681,15 +27638,6 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     if(cityWorldRuntime.transportAccessRoads){scene.remove(cityWorldRuntime.transportAccessRoads);disposeObject3D(cityWorldRuntime.transportAccessRoads);cityWorldRuntime.transportAccessRoads=null;}const lv=Math.max(1,maxRoadLevelV37()),nodes0=serviceAccessGraph(),byId=new Map(nodes0.map(n=>[n.id,n])),g=new THREE.Group(),segments=[],seen=new Set();
     for(const n of nodes0){if(!n.parent)continue;const p=byId.get(n.parent);if(!p)continue;const key=[k59(n.p),k59(p.p)].sort().join('|');if(seen.has(key))continue;seen.add(key);segments.push({a:n.p.clone(),b:p.p.clone(),w:ROAD59.widths.service[lv],lv,role:'service-yard',twoWay:false,sidewalk:false,center:false,curb:false});}
     renderNetwork59(g,segments,lv);if(g.children.length){scene.add(g);cityWorldRuntime.transportAccessRoads=g;}
-  };
-
-  makeStageRoadGroupV367=function(){
-    const lv=Math.max(1,maxRoadLevelV37()),g=new THREE.Group(),count=Math.min(STAGES.length,Math.max(0,stageIndex)),segments=[];
-    for(let i=0;i<count;i++){const knee=stageRoadKneeV367(i),end=stageRoadEndpointV367(i),inside=Math.hypot(end.x,end.z)<=STAGE_ROAD_GRID_REACH_V368;
-      if(STAGE_HUB_V367.distanceTo(knee)>.3)segments.push({a:STAGE_HUB_V367.clone(),b:knee.clone(),w:ROAD59.widths.stageTrunk[lv],lv,role:'stage-trunk',twoWay:true,sidewalk:inside&&lv>=2,center:inside,curb:inside});
-      if(knee.distanceTo(end)>.3)segments.push({a:knee.clone(),b:end.clone(),w:ROAD59.widths.stageSpur[lv],lv,role:'stage-spur',twoWay:false,sidewalk:false,center:false,curb:false});
-    }
-    renderNetwork59(g,segments,lv);return g;
   };
 
   // Cars now use actual lane centres that fit inside the asphalt envelope.
@@ -27895,18 +27843,6 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     if(ta){for(let i=targetAccess.length-2;i>=0;i--)appendTransportPoint(route,targetAccess[i].p);}appendTransportPoint(route,toPos);return smoothPolyline(route,.68);
   };
 
-  makeStageRoadGroupV367=function(){
-    const lv=Math.max(1,maxRoadLevelV37()),g=new THREE.Group(),count=Math.min(STAGES.length,Math.max(0,stageIndex));
-    for(let i=0;i<count;i++){
-      const poly=safeStagePolyline(i),end=poly[poly.length-1],inside=Math.hypot(end.x,end.z)<=STAGE_ROAD_GRID_REACH_V368;
-      for(let j=0;j<poly.length-1;j++){
-        const isLast=j===poly.length-2,w=isLast?(SPECS.widths?.stageSpur?.[lv]||1.58):(SPECS.widths?.stageTrunk?.[lv]||2.70);
-        addInfrastructureRoadV38(g,poly[j],poly[j+1],w,lv,{sidewalk:!isLast&&inside&&lv>=2,center:!isLast&&inside&&lv>=2,edges:false,curb:!isLast&&inside});
-        if(j>0)addRoadJointV38(g,poly[j],lv,w);
-      }
-    }return g;
-  };
-
   /* --------------------------------------------------------------
      4. WORKERS: work at perimeter points, never at the building centre.
      Idle workers stand around facilities rather than trying to occupy them.
@@ -28110,6 +28046,25 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     const mid=a.clone().add(b).multiplyScalar(.5),road=new THREE.Mesh(new THREE.BoxGeometry(s.w,.034,bl),roadDeckMatV38(s.lv));road.position.set(mid.x,.058,mid.z);road.rotation.y=Math.atan2(dx,dz);road.receiveShadow=true;road.userData.v59RoadDeck=true;road.userData.v59Width=s.w;road.userData.v59LaneMode=s.twoWay?'twoWay':'single';road.userData.v59Role=s.role;road.userData.v61StageRoad=true;g.add(road);
     const nx=-uz,nz=ux;paintSegment61(g,a,b,s.w*.5-.075,.045,edgePaint61);paintSegment61(g,a,b,-s.w*.5+.075,.045,edgePaint61);
     if(s.twoWay&&bl>1.25){const step=1.65,dash=.68,count=Math.max(1,Math.floor(bl/step));for(let i=0;i<count;i++){const t=(i+.5)/count,o=(t-.5)*bl;if(Math.abs(o)>bl*.5-.35)continue;const c=mid.clone().add(new THREE.Vector3(ux*o,0,uz*o)),p1=c.clone().add(new THREE.Vector3(-ux*dash*.5,0,-uz*dash*.5)),p2=c.clone().add(new THREE.Vector3(ux*dash*.5,0,uz*dash*.5));paintSegment61(g,p1,p2,0,.052,lanePaint61);}}
+    // v63 1.1 (item 3, restoring an audit-confirmed accidental loss, not a redesign): v56-v58
+    // gave stage-trunk roads a curb + sidewalk (same s.twoWay && level>=2 gate the district
+    // road system still uses); v61's from-scratch rewrite of this function (real curved
+    // corners via ribbon61, a legitimate, separate improvement) never carried that over --
+    // audit finding "Финальная (живая) геометрия STAGE-дорог не имеет ни тротуара, ни
+    // бордюра" (Проход 3, раздел 4, P1). Uses the same ROAD_STYLE_V353.curb/.walk materials
+    // and curbW/walkW constants as v59's district addRoadDeck59, placed between the same
+    // node-cut-trimmed a/b points the road deck itself already uses -- so, exactly as in the
+    // district system, the curb stops short of the junction pad on its own, no separate seam
+    // handling needed. Spurs (s.twoWay===false) intentionally stay bare, matching v56-v58.
+    if(s.twoWay&&s.lv>=2){
+      const curbW=.11,walkW=s.w>=2.8?.34:.28,rot=Math.atan2(dx,dz);
+      for(const side of [-1,1]){
+        const curb=new THREE.Mesh(new THREE.BoxGeometry(curbW,.060,bl),ROAD_STYLE_V353.curb);
+        curb.position.set(mid.x+nx*side*(s.w*.5+curbW*.5),.086,mid.z+nz*side*(s.w*.5+curbW*.5));curb.rotation.y=rot;curb.receiveShadow=true;curb.userData.v63StageCurb=true;g.add(curb);
+        const walk=new THREE.Mesh(new THREE.BoxGeometry(walkW,.035,bl),ROAD_STYLE_V353.walk);
+        walk.position.set(mid.x+nx*side*(s.w*.5+curbW+walkW*.5+.025),.097,mid.z+nz*side*(s.w*.5+curbW+walkW*.5+.025));walk.rotation.y=rot;walk.receiveShadow=true;walk.userData.v63StageSidewalk=true;g.add(walk);
+      }
+    }
   }
   function addCorner61(g,n){
     if(nodeKind61(n)!=='CORNER')return;const cut=nodeCut61(n),d1=n.dirs[0],d2=n.dirs[1],p1=n.p.clone().add(new THREE.Vector3(d1.x*cut,0,d1.z*cut)),p2=n.p.clone().add(new THREE.Vector3(d2.x*cut,0,d2.z*cut)),pts=[],widths=[],steps=9,w1=n.segments[0]?.w||n.maxW,w2=n.segments[1]?.w||n.maxW;
@@ -28117,6 +28072,19 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     // edge ribbons follow the curve, so corners no longer look like square patches.
     for(const side of [-1,1]){const ep=[];for(let i=0;i<pts.length;i++){const a=pts[Math.max(0,i-1)],b=pts[Math.min(pts.length-1,i+1)],dx=b.x-a.x,dz=b.z-a.z,l=Math.hypot(dx,dz)||1,nx=-dz/l,nz=dx/l;ep.push(new THREE.Vector3(pts[i].x+nx*side*(widths[i]*.5-.075),0,pts[i].z+nz*side*(widths[i]*.5-.075)));}const mark=ribbon61(ep,.045,edgePaint61,PAINT_Y,'v61Marking');if(mark){mark.renderOrder=4;g.add(mark);}}
     if(n.segments.some(s=>s.twoWay)){const center=ribbon61(pts,.052,lanePaint61,PAINT_Y+.0005,'v61Marking');if(center){center.renderOrder=5;center.userData.v62CurveCenter=true;g.add(center);}}
+    // v63 1.1 (item 3): same curb/sidewalk restoration as addStraight61 above, ribbon-built so
+    // it follows the curve instead of the straight BoxGeometry the district system uses --
+    // same offset-normal-per-point technique already used for the edge marking ribbon just
+    // above, just offset further out and with curb/sidewalk width/material instead.
+    if(n.segments.some(s=>s.twoWay)&&Math.max(...n.segments.map(s=>s.lv))>=2){
+      const curbW=.11,walkW=Math.max(w1,w2)>=2.8?.34:.28;
+      for(const side of [-1,1]){
+        const cp=[],wp=[];
+        for(let i=0;i<pts.length;i++){const a=pts[Math.max(0,i-1)],b=pts[Math.min(pts.length-1,i+1)],dx=b.x-a.x,dz=b.z-a.z,l=Math.hypot(dx,dz)||1,nx=-dz/l,nz=dx/l;cp.push(new THREE.Vector3(pts[i].x+nx*side*(widths[i]*.5+curbW*.5),0,pts[i].z+nz*side*(widths[i]*.5+curbW*.5)));wp.push(new THREE.Vector3(pts[i].x+nx*side*(widths[i]*.5+curbW+walkW*.5+.025),0,pts[i].z+nz*side*(widths[i]*.5+curbW+walkW*.5+.025)));}
+        const curb=ribbon61(cp,curbW,ROAD_STYLE_V353.curb,.086,'v63StageCurb');if(curb){curb.receiveShadow=true;g.add(curb);}
+        const walk=ribbon61(wp,walkW,ROAD_STYLE_V353.walk,.097,'v63StageSidewalk');if(walk){walk.receiveShadow=true;g.add(walk);}
+      }
+    }
   }
   function roundedRect61(w,d,r){r=Math.min(r,w*.48,d*.48);const s=new THREE.Shape();s.moveTo(-w/2+r,-d/2);s.lineTo(w/2-r,-d/2);s.quadraticCurveTo(w/2,-d/2,w/2,-d/2+r);s.lineTo(w/2,d/2-r);s.quadraticCurveTo(w/2,d/2,w/2-r,d/2);s.lineTo(-w/2+r,d/2);s.quadraticCurveTo(-w/2,d/2,-w/2,d/2-r);s.lineTo(-w/2,-d/2+r);s.quadraticCurveTo(-w/2,-d/2,-w/2+r,-d/2);return s;}
   function addJunction61(g,n){const k=nodeKind61(n);if(k!=='T'&&k!=='X')return;const size=n.maxW*(k==='X'?1.10:1.06),pad=new THREE.Mesh(new THREE.ShapeGeometry(roundedRect61(size,size,Math.min(.34,size*.13)),5),roadDeckMatV38(Math.max(...n.segments.map(s=>s.lv))));pad.rotation.x=-Math.PI/2;pad.position.set(n.p.x,.077,n.p.z);pad.receiveShadow=true;pad.userData.v59Intersection=true;pad.userData.v59IntersectionKind=k;pad.userData.v61Junction=true;g.add(pad);}
