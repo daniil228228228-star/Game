@@ -10894,49 +10894,6 @@ const MAX_CITY_RESIDENTS=VISUAL_MOBILE?14:24;
 const MAX_CITY_CARS=VISUAL_MOBILE?7:12;
 const CITY_CAR_COLORS=[0x4e81c4,0xd45b4e,0x5f9b68,0xd8b04b,0x858b95,0x8b67ba,0xe5e1d8];
 
-function makeCityStreetGroup(cfg){
-  const g=new THREE.Group();
-  const lv=districtLevel(cfg.id);
-  if(lv<=0){g.position.copy(cfg.pos);return g;}
-  const asphalt=new THREE.MeshStandardMaterial({color:0x555b63,roughness:.96});
-  const sidewalk=new THREE.MeshStandardMaterial({color:0xd7d1c5,roughness:.95});
-  const edge=new THREE.MeshStandardMaterial({color:0xf1eee5,roughness:.75});
-  const road=new THREE.Mesh(new THREE.RingGeometry(3.35,4.06,40),asphalt);
-  road.rotation.x=-Math.PI/2;road.position.y=.052;road.receiveShadow=true;g.add(road);
-  const outerWalk=new THREE.Mesh(new THREE.RingGeometry(4.08,4.55,40),sidewalk);
-  outerWalk.rotation.x=-Math.PI/2;outerWalk.position.y=.058;outerWalk.receiveShadow=true;g.add(outerWalk);
-  const innerEdge=new THREE.Mesh(new THREE.RingGeometry(3.27,3.34,40),edge);innerEdge.rotation.x=-Math.PI/2;innerEdge.position.y=.072;g.add(innerEdge);
-  const outerEdge=new THREE.Mesh(new THREE.RingGeometry(4.06,4.13,40),edge);outerEdge.rotation.x=-Math.PI/2;outerEdge.position.y=.073;g.add(outerEdge);
-  if(lv>=2){
-    for(let i=0;i<4;i++){
-      const a=i*Math.PI/2;
-      for(let j=-2;j<=2;j++){
-        const stripe=new THREE.Mesh(new THREE.BoxGeometry(.10,.018,.42),edge);
-        stripe.position.set(Math.cos(a)*3.72 + Math.cos(a+Math.PI/2)*j*.20,.078,Math.sin(a)*3.72 + Math.sin(a+Math.PI/2)*j*.20);
-        stripe.rotation.y=-a;g.add(stripe);
-      }
-    }
-  }
-  // v33: short radial streets make each district read as a real neighborhood, not a single roundabout.
-  const spokeMat=asphalt;
-  for(let i=0;i<Math.min(4,lv+1);i++){
-    const a=Math.PI/4+i*Math.PI/2;const roadLen=4.3+lv*.75;
-    const spoke=new THREE.Mesh(new THREE.BoxGeometry(1.12,.025,roadLen),spokeMat);spoke.position.set(Math.cos(a)*(4.0+roadLen*.5),.057,Math.sin(a)*(4.0+roadLen*.5));spoke.rotation.y=-a;spoke.receiveShadow=true;g.add(spoke);
-    const walk1=new THREE.Mesh(new THREE.BoxGeometry(.28,.018,roadLen),sidewalk);walk1.position.set(Math.cos(a)*(4.0+roadLen*.5)+Math.cos(a+Math.PI/2)*.72,.067,Math.sin(a)*(4.0+roadLen*.5)+Math.sin(a+Math.PI/2)*.72);walk1.rotation.y=-a;g.add(walk1);
-    const walk2=walk1.clone();walk2.position.x=Math.cos(a)*(4.0+roadLen*.5)-Math.cos(a+Math.PI/2)*.72;walk2.position.z=Math.sin(a)*(4.0+roadLen*.5)-Math.sin(a+Math.PI/2)*.72;g.add(walk2);
-  }
-  const parked=Math.min(3,lv);
-  for(let i=0;i<parked;i++){
-    const car=createLivingCityCar('parked',CITY_CAR_COLORS[(CITY_DISTRICTS.indexOf(cfg)+i*2)%CITY_CAR_COLORS.length]);
-    const a=.55+i*(Math.PI*2/parked),r=4.92;
-    // v34.3 bugfix: parked cars used to sit at r=3.70 -- exactly on the moving traffic lane.
-    // Give them a small asphalt bay outside the sidewalk instead.
-    const bay=new THREE.Mesh(new THREE.BoxGeometry(.92,.018,1.78),asphalt);bay.position.set(Math.cos(a)*r,.061,Math.sin(a)*r);bay.rotation.y=-a;g.add(bay);
-    car.position.set(Math.cos(a)*r,.07,Math.sin(a)*r);car.rotation.y=-a;car.scale.setScalar(.78);g.add(car);
-  }
-  g.position.copy(cfg.pos);
-  return g;
-}
 function refreshLivingDistrictStreets(){
   for(const cfg of CITY_DISTRICTS){
     const old=cityWorldRuntime.streets.get(cfg.id);
@@ -14474,26 +14431,6 @@ function addCrosswalkV362(g,x,z,rot){
     stripe.rotation.y=rot;g.add(stripe);
   }
 }
-makeCityStreetGroup=function(cfg){
-  const g=new THREE.Group(),lv=districtLevel(cfg.id),d=districtBlockDimsV362(cfg.id),roadW=lv>=3?1.62:1.42;
-  if(lv<=0){g.position.copy(cfg.pos);return g;}
-  const pts=[[-d.hw,-d.hh],[d.hw,-d.hh],[d.hw,d.hh],[-d.hw,d.hh]];
-  const V=p=>new THREE.Vector3(p[0],0,p[1]);
-  for(let i=0;i<4;i++)addRoadSegmentPremiumV353(g,V(pts[i]),V(pts[(i+1)%4]),roadW,{markings:true,kind:'street'});
-  addRoadSegmentPremiumV353(g,new THREE.Vector3(-d.hw,0,0),new THREE.Vector3(d.hw,0,0),1.12,{markings:false,edgeMarks:true,kind:'service'});
-  addRoadSegmentPremiumV353(g,new THREE.Vector3(0,0,-d.hh),new THREE.Vector3(0,0,d.hh),1.12,{markings:false,edgeMarks:true,kind:'service'});
-  if(lv>=2){
-    addRoadSegmentPremiumV353(g,new THREE.Vector3(-d.hw*.78,0,-d.hh*.55),new THREE.Vector3(d.hw*.78,0,-d.hh*.55),.92,{markings:false,edgeMarks:true,kind:'service'});
-    addRoadSegmentPremiumV353(g,new THREE.Vector3(-d.hw*.78,0,d.hh*.55),new THREE.Vector3(d.hw*.78,0,d.hh*.55),.92,{markings:false,edgeMarks:true,kind:'service'});
-  }
-  const plaza=new THREE.Mesh(new THREE.CircleGeometry(1.55,28),ROAD_STYLE_V353.walk);plaza.rotation.x=-Math.PI/2;plaza.position.y=.062;g.add(plaza);
-  for(const [x,z,r] of [[0,-d.hh,0],[0,d.hh,0],[-d.hw,0,Math.PI/2],[d.hw,0,Math.PI/2]])addCrosswalkV362(g,x*.92,z*.92,r);
-  const bays=Math.min(4,lv+1);
-  for(let i=0;i<bays;i++){
-    const t=(i/(Math.max(1,bays-1))-.5)*2;const px=t*(d.hw-1.4),pz=d.hh+1.18;addPullInBayV353(g,new THREE.Vector3(px,0,pz),Math.PI,true);
-  }
-  g.position.copy(cfg.pos);return g;
-};
 refreshLivingDistrictStreets=function(){
   for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.streets.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.streets.delete(cfg.id);}if(!districtUnlocked(cfg)||districtLevel(cfg.id)<=0)continue;const g=makeCityStreetGroup(cfg);scene.add(g);cityWorldRuntime.streets.set(cfg.id,g);}
 };
@@ -14781,31 +14718,6 @@ function refreshTransitStopsV364(){
   }
 }
 
-const _makeCityStreetGroupV364=makeCityStreetGroup;
-makeCityStreetGroup=function(cfg){
-  const g=_makeCityStreetGroupV364(cfg);const lv=districtLevel(cfg.id);if(lv<=0)return g;
-  const zebraMat=new THREE.MeshBasicMaterial({color:0xf4efe4,transparent:true,opacity:.86});
-  const dividerMat=new THREE.MeshBasicMaterial({color:0xf6dfa9,transparent:true,opacity:.76});
-  for(let i=0;i<4;i++){
-    const a=Math.PI/4+i*Math.PI/2;
-    for(let j=-2;j<=2;j++){
-      const stripe=new THREE.Mesh(new THREE.BoxGeometry(.13,.012,.42),zebraMat);
-      stripe.position.set(Math.cos(a)*4.05 + Math.cos(a+Math.PI/2)*j*.22,.082,Math.sin(a)*4.05 + Math.sin(a+Math.PI/2)*j*.22);
-      stripe.rotation.y=-a;g.add(stripe);
-    }
-    if(lv>=2){
-      const lane=new THREE.Mesh(new THREE.BoxGeometry(.045,.01,1.05),dividerMat);
-      lane.position.set(Math.cos(a)*(5.35+lv*.34),.076,Math.sin(a)*(5.35+lv*.34));lane.rotation.y=-a;g.add(lane);
-    }
-  }
-  if(cfg.id==='business'&&lv>=2){
-    for(let i=0;i<4;i++){const a=Math.PI/4+i*Math.PI/2;const planter=makeSimplePlanterV363(0x74b56e);planter.position.set(Math.cos(a)*2.25,0,Math.sin(a)*2.25);g.add(planter);}  
-  }else if(cfg.id==='waterfront'&&lv>=2){
-    for(const x of [-1.15,1.15]){const bench=makeBench();bench.position.set(x,0,0);bench.rotation.y=x>0?Math.PI/2:-Math.PI/2;g.add(bench);}  
-  }
-  return g;
-};
-
 const _chooseResidentTargetV364=chooseResidentTarget;
 chooseResidentTarget=function(r){
   const homeId=r.districtId,cfg=CITY_DISTRICTS.find(d=>d.id===homeId);if(!cfg)return;
@@ -15014,25 +14926,6 @@ moveDistrictLocalCar=function(c,dt){
   c.group.position.set(sample.x,.04,sample.z);smoothCityVehicleYaw(c.group,sample.yaw+(c.direction<0?Math.PI:0),dt,9);for(const w of c.group.userData.cityWheels||[])w.rotateX(Math.abs(step*10.5)/.14);
 };
 
-makeCityStreetGroup=function(cfg){
-  const g=new THREE.Group(),lv=districtLevel(cfg.id),d=districtBlockDimsV362(cfg.id),roadW=lv>=3?1.60:1.42; if(lv<=0){g.position.copy(cfg.pos);return g;}
-  const hw=d.hw,hh=d.hh;const C=(x,z)=>new THREE.Vector3(x,0,z);
-  const pts=[C(-hw,-hh),C(hw,-hh),C(hw,hh),C(-hw,hh)];
-  for(let i=0;i<4;i++)addUnifiedRoadV365(g,pts[i],pts[(i+1)%4],roadW,{markings:true,edgeMarks:false});
-  addUnifiedRoadV365(g,C(-hw,0),C(hw,0),1.08,{markings:false,edgeMarks:lv>=2});
-  addUnifiedRoadV365(g,C(0,-hh),C(0,hh),1.08,{markings:false,edgeMarks:lv>=2});
-  if(lv>=2){
-    addUnifiedRoadV365(g,C(-hw*.78,-hh*.55),C(hw*.78,-hh*.55),.92,{markings:false,edgeMarks:false});
-    addUnifiedRoadV365(g,C(-hw*.78,hh*.55),C(hw*.78,hh*.55),.92,{markings:false,edgeMarks:false});
-  }
-  if(lv>=3){
-    addUnifiedRoadV365(g,C(-hw*.48,-hh*.78),C(-hw*.48,hh*.78),.88,{markings:false,edgeMarks:false});
-    addUnifiedRoadV365(g,C(hw*.48,-hh*.78),C(hw*.48,hh*.78),.88,{markings:false,edgeMarks:false});
-  }
-  for(const [x,z,r] of [[0,-hh,0],[0,hh,0],[-hw,0,Math.PI/2],[hw,0,Math.PI/2]])addCrosswalkV365(g,x*.9,z*.9,r);
-  const bays=Math.min(4,lv+1);for(let i=0;i<bays;i++){const t=bays===1?0:(i/(bays-1)-.5)*2,px=t*(hw-1.4),pz=hh+1.02;addPullInBayV353(g,new THREE.Vector3(px,0,pz),Math.PI,1.08,1.54);}  
-  g.position.copy(cfg.pos);return g;
-};
 refreshLivingDistrictStreets=function(){
   for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.streets.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.streets.delete(cfg.id);}if(!districtUnlocked(cfg)||districtLevel(cfg.id)<=0)continue;const g=makeCityStreetGroup(cfg);scene.add(g);cityWorldRuntime.streets.set(cfg.id,g);}if(typeof refreshTransitStopsV364==='function')refreshTransitStopsV364();
 };
@@ -15622,17 +15515,6 @@ function addInfrastructureJointsV37(group,segs){
   for(const [k,n] of counts){if(n<2)continue;const [x,z]=k.split('|').map(Number);const cap=new THREE.Mesh(new THREE.CircleGeometry(.82,18),ROAD_STYLE_V353.asphaltDark);cap.rotation.x=-Math.PI/2;cap.position.set(x,.0585,z);cap.receiveShadow=true;group.add(cap);}
 }
 
-makeCityStreetGroup=function(cfg){
-  const g=new THREE.Group(),lv=districtRoadLevelV37(cfg.id),d=districtBlockDimsV362(cfg.id);if(lv<=0){g.position.copy(cfg.pos);return g;}
-  const hw=d.hw,hh=d.hh,C=(x,z)=>new THREE.Vector3(x,0,z),pts=[C(-hw,-hh),C(hw,-hh),C(hw,hh),C(-hw,hh)],mainW=[0,1.16,1.38,1.56][lv];
-  for(let i=0;i<4;i++)addUnifiedRoadV365(g,pts[i],pts[(i+1)%4],mainW,{markings:lv>=2,edgeMarks:lv===1,dark:true});
-  addUnifiedRoadV365(g,C(-hw,0),C(hw,0),lv>=3?1.20:1.02,{markings:lv>=3,edgeMarks:lv<3,dark:true});
-  if(lv>=2)addUnifiedRoadV365(g,C(0,-hh),C(0,hh),1.08,{markings:false,edgeMarks:true,dark:true});
-  if(lv>=2){addUnifiedRoadV365(g,C(-hw*.78,-hh*.55),C(hw*.78,-hh*.55),.88,{markings:false,edgeMarks:false,dark:true});addUnifiedRoadV365(g,C(-hw*.78,hh*.55),C(hw*.78,hh*.55),.88,{markings:false,edgeMarks:false,dark:true});}
-  if(lv>=3){addUnifiedRoadV365(g,C(-hw*.48,-hh*.78),C(-hw*.48,hh*.78),.86,{markings:false,edgeMarks:true,dark:true});addUnifiedRoadV365(g,C(hw*.48,-hh*.78),C(hw*.48,hh*.78),.86,{markings:false,edgeMarks:true,dark:true});for(const [x,z,r] of [[0,-hh,0],[0,hh,0],[-hw,0,Math.PI/2],[hw,0,Math.PI/2]])addCrosswalkV365(g,x*.94,z*.94,r);}
-  if(lv>=2){const bays=lv===2?2:4;for(let i=0;i<bays;i++){const t=bays===1?0:(i/(bays-1)-.5)*2;addPullInBayV353(g,new THREE.Vector3(t*(hw-1.4),0,hh+1.0),Math.PI,1.02,1.46);}}
-  g.position.copy(cfg.pos);return g;
-};
 refreshLivingDistrictStreets=function(){
   for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.streets.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.streets.delete(cfg.id);}if(districtRoadLevelV37(cfg.id)<=0)continue;const g=makeCityStreetGroup(cfg);scene.add(g);cityWorldRuntime.streets.set(cfg.id,g);}if(typeof refreshTransitStopsV364==='function')refreshTransitStopsV364();
 };
@@ -15792,18 +15674,6 @@ function masterInfrastructureRecordsV38(){
   return [...m.values()];
 }
 districtMasterSegmentsV37=function(){return masterInfrastructureRecordsV38().map(x=>[x.a,x.b,x.roadLv]);};
-
-makeCityStreetGroup=function(cfg){
-  const g=new THREE.Group(),lv=districtRoadLevelV37(cfg.id),d=districtBlockDimsV362(cfg.id);if(lv<=0){g.position.copy(cfg.pos);return g;}const hw=d.hw,hh=d.hh,C=(x,z)=>new THREE.Vector3(x,0,z);
-  const pts=[C(-hw,-hh),C(hw,-hh),C(hw,hh),C(-hw,hh)],mainW=[0,1.04,1.28,1.48][lv];
-  for(let i=0;i<4;i++)addInfrastructureRoadV38(g,pts[i],pts[(i+1)%4],mainW,lv,{center:lv>=3,edges:lv>=2});
-  addInfrastructureRoadV38(g,C(-hw,0),C(hw,0),[0,.88,1.00,1.12][lv],lv,{sidewalk:lv>=2,center:false,edges:lv>=3});
-  if(lv>=2)addInfrastructureRoadV38(g,C(0,-hh),C(0,hh),1.00,lv,{sidewalk:true,center:false,edges:lv>=3});
-  if(lv>=2){addInfrastructureRoadV38(g,C(-hw*.76,-hh*.55),C(hw*.76,-hh*.55),.78,lv,{sidewalk:false,center:false});addInfrastructureRoadV38(g,C(-hw*.76,hh*.55),C(hw*.76,hh*.55),.78,lv,{sidewalk:false,center:false});}
-  if(lv>=3){addInfrastructureRoadV38(g,C(-hw*.48,-hh*.76),C(-hw*.48,hh*.76),.82,lv,{sidewalk:false,center:false,edges:true});addInfrastructureRoadV38(g,C(hw*.48,-hh*.76),C(hw*.48,hh*.76),.82,lv,{sidewalk:false,center:false,edges:true});for(const [x,z,r] of [[0,-hh,0],[0,hh,0],[-hw,0,Math.PI/2],[hw,0,Math.PI/2]])addCrosswalkV365(g,x*.94,z*.94,r);}
-  if(lv>=2){const bays=lv===2?2:4;for(let i=0;i<bays;i++){const t=(i/(Math.max(1,bays-1))-.5)*2;addPullInBayV353(g,new THREE.Vector3(t*(hw-1.5),0,hh+1.0),Math.PI,1.0,1.44);}}
-  g.position.copy(cfg.pos);return g;
-};
 
 refreshArterialRoads=function(){
   if(cityWorldRuntime.masterRoads){scene.remove(cityWorldRuntime.masterRoads);disposeObject3D(cityWorldRuntime.masterRoads);cityWorldRuntime.masterRoads=null;}
@@ -24724,7 +24594,6 @@ function v44Curve(name,value){
   }
 
   function v44WrapStreetFactory(){
-    if(typeof makeCityStreetGroup!=='function'||makeCityStreetGroup.__v44Wrapped)return;const old=makeCityStreetGroup;const wrapped=function(cfg){const g=old(cfg);return v44EnhanceDistrictStreetGroup(g,cfg);};wrapped.__v44Wrapped=true;makeCityStreetGroup=wrapped;
     if(typeof refreshArterialRoads==='function'){const r=refreshArterialRoads;refreshArterialRoads=function(){const x=r.apply(this,arguments);v44EnhanceAllRoadGroups();return x;};}
     if(typeof refreshDistrictAccessRoads==='function'){const r=refreshDistrictAccessRoads;refreshDistrictAccessRoads=function(){const x=r.apply(this,arguments);v44EnhanceAllRoadGroups();return x;};}
     if(typeof refreshTransportAccessRoads==='function'){const r=refreshTransportAccessRoads;refreshTransportAccessRoads=function(){const x=r.apply(this,arguments);v44EnhanceAllRoadGroups();return x;};}
@@ -27439,45 +27308,6 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
   // Verified live: 0 ReferenceError across 10 reloads (desktop + iPhone 13) after removal, ring
   // road and all road views unchanged (see p16/t3_roads.mjs).
 
-  /* District streets are rebuilt as a real connected grid. Every crossing is a node and each
-     road stops/restarts there, so no sidewalk can run through another carriageway. */
-  makeCityStreetGroup=function(cfg){
-    const g=new THREE.Group(),lv=districtRoadLevelV37(cfg.id),d=districtBlockDimsV362(cfg.id);if(lv<=0){g.position.copy(cfg.pos);return g;}
-    const hw=d.hw,hh=d.hh;
-    const mainW=[0,1.28,1.50,1.72][lv],midW=[0,1.02,1.16,1.30][lv],localW=[0,.82,.90,.98][lv];
-    const xs=[-hw,0,hw],zs=[-hh,0,hh];
-    if(lv>=3)xs.splice(1,0,-hw*.48),xs.splice(xs.length-1,0,hw*.48);
-    if(lv>=2)zs.splice(1,0,-hh*.55),zs.splice(zs.length-1,0,hh*.55);
-    xs.sort((a,b)=>a-b);zs.sort((a,b)=>a-b);
-    const P=(x,z)=>new THREE.Vector3(x,0,z);
-    const edge=(a,b,w,opts={})=>addInfrastructureRoadV38(g,a,b,w,lv,Object.assign({openStart:true,openEnd:true},opts));
-    const joints=new Map();
-    const joint=(x,z,w)=>{const k=x.toFixed(3)+'|'+z.toFixed(3),old=joints.get(k);if(!old||old.w<w)joints.set(k,{p:P(x,z),w});};
-
-    // outer perimeter, split wherever an internal street meets it
-    for(const z of [-hh,hh])for(let i=0;i<xs.length-1;i++){edge(P(xs[i],z),P(xs[i+1],z),mainW,{center:lv>=3,edges:lv===2,sidewalk:lv>=2});joint(xs[i],z,mainW);joint(xs[i+1],z,mainW);}
-    for(const x of [-hw,hw])for(let i=0;i<zs.length-1;i++){edge(P(x,zs[i]),P(x,zs[i+1]),mainW,{center:lv>=3,edges:lv===2,sidewalk:lv>=2});joint(x,zs[i],mainW);joint(x,zs[i+1],mainW);}
-
-    // main cross
-    for(let i=0;i<xs.length-1;i++){const w=midW;edge(P(xs[i],0),P(xs[i+1],0),w,{center:lv>=3,edges:lv===2,sidewalk:lv>=2});joint(xs[i],0,Math.max(w,localW));joint(xs[i+1],0,Math.max(w,localW));}
-    for(let i=0;i<zs.length-1;i++){const w=midW;edge(P(0,zs[i]),P(0,zs[i+1]),w,{center:lv>=3,edges:lv===2,sidewalk:lv>=2});joint(0,zs[i],Math.max(w,localW));joint(0,zs[i+1],Math.max(w,localW));}
-
-    // local grid streets connect all the way to the perimeter instead of ending abruptly in lawns
-    if(lv>=2){for(const z of [-hh*.55,hh*.55])for(let i=0;i<xs.length-1;i++){edge(P(xs[i],z),P(xs[i+1],z),localW,{sidewalk:lv>=3,center:false,edges:false,curb:lv>=2});joint(xs[i],z,localW);joint(xs[i+1],z,localW);}}
-    if(lv>=3){for(const x of [-hw*.48,hw*.48])for(let i=0;i<zs.length-1;i++){edge(P(x,zs[i]),P(x,zs[i+1]),localW,{sidewalk:false,center:false,edges:false,curb:true});joint(x,zs[i],localW);joint(x,zs[i+1],localW);}}
-
-    // clean junction patches over all split endpoints; these hide tiny seams but do not create curbed mini-roundabouts
-    for(const {p,w} of joints.values())addRoadJointV38(g,p,lv,w);
-
-    if(lv>=2){
-      addCrosswalkV365(g,0,-hh+.34,0);addCrosswalkV365(g,0,hh-.34,0);
-      addCrosswalkV365(g,-hw+.34,0,Math.PI/2);addCrosswalkV365(g,hw-.34,0,Math.PI/2);
-    }
-    const bays=lv===1?1:lv===2?2:3;
-    for(let i=0;i<bays;i++){const t=bays===1?0:(i/(bays-1)-.5)*2;addPullInBayV353(g,P(t*(hw-1.65),hh+1.02),Math.PI,1.08,1.58);}
-    g.position.copy(cfg.pos);g.userData.v57DistrictRoadGrid=true;return g;
-  };
-
   /* Stage roads: keep the central trunks as streets, but later building spurs become subdued
      access lanes with no pointless sidewalk/curb treatment. */
   makeStageRoadGroupV367=function(){
@@ -27637,24 +27467,6 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     addAsphaltWear58(group,a,b,w,seedKey,opts);
   }
 
-  makeCityStreetGroup=function(cfg){
-    const g=new THREE.Group(),lv=districtRoadLevelV37(cfg.id),d=districtBlockDimsV362(cfg.id);if(lv<=0){g.position.copy(cfg.pos);return g;}
-    const hw=d.hw,hh=d.hh,mainW=[0,1.32,1.54,1.78][lv],midW=[0,1.04,1.18,1.34][lv],localW=[0,.84,.92,1.00][lv];
-    const xs=[-hw,0,hw],zs=[-hh,0,hh];if(lv>=3)xs.push(-hw*.48,hw*.48);if(lv>=2)zs.push(-hh*.55,hh*.55);xs.sort((a,b)=>a-b);zs.sort((a,b)=>a-b);
-    const P=(x,z)=>new THREE.Vector3(x,0,z),segments=[];
-    const push=(a,b,w,opts,kind)=>segments.push({a,b,w,opts:opts||{},kind});
-    for(const z of [-hh,hh])for(let i=0;i<xs.length-1;i++)push(P(xs[i],z),P(xs[i+1],z),mainW,{center:lv>=3,edges:lv===2,sidewalk:lv>=2},'perimeter');
-    for(const x of [-hw,hw])for(let i=0;i<zs.length-1;i++)push(P(x,zs[i]),P(x,zs[i+1]),mainW,{center:lv>=3,edges:lv===2,sidewalk:lv>=2},'perimeter');
-    for(let i=0;i<xs.length-1;i++)push(P(xs[i],0),P(xs[i+1],0),midW,{center:lv>=3,edges:lv===2,sidewalk:lv>=2},'collector');
-    for(let i=0;i<zs.length-1;i++)push(P(0,zs[i]),P(0,zs[i+1]),midW,{center:lv>=3,edges:lv===2,sidewalk:lv>=2},'collector');
-    if(lv>=2)for(const z of [-hh*.55,hh*.55])for(let i=0;i<xs.length-1;i++)push(P(xs[i],z),P(xs[i+1],z),localW,{sidewalk:lv>=3,center:false,edges:false,curb:true},'local');
-    if(lv>=3)for(const x of [-hw*.48,hw*.48])for(let i=0;i<zs.length-1;i++)push(P(x,zs[i]),P(x,zs[i+1]),localW,{sidewalk:false,center:false,edges:false,curb:true},'local');
-    for(let i=0;i<segments.length;i++){const s=segments[i];addRoadSeg58(g,s.a,s.b,s.w,lv,s.opts,`${cfg.id}:${s.kind}:${i}`);}
-    const nodes=nodeGraph58(segments),kinds={X:0,T:0,CORNER:0,STRAIGHT:0,END:0};for(const n of nodes.values()){const kind=nodeKind58(n);kinds[kind]=(kinds[kind]||0)+1;addIntersection58(g,n,lv,cfg.id);}
-    if(lv>=2){addCrosswalkV365(g,0,-hh+.44,0);addCrosswalkV365(g,0,hh-.44,0);addCrosswalkV365(g,-hw+.44,0,Math.PI/2);addCrosswalkV365(g,hw-.44,0,Math.PI/2);}
-    if(lv>=2){addParkingPocket58(g,P(-hw*.72,hh),P(-hw*.08,hh),1,lv>=3?4:3);addParkingPocket58(g,P(hw*.10,-hh),P(hw*.72,-hh),-1,lv>=3?4:3);}
-    g.position.copy(cfg.pos);g.userData.v58RoadAudit={district:cfg.id,level:lv,segments:segments.length,nodes:nodes.size,kinds};g.userData.v58DistrictRoadGrid=true;return g;
-  };
 
   refreshArterialRoads=function(){
     if(cityWorldRuntime.masterRoads){scene.remove(cityWorldRuntime.masterRoads);disposeObject3D(cityWorldRuntime.masterRoads);cityWorldRuntime.masterRoads=null;}
@@ -27810,6 +27622,22 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     const bay=new THREE.Mesh(new THREE.BoxGeometry(pocketW,.032,pocketLen),ROAD_STYLE_V353.asphaltDark);bay.position.set(mx,.058,mz);bay.rotation.y=yaw;bay.receiveShadow=true;bay.userData.v59ParkingPocket=true;group.add(bay);
     const outer=new THREE.Mesh(new THREE.BoxGeometry(.10,.060,pocketLen),ROAD_STYLE_V353.curb);outer.position.set(mx+nx*side*(pocketW*.5+.05),.086,mz+nz*side*(pocketW*.5+.05));outer.rotation.y=yaw;group.add(outer);
     for(let i=1;i<slots;i++){const o=(i/slots-.5)*pocketLen,line=new THREE.Mesh(new THREE.BoxGeometry(pocketW*.78,.006,.035),ROAD_STYLE_V353.edge);line.position.set(mx+ux*o,.079,mz+uz*o);line.rotation.y=yaw;group.add(line);}
+    // v63 1.1 (item 2, restoring an audit-confirmed accidental loss, not a redesign): the
+    // pre-v56 base makeCityStreetGroup placed static `createLivingCityCar('parked', ...)`
+    // meshes in its own (since-replaced) roundabout parking bays. v59's rewrite kept the
+    // pocket geometry (asphalt bay + curb + slot dividers, above) but never carried the car
+    // meshes over, so every v59 parking pocket has stood empty since v59 -- audit finding
+    // "Парковки в живой сборке не используются" (Проход 3, P3), explicitly the same
+    // rewrite-drops-a-feature pattern as the curb/sidewalk loss elsewhere in this pass.
+    // Fix here follows the audit's first suggested option verbatim ("вернуть статичные
+    // машины в карманы"): one static parked car per slot, positioned at the same slot
+    // centers as the dividers above, oriented along the pocket like the bay itself.
+    for(let i=0;i<slots;i++){
+      const o=((i+.5)/slots-.5)*pocketLen;
+      const car=createLivingCityCar('parked',CITY_CAR_COLORS[i%CITY_CAR_COLORS.length]);
+      car.position.set(mx+ux*o,.074,mz+uz*o);car.rotation.y=yaw;car.scale.setScalar(.74);
+      car.userData.v63ParkedCar=true;group.add(car);
+    }
   }
 
   // Global loose-road fallback: no road slab may be narrower than a full-size truck plus clearance.
