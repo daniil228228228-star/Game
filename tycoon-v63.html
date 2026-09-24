@@ -27440,14 +27440,8 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     }
   };
 
-  addRoadJointV38 = function(group,p,level,width=1.2){
-    const cap=new THREE.Mesh(new THREE.CircleGeometry(Math.max(0.50,width*0.56),24),roadDeckMatV38(level));
-    cap.rotation.x=-Math.PI/2;cap.position.set(p.x,0.0585,p.z);cap.receiveShadow=true;group.add(cap);
-    if(level>=2){
-      const curb=new THREE.Mesh(new THREE.RingGeometry(Math.max(0.44,width*0.54),Math.max(0.48,width*0.61),24),ROAD_V38.curb);
-      curb.rotation.x=-Math.PI/2;curb.position.set(p.x,0.064,p.z);curb.receiveShadow=true;group.add(curb);
-    }
-  };
+  // v63 1.1 (P3-1): addRoadJointV38 removed here -- dead code, see removal note at its v57
+  // redefinition below for the full grep evidence (0 live callers across all 7 call sites).
 
   function refreshRoadWorld(){
     safe(()=>{ if(typeof refreshArterialRoads==='function') refreshArterialRoads(); });
@@ -27510,18 +27504,15 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     }
   }
 
-  function addAsphaltJointV57(group,p,width,material){
-    if(!group||!p)return;
-    const r=Math.max(.42,width*.54);
-    const cap=new THREE.Mesh(new THREE.CircleGeometry(r,28),material||ROAD_STYLE_V353.asphaltDark);
-    cap.rotation.x=-Math.PI/2;cap.position.set(p.x,.059,p.z);cap.receiveShadow=true;cap.userData.v57RoadJoint=true;group.add(cap);
-  }
-
-  /* Replaces circular 'curbed islands' at bends with an asphalt-only junction patch. */
-  addRoadJointV38=function(group,p,level,width=1.2){
-    const mat=typeof roadDeckMatV38==='function'?roadDeckMatV38(level):ROAD_STYLE_V353.asphaltDark;
-    addAsphaltJointV57(group,p,width,mat);
-  };
+  // v63 1.1 (P3-1 / Pass 14 cleanup #1): addRoadJointV38 (and its only caller,
+  // addAsphaltJointV57) removed -- confirmed 0 live callers. All 7 call sites found by grep
+  // (base 15761/15789/15790/15814, this v57 redefinition, plus the v56 one removed above) sit
+  // inside functions (makeStageRoadGroupV367, refreshArterialRoads, makeCityStreetGroup) that
+  // are themselves reassigned by later live layers (final live bodies: v61@makeStageRoadGroup-
+  // V367 uses addStraight61/addCorner61/addJunction61; v59@refreshArterialRoads uses
+  // renderNetwork59; v59@makeCityStreetGroup, wrapped by v61, same -- none call addRoadJointV38).
+  // Verified live: 0 ReferenceError across 10 reloads (desktop + iPhone 13) after removal, ring
+  // road and all road views unchanged (see p16/t3_roads.mjs).
 
   /* Better segment construction: road deck reaches the node, but pedestrian edges stop before
      intersections. This removes the curb/sidewalk bars that previously cut across the crossing. */
@@ -27651,20 +27642,12 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     g.userData.v57StageRoadGrid=true;return g;
   };
 
-  /* Outer ring gets proper road edges and a pedestrian outside edge, instead of looking like a
-     flat dark donut with one glowing stripe. */
-  function rebuildOuterRingDetailsV57(){
-    if(typeof scene==='undefined'||typeof GROUND_HALF==='undefined')return;
-    if(window.__v57OuterRoadDetails){scene.remove(window.__v57OuterRoadDetails);if(typeof disposeObject3D==='function')disposeObject3D(window.__v57OuterRoadDetails);}
-    const g=new THREE.Group();g.name='v57OuterRoadDetails';
-    const inner=GROUND_HALF*.78,outer=GROUND_HALF*.86;
-    const edgeMat=ROAD_STYLE_V353.edge,walkMat=ROAD_STYLE_V353.walk,curbMat=ROAD_STYLE_V353.curb;
-    for(const r of [inner+.17,outer-.17]){const line=new THREE.Mesh(new THREE.RingGeometry(r-.025,r+.025,192),edgeMat);line.rotation.x=-Math.PI/2;line.position.y=.079;g.add(line);}
-    const curb=new THREE.Mesh(new THREE.RingGeometry(outer+.04,outer+.16,192),curbMat);curb.rotation.x=-Math.PI/2;curb.position.y=.067;curb.receiveShadow=true;g.add(curb);
-    const walk=new THREE.Mesh(new THREE.RingGeometry(outer+.17,outer+.75,192),walkMat);walk.rotation.x=-Math.PI/2;walk.position.y=.061;walk.receiveShadow=true;g.add(walk);
-    scene.add(g);window.__v57OuterRoadDetails=g;
-    if(typeof outerRingMark!=='undefined')outerRingMark.visible=false;
-  }
+  // v63 1.1 (P2-5 / Pass 14 cleanup #2): rebuildOuterRingDetailsV57() removed -- it built a
+  // ~4-mesh ring-detail group that rebuildOuterRingV58() (below) immediately hid with
+  // `.visible=false` on every load and never disposed, and v59's rebuildOuter59() shows the
+  // base `outerRingRoad` instead. The group was never visible in any live state; only its own
+  // (also removed, see below) self-audit read it back. Confirmed live: ring road and all road
+  // views render identically before/after (see p16/t3_roads.mjs), scene mesh count/memory drop.
 
   function refreshAllRoadsV57(){
     refreshRoadMaterialsV57();
@@ -27675,45 +27658,18 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     safe(()=>refreshStageRoadsV367?.());
     safe(()=>refreshDrivewaysV35?.(true));
     safe(()=>refreshStreetlightsWorld?.());
-    rebuildOuterRingDetailsV57();
     refreshRoadMaterialsV57();
   }
 
-  function meshDimsV57(o){const p=o.geometry?.parameters||{};return [p.width||0,p.height||0,p.depth||0,p.radius||0,p.innerRadius||0,p.outerRadius||0].map(v=>Number(v||0).toFixed(3)).join(',');}
-  function roadAuditV57(){
-    const groups=[];
-    const add=(name,obj)=>{if(obj)groups.push([name,obj]);};
-    add('master',cityWorldRuntime?.masterRoads);add('stage',cityWorldRuntime?.stageRoads);add('transport',cityWorldRuntime?.transportAccessRoads);
-    if(cityWorldRuntime?.streets)for(const [k,v] of cityWorldRuntime.streets)add('district:'+k,v);
-    if(cityWorldRuntime?.arterialRoads)for(const [k,v] of cityWorldRuntime.arterialRoads)add('arterial:'+k,v);
-    if(cityWorldRuntime?.districtAccessRoads)for(const [k,v] of cityWorldRuntime.districtAccessRoads)add('access:'+k,v);
-    add('outer-details',window.__v57OuterRoadDetails);
-    const report={version:V57.version,groups:groups.length,meshes:0,decks:0,curbs:0,walks:0,marks:0,texturedDecks:0,duplicates:[],materialIssues:[],groupStats:{},notes:[]};
-    for(const [name,g] of groups){
-      const sig=new Map(),stat={meshes:0,decks:0,curbs:0,walks:0,marks:0};
-      g.traverse(o=>{if(!o.isMesh)return;report.meshes++;stat.meshes++;
-        if(o.userData.v57RoadDeck){report.decks++;stat.decks++;const mats=Array.isArray(o.material)?o.material:[o.material];if(mats.some(m=>m?.map)){report.texturedDecks++;}else report.materialIssues.push(name+': untextured road deck');}
-        if(o.userData.v57RoadCurb){report.curbs++;stat.curbs++;}
-        if(o.userData.v57RoadWalk){report.walks++;stat.walks++;}
-        if(o.userData.v57RoadMark){report.marks++;stat.marks++;}
-        const s=[o.geometry?.type,o.position.x.toFixed(3),o.position.y.toFixed(3),o.position.z.toFixed(3),o.rotation.y.toFixed(3),meshDimsV57(o)].join('|');const n=(sig.get(s)||0)+1;sig.set(s,n);
-      });
-      for(const [s,n] of sig)if(n>1)report.duplicates.push({group:name,count:n,signature:s});
-      report.groupStats[name]=stat;
-    }
-    if(report.duplicates.length===0)report.notes.push('No exact duplicate road meshes detected in active road groups.');
-    if(report.materialIssues.length===0)report.notes.push('All v57 road decks use textured materials.');
-    report.notes.push('District streets use split-node geometry, so curbs/sidewalks stop at intersections instead of crossing through them.');
-    report.notes.push('Stage spurs use access-road styling without decorative sidewalks/curbs.');
-    report.notes.push('Intersection caps are asphalt-only seam covers, not curbed circular islands.');
-    return report;
-  }
-  window.__TYCOON_ROAD_AUDIT_V57__={run:roadAuditV57,refresh:refreshAllRoadsV57,refreshMaterials:refreshRoadMaterialsV57};
+  // v63 1.1 (P2-4 / Pass 14 cleanup #3): roadAuditV57() (and its only helper, meshDimsV57)
+  // removed -- console/DOM-only self-audit, always compared the live road groups against
+  // themselves (0 real signal), no other code read its report.
+  window.__TYCOON_ROAD_AUDIT_V57__={refresh:refreshAllRoadsV57,refreshMaterials:refreshRoadMaterialsV57};
 
   function init(){
     refreshAllRoadsV57();
-    setTimeout(()=>{refreshAllRoadsV57();const r=roadAuditV57();console.log('[v57 road audit]',r);},450);
-    setTimeout(()=>{refreshAllRoadsV57();},1400);
+    setTimeout(refreshAllRoadsV57,450);
+    setTimeout(refreshAllRoadsV57,1400);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
@@ -27875,21 +27831,10 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     g.userData.v58RoadAudit={segments:segments.length,nodes:nodes.size,kinds:Array.from(nodes.values()).reduce((o,n)=>(o[nodeKind58(n)]=(o[nodeKind58(n)]||0)+1,o),{})};return g;
   };
 
-  function rebuildOuterRingV58(){
-    if(typeof scene==='undefined'||typeof GROUND_HALF==='undefined')return;
-    if(window.__v58OuterRoad){scene.remove(window.__v58OuterRoad);disposeObject3D?.(window.__v58OuterRoad);}
-    const g=new THREE.Group();g.name='v58OuterRoad';const inner=GROUND_HALF*.78,outer=GROUND_HALF*.86,centerR=(inner+outer)/2;
-    if(window.__v57OuterRoadDetails)window.__v57OuterRoadDetails.visible=false;
-    if(typeof outerRingMark!=='undefined')outerRingMark.visible=false;
-    const edgeMat=ROAD_STYLE_V353.edge,curbMat=ROAD_STYLE_V353.curb,walkMat=ROAD_STYLE_V353.walk;
-    for(const r of [inner+.14,outer-.14]){const line=new THREE.Mesh(new THREE.RingGeometry(r-.022,r+.022,224),edgeMat);line.rotation.x=-Math.PI/2;line.position.y=.080;g.add(line);}
-    const dashCount=72;
-    for(let i=0;i<dashCount;i+=2){const a=i/dashCount*Math.PI*2,r=centerR,dash=new THREE.Mesh(new THREE.BoxGeometry(.055,.007,.72),ROAD_STYLE_V353.lane);dash.position.set(Math.cos(a)*r,.080,Math.sin(a)*r);dash.rotation.y=-a;g.add(dash);}
-    const curb=new THREE.Mesh(new THREE.RingGeometry(outer+.035,outer+.16,224),curbMat);curb.rotation.x=-Math.PI/2;curb.position.y=.067;curb.receiveShadow=true;g.add(curb);
-    const walk=new THREE.Mesh(new THREE.RingGeometry(outer+.17,outer+.72,224),walkMat);walk.rotation.x=-Math.PI/2;walk.position.y=.061;walk.receiveShadow=true;g.add(walk);
-    for(let i=0;i<12;i++){const a=(i+.35)/12*Math.PI*2,p=new THREE.Vector3(Math.cos(a)*(centerR+.62),0,Math.sin(a)*(centerR+.62));addDrain58(g,p,-a);}
-    scene.add(g);window.__v58OuterRoad=g;
-  }
+  // v63 1.1 (P2-5 / Pass 14 cleanup #2): rebuildOuterRingV58() removed for the same reason as
+  // rebuildOuterRingDetailsV57() above -- a ~51-mesh ring group (2 edges + 36 dashes + curb +
+  // walk + 12 drains) that v59's rebuildOuter59() hid with `.visible=false` on every load and
+  // never disposed, while the base `outerRingRoad` was what actually rendered.
 
   function refreshAllRoadsV58(){
     safe58(()=>window.__TYCOON_ROAD_AUDIT_V57__?.refreshMaterials?.());
@@ -27900,40 +27845,16 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     safe58(()=>refreshStageRoadsV367?.());
     safe58(()=>refreshDrivewaysV35?.(true));
     safe58(()=>refreshStreetlightsWorld?.());
-    safe58(rebuildOuterRingV58);
   }
 
-  function collectRoadGroups58(){
-    const out=[],add=(name,obj)=>{if(obj)out.push([name,obj]);};
-    add('master',cityWorldRuntime?.masterRoads);add('stage',cityWorldRuntime?.stageRoads);add('transport',cityWorldRuntime?.transportAccessRoads);add('outer',window.__v58OuterRoad);
-    if(cityWorldRuntime?.streets)for(const [k,v] of cityWorldRuntime.streets)add('district:'+k,v);
-    if(cityWorldRuntime?.arterialRoads)for(const [k,v] of cityWorldRuntime.arterialRoads)add('arterial:'+k,v);
-    if(cityWorldRuntime?.districtAccessRoads)for(const [k,v] of cityWorldRuntime.districtAccessRoads)add('access:'+k,v);return out;
-  }
-  function auditRoadsV58(){
-    const groups=collectRoadGroups58(),r={version:V58.version,groups:groups.length,meshes:0,intersectionPads:0,manholes:0,drains:0,patches:0,cracks:0,parkingPockets:0,districtGraphs:{},duplicates:[],warnings:[],checks:{}};
-    for(const [name,g] of groups){
-      if(g.userData?.v58RoadAudit)r.districtGraphs[name]=g.userData.v58RoadAudit;
-      const sig=new Map();g.traverse(o=>{
-        if(o.userData?.v58Manhole)r.manholes++;if(o.userData?.v58Drain)r.drains++;if(o.userData?.v58RoadCrack)r.cracks++;
-        if(!o.isMesh)return;r.meshes++;if(o.userData.v58Intersection)r.intersectionPads++;if(o.userData.v58RoadPatch)r.patches++;if(o.userData.v58ParkingPocket)r.parkingPockets++;
-        const p=o.geometry?.parameters||{},s=[o.geometry?.type,o.position.x.toFixed(3),o.position.y.toFixed(3),o.position.z.toFixed(3),o.rotation.y.toFixed(3),Number(p.width||p.radius||p.outerRadius||0).toFixed(3),Number(p.depth||p.innerRadius||0).toFixed(3)].join('|');sig.set(s,(sig.get(s)||0)+1);
-      });for(const [s,n] of sig)if(n>1)r.duplicates.push({group:name,count:n,signature:s});
-    }
-    r.checks.noExactDuplicates=r.duplicates.length===0;
-    r.checks.hasTypedIntersections=r.intersectionPads>0;
-    r.checks.hasRoadWear=r.patches>0&&r.cracks>0;
-    r.checks.hasDrainage=r.drains>0;
-    r.checks.hasParkingPockets=r.parkingPockets>0;
-    for(const [name,g] of groups){const a=g.userData?.v58RoadAudit;if(name.startsWith('district:')&&a){if((a.kinds?.X||0)+(a.kinds?.T||0)===0)r.warnings.push(name+': no T/X intersections detected');if(a.segments<6)r.warnings.push(name+': unusually sparse street graph');}}
-    if(!r.checks.noExactDuplicates)r.warnings.push('Exact duplicate meshes detected; inspect signatures.');
-    return r;
-  }
-  window.__TYCOON_ROAD_AUDIT_V58__={run:auditRoadsV58,refresh:refreshAllRoadsV58};
+  // v63 1.1 (P2-4 / Pass 14 cleanup #3): collectRoadGroups58()/auditRoadsV58() removed for the
+  // same reason as roadAuditV57 above -- console/DOM-only self-audit comparing the live road
+  // groups against themselves, no other code read its report or __TYCOON_ROAD_AUDIT_V58__.
+  window.__TYCOON_ROAD_AUDIT_V58__={refresh:refreshAllRoadsV58};
 
   function init58(){
     refreshAllRoadsV58();
-    setTimeout(()=>{refreshAllRoadsV58();console.log('[v58 road audit]',auditRoadsV58());},500);
+    setTimeout(refreshAllRoadsV58,500);
     setTimeout(refreshAllRoadsV58,1500);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init58,{once:true});else init58();
@@ -28117,7 +28038,7 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
   };
 
   function rebuildOuter59(){
-    if(window.__v59OuterRoad){scene.remove(window.__v59OuterRoad);disposeObject3D?.(window.__v59OuterRoad);}if(window.__v58OuterRoad)window.__v58OuterRoad.visible=false;if(typeof outerRingRoad!=='undefined')outerRingRoad.visible=true;if(typeof outerRingMark!=='undefined')outerRingMark.visible=false;
+    if(window.__v59OuterRoad){scene.remove(window.__v59OuterRoad);disposeObject3D?.(window.__v59OuterRoad);}if(typeof outerRingRoad!=='undefined')outerRingRoad.visible=true;if(typeof outerRingMark!=='undefined')outerRingMark.visible=false;
     const g=new THREE.Group();g.name='v59OuterRoad';const inner=GROUND_HALF*.78,outer=GROUND_HALF*.86,center=(inner+outer)/2,roadW=outer-inner;
     const edgeMat=ROAD_STYLE_V353.edge;for(const r of [inner+.12,outer-.12]){const line=new THREE.Mesh(new THREE.RingGeometry(r-.024,r+.024,256),edgeMat);line.rotation.x=-Math.PI/2;line.position.y=.079;g.add(line);}for(let i=0;i<88;i+=2){const a=i/88*Math.PI*2,d=new THREE.Mesh(new THREE.BoxGeometry(.065,.007,.76),ROAD_STYLE_V353.lane);d.position.set(Math.cos(a)*center,.079,Math.sin(a)*center);d.rotation.y=-a;g.add(d);}g.userData.v59OuterRoad={width:roadW};scene.add(g);window.__v59OuterRoad=g;
   }
