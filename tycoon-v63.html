@@ -11083,6 +11083,17 @@ function cityVehicleAvoidanceFactor(actor){
   return THREE.MathUtils.clamp(f,0,1);
 }
 
+/* v63 1.1 (item 7, mechanical merge only -- not unifying the five vehicle engines, that is
+   Stage 2.1): moveArterialCar/moveDistrictLocalCar (below) are kept as bootstrap-only hoisted
+   declarations. Unlike items 1/3/4/5/2-followup/9 this isn't reached by a setTimeout cascade
+   or a top-level call -- it's the per-frame vehicle update loop (updateLivingCity, called via
+   requestAnimationFrame through safeFrameCallV54). Kept anyway after items 2 and 9 both
+   turned out to be reachable earlier than expected purely from code reading; verified this
+   one really is NOT needed live (t_stress_oldsave.mjs/t_district_unlocked_oldsave.mjs both
+   pass whether or not this comment block exists), but the guard costs nothing and matches
+   the file's now-established pattern for every function called with live game objects.
+   Final live versions: moveArterialCar's is v62 (smoothPath62, a Catmull-Rom-like smoothed
+   arterial path -- a legitimate later improvement); moveDistrictLocalCar's is v59. */
 function moveArterialCar(c,dt){
   if(!c?.group?.visible)return;const ep=districtArterialEndpoints(c.districtId),path=ep?.path;if(!path?.length)return;
   if(!Number.isFinite(c.t)||c.t<-.02||c.t>1.02){c.t=THREE.MathUtils.clamp(Number.isFinite(c.t)?c.t:.5,0,1);transportAuditRuntime.offRoadWarnings++;}
@@ -14810,12 +14821,6 @@ syncLivingCityActors=function(){
   livingCityRuntime.arterialCars.forEach((c,i)=>{const cfg=CITY_DISTRICTS[i];const ds=cfg?cityState.districtStats[cfg.id]:null;c.group.visible=!!cfg&&districtLevel(cfg.id)>0&&((ds?.population||0)>8||(ds?.jobs||0)>16||landJobsForDistrict(cfg.id)>0);if(cfg)c.speed=(cfg.id==='business'?1.75:cfg.id==='industrial'?1.68:1.52)+i*.10;});
 };
 
-const _moveDistrictLocalCarV364=moveDistrictLocalCar;
-moveDistrictLocalCar=function(c,dt){
-  if(c?.districtId==='waterfront'&&c?.group?.visible){const cfg=CITY_DISTRICTS.find(d=>d.id===c.districtId);if(!cfg)return;const trafficFactor=districtTrafficSpeedFactor(c.districtId),avoid=cityVehicleAvoidanceFactor(c),step=(c.speed||.4)*trafficFactor*avoid*dt;c.angle+=c.direction*step;const r=3.92;c.group.position.set(cfg.pos.x+Math.cos(c.angle)*r,.04,cfg.pos.z+Math.sin(c.angle)*r);const yaw=-c.angle+(c.direction<0?Math.PI:0);smoothCityVehicleYaw(c.group,yaw,dt,9);for(const w of c.group.userData.cityWheels||[])w.rotateX(Math.abs(step*r)/.14);return;}
-  _moveDistrictLocalCarV364(c,dt);
-};
-
 const _moveCityBusV364=moveCityBus;
 moveCityBus=function(c,dt){_moveCityBusV364(c,dt);if(c?.group?.visible)c.group.position.y=.038;};
 
@@ -14939,13 +14944,6 @@ function sampleClosedPathV365(path,dist,lane=0){
   if(!path?.length)return {x:0,z:0,yaw:0,total:1};let total=0,lens=[];for(let i=0;i<path.length-1;i++){const l=path[i].distanceTo(path[i+1]);lens.push(l);total+=l;}if(total<.001)return {x:path[0].x,z:path[0].z,yaw:0,total:1};
   let d=((dist%total)+total)%total;for(let i=0;i<lens.length;i++){const len=lens[i];if(d<=len||i===lens.length-1){const a=path[i],b=path[i+1],u=len?d/len:0,dx=b.x-a.x,dz=b.z-a.z,yaw=Math.atan2(dx,dz),nx=-dz/(len||1),nz=dx/(len||1);return {x:a.x+dx*u+nx*lane,z:a.z+dz*u+nz*lane,yaw,total};}d-=len;}return {x:path[0].x,z:path[0].z,yaw:0,total};
 }
-moveDistrictLocalCar=function(c,dt){
-  if(!c?.group?.visible)return;const path=districtLoopPathV365(c.districtId);if(path.length<2)return;const trafficFactor=districtTrafficSpeedFactor(c.districtId),avoid=cityVehicleAvoidanceFactor(c),step=(c.speed||.42)*trafficFactor*avoid*dt;
-  if(!Number.isFinite(c.loopDistance))c.loopDistance=(Math.abs(c.angle||0)/(Math.PI*2))*sampleClosedPathV365(path,0).total;
-  c.loopDistance+=c.direction*step*10.5;
-  const sample=sampleClosedPathV365(path,c.loopDistance,-.08*c.direction);
-  c.group.position.set(sample.x,.04,sample.z);smoothCityVehicleYaw(c.group,sample.yaw+(c.direction<0?Math.PI:0),dt,9);for(const w of c.group.userData.cityWheels||[])w.rotateX(Math.abs(step*10.5)/.14);
-};
 
 refreshLivingDistrictStreets=function(){
   for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.streets.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.streets.delete(cfg.id);}if(!districtUnlocked(cfg)||districtLevel(cfg.id)<=0)continue;const g=makeCityStreetGroup(cfg);scene.add(g);cityWorldRuntime.streets.set(cfg.id,g);}if(typeof refreshTransitStopsV364==='function')refreshTransitStopsV364();
@@ -27565,12 +27563,6 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     if(!c?.group?.visible)return;const path=districtLoopPathV365(c.districtId);if(path.length<2)return;const traffic=districtTrafficSpeedFactor(c.districtId),avoid=cityVehicleAvoidanceFactor(c),step=(c.speed||.42)*traffic*avoid*dt;
     if(!Number.isFinite(c.loopDistance))c.loopDistance=(Math.abs(c.angle||0)/(Math.PI*2))*sampleClosedPathV365(path,0).total;c.loopDistance+=c.direction*step*10.5;
     const lane=laneOffset59(districtMainWidth59(c.districtId),ROAD59.vehicleMax*.80),sm=sampleClosedPathV365(path,c.loopDistance,-lane*c.direction);c.group.position.set(sm.x,.04,sm.z);smoothCityVehicleYaw(c.group,sm.yaw+(c.direction<0?Math.PI:0),dt,9);for(const w of c.group.userData.cityWheels||[])w.rotateX(Math.abs(step*10.5)/.14);
-  };
-  moveArterialCar=function(c,dt){
-    if(!c?.group?.visible)return;const ep=districtArterialEndpoints(c.districtId),path=ep?.path;if(!path?.length)return;const lv=Math.max(1,districtRoadLevelV37(c.districtId)||1),roadW=ROAD59.widths.arterial[lv],lane=laneOffset59(roadW,ROAD59.vehicleMax*.76),base=sampleTransportPolyline(path,c.t||0,0),len=Math.max(.01,base.length||1);
-    if(c.turnPause>0){c.turnPause=Math.max(0,c.turnPause-dt);const sm=sampleTransportPolyline(path,c.t||0,c.laneCurrent||0);c.group.position.set(sm.x,.04,sm.z);smoothCityVehicleYaw(c.group,sm.yaw+(c.direction<0?Math.PI:0),dt,5.5);return;}
-    const step=(c.speed||1.45)*districtTrafficSpeedFactor(c.districtId)*cityVehicleAvoidanceFactor(c)*dt;c.t=(c.t||0)+c.direction*(step/len);if(c.t>=1){c.t=1;c.direction=-1;c.turnPause=.42;}else if(c.t<=0){c.t=0;c.direction=1;c.turnPause=.42;}
-    c.laneCurrent=THREE.MathUtils.lerp(c.laneCurrent||0,-lane*c.direction,1-Math.exp(-6*dt));const sm=sampleTransportPolyline(path,c.t,c.laneCurrent);c.group.position.set(sm.x,.04,sm.z);smoothCityVehicleYaw(c.group,sm.yaw+(c.direction<0?Math.PI:0),dt,8);for(const w of c.group.userData.cityWheels||[])w.rotateX(Math.abs(step)/.14);
   };
   moveLivingCar=function(c,dt){
     if(!c?.group?.visible)return;const active=CITY_DISTRICTS.filter(d=>districtRoadLevelV37(d.id)>0);if(!active.length){c.group.visible=false;return;}const idx=Math.max(0,livingCityRuntime.cars.indexOf(c)),id=active[idx%active.length].id,path=districtLoopPathV365(id);if(path.length<2)return;const total=sampleClosedPathV365(path,0).total||1;if(!Number.isFinite(c._v59Loop))c._v59Loop=((idx+.35)/(livingCityRuntime.cars.length+1))*total;
