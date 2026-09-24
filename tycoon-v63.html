@@ -9033,7 +9033,14 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   localStorage.removeItem('tycoon3d_v351_guide_rewards');
   localStorage.removeItem('tycoon3d_v351_guide_rewards_initialized');
   localStorage.removeItem('tycoon3d_v352_guide_state');
-  localStorage.removeItem('tycoon3d_v40_city_systems');
+  // v63 1.1 (P3-2 / Pass 14 cleanup #14): merged in the three separate resetBtn click
+  // listeners that used to live next to V40_STATE_KEY/V41_STATE_KEY/V42_STATE_KEY (each just
+  // removed its own key when suppressAutoSaveV36 was set here) -- one handler, same keys
+  // cleared, no behavior change. V41_STATE_KEY/V42_STATE_KEY are declared inside their own
+  // IIFEs (not in scope here, same as the pre-existing literal for V40 just above), so their
+  // values are inlined as literals -- they must stay equal to those consts' values.
+  localStorage.removeItem('tycoon_v41_utilities_density'); // = V41_STATE_KEY
+  localStorage.removeItem('tycoon_v42_municipal_operations'); // = V42_STATE_KEY
   location.reload();
 });
 
@@ -16591,9 +16598,8 @@ function updateV40(dt){
 const _refreshCityExpansionWorldV40=refreshCityExpansionWorld;
 refreshCityExpansionWorld=function(){const r=_refreshCityExpansionWorldV40.apply(this,arguments);refreshV40World(true);return r;};
 
-/* Reset must also clear the v40 persistent layer. */
-const resetBtnV40=document.getElementById('resetBtn');
-if(resetBtnV40)resetBtnV40.addEventListener('click',()=>{if(suppressAutoSaveV36)try{localStorage.removeItem(V40_STATE_KEY);}catch(e){}},{capture:false});
+// v63 1.1 (P3-2 / Pass 14 cleanup #14): this resetBtn click listener (cleared V40_STATE_KEY)
+// merged into the single #resetBtn handler above (still clears the same key).
 
 /* Initial v40 sync happens after load() in INIT via a deferred microtask. */
 queueMicrotask(()=>{try{ensureV40State();updateDemandV40(true);refreshV40World(true);refreshNightDistrictLightsV40();}catch(e){console.warn('v40 init',e);}});
@@ -17025,7 +17031,9 @@ const _updateV40BeforeV41=updateV40;
 updateV40=function(dt){_updateV40BeforeV41(dt);updateV41(dt);};
 const _refreshV40WorldBeforeV41=refreshV40World;
 refreshV40World=function(force=false){const r=_refreshV40WorldBeforeV41(force);refreshV41World(force);return r;};
-const resetBtnV41=document.getElementById('resetBtn');if(resetBtnV41)resetBtnV41.addEventListener('click',()=>{if(suppressAutoSaveV36)try{localStorage.removeItem(V41_STATE_KEY);}catch(e){}},{capture:false});
+// v63 1.1 (P3-2 / Pass 14 cleanup #14): this resetBtn click listener (cleared V41_STATE_KEY)
+// merged into the single #resetBtn handler (still clears the same key, as a literal since
+// V41_STATE_KEY isn't in scope outside this IIFE).
 queueMicrotask(()=>{try{migrateV41AfterCoreLoad();ensureV41State();refreshV41World(true);updateGuideMarkers();}catch(e){console.warn('v41 init',e);}});
 ACHIEVEMENTS.push(
   {id:'v41_power',name:'Да будет свет',nameEn:'Power On',desc:'Построй электросеть L3',descEn:'Build a level 3 power grid',reward:1200,emoji:'⚡',check:()=>CITY_DISTRICTS.some(c=>powerLevelV41(c.id)>=3)},
@@ -17419,7 +17427,9 @@ const _updateV40BeforeV42=updateV40;
 updateV40=function(dt){_updateV40BeforeV42(dt);updateV42(dt);};
 const _refreshV40WorldBeforeV42=refreshV40World;
 refreshV40World=function(force=false){const r=_refreshV40WorldBeforeV42(force);refreshV42World(force);return r;};
-const resetBtnV42=document.getElementById('resetBtn');if(resetBtnV42)resetBtnV42.addEventListener('click',()=>{if(suppressAutoSaveV36)try{localStorage.removeItem(V42_STATE_KEY);}catch(e){}},{capture:false});
+// v63 1.1 (P3-2 / Pass 14 cleanup #14): this resetBtn click listener (cleared V42_STATE_KEY)
+// merged into the single #resetBtn handler (still clears the same key, as a literal since
+// V42_STATE_KEY isn't in scope outside this IIFE).
 queueMicrotask(()=>{try{migrateV42AfterCoreLoad();ensureV42State();generateContractOffersV42();refreshV42World(true);updateGuideMarkers();}catch(e){console.warn('v42 init',e);}});
 ACHIEVEMENTS.push(
   {id:'v42_capacity',name:'Энергия мегаполиса',nameEn:'Metropolis Power',desc:'Построй электростанцию L3',descEn:'Build a level 3 power plant',reward:1800,emoji:'⚡',check:()=>v42State.powerPlantLevel>=3},
