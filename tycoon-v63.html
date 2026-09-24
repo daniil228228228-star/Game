@@ -28326,8 +28326,12 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
     const base=(worker.homeBase||GENERATOR_POS).clone(),n=nearestStaticAt(base),r=n.c&&n.d<.8?n.c.radius+.85:2.15,angle=({foreman:.5,rigger:2.1,loader:3.6,builder:5.0}[worker.role]||0)+Math.random()*.45;
     worker.target=safeWorkerPoint(base,r,angle);worker.workBuild=null;worker.idle=.8+Math.random()*1.8;
   };
-  const workerWatch=new WeakMap();
-  function rescueStuckWorkers(){for(const w of npcWorkers||[]){if(!w?.group||!w.target)continue;const now=performance.now(),prev=workerWatch.get(w)||{x:w.group.position.x,z:w.group.position.z,t:now,stuck:0},moved=Math.hypot(w.group.position.x-prev.x,w.group.position.z-prev.z),far=Math.hypot(w.target.x-w.group.position.x,w.target.z-w.group.position.z)>.55;if(now-prev.t>850){prev.stuck=far&&moved<.055?prev.stuck+1:0;prev.x=w.group.position.x;prev.z=w.group.position.z;prev.t=now;if(prev.stuck>=2){w.target=null;w.workBuild=null;w.velocity?.set?.(0,0,0);chooseWorkerTarget(w);prev.stuck=0;}workerWatch.set(w,prev);}}}
+  // v63 1.1 (P2-9 / group #1): rescueStuckWorkers() removed -- dead on arrival. It re-read
+  // `workerWatch.get(w)` on every call but only ever `.set(w,prev)` inside the same
+  // `now-prev.t>850` branch, so a miss always rebuilt `prev` with `t:now` (delta 0, never
+  // >850) and nothing was ever actually stored; `prev.stuck` could never accumulate across
+  // calls. repairWorkers62() (below) is the one live, working rescue path -- it stores state
+  // on first sight and only compares on later calls. Nothing else read `workerWatch`.
 
   /* --------------------------------------------------------------
      5. PROGRESSION: sawmill, concrete plant and basic fleet are owned assets.
@@ -28377,7 +28381,7 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
   function init(){
     // sharpen asphalt itself; all fake patch overlays are disabled above
     if(typeof ROAD_STYLE_V353!=='undefined'){ROAD_STYLE_V353.lane=lanePaint;ROAD_STYLE_V353.edge=edgePaint;ROAD_STYLE_V353.asphalt.roughness=.93;ROAD_STYLE_V353.asphaltDark.roughness=.95;ROAD_STYLE_V353.asphalt.needsUpdate=ROAD_STYLE_V353.asphaltDark.needsUpdate=true;}
-    refreshV60();setTimeout(refreshV60,500);setTimeout(()=>{refreshV60();console.log('[v60 audit]',audit());},1600);setInterval(()=>{if(document.hidden)return;rescueStuckWorkers();syncOnboardingObjects();},900);
+    refreshV60();setTimeout(refreshV60,500);setTimeout(()=>{refreshV60();console.log('[v60 audit]',audit());},1600);setInterval(()=>{if(document.hidden)return;syncOnboardingObjects();},900);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
