@@ -293,6 +293,13 @@
 
 /* v35.0 Guided progression + UI waypoint markers */
 .guide-primary, .guide-secondary { position: relative !important; overflow: visible !important; isolation: isolate; }
+/* v63 hotfix 0.2: #nextCard must stay viewport-fixed even when the guide marks it
+   (updateGuideMarkers() adds .guide-primary to #nextCard whenever there's a currentPad
+   but no active multi-step quest) — otherwise it drops out of fixed positioning into
+   normal flow and the left/right-inset mobile rule (v62-qa-style) no longer has a
+   containing block to size against. #nextCard.guide-primary has higher specificity than
+   the class-only rule above, so this wins regardless of source order. */
+#nextCard.guide-primary, #nextCard.guide-secondary { position: fixed !important; }
 .guide-primary {
   box-shadow: 0 0 0 2px rgba(255,212,121,.92), 0 0 18px rgba(255,199,107,.55), 0 0 0 8px rgba(255,212,121,.14) !important;
   animation: guidePulsePrimary 1.15s ease-in-out infinite;
@@ -28490,7 +28497,7 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
   #hud .stat{min-height:32px!important;padding:5px 8px!important;border-radius:9px!important;font-size:13px!important;box-shadow:none!important;backdrop-filter:none!important}
   #topRightBtns{right:8px!important;top:calc(8px + env(safe-area-inset-top))!important}
   #topRightBtns #systemsBtn{width:40px!important;height:40px!important}
-  #nextCard{left:8px!important;right:8px!important;width:auto!important;max-width:none!important;margin:0!important}
+  #nextCard{left:8px!important;right:8px!important;width:auto!important;max-width:none!important;margin:0!important;transform:none!important}
   #actionPrompt{max-width:min(330px,calc(100vw - 110px))!important;font-size:11px!important;line-height:1.28!important}
   #toast{max-width:min(330px,calc(100vw - 28px))!important}
 }
