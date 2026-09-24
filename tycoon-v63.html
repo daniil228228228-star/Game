@@ -1713,15 +1713,21 @@ for (let i = 0; i < (VISUAL_MOBILE ? 6 : 9); i++) {
 }
 
 const V54_IOS_STABILITY = VISUAL_MOBILE && /iPhone|iPad|iPod/i.test(navigator.userAgent||'');
-const renderer = new THREE.WebGLRenderer({ antialias: !V54_IOS_STABILITY, powerPreference: V54_IOS_STABILITY ? 'default' : 'high-performance' });
-const MAX_RENDER_DPR = Math.min(devicePixelRatio, V54_IOS_STABILITY ? 1.15 : (VISUAL_MOBILE ? 1.5 : 2));
-const MIN_RENDER_DPR = V54_IOS_STABILITY ? 0.85 : (VISUAL_MOBILE ? 1.08 : 1.35);
+// v63 1.1 (root-cause group #1 / P1-1): the iOS-specific pre-emptive downgrade (no AA, no
+// shadows, DPR floor 0.85, powerPreference 'default') was never inherited from the v55.1 fix
+// (see TYCOON_V55_PLAN.md, commit 5d4827b) by the v56-v62 patch line built on pre-fix v55.
+// iPhone now gets the same tier as any other VISUAL_MOBILE device. V54_STABILITY watchdog
+// below (emergencyLoopV54) is untouched and still demotes to a fallback render on a genuine
+// core-loop stall, regardless of these initial settings.
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+const MAX_RENDER_DPR = Math.min(devicePixelRatio, VISUAL_MOBILE ? 1.5 : 2);
+const MIN_RENDER_DPR = VISUAL_MOBILE ? 1.08 : 1.35;
 let renderDpr = MAX_RENDER_DPR;
 renderer.setPixelRatio(renderDpr);
 renderer.setSize(innerWidth, innerHeight);
 renderer.setClearColor(0xcfe9ff, 1);
-renderer.shadowMap.enabled = !V54_IOS_STABILITY;
-renderer.shadowMap.type = V54_IOS_STABILITY ? THREE.BasicShadowMap : (VISUAL_MOBILE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = VISUAL_MOBILE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 renderer.domElement.addEventListener('webglcontextlost', (e) => {
   e.preventDefault();
@@ -25222,8 +25228,10 @@ body{
   function rendererPolishV45(){
     try{
       if(typeof renderer!=='undefined'){
-        renderer.shadowMap.enabled=!(typeof V54_IOS_STABILITY!=='undefined'&&V54_IOS_STABILITY);
-        renderer.shadowMap.type=(typeof V54_IOS_STABILITY!=='undefined'&&V54_IOS_STABILITY)?THREE.BasicShadowMap:(VISUAL_MOBILE?THREE.PCFShadowMap:THREE.PCFSoftShadowMap);
+        // v63 1.1: no longer re-applies the iOS downgrade on every boot (see renderer-init fix
+        // above, same root cause: P1-1 / group #1) -- iPhone stays on the mobile tier.
+        renderer.shadowMap.enabled=true;
+        renderer.shadowMap.type=VISUAL_MOBILE?THREE.PCFShadowMap:THREE.PCFSoftShadowMap;
         if('physicallyCorrectLights' in renderer)renderer.physicallyCorrectLights=false;
       }
       if(typeof scene!=='undefined'&&scene.fog){scene.fog.near=Math.max(38,scene.fog.near||38);scene.fog.far=Math.max(168,scene.fog.far||168);}
@@ -27174,10 +27182,16 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
   }
   function improveRenderer(){
     if(typeof renderer==='undefined') return;
-    const targetDpr = Math.min(window.devicePixelRatio||2, 2.0);
-    if(typeof tuneRenderResolution==='function') tuneRenderResolution = function(){};
-    if(typeof renderDpr!=='undefined') renderDpr = Math.max(renderDpr||1, targetDpr);
-    renderer.setPixelRatio(Math.max(1.5, targetDpr));
+    // v63 1.1 (P1-2 / group #1): no longer stubs tuneRenderResolution() to a no-op -- that
+    // was the only mechanism able to lower DPR back down under sustained load, and killing it
+    // left the game with no path down from a fixed high DPR on weak devices. The initial DPR
+    // bump here is clamped to MIN/MAX_RENDER_DPR (the same bounds tuneRenderResolution respects
+    // every frame) instead of a hardcoded 1.5-2.0 that used to exceed the mobile cap and pin
+    // DPR at 2 on iPhone regardless of the formal MAX_RENDER_DPR=1.5.
+    if(typeof renderDpr!=='undefined' && typeof MAX_RENDER_DPR!=='undefined' && typeof MIN_RENDER_DPR!=='undefined'){
+      renderDpr = Math.min(MAX_RENDER_DPR, Math.max(renderDpr||MAX_RENDER_DPR, MIN_RENDER_DPR));
+      renderer.setPixelRatio(renderDpr);
+    }
     renderer.setSize(innerWidth, innerHeight, false);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
