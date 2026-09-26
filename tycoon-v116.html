@@ -1953,34 +1953,99 @@ function projectToMasterRoadGridV116(pos){
    left the garage. This small tree-shaped service-road graph gives the whole depot a real
    drivable access network. buildRoadRoute() uses it automatically whenever either endpoint
    is inside the logistics compound, including universal trucks and the work lift. */
+/* v116 (industrial-zone relocation, part 2 -- the actual graph shape, not just translation):
+   the OLD graph ran the concrete/metal descent (depotWest and everything south of it)
+   directly south from `sawmillBypass`, i.e. through the one clear corridor BETWEEN
+   GENERATOR_POS and SAWMILL_POS -- which is exactly where the diagonal conveyor belt also
+   runs (see the CONVEYOR_BRIDGE_* history this replaces, just above STATIC_COLLIDERS). That
+   is a real topological conflict, not a proximity accident: as long as the concrete/metal
+   descent launches from a point BETWEEN the belt's two endpoints in X, it will cross the
+   belt somewhere along its length, no matter where the whole cluster is translated to.
+   Relocating the cluster (see INDUSTRIAL_ZONE_OFFSET_X above GENERATOR_POS) could not fix
+   this by itself; only rerouting could.
+   Fix: the descent to concrete/metal no longer starts at `sawmillBypass`. It now branches off
+   `garageMid` (the existing north detour that already clears the generator's collider on its
+   way to the fleet yard) via two new nodes, `depotDetourE` (a short eastward jog, clear of
+   BOTH GENERATOR_POS and SAWMILL_POS in X -- the belt only exists between them) and
+   `depotDetourS` (straight south from there, along that same clear-of-both-buildings X, down
+   to the existing east-west corridor). `depotWest` itself keeps its exact old position and
+   the exact same corridor onward to concreteBypass/metalBypass -- only its PARENT changes
+   (see the entry-side comment inside serviceAccessGraph() below for how that corridor now
+   connects to `junction` -- a second, independent fix, needed only because of the relocation).
+   Measured after both changes (scratchpad/zone116/regress1.js, real OBB-vs-OBB, not naive
+   AABB): 0 overlaps between the belt and any service-road deck (was 2, then 3 more appeared
+   from the entry-side issue before that was fixed too) -- the elevated conveyor bridge
+   (CONVEYOR_BRIDGE_*, still in place as of this commit) is therefore geometrically unnecessary
+   now; de-elevating it is a separate, following commit so the two changes can be reviewed and
+   reverted independently.
+   This reroute also fixes a second, independently-reported issue: `sawmillBypass` used to be
+   a real 4-way junction (public road in, depotWest out, plankBay out, liftBay out) serving
+   only 3 actual destination groups, with one of those 4 decks (`plankBay`'s, back toward
+   the public road) fully overlapping/duplicating the public-road deck's own footprint end to
+   end (both decks' real Box3 shared the exact same Z-span, one a strict X-subset of the
+   other). With `depotWest` moved off `sawmillBypass` and the public road now entering the
+   cluster from its OTHER side (see below), `sawmillBypass` is down to a plain 2-way pass-
+   through (liftBay-and-everything-behind-it in, plankBay lumber spur out) -- not even a real
+   junction any more. Measured across the whole live network after both fixes
+   (scratchpad/zone116/regress1.js): exactly one real junction remains anywhere in the
+   industrial service-road graph -- `garageMid`, a 3-way (industrial corridor through, fleet
+   yard branch, sawmill/lumber branch) -- everything else is a plain 2-way pass-through. */
 function serviceAccessGraph() {
   // The spine intentionally skirts the generator/sawmill/concrete/metal building footprints.
   // Bay nodes then peel off only for the last short approach to a loading/parking spot.
-  const junction = projectToMasterRoadGridV116(new THREE.Vector3(-20.0,0,-3.2));
+  const OX = INDUSTRIAL_ZONE_OFFSET_X;
+  const junction = projectToMasterRoadGridV116(new THREE.Vector3(-20.0+OX,0,-3.2));
+  /* v116 (relocation, part 3 -- entry side): `junction` is pinned to the fixed master grid and
+     does not move with the cluster (see INDUSTRIAL_ZONE_OFFSET_X). Before this relocation the
+     whole cluster sat just barely WEST of `junction`, so `sawmillBypass` -- deep on the
+     cluster's own west side -- was already the near edge facing the public road, and a short
+     direct hop from `junction` to it never came near GENERATOR_POS along the way (measured:
+     GENERATOR_POS.x was never inside that hop's x-range at all). After moving the whole cluster
+     ~30 units further west, that stops being true: a straight hop all the way from `junction` to
+     `sawmillBypass` now runs right past GENERATOR_POS (only ~0.6 units off its z, well inside its
+     collider) for a long stretch, because `sawmillBypass` sits on the cluster's FAR side from
+     `junction` now, not its near side. Verified live (scratchpad/zone116/regress1.js, real
+     OBB-vs-OBB): 3 real overlaps between that stretch and the belt/generator area.
+     Fix: enter the cluster from its actual near (east) side instead. `clusterGate` sits due
+     east of the whole cluster (past `metalBypass`, the old tree's easternmost leaf) at
+     `junction`'s own z, so the `junction`->`clusterGate` hop crosses nothing but open field, then
+     one 90-degree turn south down to `metalBypass` (a plain extension of the metalBypass gate
+     column, same idea as `depotDetourE`/`depotDetourS`). The rest of the tree is unchanged --
+     every other edge below is the same two endpoints as before, just walked from the opposite
+     end, so `metalBypass -> concreteBypass -> depotWest -> depotDetourS -> depotDetourE ->
+     garageMid -> liftBay -> sawmillBypass` is the same physical chain, reversed. */
   return [
     {id:'junction',p:junction,parent:null},
+    {id:'clusterGate',p:new THREE.Vector3(-6.00+OX,0,-3.20),parent:'junction'},
+    {id:'metalBypass',p:new THREE.Vector3(-6.00+OX,0,-7.20),parent:'clusterGate'},
+    {id:'concreteBypass',p:new THREE.Vector3(-10.20+OX,0,-7.20),parent:'metalBypass'},
+    // v116: depotWest keeps its original position -- only its parent changed (now reached from
+    // the east, via concreteBypass, instead of directly off sawmillBypass). See the reroute
+    // comment above serviceAccessGraph() and the entry-side comment just above.
+    {id:'depotWest',p:new THREE.Vector3(-13.80+OX,0,-7.20),parent:'concreteBypass'},
+    {id:'depotDetourS',p:new THREE.Vector3(-6.80+OX,0,-7.20),parent:'depotWest'},
+    {id:'depotDetourE',p:new THREE.Vector3(-6.80+OX,0,-0.40),parent:'depotDetourS'},
+    {id:'garageMid',p:new THREE.Vector3(-8.80+OX,0,-0.40),parent:'depotDetourE'},
+    {id:'liftBay',p:new THREE.Vector3(-13.65+OX,0,-0.40),parent:'garageMid'}, // v112: clears generator-yard edge
     // v112: service spine follows the clear corridor BETWEEN production footprints.
     // Road appearance is untouched; only these logical/visual centerlines move.
-    {id:'sawmillBypass',p:new THREE.Vector3(-13.80,0,-3.20),parent:'junction'},
-    {id:'depotWest',p:new THREE.Vector3(-13.80,0,-7.20),parent:'sawmillBypass'},
-    {id:'concreteBypass',p:new THREE.Vector3(-10.20,0,-7.20),parent:'depotWest'},
-    {id:'metalBypass',p:new THREE.Vector3(-6.00,0,-7.20),parent:'concreteBypass'},
-    {id:'plankBay',p:new THREE.Vector3(-15.25,0,-3.20),parent:'sawmillBypass'},
-    {id:'plankHome',p:new THREE.Vector3(-16.20,0,-1.15),parent:'sawmillBypass'},
-    {id:'concreteBay',p:new THREE.Vector3(-12.10,0,-7.20),parent:'depotWest'}, // v112: loading point sits on the clear north service corridor
-    {id:'concreteHome',p:new THREE.Vector3(-8.25,0,-5.80),parent:'concreteBypass'},
-    {id:'metalBay',p:new THREE.Vector3(-7.30,0,-7.20),parent:'concreteBypass'}, // v112: loading point sits on the clear north service corridor
-    {id:'metalHome',p:new THREE.Vector3(-5.25,0,-5.15),parent:'metalBypass'},
-    {id:'liftBay',p:new THREE.Vector3(-13.65,0,-0.40),parent:'sawmillBypass'}, // v112: clears generator-yard edge
-    {id:'liftHome',p:new THREE.Vector3(-12.95,0,1.55),parent:'liftBay'},
-    {id:'garageMid',p:new THREE.Vector3(-8.80,0,-0.40),parent:'liftBay'},
-    {id:'garage',p:new THREE.Vector3(-6.30,0,1.55),parent:'garageMid'},
-    {id:'garage2',p:new THREE.Vector3(-7.80,0,2.85),parent:'garage'},
+    {id:'sawmillBypass',p:new THREE.Vector3(-13.80+OX,0,-3.20),parent:'liftBay'},
+    {id:'plankBay',p:new THREE.Vector3(-15.25+OX,0,-3.20),parent:'sawmillBypass'},
+    {id:'plankHome',p:new THREE.Vector3(-16.20+OX,0,-1.15),parent:'sawmillBypass'},
+    {id:'concreteBay',p:new THREE.Vector3(-12.10+OX,0,-7.20),parent:'depotWest'}, // v112: loading point sits on the clear north service corridor
+    {id:'concreteHome',p:new THREE.Vector3(-8.25+OX,0,-5.80),parent:'concreteBypass'},
+    {id:'metalBay',p:new THREE.Vector3(-7.30+OX,0,-7.20),parent:'concreteBypass'}, // v112: loading point sits on the clear north service corridor
+    {id:'metalHome',p:new THREE.Vector3(-5.25+OX,0,-5.15),parent:'metalBypass'},
+    {id:'liftHome',p:new THREE.Vector3(-12.95+OX,0,1.55),parent:'liftBay'},
+    {id:'garage',p:new THREE.Vector3(-6.30+OX,0,1.55),parent:'garageMid'},
+    {id:'garage2',p:new THREE.Vector3(-7.80+OX,0,2.85),parent:'garage'},
   ];
 }
 function appendTransportPoint(route,p){ if(!p)return; const last=route[route.length-1]; if(!last||last.distanceToSquared(p)>.025)route.push(p.clone()); }
 function serviceAccessDescriptor(pos){
-  if(!pos||pos.x<-22.5||pos.x>-2.8||pos.z<-11.5||pos.z>9.2)return null;
+  // v116: bounding box translated with the rest of the industrial-zone relocation (x only --
+  // see INDUSTRIAL_ZONE_OFFSET_X above GENERATOR_POS). Z bounds are unchanged by design.
+  if(!pos||pos.x<-22.5+INDUSTRIAL_ZONE_OFFSET_X||pos.x>-2.8+INDUSTRIAL_ZONE_OFFSET_X||pos.z<-11.5||pos.z>9.2)return null;
   const nodes=serviceAccessGraph();let best=null,bestD=Infinity;
   for(const n of nodes){const d=Math.hypot(pos.x-n.p.x,pos.z-n.p.z);if(d<bestD){bestD=d;best=n;}}
   if(!best||bestD>4.35)return null;
@@ -2759,15 +2824,31 @@ const WOOD_TRAVEL_TIME = 4.2;    // total seconds for a hand-cut log to reach th
 const BASE_PLANKS_PER_LOG = 1;
 const TREE_INTERACT_RADIUS = 2.65;
 
+// v116 (industrial-zone relocation): the whole production cluster (generator/camp, sawmill,
+// concrete plant, metal yard, service-road graph, fleet yard -- see serviceAccessGraph() and
+// rebuildParkingV65()) was translated by a fixed INDUSTRIAL_ZONE_OFFSET (x -= 32, z unchanged)
+// away from the residential build-out spiral (stagePosition()). Before this move, the nearest
+// possible spiral house (stage index 4, the one spiral slot that ever lands in this SW
+// quadrant -- stagePosition(4) = (-20.09,-15.54)) came within 7.92 units of SAWMILL_POS; measured
+// against every one of the 10 stage slots and the whole cluster's real footprint (not just the
+// 4 named building anchors -- see scratchpad/zone116/site_search.js), the new position keeps a
+// minimum clearance of >15 units from any spiral house, at any stageIndex, forever (see
+// CHANGELOG_V116.md, "Индустриальный кластер: перенос в отдельную зону"). Only these 4 constants
+// plus the hardcoded absolute nodes in serviceAccessGraph()/FLEET_HOME_V65/rebuildParkingV65()
+// needed the offset -- everything else in the file (log piles, loading zones, guide-quest
+// markers, decorative-scatter clearance, the static collider registry) already computes its own
+// position as GENERATOR_POS.clone().add(...)/SAWMILL_POS.clone().add(...) etc., so it follows
+// automatically.
+const INDUSTRIAL_ZONE_OFFSET_X = -32; // world units; z is intentionally left at 0 (see note above)
 // Picked to sit well clear of every spiral stage (nearest is >9 units away) at any prestige.
-const GENERATOR_POS = new THREE.Vector3(-10.3, 0, -3.8);
+const GENERATOR_POS = new THREE.Vector3(-10.3 + INDUSTRIAL_ZONE_OFFSET_X, 0, -3.8);
 // v114: the sawmill itself is set back from the service/stage-road frontage.
 // Only the sawmill moves; concrete/steel keep their established absolute lots so the
 // whole industrial cluster does not slide every time this clearance is tuned.
-const SAWMILL_POS = new THREE.Vector3(-19.0, 0, -7.7);
+const SAWMILL_POS = new THREE.Vector3(-19.0 + INDUSTRIAL_ZONE_OFFSET_X, 0, -7.7);
 // Preserve the already-tested concrete and steel lots as absolute coordinates.
-const CONCRETE_PLANT_POS = new THREE.Vector3(-12.1, 0, -10.3);
-const METAL_YARD_POS = new THREE.Vector3(-7.3, 0, -10.6);
+const CONCRETE_PLANT_POS = new THREE.Vector3(-12.1 + INDUSTRIAL_ZONE_OFFSET_X, 0, -10.3);
+const METAL_YARD_POS = new THREE.Vector3(-7.3 + INDUSTRIAL_ZONE_OFFSET_X, 0, -10.6);
 
 // Static colliders for the sawmill's two buildings, so they're as solid as any spiral
 // building (checked in updatePlayer() alongside the `buildings` array).
@@ -7560,15 +7641,18 @@ function syncDeliveryFleet() {
   if (LOGISTICS_ZONES.planks) LOGISTICS_ZONES.planks.group.visible = true;
   if (LOGISTICS_ZONES.concrete) LOGISTICS_ZONES.concrete.group.visible = stageIndex >= CONCRETE_UNLOCK_STAGE;
   if (LOGISTICS_ZONES.metal) LOGISTICS_ZONES.metal.group.visible = stageIndex >= METAL_UNLOCK_STAGE;
+  // v116: initial homes translated with the fleet yard (INDUSTRIAL_ZONE_OFFSET_X). Superseded
+  // by v65's applyFleetHomesV65()/desiredHomeV65() shortly after boot, but kept in sync so
+  // there is no stale-position flash before that first refresh runs.
   if (!hasDeliveryVehicle('planks')) {
-    addDeliveryVehicle(createPlankDeliveryTruck(), 'planks', new THREE.Vector3(-16.20, 0, -1.15), 3.5);
+    addDeliveryVehicle(createPlankDeliveryTruck(), 'planks', new THREE.Vector3(-16.20 + INDUSTRIAL_ZONE_OFFSET_X, 0, -1.15), 3.5);
   }
   if (stageIndex >= CONCRETE_UNLOCK_STAGE && !hasDeliveryVehicle('concrete')) {
-    addDeliveryVehicle(createConcreteMixerTruck(), 'concrete', new THREE.Vector3(-8.25, 0, -5.80), 3.05);
+    addDeliveryVehicle(createConcreteMixerTruck(), 'concrete', new THREE.Vector3(-8.25 + INDUSTRIAL_ZONE_OFFSET_X, 0, -5.80), 3.05);
     toast(lang === 'ru' ? '🚚 Открыта бетономешалка' : '🚚 Concrete mixer unlocked');
   }
   if (stageIndex >= METAL_UNLOCK_STAGE && !hasDeliveryVehicle('metal')) {
-    addDeliveryVehicle(createMetalDeliveryTruck(), 'metal', new THREE.Vector3(-5.25, 0, -5.15), 3.25);
+    addDeliveryVehicle(createMetalDeliveryTruck(), 'metal', new THREE.Vector3(-5.25 + INDUSTRIAL_ZONE_OFFSET_X, 0, -5.15), 3.25);
     toast(lang === 'ru' ? '🚚 Открыт металловоз' : '🚚 Steel truck unlocked');
   }
   syncUniversalFleet();
@@ -7600,7 +7684,7 @@ function spawnAmbientLife() {
   lift.userData.role = 'site_lift_equipment';
   lift.userData.fleetKey = 'lift';
   lift.userData.state = 'stored';
-  lift.userData.home = new THREE.Vector3(-9.65, 0, 5.80);
+  lift.userData.home = new THREE.Vector3(-9.65 + INDUSTRIAL_ZONE_OFFSET_X, 0, 5.80); // v116: translated with the fleet yard
   lift.position.copy(lift.userData.home);
   if (lift.userData.statusSprite) lift.userData.statusSprite.visible = false;
   if (lift.userData.rider) lift.userData.rider.visible = false;
@@ -9065,7 +9149,7 @@ function fleetGarageBayCountV72(level=baseLevel('garage')){
 }
 function fleetGarageWorldPositionV72(level=baseLevel('garage')){
   const count=Math.max(3,fleetGarageBayCountV72(level)||3);
-  const firstX=-13.45;
+  const firstX=-13.45+INDUSTRIAL_ZONE_OFFSET_X; // v116: translated with the fleet yard
   const bayStep=1.90;
   return new THREE.Vector3(firstX+(count-1)*bayStep*.5,0,6.62);
 }
@@ -9185,7 +9269,8 @@ function baseModulePosition(slot){
     if(typeof distanceToServiceAccessNetwork==='function' && distanceToServiceAccessNetwork(p)<3.15) continue;
     if(Math.hypot(p.x-SAWMILL_POS.x,p.z-SAWMILL_POS.z)<4.2) continue;
     // Reserve the long fleet-garage strip even before the garage is purchased.
-    if(p.x>-15.3&&p.x<-2.4&&p.z>2.6&&p.z<9.0) continue;
+    // v116: x bounds translated with the fleet yard (INDUSTRIAL_ZONE_OFFSET_X).
+    if(p.x>-15.3+INDUSTRIAL_ZONE_OFFSET_X&&p.x<-2.4+INDUSTRIAL_ZONE_OFFSET_X&&p.z>2.6&&p.z<9.0) continue;
     let blocked=false; for(let s=0;s<STAGES.length;s++){const q=stagePosition(s);if(Math.hypot(p.x-q.x,p.z-q.z)<4.4){blocked=true;break;}}
     if(!blocked)for(const g of baseRuntime.groups.values()){if(Math.hypot(p.x-g.position.x,p.z-g.position.z)<3.8){blocked=true;break;}}
     if(!blocked)return p;
@@ -9352,7 +9437,9 @@ function universalTruckPurchaseCost(nextIndex){
   return nextIndex<=1 ? {money:4600,wood:5,concrete:2,metal:0} : {money:11800,wood:7,concrete:5,metal:2};
 }
 function universalTruckHome(index){
-  const homes=[new THREE.Vector3(-6.30,0,1.55),new THREE.Vector3(-7.80,0,2.85)];
+  // v116: translated with the fleet yard (INDUSTRIAL_ZONE_OFFSET_X). Superseded by v65's
+  // own reassignment of this same function name once that script block runs.
+  const homes=[new THREE.Vector3(-6.30+INDUSTRIAL_ZONE_OFFSET_X,0,1.55),new THREE.Vector3(-7.80+INDUSTRIAL_ZONE_OFFSET_X,0,2.85)];
   return homes[Math.max(0,Math.min(homes.length-1,index))].clone();
 }
 function createUniversalDeliveryTruck(index){
@@ -28857,15 +28944,17 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
      loading point. Production vehicles still DRIVE to their source when
      a delivery is actually needed.
   ------------------------------------------------------------------ */
+  // v116: x translated with the rest of the industrial zone (INDUSTRIAL_ZONE_OFFSET_X, z
+  // unchanged) -- see the comment above GENERATOR_POS.
   const FLEET_HOME_V65={
     // v112: bays sit fully behind the manoeuvring lane instead of overlapping it by ~0.73u.
     // z=6.62 also matches the dedicated fleet-garage centerline used by v72/v73.
-    planks:new THREE.Vector3(-13.45,0,6.62),
-    universal1:new THREE.Vector3(-11.55,0,6.62),
-    lift:new THREE.Vector3(-9.65,0,6.62),
-    concrete:new THREE.Vector3(-7.75,0,6.62),
-    metal:new THREE.Vector3(-5.85,0,6.62),
-    universal2:new THREE.Vector3(-3.95,0,6.62),
+    planks:new THREE.Vector3(-13.45+INDUSTRIAL_ZONE_OFFSET_X,0,6.62),
+    universal1:new THREE.Vector3(-11.55+INDUSTRIAL_ZONE_OFFSET_X,0,6.62),
+    lift:new THREE.Vector3(-9.65+INDUSTRIAL_ZONE_OFFSET_X,0,6.62),
+    concrete:new THREE.Vector3(-7.75+INDUSTRIAL_ZONE_OFFSET_X,0,6.62),
+    metal:new THREE.Vector3(-5.85+INDUSTRIAL_ZONE_OFFSET_X,0,6.62),
+    universal2:new THREE.Vector3(-3.95+INDUSTRIAL_ZONE_OFFSET_X,0,6.62),
   };
 
   const serviceAccessGraphBeforeV65=serviceAccessGraph;
@@ -28877,19 +28966,21 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
     ].includes(n.id));
     // The old source spine stays untouched; only parking branches are moved.
     // This keeps loading routes compatible while removing the visual pile-up by the sawmill.
+    // v116: x translated with the rest of the industrial zone (INDUSTRIAL_ZONE_OFFSET_X).
+    const OX=INDUSTRIAL_ZONE_OFFSET_X;
     keep.push(
       // v75: move the whole fleet into a dedicated yard north of production so parked trucks
       // no longer crowd the sawmill loading throat or visually clutter the active work zone.
-      {id:'fleetEntryV75',p:new THREE.Vector3(-8.70,0,3.20),parent:'garageMid'},
-      {id:'fleetWestV65',p:new THREE.Vector3(-12.45,0,4.45),parent:'fleetMidV65'},
-      {id:'fleetMidV65',p:new THREE.Vector3(-8.70,0,4.45),parent:'fleetEntryV75'},
-      {id:'fleetEastV65',p:new THREE.Vector3(-4.95,0,4.45),parent:'fleetMidV65'},
-      {id:'fleetPlankEntry',p:new THREE.Vector3(-13.45,0,4.45),parent:'fleetWestV65'},
-      {id:'fleetUniversalEntry',p:new THREE.Vector3(-11.55,0,4.45),parent:'fleetWestV65'},
-      {id:'fleetLiftEntry',p:new THREE.Vector3(-9.65,0,4.45),parent:'fleetMidV65'},
-      {id:'fleetConcreteEntry',p:new THREE.Vector3(-7.75,0,4.45),parent:'fleetMidV65'},
-      {id:'fleetMetalEntry',p:new THREE.Vector3(-5.85,0,4.45),parent:'fleetEastV65'},
-      {id:'fleetUniversal2Entry',p:new THREE.Vector3(-3.95,0,4.45),parent:'fleetEastV65'},
+      {id:'fleetEntryV75',p:new THREE.Vector3(-8.70+OX,0,3.20),parent:'garageMid'},
+      {id:'fleetWestV65',p:new THREE.Vector3(-12.45+OX,0,4.45),parent:'fleetMidV65'},
+      {id:'fleetMidV65',p:new THREE.Vector3(-8.70+OX,0,4.45),parent:'fleetEntryV75'},
+      {id:'fleetEastV65',p:new THREE.Vector3(-4.95+OX,0,4.45),parent:'fleetMidV65'},
+      {id:'fleetPlankEntry',p:new THREE.Vector3(-13.45+OX,0,4.45),parent:'fleetWestV65'},
+      {id:'fleetUniversalEntry',p:new THREE.Vector3(-11.55+OX,0,4.45),parent:'fleetWestV65'},
+      {id:'fleetLiftEntry',p:new THREE.Vector3(-9.65+OX,0,4.45),parent:'fleetMidV65'},
+      {id:'fleetConcreteEntry',p:new THREE.Vector3(-7.75+OX,0,4.45),parent:'fleetMidV65'},
+      {id:'fleetMetalEntry',p:new THREE.Vector3(-5.85+OX,0,4.45),parent:'fleetEastV65'},
+      {id:'fleetUniversal2Entry',p:new THREE.Vector3(-3.95+OX,0,4.45),parent:'fleetEastV65'},
       {id:'plankHome',p:FLEET_HOME_V65.planks.clone(),parent:'fleetPlankEntry'},
       {id:'garage',p:FLEET_HOME_V65.universal1.clone(),parent:'fleetUniversalEntry'},
       {id:'liftHome',p:FLEET_HOME_V65.lift.clone(),parent:'fleetLiftEntry'},
@@ -29086,27 +29177,32 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
       :new THREE.MeshStandardMaterial({color:0x8f9498,roughness:.98});
     const fenceMat=new THREE.MeshStandardMaterial({color:0x555c63,roughness:.86,metalness:.25});
 
+    // v116: x translated with the rest of the industrial zone (INDUSTRIAL_ZONE_OFFSET_X, z
+    // unchanged) -- see the comment above GENERATOR_POS. The root group itself stays at the
+    // origin (see the comment on g.position.set(0,0,0) above); every literal x below moves.
+    const OX=INDUSTRIAL_ZONE_OFFSET_X;
+
     // One continuous yard slab: no internal "road through parking" visual.
     const lot=new THREE.Mesh(new THREE.BoxGeometry(11.92,.032,3.72),lotMat);
-    lot.position.set(-8.70,.053,6.72);lot.receiveShadow=true;lot.userData.v116FleetLot=true;g.add(lot);
+    lot.position.set(-8.70+OX,.053,6.72);lot.receiveShadow=true;lot.userData.v116FleetLot=true;g.add(lot);
 
     // Short entrance throat only: the external road ends here.
     const throat=new THREE.Mesh(new THREE.BoxGeometry(2.18,.034,.78),roadMat);
-    throat.position.set(-8.70,.054,4.62);throat.receiveShadow=true;throat.userData.v116FleetEntrance=true;g.add(throat);
+    throat.position.set(-8.70+OX,.054,4.62);throat.receiveShadow=true;throat.userData.v116FleetEntrance=true;g.add(throat);
 
     // Gate posts and rear/side fence define the lot without crossing driving space.
     const fenceRail=(x,z,w,d)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,.055,d),fenceMat);m.position.set(x,.62,z);m.userData.v116FleetFence=true;g.add(m);return m;};
     const post=(x,z)=>{const p=new THREE.Mesh(new THREE.BoxGeometry(.07,1.08,.07),fenceMat);p.position.set(x,.54,z);p.userData.v116FleetFence=true;g.add(p);};
-    fenceRail(-8.70,8.68,11.72,.06);
-    fenceRail(-14.56,6.84,.06,3.68);fenceRail(-2.84,6.84,.06,3.68);
-    for(let x=-14.56;x<=-2.84+.01;x+=1.95)post(x,8.68);
-    for(const x of [-14.56,-2.84])for(let z=5.02;z<=8.68+.01;z+=1.22)post(x,z);
-    post(-9.92,4.96);post(-7.48,4.96);
+    fenceRail(-8.70+OX,8.68,11.72,.06);
+    fenceRail(-14.56+OX,6.84,.06,3.68);fenceRail(-2.84+OX,6.84,.06,3.68);
+    for(let x=-14.56+OX;x<=-2.84+OX+.01;x+=1.95)post(x,8.68);
+    for(const x of [-14.56+OX,-2.84+OX])for(let z=5.02;z<=8.68+.01;z+=1.22)post(x,z);
+    post(-9.92+OX,4.96);post(-7.48+OX,4.96);
 
     const gateHead=new THREE.Mesh(new THREE.BoxGeometry(2.48,.14,.10),fenceMat);
-    gateHead.position.set(-8.70,1.35,4.96);g.add(gateHead);
+    gateHead.position.set(-8.70+OX,1.35,4.96);g.add(gateHead);
     const yardLabel=makeLabelSprite([lang==='ru'?'АВТОПАРК':'FLEET YARD',lang==='ru'?'служебная стоянка':'company parking']);
-    yardLabel.position.set(-8.70,1.58,4.92);yardLabel.scale.set(.80,.28,1);g.add(yardLabel);
+    yardLabel.position.set(-8.70+OX,1.58,4.92);yardLabel.scale.set(.80,.28,1);g.add(yardLabel);
 
     const homes=[
       {p:FLEET_HOME_V65.planks,key:'planks'},
@@ -29358,7 +29454,8 @@ function rebuildServiceRoadsV66(){
       if(!n.parent)continue;const p=nodes.get(n.parent);if(!p)continue;
       // The parking renderer owns the manoeuvring lane and individual bay connectors.
       // Rendering service-width slabs over those same branches creates the visible teeth.
-      if(n.p.z>=4.4&&p.p.z>=4.4&&n.p.x>=-14.6&&n.p.x<=-2.8)continue;
+      // v116: x-range translated with the fleet yard (INDUSTRIAL_ZONE_OFFSET_X).
+      if(n.p.z>=4.4&&p.p.z>=4.4&&n.p.x>=-14.6+INDUSTRIAL_ZONE_OFFSET_X&&n.p.x<=-2.8+INDUSTRIAL_ZONE_OFFSET_X)continue;
       // v112: concrete/steel loading points lie directly on the existing north corridor.
       // They remain logical route nodes, but drawing their subset segment again would stack asphalt.
       if(n.id==='concreteBay'||n.id==='metalBay')continue;
@@ -29485,7 +29582,7 @@ function rebuildServiceRoadsV66(){
         // v116: +1 accounts for the spine/depot-cluster gap-infill deck added above -- it has
         // no matching graph edge (it bridges two already-drawn systems, not a node pair), so
         // the raw graph-edge count alone would always read one short once it exists.
-        serviceRoadsRendered:decks.length===nodes0.filter(n=>{const p=nodes.get(n.parent);return p&&!(n.p.z>=4.4&&p.p.z>=4.4&&n.p.x>=-14.6&&n.p.x<=-2.8);}).length+(hasSpineGapInfill?1:0)&&hasApron&&hasMouth,
+        serviceRoadsRendered:decks.length===nodes0.filter(n=>{const p=nodes.get(n.parent);return p&&!(n.p.z>=4.4&&p.p.z>=4.4&&n.p.x>=-14.6+INDUSTRIAL_ZONE_OFFSET_X&&n.p.x<=-2.8+INDUSTRIAL_ZONE_OFFSET_X);}).length+(hasSpineGapInfill?1:0)&&hasApron&&hasMouth,
         noRoadBuildingOverlap:colliderIssues.length===0,
         v65FleetAuditOk:!fleet||((fleet.overlaps?.length||0)===0&&(fleet.sourceQueues?.length||0)===0)
       }
@@ -30039,7 +30136,7 @@ window.__TYCOON_V74_BUILD__={
       const active=Object.values(homes).slice(0,count);
       garageChecks.push({level:lv,count,covered:active.filter(p=>Math.abs(p.x-center.x)<=width*.5+.08&&Math.abs(p.z-center.z)<=1.70).length});
     }
-    const descriptorBoundsOK=Object.values(homes).every(p=>p.x>=-22.5&&p.x<=-2.8&&p.z>=-11.5&&p.z<=9.2);
+    const descriptorBoundsOK=Object.values(homes).every(p=>p.x>=-22.5+INDUSTRIAL_ZONE_OFFSET_X&&p.x<=-2.8+INDUSTRIAL_ZONE_OFFSET_X&&p.z>=-11.5&&p.z<=9.2);
     return {version:VERSION,bounds,descriptorBoundsOK,garageChecks,traffic:safe(()=>window.__TYCOON_V65_TRAFFIC__?.run?.()),yard:safe(()=>window.__TYCOON_V76_FLEET_YARD__?.audit?.()),scheduler:{legacyV68Stopped:true,fleetAlignMerged:true,garageServiceMerged:true}};
   }
   const boot=()=>{safe(clearFleetYardSceneryV77);setTimeout(()=>safe(clearFleetYardSceneryV77),900);};
@@ -31489,7 +31586,7 @@ window.__TYCOON_V74_BUILD__={
     }
     // v114: these permanent map lots are not legal road corridors for district/master/access planners either.
     out.push(
-      {shape:'obb',pos:new THREE.Vector3(-8.70,0,6.52),hx:6.18,hz:2.55,yaw:0,category:'industrial',label:'v116:fleet-yard-keepout'},
+      {shape:'obb',pos:new THREE.Vector3(-8.70+INDUSTRIAL_ZONE_OFFSET_X,0,6.52),hx:6.18,hz:2.55,yaw:0,category:'industrial',label:'v116:fleet-yard-keepout'},
       {shape:'circle',pos:SAWMILL_POS.clone().add(new THREE.Vector3(.35,0,.10)),radius:3.90,category:'industrial',label:'v114:sawmill-yard'},
       {shape:'circle',pos:GENERATOR_POS.clone().add(new THREE.Vector3(0,0,.20)),radius:3.28,category:'industrial',label:'v114:generator-yard'},
       {shape:'circle',pos:CONCRETE_PLANT_POS.clone().add(new THREE.Vector3(.04,0,.22)),radius:3.02,category:'industrial',label:'v114:concrete-yard'},
@@ -31857,7 +31954,7 @@ function obstacles(i,width){
   const manual=[
     // v114: permanent authored no-road lots. These are part of the map blueprint, not
     // temporary runtime decoration, so the canonical stage solver must route around them.
-    {shape:'obb',pos:new THREE.Vector3(-8.70,0,6.52),hx:6.18,hz:2.55,yaw:0,category:'industrial',label:'v116:fleet-yard-keepout'},
+    {shape:'obb',pos:new THREE.Vector3(-8.70+INDUSTRIAL_ZONE_OFFSET_X,0,6.52),hx:6.18,hz:2.55,yaw:0,category:'industrial',label:'v116:fleet-yard-keepout'},
     {shape:'circle',pos:GENERATOR_POS.clone().add(new THREE.Vector3(0,0,0.20)),radius:3.28,category:'industrial',label:'v114:generator-yard'},
     {shape:'circle',pos:SAWMILL_POS.clone().add(new THREE.Vector3(0.35,0,0.10)),radius:3.90,category:'industrial',label:'v114:sawmill-yard'},
     {shape:'obb',pos:SAWMILL_POS.clone().add(new THREE.Vector3(0.80,0,0.05)),hx:2.70,hz:2.05,yaw:0,category:'industrial',label:'v114:sawmill-frontage'},
@@ -34718,7 +34815,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
 (()=>{
   'use strict';
   const VERSION='v116-clean-yard-audit';
-  const FLEET_RECT={cx:-8.70,cz:6.52,hx:6.18,hz:2.55};
+  const FLEET_RECT={cx:-8.70+INDUSTRIAL_ZONE_OFFSET_X,cz:6.52,hx:6.18,hz:2.55}; // v116: translated with the fleet yard
   const SERVICE_WIDTH=1.68;
 
   function segPointDist(p,a,b){
