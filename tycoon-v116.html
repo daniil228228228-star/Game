@@ -1923,6 +1923,31 @@ function projectToRoad(pos) {
   return best;
 }
 
+/* v116: stable anchor for the depot spine's public-road end. This used to call the global
+   projectToRoad(), which sounds right but isn't any more: v86-canonical-stage-roads reassigns
+   that same global to project onto the STAGE road centerlines (publicApi.project), because
+   that's what vehicle navigation/buildRoadRoute need. With few or no stage buildings built yet
+   (the common case -- this is exactly the state the reported screenshot was taken in) the
+   nearest stage centerline point collapses onto STAGE_HUB_V367 (0,0,0), so this depot spine's
+   public-road end silently jumped to the map's origin -- turning a short, sensible link into a
+   ~14-unit diagonal box that cut raw across the open field/hub area at an arbitrary angle, with
+   no shared corner/curb geometry with whatever road it happened to cross (see
+   ROADS_V116_NOTES.md, "стык у Лесопилки"/crooked joint near the sawmill, for the measured
+   before/after). masterRoadSegmentsV362() is the one part of the road network that is ALWAYS
+   present regardless of stageIndex/district unlocks (refreshArterialRoads() builds it
+   unconditionally from masterInfrastructureRecordsV38()), so it is the correct stable anchor
+   for a fixed depot entrance -- independent from whatever projectToRoad is repointed to. */
+function projectToMasterRoadGridV116(pos){
+  let best=pos.clone(),bestD2=Infinity;
+  for(const [a,b] of masterRoadSegmentsV362()){
+    const vx=b.x-a.x,vz=b.z-a.z,l2=vx*vx+vz*vz;
+    const t=l2?THREE.MathUtils.clamp(((pos.x-a.x)*vx+(pos.z-a.z)*vz)/l2,0,1):0;
+    const x=a.x+vx*t,z=a.z+vz*t,d2=(pos.x-x)**2+(pos.z-z)**2;
+    if(d2<bestD2){bestD2=d2;best=new THREE.Vector3(x,0,z);}
+  }
+  return best;
+}
+
 /* v34.3 transport QA: the production yard used to be 4-10 world units away from the
    spiral road. Trucks therefore cut across grass every time they loaded concrete/steel or
    left the garage. This small tree-shaped service-road graph gives the whole depot a real
@@ -1931,7 +1956,7 @@ function projectToRoad(pos) {
 function serviceAccessGraph() {
   // The spine intentionally skirts the generator/sawmill/concrete/metal building footprints.
   // Bay nodes then peel off only for the last short approach to a loading/parking spot.
-  const junction = projectToRoad(new THREE.Vector3(-20.0,0,-3.2)).point;
+  const junction = projectToMasterRoadGridV116(new THREE.Vector3(-20.0,0,-3.2));
   return [
     {id:'junction',p:junction,parent:null},
     // v112: service spine follows the clear corridor BETWEEN production footprints.
@@ -31105,12 +31130,39 @@ function renderPath(group,path,width,role,excludeOwner=null){
     return best;
   };
 
+  // v116: fullSync(forceStage=true) is invoked from the refreshBaseWorld()/refreshSpecialProjectWorld()
+  // wrapper below on every call to either -- i.e. continuously during ordinary idle play (worker/
+  // vehicle ticks), not only on a discrete player action. With forceStage always true for that path,
+  // the (circlesChanged||forceStage) condition below used to call window.__TYCOON_V61_AUDIT__.refresh()
+  // -- which hard-wires to v86-canonical-stage-roads' own raw refresh() (scene.remove+dispose+
+  // makeGroup(), a full stage-road-asphalt teardown+rebuild) -- unconditionally, every single call.
+  // Measured via scratchpad/roads116/trace_stage_churn.js + stage_road_idle_check.js: the whole
+  // stage-road group was destroyed and rebuilt every ~2s of pure idle time, 5/5 ticks, with zero
+  // player action -- a live continuation of the user's original "road gets rebuilt on its own"
+  // complaint that the v94-road-marking-cleanup / v113 passes never reached, because it is neither
+  // the markings layer nor the refreshInfrastructureWorldV37 upgrade-button cascade those fixed.
+  // Redirecting window.__TYCOON_V61_AUDIT__.refresh itself to v113's incremental syncStageRoads()
+  // was tried and reverted: syncStageRoads()/appendStageV116() only appends straight deck segments
+  // and never calls the corner/junction fill step (addCorner()/addJunction()), so multi-branch stage
+  // junctions lost their rounded fill and the live network shrank from 58 to 41 road meshes in a
+  // like-for-like scene (see ROADS_V116_NOTES.md) -- a worse, visible regression. The safe fix stays
+  // in this exact call site instead: guard it with v86's OWN generation counter (bumped only when its
+  // real input signature -- building/collision state -- actually changes, see ensureSig() in
+  // v86-canonical-stage-roads), so the expensive, fully-correct raw rebuild still runs whenever stage
+  // geometry genuinely changes, and is skipped -- not replaced by a cruder path -- when it hasn't.
+  let lastStageRefreshGenV116=-1;
   function fullSync(forceStage=false){
     safe(()=>window.__TYCOON_V83_COLLISIONS__?.rebuild?.());
     repairLandPlotRegistry();
     const circlesChanged=syncLegacyPlannerCircles();
     connectorCache.clear();lastConnectorSig='';safe(()=>districtConnectorCacheV37?.clear?.());
-    if((circlesChanged||forceStage)&&window.__TYCOON_V61_AUDIT__?.refresh)safe(()=>window.__TYCOON_V61_AUDIT__.refresh());
+    if((circlesChanged||forceStage)&&window.__TYCOON_V61_AUDIT__?.refresh){
+      const stageGen=safe(()=>window.__TYCOON_STAGE_ROADS__?.audit?.()?.generation);
+      if(stageGen===undefined||stageGen===null||stageGen!==lastStageRefreshGenV116){
+        lastStageRefreshGenV116=stageGen;
+        safe(()=>window.__TYCOON_V61_AUDIT__.refresh());
+      }
+    }
     safe(()=>window.__TYCOON_V82_TRAFFIC__?.refresh?.());
     safe(()=>refreshArterialRoads?.());
     refreshAccessRoads();
