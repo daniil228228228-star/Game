@@ -27693,7 +27693,22 @@ body.v54-stability-mode::after{content:"STABILITY";position:fixed;right:8px;bott
 function jointHalf59(n){
   if(!n||n.degree<=1||nodeKind59(n)==='STRAIGHT')return 0;
   const k=nodeKind59(n);
-  if(k==='CORNER')return Math.max(.32,n.maxW*.39);
+  if(k==='CORNER'){
+    // v116: large enough that addCornerArc59's circular fillet always gets a valid (non-self-
+    // intersecting) radius: radius=cut*tan(interior/2) must exceed the road's own half-width, or
+    // the arc's inner edge would cross past the turn centre. The old flat `maxW*.39` undershoots
+    // this the moment two lanes get wide -- measured live on a real 2.66-wide arterial corner
+    // (scratchpad/roads116/corner_measure2.js), it gave 1.037 where >=1.38 was needed, so every
+    // such corner fell back to the boxy union-of-rectangles fill (the "broken" 2-lane turn the
+    // user reported) instead of ever reaching the arc path. `Math.min(...,2.5)` caps it for a
+    // near-U-turn (interior near 0, tan(interior/2) near 0) -- addCornerArc59's own radius guard
+    // still catches the rare case this cap isn't quite enough for, falling back to the same safe
+    // rectangular fill rather than a self-intersecting ribbon.
+    const d1=n.dirs[0],d2=n.dirs[1];
+    const interior=Math.acos(THREE.MathUtils.clamp(d1.x*d2.x+d1.z*d2.z,-.999999,.999999));
+    const forArc=Math.min(2.5,(n.maxW*.5)/Math.max(.05,Math.tan(Math.max(.02,interior)/2))+.12);
+    return Math.max(.32,n.maxW*.39,forArc);
+  }
   return Math.max(.40,n.maxW*.46);
 }
   function material59(level){return roadDeckMatV38(Math.max(1,Math.min(3,level||1)));}
@@ -27804,32 +27819,98 @@ function roundedPoly104(points,radius=.22){
   sh.closePath();
   return sh;
 }
+// v116: same ribbon-strip construction v86-canonical-stage-roads' addCorner() uses for the
+// single-lane stage-road turns the user singled out as "just excellent" -- a strip of quads
+// following a polyline of centre points with a per-point width and (optionally) an explicit
+// tangent, baking `y` straight into the vertices so callers don't need a separate position.y.
+function ribbon59(points,widths,material,y=0,tag){
+  if(points.length<2)return null;
+  const pos=[],uv=[],ind=[];let travel=0;
+  for(let i=0;i<points.length;i++){
+    if(i)travel+=points[i].distanceTo(points[i-1]);
+    const a=points[Math.max(0,i-1)],b=points[Math.min(points.length-1,i+1)],
+      dx=points.tangents?.[i]?.x??(b.x-a.x),dz=points.tangents?.[i]?.z??(b.z-a.z),
+      l=Math.hypot(dx,dz)||1,nx=-dz/l,nz=dx/l,h=(Array.isArray(widths)?widths[i]:widths)*.5;
+    pos.push(points[i].x+nx*h,y,points[i].z+nz*h,points[i].x-nx*h,y,points[i].z-nz*h);
+    const us=Math.max(.08,(h*2)/8),v=travel/8;uv.push(.5-us*.5,v,.5+us*.5,v);
+  }
+  for(let i=0;i<points.length-1;i++){const q=i*2;ind.push(q,q+2,q+1,q+1,q+2,q+3);}
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+  geo.setIndex(ind);geo.computeVertexNormals();
+  const m=new THREE.Mesh(geo,material);m.receiveShadow=true;if(tag)m.userData[tag]=true;return m;
+}
+// v116: addIntersection59's old CORNER handling built the exact same junction fill as T/X nodes
+// -- roadJunctionOutlineXZ()'s star-shaped union of the two incident rectangles. For a simple
+// 2-road bend that is NOT a smooth corner: measured live on a real district-arterial corner
+// (scratchpad/roads116/corner_measure2.js), it produced a jagged, non-convex 12-point outline
+// (two extra rectangular notches) with no continuous tangent where it meets either straight
+// deck -- visually the "broken" 2-lane turn the user contrasted against the stage road's smooth
+// single-lane bends. (A first attempt at fixing this, right above in the pre-fix source, computed
+// a 72-step radial-envelope `pts`/`shape` but never wired it into `pad` -- dead code, removed.)
+// This gives CORNER nodes the exact tangent-continuous circular-arc fillet v86's addCorner() uses
+// for stage roads instead: same radius/bisector math, generalised to interpolate width across the
+// arc (for a corner joining two different road widths) and to grow matching curb/sidewalk arcs
+// alongside it when the incident segment calls for them. T/X junctions are untouched -- a smooth
+// arc has no meaning for a real 3/4-way junction, and v86 makes the identical split (addCorner()
+// vs addJunction()).
+function addCornerArc59(group,n,level){
+  const cut=jointHalf59(n)+.10;
+  const d1=n.dirs[0],d2=n.dirs[1],w1=n.segments[0]?.w||n.maxW,w2=n.segments[1]?.w||n.maxW;
+  const bisector=new THREE.Vector3(d1.x+d2.x,0,d1.z+d2.z).normalize();
+  const interior=Math.acos(THREE.MathUtils.clamp(d1.x*d2.x+d1.z*d2.z,-.999999,.999999));
+  const radius=cut*Math.tan(interior/2);
+  if(!(radius>Math.max(w1,w2)*.5+.05)){
+    // Too tight for a clean arc (near-U-turn, or a very wide road with a short cut) -- keep the
+    // existing, already-safe union-of-rectangles fill instead of a self-intersecting ribbon.
+    // Same guard v86's addCorner() uses for the same reason.
+    const pad=new THREE.Mesh(roadShapeGeometryXZ(roadJunctionOutlineXZ(n.dirs,n.segments.map(s=>s.w||n.maxW),cut)),material59(level));
+    pad.rotation.x=-Math.PI/2;pad.position.set(n.p.x,ROAD59.jointTop,n.p.z);pad.receiveShadow=true;
+    pad.userData.v59Intersection=true;pad.userData.v59IntersectionKind='CORNER';
+    pad.userData.v59JointSize=n.maxW;pad.userData.v59Level=level||1;pad.userData.v105RadialJunction=true;
+    group.add(pad);return;
+  }
+  const center=n.p.clone().addScaledVector(bisector,cut/Math.cos(interior/2));
+  const p1=n.p.clone().add(new THREE.Vector3(d1.x*cut,0,d1.z*cut)),p2=n.p.clone().add(new THREE.Vector3(d2.x*cut,0,d2.z*cut));
+  const startAngle=Math.atan2(p1.z-center.z,p1.x-center.x),endAngle=Math.atan2(p2.z-center.z,p2.x-center.x);
+  const sweep=Math.atan2(Math.sin(endAngle-startAngle),Math.cos(endAngle-startAngle));
+  const steps=24,pts=[],widths=[];pts.tangents=[];
+  for(let i=0;i<=steps;i++){
+    const t=i/steps,angle=startAngle+sweep*t;
+    pts.push(new THREE.Vector3(center.x+radius*Math.cos(angle),0,center.z+radius*Math.sin(angle)));
+    pts.tangents.push(new THREE.Vector3(-Math.sin(angle)*Math.sign(sweep),0,Math.cos(angle)*Math.sign(sweep)));
+    widths.push(w1+(w2-w1)*t);
+  }
+  const asphalt=ribbon59(pts,widths,material59(level),ROAD59.jointTop);
+  if(asphalt){
+    asphalt.userData.v59Intersection=true;asphalt.userData.v59IntersectionKind='CORNER';
+    asphalt.userData.v59JointSize=n.maxW;asphalt.userData.v59Level=level||1;asphalt.userData.v59CornerArc=true;
+    group.add(asphalt);
+  }
+  // Curb/sidewalk continuation around the bend -- both incident segments at a real corner are
+  // the same road at the same level in every caller of renderNetwork59, so segment 0's flags
+  // (already gating addRoadDeck59's own curb/sidewalk on the straight parts) are representative.
+  const seg=n.segments[0]||{},lvl=Math.max(1,level||1),wantCurb=lvl>=2&&seg.curb!==false;
+  const wantWalk=wantCurb&&seg.sidewalk!==false&&Math.min(w1,w2)>=2.2;
+  if(wantCurb){
+    const curbW=lvl>=3?.10:.085,walkW=wantWalk?(lvl>=3?.30:.22):0;
+    for(const side of[-1,1]){
+      const curbPts=pts.map((p,i)=>{const tg=pts.tangents[i],nx=-tg.z,nz=tg.x,h=widths[i]*.5+curbW*.5;return new THREE.Vector3(p.x+nx*side*h,0,p.z+nz*side*h);});
+      const curbRibbon=ribbon59(curbPts,curbW,ROAD_STYLE_V353.curb,.078);
+      if(curbRibbon){curbRibbon.userData.v59Curb=true;curbRibbon.userData.v59CornerCurb=true;group.add(curbRibbon);}
+      if(walkW){
+        const walkPts=pts.map((p,i)=>{const tg=pts.tangents[i],nx=-tg.z,nz=tg.x,h=widths[i]*.5+curbW+walkW*.5+.018;return new THREE.Vector3(p.x+nx*side*h,0,p.z+nz*side*h);});
+        const walkRibbon=ribbon59(walkPts,walkW,ROAD_STYLE_V353.walk,.087);
+        if(walkRibbon){walkRibbon.userData.v59Sidewalk=true;walkRibbon.userData.v59CornerCurb=true;group.add(walkRibbon);}
+      }
+    }
+  }
+}
 function addIntersection59(group,n,level){
   const kind=nodeKind59(n);if(kind==='END'||kind==='STRAIGHT')return;
+  if(kind==='CORNER'){addCornerArc59(group,n,level);return;}
   const cut=jointHalf59(n)+.10;
-  const minHalf=Math.max(.38,Math.min(...n.segments.map(s=>(s.w||n.maxW)*.5)));
-  const core=kind==='CORNER'?Math.min(.30,minHalf*.30):Math.min(.38,minHalf*.34);
-  const steps=72,pts=[];
-
-  for(let i=0;i<steps;i++){
-    const a=i/steps*Math.PI*2,ux=Math.cos(a),uz=Math.sin(a);
-    let r=core;
-    for(let j=0;j<n.dirs.length;j++){
-      const d=n.dirs[j],half=Math.max(.38,(n.segments[j]?.w||n.maxW)*.5);
-      const c=ux*d.x+uz*d.z;
-      if(c<=1e-5)continue;
-      const ss=Math.abs(d.x*uz-d.z*ux);
-      const rLong=cut/c;
-      const rSide=ss>1e-5?half/ss:1e6;
-      r=Math.max(r,Math.min(rLong,rSide));
-    }
-    pts.push([ux*r,uz*r]);
-  }
-
-  const shape=new THREE.Shape();shape.moveTo(pts[0][0],pts[0][1]);
-  for(let i=1;i<pts.length;i++)shape.lineTo(pts[i][0],pts[i][1]);
-  shape.closePath();
-
   const pad=new THREE.Mesh(roadShapeGeometryXZ(roadJunctionOutlineXZ(n.dirs,n.segments.map(s=>s.w||n.maxW),cut)),material59(level));
   pad.rotation.x=-Math.PI/2;pad.position.set(n.p.x,ROAD59.jointTop,n.p.z);pad.receiveShadow=true;
   pad.userData.v59Intersection=true;pad.userData.v59IntersectionKind=kind;
