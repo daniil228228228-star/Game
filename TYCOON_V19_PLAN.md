@@ -1,0 +1,1009 @@
+# Tycoon 3D — v19+ design brief & roadmap
+
+This is the standing brief for `tycoon-v19.html`, a separate, more advanced
+prototype the user has been iterating outside this session (v1..v19) and
+asked to continue here, edited in place, from v19 onward. It is **not** the
+same file as `tycoon.html` (the archetype/sawmill-workers prototype from
+earlier sessions in this repo) — the two are independent and this brief
+only governs `tycoon-v19.html`.
+
+Full original spec from the user is condensed below into a checklist so a
+future session (autonomous loop or human-directed) can pick up the next
+highest-impact gap without re-reading a 600-line prompt. When in doubt,
+re-read the "non-negotiable rules" before touching anything.
+
+## North star
+
+*"I started a tiny construction outfit hand-cutting logs, and gradually
+built a construction empire with factories, warehouses, equipment, offices
+and skyscrapers."* The player should always be able to answer: what am I
+doing right now, why, what do I get, what unlocks next, and how is my
+territory visibly getting richer/more automated. Minimize moments where the
+player just stands and waits.
+
+## Non-negotiable rules
+
+- **Every object on the map needs a function.** No vehicle that just drives
+  around, no worker that wanders randomly, no building that's pure decor.
+  If it's visible, it does something a player can name.
+- **Pick the next priority yourself.** Never ask the user "what next" —
+  read this doc, pick the highest-impact incomplete item, and do it.
+- **Meaningful slices, not version-number bumps.** Each session should make
+  the game *noticeably* better, not tweak one constant.
+- **Test the real gameplay loop, not just syntax.** `node --check` passing
+  proves nothing. Actually playtest: start → move → chop → carry → drop off
+  → production → buy a building → construction → equipment → completion →
+  income → upgrade → save → reload. Use the player-teleport-via-save (or
+  via direct `player.position.set(...)` + calling the real purchase/state
+  functions, since this file is classic scripts and top-level `let/const`
+  bindings ARE reachable from `page.evaluate()`) — never fight the
+  follow-camera by overriding `camera.position` alone, it gets stomped by
+  `updatePlayer()` every frame.
+- **No flying objects.** Before calling a slice done, check: wheels touch
+  ground, workers stand on ground, foundations aren't floating, signs are
+  attached, cranes aren't hovering, beams don't clip, trees grow from the
+  ground, roofs sit on walls, cargo sits in truck beds. This is one of the
+  main quality bars the user explicitly called out.
+- Keep it a single self-contained `tycoon-v19.html` for now (matches this
+  repo's existing no-build-step convention). Only split into `/src` modules
+  once the design has settled (user's own item 29) — not yet.
+
+## Audit — what v19 already had before this session
+
+Confirmed by reading the code and by headless-browser playtesting (not just
+grepping), so future sessions don't waste time re-building working systems:
+
+- **6-phase construction pipeline already exists** and is genuinely good:
+  `CONSTRUCTION_PHASES` (prep → foundation → frame → walls → roof →
+  finish), `spawnConstructionSite()` builds a real site (fence, site office
+  cabin, footings, steel skeleton, wall panels, archetype-aware roof,
+  window/door finish kit, a working tower crane with rotating jib + bobbing
+  hook + cargo block, a spinning cement mixer, an excavator with an
+  oscillating arm, a rebar cage, a beam stack), and
+  `setConstructionPhaseVisual()`/`updateConstructionSites()` animate all of
+  it and swap visibility per phase. Verified visually via headless
+  screenshots at multiple phases (see session log) — grounded, no floating
+  parts, crane/mixer/excavator animate only during the right phases.
+- **Delivery vehicles already accelerate construction.** `assignVehicleJob`
+  / `moveWorkVehicle` route a delivery truck and a lift truck to whichever
+  site needs them (by phase — delivery for phase ≤3, lift for phase ≥4),
+  with a compact status label (`МАТЕРИАЛЫ / доставка на объект`), and
+  arriving actually speeds up `build.timer`. Not yet: naming the specific
+  resource + target building on the label (spec wants e.g. "Доски → Дом");
+  currently generic "MATERIALS". Small, not urgent.
+  labels.
+- **Auto-fit label text already exists**: `fitLabelFont()` /
+  `drawLabelLine()` shrink font until text fits, used by `makeLabelSprite`.
+  Section 23's requirement is already satisfied generically.
+- **Choppable trees, log-carrying, sawmill drop-off, conveyor, global
+  field-upgrades (Build Speed / Carry Capacity / Wood Yield / Sawmill),
+  achievements, prestige, i18n (ru/en), save versioning (`saveVersion: 4`)**
+  all already exist and work (verified with a headless pass — build a
+  house end to end, income starts, upgrade pad appears).
+- **No contracts system existed** before this session (spec item 19) —
+  implemented in the previous session, see below.
+- Vehicle navigation was **not** on road nodes as of the previous session
+  (`makeVehiclePath()` was a straight 3-point path: home → map center →
+  target). **Fixed this session** — see "What this session added" below.
+- Re-checked the two "known mobile bugs" noted by the previous session
+  before spending a slice on them, and downgraded both after a closer look
+  (measured actual DOM bounding boxes + screenshots at 390px, not just a
+  glance): the 5-chip HUD stats row wraps to 2 lines at narrow widths, but
+  reads cleanly (no overlap/garble) — not actually broken, just two lines
+  instead of one; acceptable per section 22's "don't take half the
+  screen" bar. The field-upgrade label appearing near the screen edge is a
+  world-space 3D sprite near the current camera framing's edge, not a
+  CSS/DOM overflow bug — any world-space label can be partially
+  off-screen depending on where the player is standing, and that's
+  expected behavior for this label system, not a defect. Neither is worth
+  a dedicated slice; removed from the priority list below.
+
+## What recent sessions added (most recent first)
+
+**Concrete — the third resource, first slice** (this session, spec
+section 3: "add resources gradually, 5 max: money, logs, planks,
+concrete, metal"). Added `CONCRETE_PLANT_POS` (verified clear of the
+road network and the sawmill camp's other structures via
+`distToNearestRoadSegment()` before finalizing, same discipline as the
+parking-lot placement earlier), `buildConcretePlant()` (a silo + rotating
+mixer drum model near the sawmill camp, with a sign label), and
+`updateConcretePlant(dt)`: silent until `stageIndex >= CONCRETE_UNLOCK_STAGE`
+(4, Mini Factory), then a slow passive tick (every 14s, vs. planks'
+10-16s) producing 1 concrete (scaling with prestige, mirroring the
+sawmill's own formula). A new HUD chip (`#concreteStat`) stays hidden
+until the resource is relevant. `save()`/`load()` updated
+(`saveVersion: 5`, with a defensive `typeof === 'number'` fallback so
+older saves without a `concrete` field still load cleanly at 0).
+
+Deliberately does **not** yet spend concrete on anything -- cost
+integration into building/upgrade prices touches many coordinated call
+sites (STAGES cost fields, purchase/upgrade deduction, insufficient-
+funds checks, multiple price-tag labels) and deserves its own tested
+slice rather than being rushed alongside landing the resource itself,
+per the "one real slice, not everything at once" rule. Noted as the
+literal #1 item on next session's suggested-slice list.
+
+Verified: a dedicated test confirmed zero production before unlock even
+over 400 simulated seconds, exactly 4 concrete after 60 simulated
+seconds post-unlock (60s / 14s-interval = 4 full ticks), the HUD chip's
+hidden/text state, and a `save()`/`load()` round-trip preserving the
+value. Re-ran the full regression suite (boot, pinch-zoom, full-build
+lifecycle, camera-obstruction, milestone banner, scatter-on-road) with
+zero new failures.
+
+**Two direct real-device-reported fixes this session**: (1) **Label
+clipping was NOT actually fixed by the earlier "reduce label scale by
+~0.68x" session** -- confirmed by the user's own iPhone screenshot
+showing "Мотор лесопилки" clipped mid-word inside its own card. Went
+back and did the math the earlier session skipped: at `CAM_MIN_DIST=3.5`
+and 55° FOV, visible world-height is ~3.64 units; on a narrow portrait
+phone (aspect as low as ~0.43, worse than the 390x844 this repo's tests
+use) that's only ~1.57 units of visible *width*. The earlier fix left
+most labels at 2.0-2.72 units wide -- mathematically guaranteed to
+overflow at minimum zoom regardless of the canvas-level font-fit logic,
+which only guarantees the text fits *within the sprite's own texture*,
+not that the sprite itself fits on screen. Recomputed every label
+sprite's world-scale against this real formula (not a guessed
+multiplier) and set them all to a uniform 1.45-unit target width
+(aspect-preserved per label), leaving real margin below the ~1.57 hard
+limit. Verified by reproducing the *exact* scenario from the user's
+screenshot (player standing at the Sawmill Motor pad at `CAM_MIN_DIST`)
+before and after -- confirmed the title now renders fully inside its
+card with room to spare. (2) **Unexplained bare up-arrow icons on
+upgrade pads** -- each building has 3 walkable upgrade-pad positions
+(so it's reachable from any approach angle), but only the primary one
+ever showed the price/level card; the other two were a lone `⬆️` icon
+with zero context, per direct feedback ("не понимаю что эта галка вверх
+дает"). Gave the two secondary pads a short `⬆️ Улучшить`/`⬆️ Upgrade`
+text hint (bilingual, refreshed on language switch via a new
+`secondarySprites` array on `entry.upgradePad`) instead of leaving them
+as bare icons, without duplicating the full price tag three times over.
+
+Verified: re-ran the full regression suite (boot, pinch-zoom, full-
+build lifecycle, camera-obstruction, milestone banner) with zero new
+failures; confirmed via `page.evaluate()` that both secondary hint
+sprites are created and wired into the language-refresh path.
+
+**Small parking lot near the sawmill camp** (this session, spec
+sections 14-15 -- the final "world density" checklist item). Added
+`addParkingLot()` (a marked paved rectangle with 4 divider lines
+forming 3 stalls, using the same rotation convention the road/crosswalk
+meshes already use) at a hand-picked spot near `GENERATOR_POS`.
+Unlike the field-upgrade pads fixed earlier this session, this position
+was checked against `distToNearestRoadSegment()` *before* being
+finalized (8.17 units clear) rather than discovered broken after the
+fact. Verified via a scene traverse (exactly 1 lot mesh + 4 divider-line
+meshes at the expected geometry signature) and the full regression
+suite with zero new failures. This closes out sections 14-15 entirely
+(benches, signs, lamps, curbs, sidewalks, hydrants, crosswalks, cones,
+now parking); the "World density / roads" checklist item is `[x]`.
+
+**Found and fixed two field-upgrade pads sitting on the road** (this
+session, a follow-up audit using the `distToNearestRoadSegment()` helper
+from the previous fix -- checked every other static/hand-placed position
+in the game against it, not just the random scatter). The road segment
+connecting stage 3 to stage 4 happens to run almost due south right past
+`x=-20`, cutting straight through a corner of the sawmill camp. The
+'sawmill' (Sawmill Motor) and 'yield' (Wood Yield) field-upgrade pads'
+original offsets put their discs only 0.69 and 0.94 units from that
+segment's centerline -- sitting ON the paved road itself (half-width
+1.15), not just close to it. This is a permanent, deterministic map-
+geometry fact (not something random-seed-dependent like the scatter
+bug), so it affected every single playthrough. Pushed both pads' X
+offset from SAWMILL_POS out further (to -5.0) so they clear the road +
+sidewalk (now 2.89 and 2.86 units away) while staying close enough to
+read as "near the mill."
+
+Verified: re-ran the same `distToNearestRoadSegment()` check against
+`GENERATOR_POS`, `SAWMILL_POS`, `SAWMILL_DROPOFF_POS`, and all 4 field-
+upgrade pad positions -- both previously-flagged pads now clear;
+confirmed the two pads are still comfortably apart from each other
+(4.4 units). `SAWMILL_POS` itself sits at 2.12 (just inside the
+sidewalk-clearance zone but outside the actual paved road) -- left
+alone this session since moving the mill building itself would cascade
+into the conveyor belt, static colliders, and dropoff position, for a
+much smaller visual issue than a pad sitting mid-road. Re-ran the full
+regression suite (boot, pinch-zoom, full-build lifecycle, camera-
+obstruction, scatter-on-road) with zero new failures.
+
+**Found and fixed scattered decor spawning on the road** (this session,
+another incidental-audit find). `scatterScenery()`'s random tree/rock/
+bush placement only checked clearance against the 10 stage NODE
+positions, never against the ROAD ITSELF connecting them -- a segment's
+midpoint, far from either endpoint, had no clearance check at all.
+Confirmed via a live-scene scan across fresh page loads: roughly 2% of
+scattered decor (2 of 88 checked pieces in one run) landed within the
+road's own footprint, one as close as 1.24 units from the centerline --
+well inside the road+sidewalk width. Added `distToNearestRoadSegment()`
+(perpendicular point-to-segment distance, checked against every road
+segment, not just its endpoints) and a `ROAD_CLEAR = 2.6` rejection in
+the scatter loop, mirroring the existing per-stage-node clearance check.
+
+Verified: re-ran the same live-scene scan across 5 fresh random-seeded
+page loads post-fix -- zero pieces landed on/near a road in any of them
+(down from the earlier confirmed non-zero case), while placement counts
+stayed similar (77-88 vs. the original ~88), so the extra clearance
+check isn't meaningfully starving the scatter budget. Re-ran the boot,
+pinch-zoom, full-build-lifecycle, and camera-obstruction regression
+tests with zero new failures.
+
+**Crosswalks + construction-site cones** (this session, spec sections
+14-15, continuing the "world density" checklist). Added `addCrosswalk()`
+(5 zebra stripes, oriented via the same `atan2(dir.x, dir.z)` rotation
+convention the road/lane meshes already use, so they line up square with
+the road rather than the map) at 3 of the road-segment stops the
+benches/signs already iterate over (every other one, to avoid stacking
+a crossing at literally every corner), and `makeTrafficCone()`, with 3
+cones scattered around each construction site's yard for a bit more
+"active site" texture alongside the existing fence.
+
+Verified: a scene-wide traverse counted exactly 15 stripe meshes (3
+crosswalks x 5 stripes, matching the `i % 4 === 0` selection over the
+road-segment loop) at the expected positions; a purchase-triggered
+construction site was confirmed to contain exactly 3 cone meshes,
+grounded at y=0. Screenshots weren't useful for this check either (same
+follow-camera-fighting issue as prior sessions), so verification stayed
+numeric. Re-ran the boot, pinch-zoom, full-build-lifecycle and camera-
+obstruction regression tests with zero new failures.
+
+**Two direct user-reported fixes this session**: (1) **Road marking
+flicker ("разметка бликует")** -- root-caused to `outerRingMark` (the
+painted line on the big outer ring road, near the map's edge) sitting
+only 0.007 world units above `outerRingRoad` while fully overlapping its
+radius band. At that ring's distance from the camera (~55+ units, near
+`GROUND_HALF`), the depth buffer's precision at the far end of the
+camera's `[0.1, 500]` clip range isn't fine enough to keep two
+near-coplanar surfaces that close apart, causing them to flicker/
+z-fight. The inner spiral roads' own lane markings already use a much
+larger ~0.0375 gap successfully; bumped `outerRingMark` to a 0.045 gap
+(0.09 vs. 0.045) to match. (2) **Camera clipping through buildings** --
+added a raycast-based obstruction check to `updatePlayer()`'s camera-
+follow code: each frame, after the existing follow-camera positioning
+logic computes a desired camera position, a single reused
+`THREE.Raycaster` checks the line from the player's eye to that position
+against all completed (non-under-construction) building meshes, and
+pulls the camera in front of the nearest hit (with a small buffer) if
+one exists -- previously OrbitControls had no concept of solid geometry
+at all, so walking close to a building's far side could put the camera
+inside or behind its wall.
+
+Verified: an obstruction test placed a real building between the player
+and an intentionally-far camera position and confirmed the camera pulls
+in from a raw ~12 units to ~4.4 (in front of the wall), confirmed via a
+separate case that an unobstructed camera in open grass is completely
+unaffected (identical distance before/after), and confirmed the pulled-
+in position survives several real `animate()`/`controls.update()` frames
+(not just the single `updatePlayer()` call) so OrbitControls' damping
+doesn't stomp it back. Re-ran the full existing regression suite (boot,
+pinch-zoom, the three earlier user-reported fixes, milestone banner,
+full build lifecycle) with zero new failures.
+
+**Found and fixed the reported material-overlap bug** (this session,
+follow-up to the earlier "материалы накладываются друг на друга"
+report). Screenshots alone weren't reliable for hunting this down (the
+game's own `animate()` loop keeps re-deriving camera position from
+OrbitControls' state every frame, fighting any one-off camera move meant
+for a diagnostic shot -- worked around by teleporting the *player*, not
+just the camera, since `updatePlayer()` resets `controls.target` to the
+player's position every frame regardless of anything else set
+externally). Wrote a `THREE.Box3`-based scanner that walks every
+building archetype's mesh tree and flags structurally-significant
+mesh pairs (skipping small trim/window/mullion pieces, which are
+*meant* to sit flush against their parent surface) whose bounding boxes
+overlap by more than 85% of the smaller one's volume. Found: `buildWarehouse()`'s
+"office" annex (and its roof/window/door) was positioned at `x = -w*0.38`,
+but the annex's own half-width (`w*0.12`) meant its entire footprint sat
+inside the main body's range (which extends to `-w*0.5`) -- the whole
+wing, meant to read as a visible attached structure, was completely
+swallowed inside the opaque main warehouse box, invisible. Fixed by
+moving it to `-w*0.55` (now pokes out ~29% of its own width past the
+main wall, similar overlap ratio to the equivalent wing in `buildHouse()`
+which was already correct). Verified: re-ran the scanner (warehouse no
+longer flagged) and took an isolated screenshot confirming the annex
+(cream walls, red gable roof) is now clearly visible attached to the
+warehouse's side, not hidden. The other flagged pairs across all 10
+archetypes turned out to be intentional trim/belt bands (wood siding
+bands on houses, a "sky lobby" band on office/tower) matching the same
+layered-trim pattern used everywhere else in the file -- not bugs.
+
+**Construction walls/roof now genuinely differ per archetype** (this
+session, direct follow-up: the previous session's size-only scaling fix
+"didn't look very different" since early buildings are close enough in
+size that the difference wasn't visible -- shape and material read
+immediately regardless of size, so that's the lever pulled this time).
+`spawnConstructionSite()` now classifies each build into one of 4
+archetype groups (house / shop / industrial (warehouse, factory) /
+vertical (office, tower)) and gives each a genuinely different wall
+shape+material and roof shape+material during the walls/roof
+construction phases (which together span over half the total build
+time): house keeps its gable roof + tan concrete walls; industrial gets
+a wider footprint + corrugated-metal walls and roof; vertical gets a
+narrower, taller-reading footprint + an emissive glass curtain-wall
+material (matching `createCurtainWallMaterial`, same one the finished
+office/tower buildings use) + a dark flat metal roof; shop keeps the
+previous generic box/metal-roof default. Verified programmatically
+(material color/metalness/emissive and geometry width/roof-geometry-type
+compared across all 4 groups -- confirmed genuinely distinct, not just
+recolored) rather than via screenshots, which kept framing the wrong
+part of the map due to the animate() loop's own `controls.update()`
+continuously re-deriving camera position from OrbitControls' damped
+internal state, fighting any one-off camera repositioning done for a
+screenshot. Re-ran the full regression suite (boot, full purchase→
+complete lifecycle, camera-follow/growth-reveal/label-scale, milestone
+banner) with zero new failures.
+
+**Benches/signposts/lamps sitting on the road** (this session, direct
+user report: "скамейки на самих дорогах стоят"). Root cause:
+`createRoadsideDetails()` and the lamp-scattering loop anchored their
+perpendicular offset to a spiral *corner point* using the *radial
+direction from the map's origin* as the tangent basis — not the actual
+road segment's own direction. The spiral turns ~54deg per stage, so
+those two directions diverge sharply at some points; worse, a corner
+point has a second road segment meeting it at a different angle, so
+even a tangent computed from one adjacent segment could still pass
+close to the other. Measured one bench at just 0.08 units from the
+segment leaving that corner — deep inside the road, not just close to
+it. Fixed by anchoring to each road SEGMENT's own midpoint and
+direction (matching how the curb/sidewalk loop already does it),
+which has no such neighboring-segment problem since the nearest other
+segment is at least half a segment length away.
+
+Verified: a `THREE.Box3`/segment-distance diagnostic (not screenshots,
+which don't reliably show a few units of clearance at this zoom) checked
+every relocated bench against every road segment in the whole network,
+not just its own: all five are now a consistent 2.95 units clear of any
+road, versus the old worst case of 0.08. Re-ran the boot regression test
+and took a top-down screenshot to visually confirm nothing sits on the
+road surface. Zero new console errors.
+
+**Four direct user-reported fixes this session**: (1) **Icon sprites were
+genuinely clipped** (gear ⚙️ and up-arrow ⬆️ on upgrade pads) — reproduced
+by dumping `makeIconSprite()`'s own canvas: the 96x96 canvas at a 76px
+font gave almost no margin, and some emoji glyphs' actual ink extends
+past their nominal font-size box, clipping the edges. Fixed by using a
+128x128 canvas at a smaller 64px font for real headroom; verified the
+raw canvas render no longer touches any edge. (2) **Camera glitching on
+a slight joystick nudge** — root-caused to a hard `joyMag > 0.08`
+on/off switch between two *different* position formulas (rotate-behind-
+player vs. plain-translate); a thumb hovering right around that cutoff
+made the camera alternate between them every frame. Replaced with one
+continuous formula parameterized by a `followWeight` that ramps smoothly
+over `joyMag ∈ [0.04, 0.18]` instead of a hard threshold — proven
+algebraically (and by simulation) to reduce to the exact same translate
+behavior at weight 0, so there's no seam. Verified via a jitter
+simulation (joyMag oscillating right around the old threshold): max
+per-frame camera displacement dropped from 0.78 to 0.34 units (old code
+vs. new, same input) -- confirmed by literally re-running the same test
+against the pre-fix code via `git stash`. (3) **Every construction site
+was identically sized regardless of the building** — `spawnConstructionSite()`
+used fixed dimensions for the foundation/frame/walls/roof/crane no matter
+whether it was building a House or an Empire, which read as "boring,
+always the same." Added `envW`/`envH` scale factors derived from the
+real `stage.baseSize`/`height`, applied to the building-envelope groups
+and (partially, height-only) the crane rig, with equipment repositioned
+outward by `envW` so it still clears a wider footprint.
+`setConstructionPhaseVisual()`'s per-phase Y-scale animation now
+multiplies by `envH` instead of overwriting it outright. Verified via
+`THREE.Box3` bounding-box measurements (not screenshots, which were
+hard to frame cleanly against existing map clutter): total rig height
+went 5.5 (House) → 6.87 (Mini Factory) → 14.3 (Empire), a real, visible
+size difference; full-lifecycle test confirmed a site still completes
+correctly (building becomes visible at scale 1,1,1, site cleans up).
+(4) Noted but not yet addressed this session: reported material/texture
+overlap on some buildings, and a general ask for more detailed/realistic
+building and construction-site geometry -- both need focused follow-up
+(the overlap needs a reproduction pass across archetypes; "more
+detail/realism" is an open-ended visual-quality push, not a single bug).
+
+**Economy pacing audit + a real tuning fix** (this session, spec section
+20, #2 on the "suggested next slice" list). Wrote a pure-numeric
+idle-progression simulator that drives the game's own real formula
+functions (`buildingIncome`, `buildingUpgradeCost`, `buildingPlankCost`,
+`constructionDuration`, `sawmillAutoInterval`, etc. — called directly via
+`page.evaluate()`, never touching the THREE scene) to fast-forward
+thousands of simulated seconds and compare three play styles: idle (only
+the passive sawmill tick), light manual chopping (3 logs/min), and active
+manual chopping (8 logs/min, near the carry-capacity pace). Finding: with
+the original `BASE_SAWMILL_AUTO_INTERVAL = 10`, all three profiles
+finished the entire 10-building + all-upgrades run within a few percent
+of each other (e.g. full completion at ~6569s idle vs. ~2821s active —
+but the *initial 10-building race itself* was within single-digit
+seconds regardless of chopping). In other words, manually chopping
+trees — the interactive mechanic the hint overlay specifically teaches
+new players — had almost no effect on how fast the game actually
+progressed; plank costs on the main build path are trivially small next
+to the money costs, so wood was essentially never the bottleneck.
+Slowed the passive rate (`BASE_SAWMILL_AUTO_INTERVAL: 10 → 16`, i.e.
+3.75 planks/min passively instead of 6/min) and re-ran the same
+simulation: the early build race is still (correctly) money-dominated,
+but the midgame-to-endgame upgrade grind now meaningfully rewards active
+play — full completion moved to ~10505s idle vs. ~3361s active (roughly
+3.1x apart, up from ~2.3x), without breaking idle progression (it still
+finishes, just slower). A single well-reasoned constant change rather
+than a broad rebalance, backed by before/after simulation data;
+worth revisiting if a real playtest disagrees with the model.
+
+Verified: re-ran the idle/light/active simulation before and after the
+change and confirmed the intended before/after separation above; re-ran
+the full existing regression suite (boot, pinch-zoom, camera-follow/
+construction-reveal/label-scale, milestone banner) with zero new
+failures — this was a pure constant tweak, no logic paths touched.
+
+**Progression-stage milestone banner** (this session, spec section 18,
+top of the "suggested next slice" list). The 10-stage `STAGES` array
+already tracked raw progress (`🏗️ N/10` in the HUD), but there was no
+explicit "you've entered a new era" moment the spec calls out as
+important for always knowing the next big milestone. Added
+`MILESTONE_ERAS`, a 5-entry table grouping `STAGES` into named eras two
+buildings at a time (Residential Quarter → Commercial District →
+Industrial Zone → Corporate District → Metropolis, each with an
+emoji/title/subtitle in both languages), and `eraIndexForCount(n)`, a
+pure function of `stageIndex` (`Math.floor((n-1)/2)`, clamped) so no
+separate "have I announced this" flag is needed — prestige resetting
+`stageIndex` to 0 naturally re-announces the same eras on the way back
+up. `purchaseCurrentPad()` compares the era before/after each purchase
+and calls `showMilestone()` only on an actual transition (5 of the 10
+purchases, not all 10) -- a centered, auto-dismissing banner
+(`#milestoneBanner`, 3.4s) separate from the existing toast system so it
+doesn't fight with the "Construction started" toast that fires in the
+same call.
+
+Verified with a headless-browser pass: confirmed `eraIndexForCount()`'s
+output for every count 0-10 matches the intended 5 two-building eras;
+bought all 10 buildings in sequence and confirmed the banner's title/
+subtitle text only changes at the 5 correct transition points (indices
+0, 2, 4, 6, 8) and stays put on the other 5 purchases; screenshotted the
+banner on a 390px mobile viewport after the very first building and
+confirmed it's fully on-screen and legible, not clipped or colliding
+with the HUD. Zero new console errors; re-ran the boot, pinch-zoom, and
+the three-fixes regression tests with no failures.
+
+**Three direct user-reported fixes this session** (real gameplay feedback,
+not a plan-list item): (1) **joystick-driven camera auto-follow** --
+`updatePlayer()`'s camera-follow tail used to translate the camera by the
+player's per-frame delta only, so the camera's *viewing angle* never
+changed while walking (uncomfortable per the user: "неудобно ходить").
+Now, while the joystick is actively pushed (`joyMag > 0.08`) and the
+player is moving, the camera's XZ offset from the player is reinterpreted
+as a spherical azimuth around a fixed radius, and that azimuth is
+interpolated (shortest-path, `atan2(sin(da), cos(da))`, rate `dt * 2.6`)
+toward "directly behind the player's facing direction"
+(`player.rotation.y + Math.PI`) every frame, before `controls.update()`
+runs. Falls back to the old plain-translation behavior when the joystick
+is idle/centered, so free-look via drag/OrbitControls when standing still
+is untouched. (2) **Construction "growing" look fixed** -- the building
+mesh used to fade/scale in gradually across phases 3-5 (frame through
+finish), which read as the finished house slowly inflating out of the
+ground the moment the frame went up, well before its real textures
+appeared -- the user specifically flagged this as looking unnatural. Now
+`growingMeshes` stays fully invisible through phase 4 (frame/walls/roof,
+crane+scaffolding+fence visuals carry all the "under construction" read
+instead) and only reveals in phase 5 (finish, last 12% of build time)
+with a quick ease-out-cubic pop (`scale` 0.92->1.0 on Y, 0.97->1.0 on
+XZ) -- textures and geometry appear together in one beat instead of a
+long slow grow. (3) **Label overflow on mobile fixed** -- root-caused (in
+a prior session) to label *sprite* world-space scale being too large
+relative to the visible viewport width at typical close-up camera
+distances on narrow portrait screens, not a font-fitting bug. Reduced
+every label sprite's `.scale.set()` by ~0.68x across all ~9 creation/
+regeneration call sites (sawmill dropoff, field-upgrade pads x2,
+construction-site phase label, building upgrade pad, lift/delivery
+vehicle status labels, `makeLabelSprite`'s internal default, the main
+gold build-pad label) while preserving each one's aspect ratio, and fixed
+one stale hardcoded `regenerateSprite(..., 1.15)` scaleY override in
+`applyLanguage()` that had drifted out of sync with its creation-time
+value (now `0.82`, matching the upgrade-pad's new scale).
+
+Verified with a headless-browser pass: simulated 90 frames of joystick-
+held movement with the player turning and confirmed the camera's azimuth
+converges from a 2.7 rad offset down to 0.005 rad behind the player;
+sampled `growingMeshes` visibility/scale across the full 0-1 construction
+timeline and confirmed the mesh stays hidden through t=0.85 (end of
+phase 4) and only appears at t=0.9+ with the new narrow scale range;
+confirmed the new label scales are applied and took a close-up screenshot
+of a field-upgrade label at the same tight camera distance that
+previously showed real clipping -- text now fits cleanly inside the
+viewport. Re-ran the pinch-zoom-fix and boot regression tests with zero
+new console errors.
+
+**Delivery-vehicle status labels now name the target building** (this
+session, spec item from the "suggested next slice" list). Previously
+both the delivery truck and the lift showed a generic secondary line
+("доставка на объект" / "delivery", "работает на стройке" / "working")
+regardless of which building they were actually headed to or working on
+-- despite `assignVehicleJob()` already picking a specific real target.
+Added `jobTargetName(ud)`, reading a new `ud.assignedEntry` that
+`assignVehicleJob()` now sets in every branch -- both for a real
+construction/upgrade target *and* the delivery role's "nothing under
+construction, restock the nearest built warehouse/factory" fallback,
+which previously used a bare-position helper (`nearestBuiltByArchetype()`,
+now removed, its one caller inlined) with no way to name what it found.
+Status text now reads e.g. "МАТЕРИАЛЫ / → Дом" while driving out, and
+"разгрузка: Дом" / "работает: Дом" once arrived, through all three
+phases of a job (assign -> arrive/work -> the label stays correct since
+`assignedEntry` isn't cleared until the next assignment). Note: the game
+doesn't yet track *which* resource is being delivered (concrete doesn't
+exist yet, spec item under section 3) so "МАТЕРИАЛЫ"/"MATERIALS" stays as
+the resource side of the label for now -- the target-naming half is what
+this slice actually had real data for.
+
+Verified with a headless-browser pass: confirmed a real construction
+target is named correctly right after `assignVehicleJob()`; confirmed
+the delivery restock fallback (no active construction, a built warehouse
+exists) also correctly names that warehouse via `assignedEntry`, not just
+a bare position; confirmed the "nothing to do" idle/waiting paths (no
+active construction and no warehouse/factory built yet) are untouched
+and don't crash on a null `assignedEntry`. Re-ran the full existing
+regression suite (boot, construction, contracts, road-node routing, the
+lift, worker roles, the pinch-zoom fix) with zero new failures.
+
+**Note on this session's Bloom attempt**: the user asked for the Bloom
+image-generation connector to be used for the still-open texture pass
+(spec sections 12-13). Generated 4 candidate seamless textures (brick,
+concrete, corrugated metal, asphalt) via `bloom_generate_image` against
+the account's existing "Элитруф" brand — all 4 completed successfully.
+However, this sandbox's outbound network policy blocks `trybloom.ai`
+(confirmed via a direct `curl` 403 and the agent-proxy's own status log),
+and no other available tool path (`Read`, `WebFetch`, which only
+extracts text) can retrieve the actual image bytes from that host into
+this environment. The generated images exist in the Bloom workspace but
+could not be downloaded, converted, or embedded into the game from here.
+**This is an environment limitation, not a prompt-quality problem** --
+don't re-attempt Bloom texture generation from this same sandboxed dev
+environment without first confirming a way to pull the resulting file
+bytes in (e.g. the user downloading the 4 already-generated images from
+their Bloom account and attaching them directly, which this session
+*can* read as local files). Pivoted this session's remaining time to the
+delivery-label slice above instead.
+
+**Critical fix: pinch-zoom crashed the whole game on real phones**
+(previous session, user-reported). The user published this file as a Claude
+Artifact and immediately hit a hard crash on their iPhone: `TypeError:
+undefined is not an object (evaluating 'event.touches[1].pageX')`, which
+blanked the entire screen behind the boot-error overlay (that overlay's
+global `window.addEventListener('error', ...)` handler treats *any*
+uncaught runtime error, not just boot-time ones, as fatal). Traced the
+reported line number to the vendored `vendor_v19/three_r128/OrbitControls.js`
+(the game's own `tycoon-v19.html` has no `touches[1]` reference at all):
+`handleTouchStartDolly()`/`handleTouchMoveDolly()` read
+`event.touches[0]`/`event.touches[1]` completely unguarded, while the
+sibling rotate/pan handlers in the same file already correctly check
+`event.touches.length` first. The controls' touch state machine
+(`onTouchMove`) dispatches purely on a `state` value set once at
+`touchstart` and only reset on `touchend` -- so lifting the *second*
+finger mid-pinch (routine on a real phone, essentially never produced by
+a synthetic mouse-driven test) can fire one more `touchmove` with only 1
+touch left while state is still `TOUCH_DOLLY_PAN`, hitting the unguarded
+`touches[1]`.
+Fixed by adding the same `if (event.touches.length < 2) return;` guard
+already used elsewhere in the file to both dolly handlers -- a one-line
+change per function, matching the file's own established defensive
+pattern.
+
+Verified with a headless-browser pass (Playwright launched with
+`hasTouch: true` so real `Touch`/`TouchEvent` constructors work):
+first confirmed the repro was faithful by running it against the
+*unfixed* file (`git stash`) and getting the exact same error plus the
+boot-error overlay appearing; restored the fix and re-ran the identical
+two-finger-touchstart -> two-finger-touchmove -> one-finger-touchmove
+sequence and got zero errors with the game still fully responsive
+afterward; separately verified a genuine two-finger pinch (both fingers
+staying down the whole gesture) still actually zooms the camera
+(distance changed 9.55 -> 3.5), so the fix doesn't silently disable
+pinch-zoom, only the crash on an asymmetric finger-lift. Re-ran the full
+existing regression suite with zero new failures. Republished the
+Claude Artifact (same URL) with the patched vendor file so the user's
+already-shared link is immediately fixed, and pushed the same fix to the
+repo.
+
+**Dedicated audit pass: fixed an orphaned-construction-site bug in
+`doPrestige()`** (previous session, following through on last session's own
+suggestion to do a focused "does this visibly do what it claims" pass
+rather than build something new). Read through `doPrestige()`,
+`purchaseCurrentPad()`, and `upgradeBuilding()` together and found a real,
+reachable bug: `stageIndex` reaches `STAGES.length` (which is what
+unlocks the prestige button) the instant the **last** building's
+construction *starts*, not when it finishes -- and any building can have
+an upgrade in progress at prestige time too. `doPrestige()` only ever
+cleared the `buildings` array; it never touched `growingMeshes` or
+`constructionSites`, which are separate arrays holding the in-progress
+construction animation state and the crane/scaffolding/fence site group
+for anything still building. A player who prestiges while any
+construction/upgrade is mid-flight would leave that site's crane and
+scaffolding running in the scene forever (or until its own timer
+happened to expire) with no building behind it anymore -- a textbook
+orphaned object, same bug family as the lift's disconnected platform and
+the duplicate sawmill, just in a different system.
+Fixed by clearing `growingMeshes` and `constructionSites` (removing their
+scene objects) inside `doPrestige()`, and clearing any NPC worker's
+`workBuild`/`target` if it pointed at one of the now-gone sites (so they
+re-roll a sensible target next frame instead of playing their "hammering"
+animation forever next to an empty foundation).
+
+Verified with a headless-browser pass: bought all 10 stages back-to-back
+with cheated money/planks (so all 10 were simultaneously mid-construction
+-- the worst case for this bug) and called the real `doPrestige()`
+(auto-accepting its `confirm()` dialog); captured direct references to
+every construction-site group and under-construction mesh *before*
+prestige and confirmed all of them were detached from the scene
+(`.parent === null`) afterward, `growingMeshes`/`constructionSites` were
+both empty, and no worker was still targeting a stale build. Also
+verified the ordinary path (let every construction actually finish, then
+prestige) still works correctly: money/stageIndex/buildings reset, prestige
+count and income multiplier increment, a fresh stage-0 pad spawns. Re-ran
+the full existing regression suite (boot, construction, contracts,
+road-node routing, the lift, worker roles) with zero new failures.
+
+Incidental finding, not fixed this session (out of scope for the slice,
+noted for later): while testing the 10-simultaneous-construction-sites
+edge case, the in-game construction timer visibly fell behind real wall-
+clock time under that load (roughly 3x slower) -- `animate()`'s `dt` is
+clamped to a 0.1s ceiling per frame, so when the software-rendered scene
+gets heavy enough that real frame time exceeds that, the simulation
+itself slows down rather than the game just skipping visual frames. This
+specific scenario (buying all 10 buildings simultaneously) is not
+reachable in ordinary economically-realistic play given the steep cost
+curve (the last building alone costs 200,000), so it's a synthetic
+stress-test finding rather than a live bug -- but it's a real data point
+for spec section 28 (performance pass), still `[ ]` not started.
+
+**NPC worker roles + stay-near-base idle behavior** (previous session, spec
+section 17). Audited `createWorkerNPC()`/`spawnAmbientLife()` and found the
+7 ambient workers were all the exact same model with only a random shirt
+color from a 7-color palette — no role distinction at all — and when idle
+(no construction to help with), `chooseWorkerTarget()` sent them to a
+random point among *every* building position on the map via
+`ambientTargetPoints()`, which could be far from wherever they actually
+started. Neither matched spec section 17 (four named roles: 👷 Строитель/
+🔧 Монтажник/🦺 Прораб/📦 Грузчик; idle workers should stay near base with
+short routes, not roam the whole map).
+
+Fixed both: added a `WORKER_ROLES` table (builder/rigger/foreman/loader)
+with a distinct helmet+brim color per role (the most legible signal at
+ambient-NPC distance) and a role-appropriate hand tool built by a new
+`addWorkerTool()` helper (brick / wrench / clipboard / stacked crate),
+each parented directly onto the existing `armR` limb group so it
+automatically follows the same arm-swing animation the worker already
+had — no new animation code needed. `createWorkerNPC()` now takes a role
+key (a bare color still works via a back-compat branch, used by the
+lift's rider). `spawnAmbientList()`'s 7 workers now cycle through the 4
+roles and each stores its spawn point as `worker.homeBase`;
+`chooseWorkerTarget()`'s "nothing to help with" branch now picks a point
+near that stored `homeBase` (±1.6 units) instead of `ambientTargetPoints()`
+(removed, now dead code) — deleted the ~24-line function.
+
+Verified with a headless-browser pass: confirmed all 7 workers spawn with
+the expected 2/2/2/1 role distribution and a stored `homeBase`; sampled
+distance-from-home-base every 1.5s over a 12-second window with no active
+construction and confirmed every worker stayed within ~1.9 units of home
+(previously they could roam to any building anywhere on the spiral);
+confirmed the "72% chance to go help an active build" behavior still
+works unchanged (6 of 7 workers correctly picked up a freshly-started
+house's construction site within 6 seconds); confirmed programmatically
+that each role's helmet material is the exact intended distinct color
+(not just relying on a screenshot, which this scene's bright tone-mapping
+can wash out); and confirmed every tool prop is a direct child of `armR`
+at the hand position and its world position genuinely moves when `armR`
+rotates (0.557 units for a 1-radian test rotation) — i.e. not a
+disconnected floating prop, the exact class of bug fixed on the lift last
+session. Re-ran the full regression suite (boot, construction, contracts,
+road-node routing, the lift) with zero new failures.
+
+**Fixed the lift/telehandler's disconnected platform + gave it real
+deploy/extend/retract behavior** (previous session, spec section 6). Audited
+`createWorkLift()` against the spec (base, wheels, outriggers, telescoping
+arm, basket, worker inside) and found a real bug: the platform (the
+basket the whole vehicle exists to raise) was a **separate mesh at a
+fixed absolute height**, not a child of the scissor-arm pivot
+(`liftArms`) that the animation loop actually moves — so the "lift" never
+visibly lifted its own basket; the arms shifted by a token amount
+underneath a platform that just sat there. Confirmed with a structural
+check (`platformIsChildOfArms: false`, platform fixed at local Y 1.72
+while the arms only ever spanned roughly 0.46-1.5) before touching
+anything. Fixed by: reparenting the platform (+ guard rail/posts) onto
+`liftArms` so it now genuinely rides the mechanism; widening the
+raise/lower range `moveWorkVehicle()` drives it across (retracted 0.34 →
+working 1.35, or 1.95 during the finishing phase) so the raise is
+actually visible instead of a token few centimeters; adding 8 outrigger
+leg/pad meshes (hidden while driving/idle, shown while `state ===
+'working'`); and adding a small rider (`createWorkerNPC()`, reused as-is)
+standing on the platform, visible only while working. All of this is
+driven from a single new always-runs-first block in `moveWorkVehicle()`
+that retracts/hides everything whenever the vehicle isn't in the
+`'working'` state, so idle/outbound/returning all correctly fold the lift
+away — matching the spec's own described sequence ("arrives, deploys
+legs, raises the basket, a worker does finishing work, then folds up,
+leaves").
+
+Verified with a headless-browser pass: confirmed `platformIsChildOfArms`
+is now `true`; forced the lift into a real `'working'` state next to an
+active construction site and sampled arm height / rider visibility /
+outrigger visibility every 0.5s — height climbed steadily (0.57 → 0.89 →
+1.07 → 1.16 → 1.22 → 1.28, converging on target) with rider and
+outriggers visible throughout; then ended the work cycle and confirmed
+the arms were already retracting (1.28 → 0.43) and the rider had gone
+invisible again within 3.5s of returning. Screenshot shows the scissor
+arms genuinely raised with the platform, rail, and rider sitting properly
+on top — grounded, no disconnect. Re-ran the full existing regression
+suite (boot, construction, contracts, road-node routing, a 25s multi-
+vehicle soak) with zero new failures.
+
+**Duplicate sawmill scenery bug fix + tree species variety** (previous
+session). Two changes:
+
+1. Found and fixed a real, previously-unaudited bug while reading the
+   sawmill code to plan the tree-variety work: `buildSawmillScenery()` was
+   called **twice** (two back-to-back statements right before
+   `registerAllHarvestableTrees()`), with no guard against re-entry. Since
+   the function unconditionally builds and `scene.add()`s a brand-new
+   camp/shed/rack/mill/conveyor/blade every call, this silently doubled
+   the entire sawmill complex on top of itself: 2 identical shed bodies
+   z-fighting at the same position, 12 grove trees instead of 6 (all
+   pushed into `sourceTrees`, so the sawmill's "gently gated by tree
+   availability" production pacing was subtly wrong), a duplicated
+   spinning saw blade (only one of the two ends up referenced by the
+   `sawmillBlade` variable that the animation loop spins — the other sits
+   there identical but frozen), and duplicated conveyor belt slats reading
+   stale vs. fresh `conveyorData` geometry. Fixed by removing the
+   duplicate call (one-line diff, but the runtime effect is large — see
+   verification below). This is exactly the class of bug the plan's "no
+   flying/duplicate objects" rule exists to catch, and it predates every
+   session logged in this file (present from the original v19 import).
+2. **Tree species variety** (spec section 7 — "the forest shouldn't look
+   like 50 identical cones"). `makeTree()` used to always build the same
+   stacked-cone conifer shape (only leaf color and uniform group scale
+   varied). Replaced with `makeConiferTree(size)` (the original shape,
+   kept) and a new `makeDeciduousTree(size)` (short thick trunk, two
+   leaning fork limbs, a round leafy canopy built from overlapping
+   spheres — genuinely different silhouette, not just a recolor), plus a
+   `TREE_SIZES` table (`young`/`normal`/`large`) that scales trunk and
+   canopy **independently** rather than uniformly scaling the whole
+   group, so a young tree actually reads as spindly rather than just a
+   shrunk adult. `makeTree(opts)` now picks species (~62% conifer / 38%
+   deciduous) and size randomly unless told otherwise, and both species
+   still return a plain group with `userData.harvestableTree = true` (now
+   also `userData.treeSpecies`), so the chop/carry/regrow system — which
+   only ever calls `group.scale.setScalar(...)` on whatever it's given —
+   needed zero changes.
+
+Verified with a headless-browser pass: before the fix, a scene traversal
+counted 2 shed-body meshes at identical dimensions and 12 grove
+`sourceTrees` within 3.2 units of `GENERATOR_POS`; after the fix, exactly
+1 and 6, confirming the duplication is gone (and only the intended amount
+of geometry remains — checked this wasn't secretly needed for anything
+else, since nothing in the game reads a "second sawmill" concept). For
+tree variety: counted species tags across the full scene (61 total trees
+in one run, ~2:1 conifer:deciduous, matching the roll probability) and
+confirmed every tree's group-level Y position is exactly 0 (grounded, per
+the "no flying objects" rule); screenshots from ground level show clearly
+distinct silhouettes side by side (sharp conical pines vs. round bushy
+canopies). Confirmed the chop → shrink → regrow cycle still works
+correctly end to end on the new tree shapes: teleported the player onto a
+real grove `sourceTrees[0]` entry, called the actual `tryHarvestTree()`
+function the E/Space handler uses (not a faked state change), and traced
+`state`/`scale`/`position.y` across the chop and regrow phases — scale
+animated smoothly (1.07 → 0.91 mid-chop → 0.34 mid-regrow) with `y`
+staying exactly 0 throughout. Re-ran the full existing regression suite
+(boot, construction pipeline, contracts, road-node routing) with zero new
+failures.
+
+**Road-node vehicle navigation** (spec item 16, previously a confirmed
+open gap). Service vehicles (the delivery truck and the lift/telehandler)
+used to route as a straight 3-point path — home, then literally the map
+center `(0,0,0)`, then the target — cutting across open lawn regardless of
+where the actual road ran. The visible road itself is already built from a
+simple chain (`pathPoints`: plaza center, then each of the 10
+`stagePosition(i)` points in order, per the existing road-segment-building
+loop), so routing didn't need a real graph/pathfinder: added `ROAD_NODES`
+(that same chain), `nearestRoadNodeIndex()`, and `buildRoadRoute(from, to)`
+which finds the nearest road node to each end and slices the chain between
+them (ascending or descending as needed), replacing `makeVehiclePath()` at
+all 3 call sites (both `assignVehicleJob()` branches and the hardcoded
+return-to-base path in `moveWorkVehicle()`). No changes needed to the
+actual per-frame movement/rotation code — `moveWorkVehicle()` already
+walked an arbitrary-length `path` array one waypoint at a time, so this
+was a drop-in upgrade to *how* the path is built, not how it's followed.
+
+Verified with a headless-browser pass: confirmed `ROAD_NODES` has the
+expected 11 entries (center + 10 stages) at the right world positions;
+force-assigned the delivery truck a job after building a house and
+confirmed its route is no longer a fixed 3 points but walks multiple real
+road nodes toward the target (6 waypoints in the test case, following the
+spiral instead of cutting through open ground); watched the truck drive
+for several seconds with position/rotation telemetry each frame (`y`
+stayed exactly `0` throughout — grounded, no floating) and screenshots
+along the way; ran a 25-second soak with both vehicles actively cycling
+through outbound/working/returning/idle and re-assignment with zero
+console errors and both still in valid, grounded states at the end. Also
+re-ran the full existing regression pass (boot, construction pipeline,
+contracts) to confirm nothing else broke — all green.
+
+One known limitation carried forward, not a regression: since vehicle home
+bases (the sawmill/generator area) sit off the spiral entirely, "nearest
+road node" can occasionally be a node that isn't on the visually shortest
+side of the chain, producing a slightly indirect first/last leg. Good
+enough for this slice (real improvement over "always through dead
+center"); a future refinement could give off-road bases their own fixed
+driveway node instead of pure nearest-neighbor snapping.
+
+**Contracts system** (spec item 19, previous session). Up to 2 simultaneous short-term
+objectives, randomly drawn from 4 templates (build N buildings, produce N
+planks, chop N logs, earn N money), each with a scaled cash reward. Tracked
+via new `stats.buildingsCompleted` / `stats.logsChopped` counters (plus the
+existing `stats.planksEarned` / `stats.totalEarned`) and a `startValue`
+snapshot per contract so progress is a simple delta — no separate polling
+system needed, it piggybacks on the existing 1s `setInterval` tick
+alongside `checkAchievements()`. A completed contract pays out immediately,
+toasts, and is replaced by a fresh one next tick. Persisted in `save()` /
+restored in `load()` (contracts survive a reload instead of resetting).
+Compact card UI (`#contractsCard`, top-right, below the icon buttons),
+following the existing "no giant plaques" visual language, using the
+already-existing `fmt()` number formatting. Fully bilingual (ru/en) via
+inline `lang === 'ru' ? ... : ...`, matching this file's existing pattern
+(not the separate `STRINGS`/`t()` table, which is reserved for static UI
+strings here — dynamic contract text follows the same inline convention
+`nextCard` already uses).
+
+Verified with a headless-browser pass: contracts generate and render on
+first load, progress advances and a contract completes + pays out + gets
+replaced (forced via the real `earn()` path, not by faking state), survives
+a reload with the same contract IDs, and re-renders correctly in both
+languages. Also caught and fixed a real bug during mobile testing: the new
+card's initial top offset assumed the icon-button row was one line, but at
+narrow widths (`topRightBtns` wraps to 2 rows there) it collided — fixed by
+pushing the card down far enough to clear both wrapped rows at both mobile
+breakpoints.
+
+## Condensed target checklist (from the user's full spec)
+
+Legend: `[x]` done and verified, `[~]` partially there, `[ ]` not started.
+
+- [~] **Production chain**: money, logs, planks done. This session added
+      **concrete** (4th of the 5 resources the spec calls for) as a
+      standalone slice: a concrete plant near the sawmill camp, silent
+      until stage 4 (Mini Factory), then a slow passive tick like the
+      sawmill's own. Deliberately does NOT yet spend concrete on
+      anything (cost integration into building/upgrade prices is a
+      separate follow-up slice, to land the resource loop itself tested
+      end to end first). Metal (the 5th resource) not started.
+- [x] **Construction stages** (section 4) — see audit above.
+- [x] **Delivery visualization** (section 5) — trucks accelerate
+      construction and (this session) status labels now name the real
+      target building (`jobTargetName()`/`ud.assignedEntry`). The specific
+      *resource* half of "resource → building" stays generic ("МАТЕРИАЛЫ")
+      since the game only has one delivered-materials concept until a
+      second raw resource (section 3) exists to actually differentiate.
+- [x] **Construction equipment 3D models** (section 6) — excavator, tower
+      crane, mixer, and (this session) the lift/telehandler all modelled
+      with correct parts and animated at the right phases. Lift now has
+      outriggers, a platform that actually rides its scissor arms, and a
+      rider, all correctly shown/hidden by work state (see session log).
+- [x] **Tree variety** (section 7) — done this session: conifer +
+      deciduous species with independently-scaled trunk/canopy size tiers.
+- [ ] **Log-carry stacking visual** (section 8) — carried logs currently
+      shown via `refreshCarriedLogVisuals()`; whether it does the
+      1/2/3/4-6 stacking pattern the spec wants hasn't been checked yet.
+- [x] **Sawmill drop-off circle** (section 9) — `createSawmillDropoff()`
+      exists with a labeled pad ("Bring logs here" / "Сдать N брёвен"
+      pattern); considered adequate from earlier grep, not re-verified
+      visually this session.
+- [~] **Upgrade circles** (sections 10-11) — `fieldUpgradePads` (global,
+      category-style: Build Speed / Carry Capacity / Wood Yield / Sawmill)
+      already exist with auto-fit labels; whether they're visually
+      differentiated by icon/color per category not yet audited.
+- [ ] **Texture pass** (sections 12-13) — 10 embedded textures exist
+      (brick/concrete/metal/roof/siding/asphalt/dirt/grass/wood + splash)
+      but haven't been checked against the "correct scale per building
+      size" requirement (repeat values per archetype). A Bloom-based
+      attempt this session generated 4 replacement candidates but hit an
+      environment limitation (can't download from `trybloom.ai` in this
+      sandbox) — see the session log note; still open, needs a different
+      path to get file bytes in (e.g. the user attaching the already-
+      generated images, or re-attempting from an environment with
+      broader network access).
+- [x] **World density / roads** (sections 14-15) — benches, streetlights,
+      signs, curbs, sidewalks, hydrants, crosswalks and cones all done;
+      this session added a small marked parking lot near the sawmill
+      camp (verified clear of the road network before placing it, after
+      two earlier sessions found hand-placed positions that weren't).
+      Full checklist now covered.
+      missing: parking.
+- [x] **Road-node vehicle navigation** (section 16) — done this session
+      (`ROAD_NODES` / `buildRoadRoute()`). See known limitation noted above
+      (off-road bases don't get a dedicated driveway node yet).
+- [x] **NPC worker roles** (section 17) — done this session: 4 visually
+      distinct roles (helmet color + hand tool) plus stay-near-home-base
+      idle behavior instead of roaming the whole map.
+- [x] **Progression stages** (section 18) — added a milestone banner
+      this session: `STAGES` grouped into 5 named eras (2 buildings each)
+      with a centered "you've entered a new era" announcement the first
+      time a building from it starts.
+- [x] **Contracts** (section 19) — done this session.
+- [x] **Economy pacing re-check** (section 20) — simulated idle vs. active
+      play this session (see note above) and found manual tree-chopping
+      had almost zero effect on progression speed; tuned the passive
+      sawmill rate so it now does. The initial 10-building race is still
+      (correctly) money-dominated regardless.
+- [x] **Prestige** (section 21) — exists (`doPrestige`), messaging clear.
+- [~] **UI cleanliness** (section 22) — the two specific bugs the previous
+      session flagged were re-audited and downgraded (see note above, not
+      real issues); general responsive polish beyond that pair not
+      exhaustively re-checked.
+- [x] **3D label auto-fit** (section 23) — font-fit logic was already
+      correct; the real overflow bug was label *sprite world-scale* being
+      too large for close-up mobile viewports, fixed this session (see
+      note above) by shrinking every label sprite's scale ~0.68x.
+- [~] **Camera tuning** (section 24) — this session added joystick-driven
+      camera auto-follow (camera azimuth now turns to stay behind the
+      player while actively steering, per direct user feedback); default
+      follow distance/angle constants themselves not further re-tuned.
+- [~] **Lighting** (section 25) — sun/hemisphere/fog present in screenshots;
+      not specifically audited against bloom/tone-mapping asks.
+- [~] **Effects** (section 26) — particle bursts, smoke, sawmill dust seen;
+      full checklist (welding sparks, chop chips) not audited.
+- [~] **Sound** (section 27) — synthesized SFX system exists
+      (`ensureAudio`/`sfx`); volume categories (SFX/Music/Ambient) and full
+      sound list not audited.
+- [ ] **Performance pass** (section 28) — not profiled directly, but a
+      synthetic stress test this session (10 simultaneous construction
+      sites) showed the game's own simulation timer falling behind real
+      time under heavy load (`dt` clamped at 0.1s/frame in `animate()`),
+      not just dropped visual frames. Not reachable in normal economically-
+      paced play, but worth keeping in mind once a real profiling pass
+      happens.
+- [ ] **File split into /src** (section 29) — intentionally not started;
+      spec itself says do this only once the design has settled.
+- [x] **Save format / versioning** (section 30) — `saveVersion: 4` with
+      migration-tolerant `load()` already exists; contracts folded in
+      cleanly this session.
+
+## Release line (user's own v19→v25 framing)
+
+- **v19 — Construction System**: mostly already true of the file as
+  received (see audit). This session's contracts feature and the mobile
+  fix are the first v19→v20-ish increment.
+- **v20 — Production Chain**: warehouse-as-storage, concrete, metal, real
+  logistics. Not started.
+- **v21 — City Life**: road-node navigation now done; worker roles and
+  city decor remain.
+- **v22 — Economy & Contracts**: contracts and milestone-era UI now done;
+  a fresh balance pass remains.
+- **v23 — Visual Polish**: models/textures/lighting/effects/animation/camera.
+- **v24 — Mobile & Performance**: the two previously-flagged mobile HUD
+  items turned out not to need fixing (see audit above); a real
+  performance profiling pass is still outstanding.
+- **v25 — Release Candidate**: full bug/softlock/save/UI/perf sweep.
+
+## Suggested next slice (pick one, don't do everything at once)
+
+In priority order, given what's already solid vs. genuinely missing:
+1. **Spend concrete on something** — the resource loop itself (plant,
+   passive production, HUD, save/load) landed this session and is
+   tested end to end, but nothing costs concrete yet. Natural next step:
+   add `concreteCost` to a handful of the later STAGES (industrial tier
+   onward), wire it into `purchaseCurrentPad()`/`upgradeBuilding()`'s
+   deduction + insufficient-funds checks, and the pad/upgrade-pad price
+   labels. Re-run the economy-pacing simulator afterward (same technique
+   as the earlier sawmill-rate audit) to sanity-check the new sink
+   doesn't stall progression.
+2. A warehouse-as-storage mechanic (section 3) -- not started, lower
+   priority than actually spending the resource that exists now.
+4. **Keep doing incidental audits, not just this one dedicated pass**:
+   four sessions running have now found a real bug purely by reading code
+   closely (`buildSawmillScenery()` called twice; the lift's platform
+   never attached to its lifting mechanism; the old ambient-worker wander
+   target ignored home base; `doPrestige()` never cleaned up an
+   in-progress construction site). Whatever slice gets picked next, read
+   the surrounding code for this same "does this visibly do what it
+   claims" class of bug before assuming it's fine — it has paid off every
+   single time so far.
+
+## Process reminder for future sessions
+
+1. Read this file first.
+2. Pick the next unstarted/partial item above (or the user's latest
+   explicit request, if any, takes priority over this list).
+3. Implement a real, meaningful slice.
+4. Playtest headless (see the "non-negotiable rules" testing checklist).
+5. Update this file's checklist + append to `CHANGELOG_V19.md`.
+6. Commit and push to `claude/3d-building-tycoon-game-pigx1h`.

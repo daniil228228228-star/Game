@@ -1,0 +1,2188 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Tycoon 3D — Строительный тайкон</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0f14'/%3E%3Crect x='7' y='14' width='8' height='13' fill='%236fcf6f'/%3E%3Cpolygon points='6,14 11,9 16,14' fill='%238a3b2b'/%3E%3Crect x='17' y='8' width='8' height='19' fill='%235ab0ff'/%3E%3C/svg%3E">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0f14; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  canvas { display: block; touch-action: none; }
+
+  #hud { position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: flex-start;
+         padding: 10px 16px; background: linear-gradient(to bottom, rgba(10,14,20,.92), rgba(10,14,20,0));
+         color: #eaf2ff; z-index: 10; pointer-events: none; }
+  #hud .stats { display: flex; gap: 8px; flex-wrap: wrap; }
+  #hud .stat { pointer-events: auto; display: flex; align-items: center; gap: 8px; background: rgba(20,28,40,.7);
+               border: 1px solid rgba(120,170,255,.25); border-radius: 12px; padding: 8px 14px; font-weight: 600;
+               font-size: 15px; backdrop-filter: blur(6px); }
+  #money { color: #8be28b; }
+  #income { color: #ffd479; font-size: 13px; font-weight: 500; }
+  #progress { color: #9fd0ff; font-size: 13px; font-weight: 500; }
+
+  #topRightBtns { display: flex; gap: 8px; pointer-events: auto; }
+  .iconBtn { cursor: pointer; background: rgba(20,28,40,.75); color: #fff; border: 1px solid rgba(120,170,255,.3);
+             border-radius: 10px; padding: 8px 10px; font-size: 15px; line-height: 1; backdrop-filter: blur(6px); }
+  .iconBtn.danger { background: rgba(140,50,50,.7); border-color: rgba(255,120,120,.3); }
+  .iconBtn.hasBadge { position: relative; }
+  .iconBtn .badge { position: absolute; top: -6px; right: -6px; background: #ff5d5d; color: #fff; font-size: 10px;
+                     font-weight: 700; border-radius: 8px; padding: 1px 5px; display: none; }
+  .iconBtn .badge.show { display: block; }
+
+  #nextCard { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 9; pointer-events: none;
+              background: rgba(20,28,40,.75); border: 1px solid rgba(255,212,121,.35); border-radius: 12px;
+              padding: 7px 14px; color: #ffe6a8; font-size: 13px; font-weight: 600; backdrop-filter: blur(6px);
+              text-align: center; max-width: 90vw; }
+
+  #prestigeBtn { position: fixed; top: 96px; left: 50%; transform: translateX(-50%); z-index: 9; cursor: pointer;
+                 border: none; border-radius: 12px; padding: 9px 18px; font-weight: 700; font-size: 13px;
+                 background: linear-gradient(135deg,#ffd479,#ff9d4d); color: #2a1a00;
+                 box-shadow: 0 0 18px rgba(255,180,80,.5); }
+
+  #compass { position: fixed; z-index: 12; pointer-events: none; display: none; }
+  #compass .arrow { width: 0; height: 0; border-left: 13px solid transparent; border-right: 13px solid transparent;
+                     border-bottom: 24px solid #ffd479; filter: drop-shadow(0 0 5px rgba(255,212,121,.85)); }
+
+  #staminaWrap { position: fixed; left: 26px; bottom: 152px; width: 118px; height: 9px; border-radius: 5px;
+                 background: rgba(20,28,40,.55); border: 1px solid rgba(120,170,255,.25); z-index: 15;
+                 overflow: hidden; opacity: 0; transition: opacity .25s; }
+  #staminaFill { height: 100%; width: 100%; background: linear-gradient(90deg,#ffd479,#ff9d4d); transition: width .1s linear; }
+
+  #toast { position: fixed; top: 106px; left: 50%; transform: translateX(-50%); z-index: 30; color: #fff;
+           background: rgba(20,28,40,.92); border: 1px solid rgba(120,170,255,.3); padding: 8px 16px; border-radius: 10px;
+           font-size: 13px; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; text-align: center;
+           max-width: 80vw; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(4px); }
+
+  /* Achievements panel */
+  #achOverlay { position: fixed; inset: 0; background: rgba(5,8,12,.6); z-index: 40; display: none;
+                align-items: center; justify-content: center; padding: 20px; }
+  #achOverlay.show { display: flex; }
+  #achPanel { width: min(420px, 100%); max-height: 78vh; overflow-y: auto; background: rgba(16,22,32,.97);
+              border: 1px solid rgba(120,170,255,.3); border-radius: 16px; padding: 16px; color: #eaf2ff; }
+  #achPanel h2 { margin: 0 0 12px; font-size: 18px; display: flex; justify-content: space-between; align-items: center; }
+  #achPanel h2 .close { cursor: pointer; font-size: 18px; opacity: .7; }
+  .achItem { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border-radius: 12px; margin-bottom: 8px;
+             background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06); }
+  .achItem.unlocked { background: rgba(90,180,110,.12); border-color: rgba(90,180,110,.3); }
+  .achItem .ico { font-size: 22px; filter: grayscale(1); opacity: .5; }
+  .achItem.unlocked .ico { filter: none; opacity: 1; }
+  .achItem .body { flex: 1; }
+  .achItem .name { font-weight: 700; font-size: 13px; }
+  .achItem .desc { font-size: 12px; color: #9fb0c4; margin-top: 2px; }
+  .achItem .reward { font-size: 11px; color: #ffd479; margin-top: 3px; }
+
+  /* Onboarding hint */
+  #hintOverlay { position: fixed; inset: 0; background: rgba(5,8,12,.7); z-index: 50; display: none;
+                 align-items: center; justify-content: center; padding: 20px; }
+  #hintOverlay.show { display: flex; }
+  #hintCard { width: min(360px, 100%); background: rgba(16,22,32,.97); border: 1px solid rgba(120,170,255,.35);
+              border-radius: 18px; padding: 20px; color: #eaf2ff; text-align: center; }
+  #hintCard .emoji { font-size: 40px; margin-bottom: 8px; }
+  #hintCard h2 { margin: 0 0 10px; font-size: 18px; }
+  #hintCard ul { text-align: left; font-size: 13px; color: #c3d0e2; line-height: 1.7; margin: 0 0 16px; padding-left: 20px; }
+  #hintCard button { width: 100%; cursor: pointer; border: none; border-radius: 12px; padding: 12px; font-weight: 700;
+                      font-size: 14px; background: linear-gradient(135deg,#3fae5c,#2c8c47); color: #fff; }
+
+  /* Mobile joystick */
+  #joyBase { position: fixed; left: 26px; bottom: 26px; width: 118px; height: 118px; border-radius: 50%;
+             background: rgba(20,28,40,.55); border: 1px solid rgba(120,170,255,.3); z-index: 15; touch-action: none;
+             display: none; }
+  #joyBase.active-input { display: block; }
+  #joyKnob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; border-radius: 50%;
+             background: rgba(120,170,255,.55); border: 1px solid rgba(200,225,255,.6); transform: translate(-50%, -50%); }
+
+  @media (max-width: 420px) {
+    #hud .stat { font-size: 13px; padding: 7px 10px; }
+    #nextCard { font-size: 12px; }
+  }
+  @media (pointer: coarse) {
+    #joyBase { display: block; }
+  }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div class="stats">
+    <div class="stat"><span class="icon">💰</span><span id="money">0</span></div>
+    <div class="stat"><span id="income">+0/с</span></div>
+    <div class="stat"><span id="progress">0/0</span></div>
+    <div class="stat"><span id="planks">🪵 0</span></div>
+  </div>
+  <div id="topRightBtns">
+    <div class="iconBtn hasBadge" id="achBtn">🏆<span class="badge" id="achBadge"></span></div>
+    <div class="iconBtn" id="camBtn">🎥</div>
+    <div class="iconBtn" id="muteBtn">🔊</div>
+    <div class="iconBtn" id="langBtn"></div>
+    <div class="iconBtn danger" id="resetBtn"></div>
+  </div>
+</div>
+
+<div id="nextCard"></div>
+<button id="prestigeBtn" hidden></button>
+<div id="toast"></div>
+<div id="compass"><div class="arrow"></div></div>
+<div id="staminaWrap"><div id="staminaFill"></div></div>
+
+<div id="achOverlay">
+  <div id="achPanel">
+    <h2><span id="achTitleText"></span><span class="close" id="achClose">✕</span></h2>
+    <div id="achList"></div>
+  </div>
+</div>
+
+<div id="hintOverlay">
+  <div id="hintCard">
+    <div class="emoji">🏃</div>
+    <h2 id="hintTitle"></h2>
+    <ul id="hintBullets"></ul>
+    <button id="hintCloseBtn"></button>
+  </div>
+</div>
+
+<div id="joyBase">
+  <div id="joyKnob"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/build/three.module.min.js",
+    "three/addons/": "./vendor/three/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ---------------------------------------------------------------------- */
+/*  CONFIG                                                                 */
+/* ---------------------------------------------------------------------- */
+const SAVE_KEY = 'tycoon3d_save_v3';
+const MUTE_KEY = 'tycoon3d_muted';
+const HINT_KEY = 'tycoon3d_seen_hint_v4';
+
+const GROUND_HALF = 70;
+const PLAYER_SPEED = 7.2;       // units / sec
+const SPRINT_MULT = 1.7;
+const STAMINA_MAX = 100;
+const STAMINA_DRAIN = 40;       // per second while sprinting
+const STAMINA_REGEN = 18;       // per second while not sprinting
+const PLAYER_EYE_HEIGHT = 1.5;
+const PAD_TRIGGER_RADIUS = 2.0;
+const CAM_MIN_DIST = 3.5;
+const CAM_MAX_DIST = 20;
+const CAM_DEFAULT_DIST = 9;
+
+const PLAYER_RADIUS = 0.4;
+const BUILDING_RADIUS = 1.5;      // collision footprint of a constructed building
+const BUILDING_OFFSET = 2.7;      // building sits this far past its pad, so it never overlaps the player standing on the pad
+const UPGRADE_PAD_OFFSET = 2.15;  // an upgrade pad sits this far to the side of its building
+const MAX_BUILDING_LEVEL = 3;     // 1 = just built; 2 more upgrade levels on top of that
+
+// Spiral layout: each stage sits further from spawn, so the base visibly grows outward.
+const SPIRAL_BASE_RADIUS = 7;
+const SPIRAL_RADIUS_STEP = 4.6;
+const SPIRAL_ANGLE_STEP = 0.95; // radians per stage
+
+const STAGES = [
+  { name: 'Дом',            nameEn: 'House',           cost: 50,     incomeAdd: 1,   emoji: '🏠', color: 0x6fcf6f, height: 2.4,  archetype: 'house',     baseSize: 2.2 },
+  { name: 'Второй дом',     nameEn: 'Second House',    cost: 150,    incomeAdd: 2,   emoji: '🏡', color: 0x7fd97f, height: 2.9,  archetype: 'house',     baseSize: 2.6 },
+  { name: 'Магазин',        nameEn: 'Shop',            cost: 400,    incomeAdd: 5,   emoji: '🏪', color: 0x5ab0ff, height: 2.6,  archetype: 'shop',      baseSize: 2.6 },
+  { name: 'Склад',          nameEn: 'Warehouse',       cost: 900,    incomeAdd: 8,   emoji: '📦', color: 0x9aa5b1, height: 2.4,  archetype: 'warehouse', baseSize: 2.2 },
+  { name: 'Мини-завод',     nameEn: 'Mini Factory',    cost: 2000,   incomeAdd: 15,  emoji: '🏭', color: 0xff9d4d, height: 3.0,  archetype: 'factory',   baseSize: 2.4, stacks: 1 },
+  { name: 'Завод',          nameEn: 'Factory',         cost: 5000,   incomeAdd: 30,  emoji: '🏭', color: 0xff7d4d, height: 3.6,  archetype: 'factory',   baseSize: 2.9, stacks: 2 },
+  { name: 'Офис',           nameEn: 'Office',          cost: 12000,  incomeAdd: 60,  emoji: '🏢', color: 0xd282ff, height: 6.5,  archetype: 'office',    baseSize: 2.4 },
+  { name: 'Бизнес-центр',   nameEn: 'Business Center', cost: 30000,  incomeAdd: 120, emoji: '🏬', color: 0xb96cff, height: 8.5,  archetype: 'office',    baseSize: 2.8 },
+  { name: 'Небоскрёб',      nameEn: 'Skyscraper',      cost: 80000,  incomeAdd: 250, emoji: '🏙️', color: 0x8a5cff, height: 13,   archetype: 'tower',     baseSize: 2.2 },
+  { name: 'Империя',        nameEn: 'Empire',          cost: 200000, incomeAdd: 500, emoji: '👑', color: 0xffd479, height: 16,   archetype: 'tower',     baseSize: 2.6, crown: true },
+];
+
+function stageName(stage) {
+  return lang === 'ru' ? stage.name : stage.nameEn;
+}
+
+const ACHIEVEMENTS = [
+  { id: 'first_building', name: 'Первая стройка', nameEn: 'First Build', desc: 'Постройте первое здание', descEn: 'Build your first building', reward: 20, emoji: '🧱',
+    check: (s, stage) => stage >= 1 },
+  { id: 'five_buildings', name: 'Растём!', nameEn: 'Growing!', desc: 'Постройте 5 зданий', descEn: 'Build 5 buildings', reward: 500, emoji: '🏘️',
+    check: (s, stage) => stage >= 5 },
+  { id: 'tycoon_complete', name: 'Тайкон построен!', nameEn: 'Tycoon Complete!', desc: 'Постройте все здания', descEn: 'Build every building', reward: 5000, emoji: '👑',
+    check: (s, stage) => stage >= STAGES.length },
+  { id: 'rich_1000', name: 'Первая тысяча', nameEn: 'First Thousand', desc: 'Заработайте 1 000 💰 за игру', descEn: 'Earn 1,000 💰 in total', reward: 100, emoji: '💵',
+    check: s => s.totalEarned >= 1000 },
+  { id: 'rich_10000', name: 'Капиталист', nameEn: 'Capitalist', desc: 'Заработайте 10 000 💰 за игру', descEn: 'Earn 10,000 💰 in total', reward: 500, emoji: '💰',
+    check: s => s.totalEarned >= 10000 },
+  { id: 'rich_100000', name: 'Магнат', nameEn: 'Tycoon Magnate', desc: 'Заработайте 100 000 💰 за игру', descEn: 'Earn 100,000 💰 in total', reward: 2000, emoji: '💎',
+    check: s => s.totalEarned >= 100000 },
+  { id: 'income_100', name: 'Пассивный доход', nameEn: 'Passive Income', desc: 'Доход 100/с', descEn: 'Reach 100/s income', reward: 500, emoji: '📈',
+    check: (s, stage, income) => income >= 100 },
+  { id: 'marathon', name: 'Марафонец', nameEn: 'Marathoner', desc: 'Пробегите 2000 м по своему тайкону', descEn: 'Run 2,000m around your tycoon', reward: 300, emoji: '🏃',
+    check: s => s.distanceRun >= 2000 },
+  { id: 'first_prestige', name: 'Возрождение', nameEn: 'Rebirth', desc: 'Совершите престиж', descEn: 'Perform a prestige', reward: 1000, emoji: '✨',
+    check: s => s.prestige >= 1 },
+  { id: 'max_level', name: 'На пределе', nameEn: 'Maxed Out', desc: 'Прокачайте любое здание до максимума', descEn: 'Upgrade any building to max level', reward: 400, emoji: '⭐',
+    check: s => s.maxLevelHit },
+  { id: 'first_plank', name: 'Первые доски', nameEn: 'First Planks', desc: 'Дождитесь первой доски с лесопилки', descEn: 'Wait for the sawmill to produce your first plank', reward: 15, emoji: '🪵',
+    check: s => s.planksEarned >= 1 },
+  { id: 'plank_baron', name: 'Лесной барон', nameEn: 'Plank Baron', desc: 'Накопите 50 досок с лесопилки', descEn: 'Collect 50 planks from the sawmill', reward: 200, emoji: '🌲',
+    check: s => s.planksEarned >= 50 },
+  { id: 'first_worker', name: 'Первый найм', nameEn: 'First Hire', desc: 'Наймите первого лесоруба', descEn: 'Hire your first lumberjack', reward: 50, emoji: '🪓',
+    check: s => (s.workersHired || 0) >= 1 },
+  { id: 'full_crew', name: 'Полная бригада', nameEn: 'Full Crew', desc: 'Наймите всех 3 лесорубов', descEn: 'Hire all 3 lumberjacks', reward: 300, emoji: '👷',
+    check: s => (s.workersHired || 0) >= 3 },
+];
+
+function achName(a) { return lang === 'ru' ? a.name : a.nameEn; }
+function achDesc(a) { return lang === 'ru' ? a.desc : a.descEn; }
+
+/* ---------------------------------------------------------------------- */
+/*  I18N — minimal data-driven ru/en strings table                         */
+/* ---------------------------------------------------------------------- */
+const LANG_KEY = 'tycoon3d_lang';
+let lang = localStorage.getItem(LANG_KEY) || (navigator.language?.startsWith('ru') ? 'ru' : 'en');
+
+const STRINGS = {
+  ru: {
+    reset: 'Сброс',
+    hint_title: 'Добро пожаловать в Tycoon 3D!',
+    hint_button: 'Понятно, начнём!',
+    hint_bullets: [
+      '<b>WASD / стрелки</b> — бегать (на телефоне — джойстик слева внизу)',
+      'Тяните экран, чтобы <b>смотреть по сторонам</b>; колесо/щипок — зум',
+      'Держите <b>Shift</b> (или толкайте джойстик до упора) — спринт, следите за шкалой выносливости',
+      '<b>Золотая площадка</b> — добегите до неё, чтобы построить здание рядом (если хватает денег). Стрелка сверху подскажет направление',
+      '<b>Синяя площадка</b> у здания — прокачивает его до 3 уровней и повышает доход. Сами здания теперь твёрдые — сквозь них не пройти',
+      'Загляните к лесопилке 🪵 — там можно нанять <b>лесорубов</b>: они сами рубят деревья и носят брёвна на мельницу, пока вы заняты другим',
+      'Следите за достижениями 🏆 — за них дают деньги. Построите весь тайкон — откроется <b>престиж</b> ✨',
+    ],
+    ach_title: 'Достижения',
+    ach_unlocked: 'Получено',
+    ach_reward: 'Награда',
+    reset_confirm: 'Сбросить весь прогресс?',
+    prestige_confirm: 'Начать тайкон заново? Все здания и деньги обнулятся, но доход навсегда умножится на x{mult}.',
+    prestige_btn: '✨ Престиж — доход x{mult}',
+    next_building: 'Далее: {emoji} {name} — {cost} 💰 (добегите до площадки)',
+    next_complete: '🎉 Тайкон полностью построен!',
+    next_prestige_suffix: ' (престижей: {n})',
+    toast_built: 'Построено: {emoji} {name}!',
+    toast_upgraded: 'Улучшено: {name} → ур. {level}',
+    toast_prestige: '✨ Престиж! Доход теперь x{mult}',
+    toast_achievement: '🏆 Достижение: {name} (+{reward} 💰)',
+    toast_need_more: 'Нужно ещё {amount} 💰',
+    toast_need_more_upgrade: 'Нужно ещё {amount} 💰 на улучшение',
+    toast_need_more_worker: 'Нужно ещё {money} 💰 и {planks} 🪵 на лесоруба',
+    toast_worker_hired: 'Нанят лесоруб! ({n}/{max})',
+    upgrade_level_line: '⬆️ Ур. {level}',
+    worker_pad_line: '🪓 Лесоруб {n}/{max}',
+    doc_title: 'Tycoon 3D — Строительный тайкон',
+  },
+  en: {
+    reset: 'Reset',
+    hint_title: 'Welcome to Tycoon 3D!',
+    hint_button: "Got it, let's go!",
+    hint_bullets: [
+      "<b>WASD / arrow keys</b> to run (joystick bottom-left on phone)",
+      'Drag the screen to <b>look around</b>; wheel/pinch to zoom',
+      'Hold <b>Shift</b> (or push the joystick to its edge) to sprint — watch the stamina bar',
+      "<b>Gold pad</b> — run onto it to build a building nearby (if you can afford it). The arrow at the top points the way",
+      "<b>Blue pad</b> next to a building — upgrades it up to level 3 and raises its income. Buildings are now solid — you can't walk through them",
+      "Visit the sawmill 🪵 — hire <b>lumberjacks</b> there and they'll chop trees and haul logs to the mill on their own",
+      'Watch for achievements 🏆 — they pay out cash. Build the whole tycoon and <b>prestige</b> ✨ unlocks',
+    ],
+    ach_title: 'Achievements',
+    ach_unlocked: 'Unlocked',
+    ach_reward: 'Reward',
+    reset_confirm: 'Reset all progress?',
+    prestige_confirm: 'Start the tycoon over? All buildings and money reset, but income permanently multiplies by x{mult}.',
+    prestige_btn: '✨ Prestige — income x{mult}',
+    next_building: 'Next: {emoji} {name} — {cost} 💰 (run to the pad)',
+    next_complete: '🎉 Tycoon fully built!',
+    next_prestige_suffix: ' (prestiges: {n})',
+    toast_built: 'Built: {emoji} {name}!',
+    toast_upgraded: 'Upgraded: {name} → lv. {level}',
+    toast_prestige: '✨ Prestige! Income is now x{mult}',
+    toast_achievement: '🏆 Achievement: {name} (+{reward} 💰)',
+    toast_need_more: 'Need {amount} 💰 more',
+    toast_need_more_upgrade: 'Need {amount} 💰 more to upgrade',
+    toast_need_more_worker: 'Need {money} 💰 and {planks} 🪵 more to hire a lumberjack',
+    toast_worker_hired: 'Hired a lumberjack! ({n}/{max})',
+    upgrade_level_line: '⬆️ Lv. {level}',
+    worker_pad_line: '🪓 Lumberjack {n}/{max}',
+    doc_title: 'Tycoon 3D — Building Tycoon',
+  },
+};
+
+function t(key, vars) {
+  let str = STRINGS[lang][key] ?? STRINGS.ru[key] ?? key;
+  if (vars) for (const k in vars) str = str.replaceAll(`{${k}}`, vars[k]);
+  return str;
+}
+
+/* ---------------------------------------------------------------------- */
+/*  STATE                                                                  */
+/* ---------------------------------------------------------------------- */
+let money = 300;
+let displayedMoney = money; // eased toward `money` each frame for a count-up feel
+let stageIndex = 0; // number of stages already built
+let stamina = STAMINA_MAX;
+let planks = 0; // secondary resource produced by the sawmill (see SAWMILL below)
+const stats = { totalEarned: 0, distanceRun: 0, prestige: 0, maxLevelHit: false, planksEarned: 0, workersHired: 0 };
+const unlockedAch = new Set();
+let currentPad = null; // { index, group, pos: THREE.Vector3 }
+const growingMeshes = []; // pop-in scale animation queue
+const buildings = []; // { index, level, mesh, pos: THREE.Vector3, upgradePad: {...} | null }
+
+function earn(amount) {
+  money += amount;
+  if (amount > 0) stats.totalEarned += amount;
+}
+
+function incomeMultiplier() {
+  return 1 + stats.prestige * 0.5;
+}
+
+function fmt(n) {
+  n = Math.floor(n);
+  if (n >= 1000000) return (n / 1000000).toFixed(2).replace(/\.?0+$/, '') + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return n.toLocaleString('ru-RU');
+}
+
+function stagePosition(i) {
+  const angle = i * SPIRAL_ANGLE_STEP;
+  const radius = SPIRAL_BASE_RADIUS + i * SPIRAL_RADIUS_STEP;
+  return new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+}
+
+// The building itself sits a bit further out than its pad, so it never appears exactly where
+// the player was standing (and never overlaps the player once it becomes solid).
+function buildingPosition(i) {
+  const pad = stagePosition(i);
+  const dir = pad.clone().normalize();
+  return pad.addScaledVector(dir, BUILDING_OFFSET);
+}
+
+// An upgrade pad sits to the side of its building, clear of both the building's own
+// footprint and the main path.
+function upgradePadPosition(buildingPos, i) {
+  const dir = stagePosition(i).normalize();
+  const tangent = new THREE.Vector3(-dir.z, 0, dir.x);
+  return buildingPos.clone().addScaledVector(tangent, UPGRADE_PAD_OFFSET);
+}
+
+function buildingIncome(stageIdx, level) {
+  return STAGES[stageIdx].incomeAdd * level;
+}
+
+function buildingUpgradeCost(stageIdx, level) {
+  // cost to go from `level` to `level + 1`
+  return Math.round(STAGES[stageIdx].cost * 0.55 * level);
+}
+
+/* ---------------------------------------------------------------------- */
+/*  SOUND (synthesized, no external assets)                                */
+/* ---------------------------------------------------------------------- */
+let audioCtx = null;
+let muted = localStorage.getItem(MUTE_KEY) === '1';
+
+function ensureAudio() {
+  if (!audioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (Ctx) audioCtx = new Ctx();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function beep(freq, start, duration, type = 'sine', gain = 0.12) {
+  const ctx = ensureAudio();
+  if (!ctx || muted) return;
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  g.gain.value = 0;
+  osc.connect(g).connect(ctx.destination);
+  const t0 = ctx.currentTime + start;
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(gain, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+  osc.start(t0);
+  osc.stop(t0 + duration + 0.02);
+}
+
+const sfx = {
+  build: () => { beep(520, 0, 0.12, 'triangle'); beep(780, 0.05, 0.12, 'triangle'); beep(1040, 0.1, 0.16, 'triangle'); },
+  achievement: () => { beep(660, 0, 0.1, 'sine', 0.1); beep(880, 0.1, 0.1, 'sine', 0.1); beep(1100, 0.2, 0.22, 'sine', 0.12); },
+  error: () => { beep(160, 0, 0.18, 'sawtooth', 0.09); },
+  footstep: (alt) => beep(alt ? 190 : 150, 0, 0.045, 'sine', 0.035),
+  prestige: () => { beep(440, 0, 0.12, 'sine', 0.1); beep(660, 0.1, 0.12, 'sine', 0.1); beep(880, 0.2, 0.12, 'sine', 0.1); beep(1320, 0.3, 0.3, 'sine', 0.13); },
+  plank: () => { beep(300, 0, 0.08, 'triangle', 0.05); beep(450, 0.05, 0.1, 'triangle', 0.05); },
+};
+
+/* ---------------------------------------------------------------------- */
+/*  THREE SETUP                                                            */
+/* ---------------------------------------------------------------------- */
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xcfe9ff, 40, 175);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 500);
+
+// Gradient sky dome (cheap vertex-height gradient) instead of a flat background color.
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(400, 24, 16),
+  new THREE.ShaderMaterial({
+    uniforms: {
+      topColor: { value: new THREE.Color(0x4a90d9) },
+      bottomColor: { value: new THREE.Color(0xcfe9ff) },
+      offset: { value: 18 },
+      exponent: { value: 0.65 },
+    },
+    vertexShader: `
+      varying vec3 vWorldPosition;
+      void main() {
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 topColor;
+      uniform vec3 bottomColor;
+      uniform float offset;
+      uniform float exponent;
+      varying vec3 vWorldPosition;
+      void main() {
+        float h = normalize(vWorldPosition + vec3(0.0, offset, 0.0)).y;
+        gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+      }
+    `,
+    side: THREE.BackSide,
+  })
+);
+scene.add(sky);
+
+// Drifting low-poly clouds.
+const clouds = [];
+function makeCloud() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true });
+  const puffs = 4 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < puffs; i++) {
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(1.8 + Math.random() * 1.6, 7, 6), mat);
+    puff.position.set((Math.random() - 0.5) * 5.5, (Math.random() - 0.5) * 1.1, (Math.random() - 0.5) * 3.2);
+    group.add(puff);
+  }
+  return group;
+}
+for (let i = 0; i < 9; i++) {
+  const cloud = makeCloud();
+  cloud.position.set(
+    (Math.random() - 0.5) * GROUND_HALF * 2.3,
+    30 + Math.random() * 16,
+    (Math.random() - 0.5) * GROUND_HALF * 2.3
+  );
+  cloud.userData.speed = 0.5 + Math.random() * 0.9;
+  scene.add(cloud);
+  clouds.push(cloud);
+}
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.1;
+controls.enablePan = false;
+controls.minDistance = CAM_MIN_DIST;
+controls.maxDistance = CAM_MAX_DIST;
+controls.minPolarAngle = 0.25;
+controls.maxPolarAngle = Math.PI / 2.1;
+controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+
+// Lighting
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+sun.position.set(60, 90, 30);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -GROUND_HALF;
+sun.shadow.camera.right = GROUND_HALF;
+sun.shadow.camera.top = GROUND_HALF;
+sun.shadow.camera.bottom = -GROUND_HALF;
+sun.shadow.camera.far = 260;
+scene.add(sun);
+
+// Ground
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(GROUND_HALF * 2, GROUND_HALF * 2),
+  new THREE.MeshStandardMaterial({ color: 0x3a9a4d })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const gridHelper = new THREE.GridHelper(GROUND_HALF * 2, GROUND_HALF / 2, 0x1c5e2a, 0x2d7a3d);
+gridHelper.position.y = 0.01;
+scene.add(gridHelper);
+
+/* ---------------------------------------------------------------------- */
+/*  SCENERY — trees & rocks scattered around the plot, kept off the path   */
+/* ---------------------------------------------------------------------- */
+function makeTree() {
+  const group = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.16, 0.24, 1.6, 6),
+    new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.9 })
+  );
+  trunk.position.y = 0.8;
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  const leafColors = [0x2f7d4a, 0x3a8f55, 0x276b3e];
+  const leaves = new THREE.Mesh(
+    new THREE.ConeGeometry(1.05, 2.3, 7),
+    new THREE.MeshStandardMaterial({ color: leafColors[Math.floor(Math.random() * leafColors.length)], roughness: 0.85 })
+  );
+  leaves.position.y = 2.3;
+  leaves.castShadow = true;
+  group.add(leaves);
+  return group;
+}
+
+function makeRock() {
+  const rock = new THREE.Mesh(
+    new THREE.DodecahedronGeometry(0.35 + Math.random() * 0.4, 0),
+    new THREE.MeshStandardMaterial({ color: 0x8b8f97, roughness: 0.95, flatShading: true })
+  );
+  rock.castShadow = true;
+  rock.receiveShadow = true;
+  rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+  return rock;
+}
+
+(function scatterScenery() {
+  const stagePositions = STAGES.map((_, i) => stagePosition(i));
+  const MIN_CLEAR = 3.6;
+  let placed = 0, attempts = 0;
+  while (placed < 60 && attempts < 500) {
+    attempts++;
+    const x = (Math.random() - 0.5) * GROUND_HALF * 1.9;
+    const z = (Math.random() - 0.5) * GROUND_HALF * 1.9;
+    if (Math.hypot(x, z) < 5) continue; // keep the spawn area clear
+    let tooClose = false;
+    for (const p of stagePositions) {
+      if (Math.hypot(x - p.x, z - p.z) < MIN_CLEAR) { tooClose = true; break; }
+    }
+    if (tooClose) continue;
+    const deco = Math.random() < 0.6 ? makeTree() : makeRock();
+    deco.position.set(x, 0, z);
+    const scale = 0.8 + Math.random() * 0.6;
+    deco.scale.set(scale, scale, scale);
+    deco.rotation.y = Math.random() * Math.PI * 2;
+    scene.add(deco);
+    placed++;
+  }
+})();
+
+/* ---------------------------------------------------------------------- */
+/*  SAWMILL — a standalone wood generator + conveyor + mill, always        */
+/*  present off to the side of the main spiral path. Produces "planks", a  */
+/*  secondary resource (VISION.md Phase 2, item 7 — first slice: resource  */
+/*  generation + tracking; spending planks on upgrades is a follow-up).    */
+/* ---------------------------------------------------------------------- */
+const WOOD_SPAWN_INTERVAL = 4;   // seconds between logs leaving the generator
+const WOOD_TRAVEL_TIME = 3.5;    // seconds for a log to ride the belt
+const PLANKS_PER_LOG = 1;
+
+// Picked to sit well clear of every spiral stage (nearest is >9 units away) at any prestige.
+const GENERATOR_POS = new THREE.Vector3(-10.3, 0, -3.8);
+const SAWMILL_POS = new THREE.Vector3(-17.9, 0, -6.5);
+
+// Static colliders for the sawmill's two buildings, so they're as solid as any spiral
+// building (checked in updatePlayer() alongside the `buildings` array).
+const STATIC_COLLIDERS = [
+  { pos: GENERATOR_POS, radius: 1.6 },
+  { pos: SAWMILL_POS, radius: 1.9 },
+];
+
+const logsInTransit = []; // { mesh, t: 0..1, from: THREE.Vector3 }
+let woodSpawnTimer = 0;
+const sourceTrees = []; // { mesh, state: 'grown'|'chopping'|'regrowing', timer, baseScale }
+const CHOP_FALL_TIME = 0.3;
+const CHOP_SHRINK_TIME = 0.2;
+const REGROW_TIME = 6;
+
+function buildSawmillScenery() {
+  // Generator: a small woodcutter's shed among a tight cluster of trees.
+  const shed = new THREE.Group();
+  const shedBody = new THREE.Mesh(
+    new THREE.BoxGeometry(2.2, 1.8, 2.2),
+    new THREE.MeshStandardMaterial({ color: 0x8a5a34, roughness: 0.85 })
+  );
+  shedBody.position.y = 0.9;
+  shedBody.castShadow = true;
+  shedBody.receiveShadow = true;
+  shed.add(shedBody);
+  const shedRoof = new THREE.Mesh(
+    new THREE.ConeGeometry(1.8, 1.1, 4),
+    new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.9 })
+  );
+  shedRoof.rotation.y = Math.PI / 4;
+  shedRoof.position.y = 2.35;
+  shedRoof.castShadow = true;
+  shed.add(shedRoof);
+  shed.position.copy(GENERATOR_POS);
+  scene.add(shed);
+
+  // A small grove around the shed IS the wood source: each tree gets chopped down and
+  // hauled to the belt when it's the generator's turn to produce a log, then regrows.
+  for (let i = 0; i < 4; i++) {
+    const tree = makeTree();
+    const a = (i / 4) * Math.PI * 2;
+    tree.position.set(GENERATOR_POS.x + Math.cos(a) * 2.4, 0, GENERATOR_POS.z + Math.sin(a) * 2.4);
+    const baseScale = 0.85 + Math.random() * 0.25;
+    tree.scale.setScalar(baseScale);
+    scene.add(tree);
+    sourceTrees.push({ mesh: tree, state: 'grown', timer: 0, baseScale, claimedBy: null });
+  }
+  // Purely decorative trees a little further out, so the grove doesn't look sparse once a
+  // couple of source trees are mid-regrow.
+  for (let i = 0; i < 4; i++) {
+    const tree = makeTree();
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    tree.position.set(GENERATOR_POS.x + Math.cos(a) * 3.6, 0, GENERATOR_POS.z + Math.sin(a) * 3.6);
+    tree.scale.setScalar(0.8 + Math.random() * 0.3);
+    scene.add(tree);
+  }
+
+  // Sawmill building, with a small spinning saw blade for flavor.
+  const mill = new THREE.Group();
+  const millBody = new THREE.Mesh(
+    new THREE.BoxGeometry(2.8, 2.4, 2.4),
+    new THREE.MeshStandardMaterial({ color: 0xb08a5a, roughness: 0.8 })
+  );
+  millBody.position.y = 1.2;
+  millBody.castShadow = true;
+  millBody.receiveShadow = true;
+  mill.add(millBody);
+  const millRoof = new THREE.Mesh(
+    new THREE.ConeGeometry(2.2, 1.2, 4),
+    new THREE.MeshStandardMaterial({ color: 0x6b3f22, roughness: 0.9 })
+  );
+  millRoof.rotation.y = Math.PI / 4;
+  millRoof.position.y = 3.0;
+  millRoof.castShadow = true;
+  mill.add(millRoof);
+  const blade = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5, 0.5, 0.08, 16),
+    new THREE.MeshStandardMaterial({ color: 0xd8d8e0, metalness: 0.6, roughness: 0.3, emissive: 0x222233, emissiveIntensity: 0.3 })
+  );
+  blade.rotation.x = Math.PI / 2;
+  blade.position.set(1.6, 1.0, 0);
+  mill.add(blade);
+  mill.userData.blade = blade;
+  mill.position.copy(SAWMILL_POS);
+  scene.add(mill);
+  sawmillBlade = blade;
+
+  // Conveyor belt: a flat dark strip with side rails running between generator and mill.
+  const beltDir = new THREE.Vector3().subVectors(SAWMILL_POS, GENERATOR_POS);
+  const beltLen = beltDir.length();
+  const beltAngle = Math.atan2(beltDir.x, beltDir.z);
+  const beltMid = new THREE.Vector3().addVectors(GENERATOR_POS, SAWMILL_POS).multiplyScalar(0.5);
+
+  const belt = new THREE.Mesh(
+    new THREE.BoxGeometry(1.1, 0.15, beltLen),
+    new THREE.MeshStandardMaterial({ color: 0x2b2f38, roughness: 0.9 })
+  );
+  belt.position.set(beltMid.x, 0.08, beltMid.z);
+  belt.rotation.y = beltAngle;
+  belt.receiveShadow = true;
+  scene.add(belt);
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x4a4f5c, roughness: 0.8 });
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.3, beltLen), railMat);
+    rail.position.set(
+      beltMid.x + Math.cos(beltAngle) * 0.58 * side,
+      0.18,
+      beltMid.z - Math.sin(beltAngle) * 0.58 * side
+    );
+    rail.rotation.y = beltAngle;
+    scene.add(rail);
+  }
+}
+let sawmillBlade = null;
+buildSawmillScenery();
+
+function spawnLog(fromPos) {
+  const log = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22, 0.22, 0.9, 10),
+    new THREE.MeshStandardMaterial({ color: 0x8a5a34, roughness: 0.85 })
+  );
+  log.rotation.z = Math.PI / 2;
+  const from = (fromPos || GENERATOR_POS).clone();
+  log.position.copy(from);
+  log.position.y = 0.3;
+  log.castShadow = true;
+  scene.add(log);
+  logsInTransit.push({ mesh: log, t: 0, from });
+}
+
+function updateSawmill(dt) {
+  if (sawmillBlade) sawmillBlade.rotation.y += dt * 12;
+
+  // Animate each source tree through chop -> shrink -> regrow, so it's visually obvious
+  // where the belt's wood comes from.
+  for (const tree of sourceTrees) {
+    if (tree.state === 'chopping') {
+      tree.timer += dt;
+      if (tree.timer < CHOP_FALL_TIME) {
+        tree.mesh.rotation.z = (tree.timer / CHOP_FALL_TIME) * (Math.PI * 0.46);
+      } else if (tree.timer < CHOP_FALL_TIME + CHOP_SHRINK_TIME) {
+        const k = (tree.timer - CHOP_FALL_TIME) / CHOP_SHRINK_TIME;
+        tree.mesh.scale.setScalar(tree.baseScale * Math.max(0.001, 1 - k));
+      } else {
+        tree.state = 'regrowing';
+        tree.timer = 0;
+        tree.mesh.rotation.z = 0;
+        tree.mesh.scale.setScalar(0.001);
+      }
+    } else if (tree.state === 'regrowing') {
+      tree.timer += dt;
+      const k = Math.min(1, tree.timer / REGROW_TIME);
+      tree.mesh.scale.setScalar(tree.baseScale * k);
+      if (k >= 1) tree.state = 'grown';
+    }
+  }
+
+  woodSpawnTimer += dt;
+  if (woodSpawnTimer >= WOOD_SPAWN_INTERVAL) {
+    // Skip trees a lumberjack is already en route to, so the automatic timer and a worker
+    // can never both claim the same tree.
+    const readyTree = sourceTrees.find(tr => tr.state === 'grown' && !tr.claimedBy);
+    if (readyTree) {
+      woodSpawnTimer = 0;
+      readyTree.state = 'chopping';
+      readyTree.timer = 0;
+      spawnLog(readyTree.mesh.position);
+    }
+    // If every tree is mid-chop/regrow, keep the timer running and retry next frame —
+    // production is gently gated by actually having a tree ready to fell.
+  }
+
+  for (let i = logsInTransit.length - 1; i >= 0; i--) {
+    const log = logsInTransit[i];
+    log.t += dt / WOOD_TRAVEL_TIME;
+    if (log.t >= 1) {
+      scene.remove(log.mesh);
+      logsInTransit.splice(i, 1);
+      planks += PLANKS_PER_LOG;
+      stats.planksEarned += PLANKS_PER_LOG;
+      spawnBurst(SAWMILL_POS, 0xc9a06a);
+      sfx.plank();
+      updateHUD();
+      checkAchievements();
+      save();
+    } else {
+      log.mesh.position.lerpVectors(log.from, SAWMILL_POS, log.t);
+      log.mesh.position.y = 0.3;
+      log.mesh.rotation.x += dt * 3;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/*  SAWMILL WORKERS — hireable lumberjacks (VISION.md Phase 2, item 2:    */
+/*  "give planks a purpose" + user request: no idle NPCs, hired workers   */
+/*  must visibly do something). Each worker walks to a free source tree,  */
+/*  chops it (feeding the same fall/shrink/regrow animation and belt      */
+/*  pipeline as the automatic timer), hauls to the mill, and repeats —    */
+/*  never stands around; with no tree free it heads back to the shed and  */
+/*  keeps animating there instead of freezing in place.                   */
+/* ---------------------------------------------------------------------- */
+const WORKER_MAX = 3;
+const WORKER_SPEED = 3.2;
+const WORKER_CHOP_DURATION = 1.1;
+const WORKER_ARRIVE_DIST = 0.35;
+const WORKER_COLORS = [0xd9822b, 0x3fae5c, 0xb14a4a];
+
+function workerHireCost(n) {
+  return { money: Math.round(400 * Math.pow(2.2, n)), planks: 20 + n * 20 };
+}
+
+const workers = []; // { mesh, state: 'seekTree'|'toTree'|'chopping'|'toMill'|'wander', target, treeRef, chopTimer, phase }
+let workerPad = null;
+
+function buildWorkerMesh(colorIdx) {
+  const color = WORKER_COLORS[colorIdx % WORKER_COLORS.length];
+  const group = new THREE.Group();
+
+  const torso = new THREE.Mesh(
+    new THREE.BoxGeometry(0.56, 0.72, 0.34),
+    new THREE.MeshStandardMaterial({ color, roughness: 0.75 })
+  );
+  torso.position.y = 0.95;
+  torso.castShadow = true;
+  group.add(torso);
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.25, 14, 14),
+    new THREE.MeshStandardMaterial({ color: 0xffcfa0, roughness: 0.7 })
+  );
+  head.position.y = 1.5;
+  head.castShadow = true;
+  group.add(head);
+
+  const legL = makeLimb(0x2b2f38); legL.position.set(-0.15, 0.56, 0); group.add(legL);
+  const legR = makeLimb(0x2b2f38); legR.position.set(0.15, 0.56, 0); group.add(legR);
+  const armL = makeLimb(color); armL.position.set(-0.38, 1.22, 0); group.add(armL);
+  const armR = makeLimb(color); armR.position.set(0.38, 1.22, 0); group.add(armR);
+
+  // A small axe riding the right arm marks these as lumberjacks at a glance.
+  const axeHandle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.025, 0.025, 0.5, 6),
+    new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.8 })
+  );
+  axeHandle.position.set(0, -0.55, 0.05);
+  axeHandle.rotation.x = 0.3;
+  armR.add(axeHandle);
+  const axeHead = new THREE.Mesh(
+    new THREE.BoxGeometry(0.16, 0.14, 0.04),
+    new THREE.MeshStandardMaterial({ color: 0xaab0bb, roughness: 0.4, metalness: 0.5 })
+  );
+  axeHead.position.set(0, -0.78, 0.12);
+  armR.add(axeHead);
+
+  group.userData = { legL, legR, armL, armR };
+  return group;
+}
+
+function spawnWorkerPad() {
+  const beltDir2 = new THREE.Vector3().subVectors(SAWMILL_POS, GENERATOR_POS).normalize();
+  const perp = new THREE.Vector3(-beltDir2.z, 0, beltDir2.x);
+  const pos = new THREE.Vector3().addVectors(GENERATOR_POS, SAWMILL_POS).multiplyScalar(0.5).addScaledVector(perp, 3.2);
+
+  const group = new THREE.Group();
+  const disc = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.85, 0.85, 0.13, 24),
+    new THREE.MeshStandardMaterial({ color: 0x8a5a34, emissive: 0x2a1a0a, emissiveIntensity: 0.5, roughness: 0.5 })
+  );
+  disc.position.y = 0.07;
+  disc.receiveShadow = true;
+  group.add(disc);
+
+  const cost = workerHireCost(workers.length);
+  const sprite = makeLabelSprite([
+    t('worker_pad_line', { n: workers.length, max: WORKER_MAX }),
+    `${fmt(cost.money)} 💰 ${fmt(cost.planks)} 🪵`,
+  ]);
+  sprite.position.y = 2.3;
+  sprite.scale.set(2.4, 1.15, 1);
+  group.add(sprite);
+
+  group.position.set(pos.x, 0, pos.z);
+  scene.add(group);
+  workerPad = { group, sprite, pos, insufficientShown: false };
+}
+
+function removeWorkerPad() {
+  if (!workerPad) return;
+  scene.remove(workerPad.group);
+  workerPad = null;
+}
+
+function hireWorker(opts = {}) {
+  if (workers.length >= WORKER_MAX) return;
+  if (!opts.free) {
+    const cost = workerHireCost(workers.length);
+    if (money < cost.money || planks < cost.planks) return;
+    money -= cost.money;
+    planks -= cost.planks;
+  }
+
+  const colorIdx = workers.length;
+  const mesh = buildWorkerMesh(colorIdx);
+  const spawnPos = GENERATOR_POS.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.4, 0, (Math.random() - 0.5) * 1.4));
+  mesh.position.copy(spawnPos);
+  scene.add(mesh);
+  workers.push({
+    mesh, state: 'seekTree', target: spawnPos.clone(), treeRef: null,
+    chopTimer: 0, phase: Math.random() * 10,
+  });
+  stats.workersHired = workers.length;
+
+  if (!opts.free) {
+    removeWorkerPad();
+    if (workers.length < WORKER_MAX) spawnWorkerPad();
+    spawnBurst(spawnPos, 0x8a5a34);
+    sfx.build();
+    toast(t('toast_worker_hired', { n: workers.length, max: WORKER_MAX }));
+    updateHUD();
+    checkAchievements();
+    save();
+  }
+}
+
+function updateWorkers(dt) {
+  for (const w of workers) {
+    w.phase += dt * 6;
+    const ud = w.mesh.userData;
+
+    if (w.state === 'seekTree') {
+      let best = null, bestD = Infinity;
+      for (const tr of sourceTrees) {
+        if (tr.state !== 'grown' || tr.claimedBy) continue;
+        const d = w.mesh.position.distanceTo(tr.mesh.position);
+        if (d < bestD) { bestD = d; best = tr; }
+      }
+      if (best) {
+        best.claimedBy = w;
+        w.treeRef = best;
+        w.target = best.mesh.position.clone();
+        w.state = 'toTree';
+      } else {
+        // No tree free right now — head back toward the shed instead of standing idle;
+        // it'll pick a fresh target as soon as one regrows.
+        w.target = GENERATOR_POS.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.6, 0, (Math.random() - 0.5) * 1.6));
+        w.state = 'wander';
+      }
+    }
+
+    if (w.state === 'toTree' || w.state === 'toMill' || w.state === 'wander') {
+      const dx = w.target.x - w.mesh.position.x, dz = w.target.z - w.mesh.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 0.02) {
+        const step = Math.min(dist, WORKER_SPEED * dt);
+        w.mesh.position.x += (dx / dist) * step;
+        w.mesh.position.z += (dz / dist) * step;
+        w.mesh.rotation.y = Math.atan2(dx, dz);
+        const swing = Math.sin(w.phase) * 0.5;
+        ud.legL.rotation.x = swing; ud.legR.rotation.x = -swing;
+        ud.armL.rotation.x = -swing; ud.armR.rotation.x = swing;
+      }
+      if (dist <= WORKER_ARRIVE_DIST) {
+        if (w.state === 'toTree') { w.state = 'chopping'; w.chopTimer = 0; }
+        else { w.state = 'seekTree'; }
+      }
+    } else if (w.state === 'chopping') {
+      w.chopTimer += dt;
+      const swing = Math.max(0, Math.sin(w.phase * 3)) * 0.9;
+      ud.armR.rotation.x = -0.4 - swing;
+      ud.armL.rotation.x = 0.15;
+      ud.legL.rotation.x = 0; ud.legR.rotation.x = 0;
+      if (w.chopTimer >= WORKER_CHOP_DURATION) {
+        const tr = w.treeRef;
+        if (tr) {
+          if (tr.state === 'grown') {
+            tr.state = 'chopping';
+            tr.timer = 0;
+            spawnLog(tr.mesh.position);
+          }
+          tr.claimedBy = null;
+        }
+        w.treeRef = null;
+        w.target = SAWMILL_POS.clone();
+        w.state = 'toMill';
+      }
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/*  PLAYER CHARACTER                                                       */
+/* ---------------------------------------------------------------------- */
+const player = new THREE.Group();
+
+const torso = new THREE.Mesh(
+  new THREE.BoxGeometry(0.62, 0.8, 0.36),
+  new THREE.MeshStandardMaterial({ color: 0x3f7fe0, roughness: 0.6 })
+);
+torso.position.y = 1.05;
+torso.castShadow = true;
+player.add(torso);
+
+const head = new THREE.Mesh(
+  new THREE.SphereGeometry(0.28, 16, 16),
+  new THREE.MeshStandardMaterial({ color: 0xffcfa0, roughness: 0.7 })
+);
+head.position.y = 1.68;
+head.castShadow = true;
+player.add(head);
+
+function makeLimb(color) {
+  const limb = new THREE.Group();
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(0.2, 0.62, 0.2),
+    new THREE.MeshStandardMaterial({ color, roughness: 0.7 })
+  );
+  mesh.position.y = -0.31;
+  mesh.castShadow = true;
+  limb.add(mesh);
+  return limb;
+}
+
+const legL = makeLimb(0x2b2f38); legL.position.set(-0.17, 0.62, 0); player.add(legL);
+const legR = makeLimb(0x2b2f38); legR.position.set(0.17, 0.62, 0); player.add(legR);
+const armL = makeLimb(0x3f7fe0); armL.position.set(-0.42, 1.35, 0); player.add(armL);
+const armR = makeLimb(0x3f7fe0); armR.position.set(0.42, 1.35, 0); player.add(armR);
+
+player.position.set(0, 0, 0);
+scene.add(player);
+
+/* ---------------------------------------------------------------------- */
+/*  BUILDINGS & PADS                                                       */
+/* ---------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------- */
+/*  BUILDING ARCHETYPES — each STAGES entry picks a silhouette by         */
+/*  `archetype` so buildings read as what they are, not just tinted boxes. */
+/* ---------------------------------------------------------------------- */
+let windowTexture = null;
+function getWindowTexture() {
+  if (windowTexture) return windowTexture;
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#274b6b';
+  ctx.fillRect(0, 0, 64, 128);
+  ctx.fillStyle = '#bfe6ff';
+  for (let y = 6; y < 128; y += 20) {
+    for (let x = 6; x < 64; x += 20) ctx.fillRect(x, y, 11, 13);
+  }
+  windowTexture = new THREE.CanvasTexture(c);
+  windowTexture.wrapS = THREE.RepeatWrapping;
+  windowTexture.wrapT = THREE.RepeatWrapping;
+  windowTexture.colorSpace = THREE.SRGBColorSpace;
+  return windowTexture;
+}
+
+function makeIconSprite(emoji, size) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 96; canvas.height = 96;
+  const ctx = canvas.getContext('2d');
+  ctx.font = '76px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(emoji, 48, 54);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true }));
+  sprite.scale.set(size, size, 1);
+  sprite.renderOrder = 5;
+  return sprite;
+}
+
+function buildHouse(stage, height, baseSize) {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize, height, baseSize),
+    new THREE.MeshStandardMaterial({ color: stage.color, roughness: 0.75 })
+  );
+  body.position.y = height / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  const roofH = height * 0.5;
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(baseSize * 0.78, roofH, 4),
+    new THREE.MeshStandardMaterial({ color: 0x8a3b2b, roughness: 0.85 })
+  );
+  roof.rotation.y = Math.PI / 4;
+  roof.position.y = height + roofH / 2;
+  roof.castShadow = true;
+  group.add(roof);
+
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize * 0.26, height * 0.4, 0.06),
+    new THREE.MeshStandardMaterial({ color: 0x4a2f1a, roughness: 0.8 })
+  );
+  door.position.set(0, height * 0.2, baseSize / 2 + 0.03);
+  group.add(door);
+
+  const winMat = new THREE.MeshStandardMaterial({ color: 0xbfe6ff, emissive: 0x6fa8c9, emissiveIntensity: 0.5, roughness: 0.3 });
+  for (const side of [-1, 1]) {
+    const win = new THREE.Mesh(new THREE.BoxGeometry(baseSize * 0.22, baseSize * 0.22, 0.06), winMat);
+    win.position.set(side * baseSize * 0.32, height * 0.62, baseSize / 2 + 0.03);
+    group.add(win);
+  }
+  return group;
+}
+
+function buildShop(stage, height, baseSize) {
+  const group = new THREE.Group();
+  const bodyH = height * 0.85;
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize, bodyH, baseSize),
+    new THREE.MeshStandardMaterial({ color: stage.color, roughness: 0.65 })
+  );
+  body.position.y = bodyH / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  const cap = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize * 1.06, height * 0.08, baseSize * 1.06),
+    new THREE.MeshStandardMaterial({ color: 0x333846, roughness: 0.8 })
+  );
+  cap.position.y = bodyH + height * 0.04;
+  cap.castShadow = true;
+  group.add(cap);
+
+  const awning = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize * 1.12, height * 0.07, baseSize * 0.5),
+    new THREE.MeshStandardMaterial({ color: 0xd6543f, roughness: 0.7 })
+  );
+  awning.position.set(0, bodyH * 0.68, baseSize / 2 + baseSize * 0.25);
+  awning.castShadow = true;
+  group.add(awning);
+
+  const glass = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize * 0.8, bodyH * 0.5, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x7fc8e8, transparent: true, opacity: 0.55, roughness: 0.15, metalness: 0.2 })
+  );
+  glass.position.set(0, bodyH * 0.3, baseSize / 2 + 0.03);
+  group.add(glass);
+
+  const sign = makeIconSprite(stage.emoji, baseSize * 0.7);
+  sign.position.set(0, bodyH + height * 0.16, 0);
+  group.add(sign);
+  return group;
+}
+
+function buildWarehouse(stage, height, baseSize) {
+  const group = new THREE.Group();
+  const w = baseSize * 1.55, d = baseSize * 1.15;
+  const bodyH = height * 0.85;
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(w, bodyH, d),
+    new THREE.MeshStandardMaterial({ color: stage.color, roughness: 0.8 })
+  );
+  body.position.y = bodyH / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  const roof = new THREE.Mesh(
+    new THREE.BoxGeometry(w * 1.04, height * 0.1, d * 1.04),
+    new THREE.MeshStandardMaterial({ color: 0x555f6b, roughness: 0.85 })
+  );
+  roof.position.y = bodyH + height * 0.05;
+  roof.castShadow = true;
+  group.add(roof);
+
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(w * 0.46, bodyH * 0.55, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x2c313b, roughness: 0.6 })
+  );
+  door.position.set(0, bodyH * 0.275, d / 2 + 0.03);
+  group.add(door);
+
+  const ventMat = new THREE.MeshStandardMaterial({ color: 0x8a8f99, roughness: 0.7 });
+  for (const side of [-1, 1]) {
+    const vent = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.32, 8), ventMat);
+    vent.position.set(side * w * 0.28, bodyH + height * 0.1 + 0.16, 0);
+    vent.castShadow = true;
+    group.add(vent);
+  }
+  return group;
+}
+
+function buildFactory(stage, height, baseSize) {
+  const group = new THREE.Group();
+  const w = baseSize * 1.25, d = baseSize * 1.1;
+  const bodyH = height * 0.6;
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(w, bodyH, d),
+    new THREE.MeshStandardMaterial({ color: stage.color, roughness: 0.75, metalness: 0.15 })
+  );
+  body.position.y = bodyH / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  const roofRidge = new THREE.Mesh(
+    new THREE.BoxGeometry(w * 1.02, height * 0.12, d * 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x4a4f5c, roughness: 0.8 })
+  );
+  roofRidge.position.set(0, bodyH + height * 0.06, d * 0.2);
+  group.add(roofRidge);
+
+  const stacks = stage.stacks || 1;
+  const stackH = height * 0.85;
+  const stackMat = new THREE.MeshStandardMaterial({ color: 0x555f6b, roughness: 0.8 });
+  group.userData.stackTops = [];
+  for (let i = 0; i < stacks; i++) {
+    const sx = stacks === 1 ? 0 : (i === 0 ? -w * 0.24 : w * 0.24);
+    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, stackH, 10), stackMat);
+    stack.position.set(sx, bodyH + stackH / 2, -d * 0.22);
+    stack.castShadow = true;
+    group.add(stack);
+    group.userData.stackTops.push(new THREE.Vector3(sx, bodyH + stackH, -d * 0.22));
+  }
+  return group;
+}
+
+function buildOffice(stage, height, baseSize) {
+  const group = new THREE.Group();
+  const d = baseSize * 0.85;
+  const tex = getWindowTexture().clone();
+  tex.repeat.set(1, Math.max(1, Math.round(height / 2.1)));
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize, height, d),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.1 })
+  );
+  body.position.y = height / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  const cap = new THREE.Mesh(
+    new THREE.BoxGeometry(baseSize * 1.03, height * 0.035, d * 1.03),
+    new THREE.MeshStandardMaterial({ color: 0x2c313b, roughness: 0.7 })
+  );
+  cap.position.y = height + height * 0.018;
+  group.add(cap);
+  return group;
+}
+
+function buildTower(stage, height, baseSize) {
+  const group = new THREE.Group();
+  const w = baseSize * 0.78;
+  const tex = getWindowTexture().clone();
+  tex.repeat.set(1, Math.max(2, Math.round(height / 2.1)));
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(w, height, w),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.4, metalness: 0.2 })
+  );
+  body.position.y = height / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  if (stage.crown) {
+    const crown = new THREE.Mesh(
+      new THREE.ConeGeometry(w * 0.62, height * 0.16, 8),
+      new THREE.MeshStandardMaterial({ color: 0xffd479, metalness: 0.6, roughness: 0.3, emissive: 0x664400, emissiveIntensity: 0.4 })
+    );
+    crown.position.y = height + height * 0.08;
+    crown.castShadow = true;
+    group.add(crown);
+  } else {
+    const spire = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.09, height * 0.22, 8),
+      new THREE.MeshStandardMaterial({ color: 0xd8d8e0, metalness: 0.7, roughness: 0.3 })
+    );
+    spire.position.y = height + height * 0.11;
+    group.add(spire);
+  }
+  return group;
+}
+
+const BUILDERS = { house: buildHouse, shop: buildShop, warehouse: buildWarehouse, factory: buildFactory, office: buildOffice, tower: buildTower };
+
+function createBuildingMesh(stage, level = 1) {
+  const height = stage.height * (1 + (level - 1) * 0.28);
+  const baseSize = stage.baseSize || 2.6;
+  const builder = BUILDERS[stage.archetype] || buildHouse;
+  const group = builder(stage, height, baseSize);
+
+  // Small glowing pips on a corner mark the upgrade level at a glance, regardless of archetype.
+  for (let i = 0; i < level; i++) {
+    const pip = new THREE.Mesh(
+      new THREE.BoxGeometry(0.32, 0.22, 0.32),
+      new THREE.MeshStandardMaterial({ color: 0xffe08a, emissive: 0x664400, emissiveIntensity: 0.5 })
+    );
+    pip.position.set(baseSize / 2 - 0.2, height + 0.2 + i * 0.3, baseSize / 2 - 0.2);
+    group.add(pip);
+  }
+
+  return group;
+}
+
+// Factory buildings expose their smokestack top positions (local space) via
+// mesh.userData.stackTops; convert to world space (buildings never rotate) for the smoke system.
+function smokeTopsFor(mesh, pos) {
+  const tops = mesh.userData.stackTops;
+  if (!tops || !tops.length) return null;
+  return tops.map(local => new THREE.Vector3(pos.x + local.x, local.y, pos.z + local.z));
+}
+
+function spawnBuilding(index, level, { grow = true } = {}) {
+  const stage = STAGES[index];
+  const mesh = createBuildingMesh(stage, level);
+  const pos = buildingPosition(index);
+  mesh.position.set(pos.x, 0, pos.z);
+  if (grow) {
+    mesh.scale.set(0.001, 0.001, 0.001);
+    growingMeshes.push(mesh);
+  }
+  scene.add(mesh);
+
+  const entry = {
+    index, level, mesh, pos, upgradePad: null,
+    smokeTops: smokeTopsFor(mesh, pos), smokeTimer: Math.random() * 1.4,
+  };
+  buildings.push(entry);
+  if (level < MAX_BUILDING_LEVEL) spawnUpgradePad(entry);
+  return entry;
+}
+
+function spawnUpgradePad(entry) {
+  const stage = STAGES[entry.index];
+  const pos = upgradePadPosition(entry.pos, entry.index);
+  const group = new THREE.Group();
+
+  const disc = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.85, 0.85, 0.13, 24),
+    new THREE.MeshStandardMaterial({ color: 0x5ab0ff, emissive: 0x0a2a4a, emissiveIntensity: 0.6, roughness: 0.4 })
+  );
+  disc.position.y = 0.07;
+  disc.receiveShadow = true;
+  group.add(disc);
+
+  const sprite = makeLabelSprite([
+    t('upgrade_level_line', { level: entry.level + 1 }),
+    `${fmt(buildingUpgradeCost(entry.index, entry.level))} 💰`,
+  ]);
+  sprite.position.y = 2.6;
+  sprite.scale.set(2.4, 1.15, 1);
+  group.add(sprite);
+
+  group.position.set(pos.x, 0, pos.z);
+  scene.add(group);
+  entry.upgradePad = { group, sprite, pos, insufficientShown: false };
+}
+
+function removeUpgradePad(entry) {
+  if (!entry.upgradePad) return;
+  scene.remove(entry.upgradePad.group);
+  entry.upgradePad = null;
+}
+
+function upgradeBuilding(entry) {
+  const cost = buildingUpgradeCost(entry.index, entry.level);
+  money -= cost;
+  removeUpgradePad(entry);
+  scene.remove(entry.mesh);
+  entry.level += 1;
+  entry.mesh = createBuildingMesh(STAGES[entry.index], entry.level);
+  entry.mesh.position.set(entry.pos.x, 0, entry.pos.z);
+  entry.mesh.scale.set(0.001, 0.001, 0.001);
+  growingMeshes.push(entry.mesh);
+  scene.add(entry.mesh);
+  entry.smokeTops = smokeTopsFor(entry.mesh, entry.pos);
+  if (entry.level < MAX_BUILDING_LEVEL) spawnUpgradePad(entry);
+  else stats.maxLevelHit = true;
+
+  sfx.build();
+  spawnBurst(entry.pos, 0x5ab0ff);
+  triggerShake(0.12, 0.2);
+  toast(t('toast_upgraded', { name: stageName(STAGES[entry.index]), level: entry.level }));
+  updateHUD();
+  checkAchievements();
+  save();
+}
+
+/* ---------------------------------------------------------------------- */
+/*  PARTICLE BURST — purchase "juice"                                      */
+/* ---------------------------------------------------------------------- */
+const particleBursts = [];
+function spawnBurst(pos, color) {
+  const count = 36;
+  const positions = new Float32Array(count * 3);
+  const velocities = [];
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = pos.x;
+    positions[i * 3 + 1] = pos.y + 1;
+    positions[i * 3 + 2] = pos.z;
+    const a = Math.random() * Math.PI * 2;
+    const speed = 3 + Math.random() * 4;
+    velocities.push(new THREE.Vector3(Math.cos(a) * speed, 3 + Math.random() * 3, Math.sin(a) * speed));
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color, size: 0.35, transparent: true, opacity: 1,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const points = new THREE.Points(geo, mat);
+  scene.add(points);
+  particleBursts.push({ points, velocities, life: 0.9, maxLife: 0.9 });
+}
+
+/* ---------------------------------------------------------------------- */
+/*  SMOKE — drifting puffs from every factory's smokestacks                */
+/* ---------------------------------------------------------------------- */
+const SMOKE_INTERVAL = 1.5;
+let smokeTexture = null;
+function getSmokeTexture() {
+  if (smokeTexture) return smokeTexture;
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,0.85)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  smokeTexture = new THREE.CanvasTexture(c);
+  return smokeTexture;
+}
+
+const smokePuffs = [];
+function spawnSmokePuff(pos) {
+  const mat = new THREE.SpriteMaterial({ map: getSmokeTexture(), color: 0xd8d8dc, transparent: true, opacity: 0.5, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.position.copy(pos);
+  sprite.scale.set(0.5, 0.5, 1);
+  scene.add(sprite);
+  smokePuffs.push({ sprite, drift: (Math.random() - 0.5) * 0.3, life: 2.4, maxLife: 2.4 });
+}
+
+function updateSmoke(dt) {
+  for (const b of buildings) {
+    if (!b.smokeTops) continue;
+    b.smokeTimer += dt;
+    if (b.smokeTimer >= SMOKE_INTERVAL) {
+      b.smokeTimer = Math.random() * 0.4;
+      for (const top of b.smokeTops) spawnSmokePuff(top);
+    }
+  }
+  for (let i = smokePuffs.length - 1; i >= 0; i--) {
+    const p = smokePuffs[i];
+    p.life -= dt;
+    if (p.life <= 0) {
+      scene.remove(p.sprite);
+      p.sprite.material.dispose();
+      smokePuffs.splice(i, 1);
+      continue;
+    }
+    p.sprite.position.y += dt * 0.7;
+    p.sprite.position.x += dt * p.drift;
+    const k = 1 - p.life / p.maxLife;
+    p.sprite.scale.setScalar(0.5 + k * 1.3);
+    p.sprite.material.opacity = 0.5 * (p.life / p.maxLife);
+  }
+}
+
+function makeLabelSprite(lines) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 320;
+  canvas.height = 150;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(16,22,32,0.88)';
+  ctx.beginPath();
+  ctx.roundRect(4, 4, canvas.width - 8, canvas.height - 8, 22);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,212,121,0.7)';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#eaf2ff';
+  ctx.font = '700 46px sans-serif';
+  ctx.fillText(lines[0], canvas.width / 2, 66);
+  ctx.fillStyle = '#ffd479';
+  ctx.font = '700 40px sans-serif';
+  ctx.fillText(lines[1], canvas.width / 2, 120);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(3.4, 1.6, 1);
+  sprite.renderOrder = 10;
+  return sprite;
+}
+
+function spawnPad(index) {
+  const stage = STAGES[index];
+  const pos = stagePosition(index);
+  const group = new THREE.Group();
+
+  const disc = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.3, 1.3, 0.15, 28),
+    new THREE.MeshStandardMaterial({ color: 0xffd479, emissive: 0x664400, emissiveIntensity: 0.5, roughness: 0.4 })
+  );
+  disc.position.y = 0.08;
+  disc.receiveShadow = true;
+  group.add(disc);
+
+  const beacon = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.1, 7, 8, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
+  );
+  beacon.position.y = 3.5;
+  group.add(beacon);
+
+  const sprite = makeLabelSprite([`${stage.emoji} ${stageName(stage)}`, `${fmt(stage.cost)} 💰`]);
+  sprite.position.y = 8.6;
+  group.add(sprite);
+
+  group.position.set(pos.x, 0, pos.z);
+  scene.add(group);
+  currentPad = { index, group, beacon, sprite, pos: new THREE.Vector3(pos.x, 0, pos.z), insufficientShown: false };
+}
+
+function purchaseCurrentPad() {
+  if (!currentPad) return;
+  const { index, group, pos } = currentPad;
+  const stage = STAGES[index];
+  money -= stage.cost;
+  scene.remove(group);
+  spawnBuilding(index, 1);
+  stageIndex = index + 1;
+  sfx.build();
+  spawnBurst(pos, 0xffd479);
+  triggerShake(0.16, 0.26);
+  toast(t('toast_built', { emoji: stage.emoji, name: stageName(stage) }));
+  currentPad = null;
+  if (stageIndex < STAGES.length) spawnPad(stageIndex);
+  updateHUD();
+  checkAchievements();
+  save();
+}
+
+function doPrestige() {
+  if (stageIndex < STAGES.length) return;
+  const nextMult = 1 + (stats.prestige + 1) * 0.5;
+  if (!confirm(t('prestige_confirm', { mult: nextMult.toFixed(1) }))) return;
+  stats.prestige += 1;
+  buildings.forEach(b => {
+    scene.remove(b.mesh);
+    removeUpgradePad(b);
+  });
+  buildings.length = 0;
+  stageIndex = 0;
+  money = 300;
+  displayedMoney = money;
+  spawnPad(0);
+  sfx.prestige();
+  toast(t('toast_prestige', { mult: incomeMultiplier().toFixed(1) }));
+  updateHUD();
+  checkAchievements();
+  save();
+}
+document.getElementById('prestigeBtn').addEventListener('click', doPrestige);
+
+/* ---------------------------------------------------------------------- */
+/*  ECONOMY                                                                 */
+/* ---------------------------------------------------------------------- */
+function totalIncomePerSec() {
+  let sum = 0;
+  for (const b of buildings) sum += buildingIncome(b.index, b.level);
+  return sum * incomeMultiplier();
+}
+
+function updateHUD() {
+  document.getElementById('income').textContent =
+    `+${fmt(totalIncomePerSec())}/с${stats.prestige > 0 ? ` (x${incomeMultiplier().toFixed(1)})` : ''}`;
+  document.getElementById('progress').textContent = `🏗️ ${stageIndex}/${STAGES.length}`;
+  document.getElementById('planks').textContent = `🪵 ${fmt(planks)}`;
+
+  const nextCard = document.getElementById('nextCard');
+  const prestigeBtn = document.getElementById('prestigeBtn');
+  if (stageIndex < STAGES.length) {
+    const s = STAGES[stageIndex];
+    nextCard.textContent = t('next_building', { emoji: s.emoji, name: stageName(s), cost: fmt(s.cost) });
+    prestigeBtn.hidden = true;
+  } else {
+    nextCard.textContent = t('next_complete') +
+      (stats.prestige > 0 ? t('next_prestige_suffix', { n: stats.prestige }) : '');
+    prestigeBtn.hidden = false;
+    prestigeBtn.textContent = t('prestige_btn', { mult: (1 + (stats.prestige + 1) * 0.5).toFixed(1) });
+  }
+}
+
+setInterval(() => {
+  earn(totalIncomePerSec());
+  updateHUD();
+  checkAchievements();
+  save();
+}, 1000);
+
+/* ---------------------------------------------------------------------- */
+/*  ACHIEVEMENTS                                                           */
+/* ---------------------------------------------------------------------- */
+const achListEl = document.getElementById('achList');
+const achBadge = document.getElementById('achBadge');
+
+function renderAchList() {
+  achListEl.innerHTML = '';
+  ACHIEVEMENTS.forEach(a => {
+    const unlocked = unlockedAch.has(a.id);
+    const item = document.createElement('div');
+    item.className = 'achItem' + (unlocked ? ' unlocked' : '');
+    item.innerHTML = `
+      <div class="ico">${a.emoji}</div>
+      <div class="body">
+        <div class="name">${achName(a)}</div>
+        <div class="desc">${achDesc(a)}</div>
+        <div class="reward">${unlocked ? t('ach_unlocked') : t('ach_reward')}: +${a.reward} 💰</div>
+      </div>`;
+    achListEl.appendChild(item);
+  });
+}
+
+function updateAchBadge() {
+  const lockedCount = ACHIEVEMENTS.length - unlockedAch.size;
+  achBadge.textContent = lockedCount;
+  achBadge.classList.toggle('show', lockedCount > 0);
+}
+
+function checkAchievements() {
+  const income = totalIncomePerSec();
+  let unlockedAny = false;
+  ACHIEVEMENTS.forEach(a => {
+    if (unlockedAch.has(a.id)) return;
+    if (a.check(stats, stageIndex, income)) {
+      unlockedAch.add(a.id);
+      earn(a.reward);
+      toast(t('toast_achievement', { name: achName(a), reward: a.reward }));
+      sfx.achievement();
+      unlockedAny = true;
+    }
+  });
+  if (unlockedAny) {
+    updateHUD();
+    updateAchBadge();
+    renderAchList();
+    save();
+  }
+}
+
+document.getElementById('achBtn').addEventListener('click', () => {
+  renderAchList();
+  document.getElementById('achOverlay').classList.add('show');
+});
+document.getElementById('achClose').addEventListener('click', () => {
+  document.getElementById('achOverlay').classList.remove('show');
+});
+document.getElementById('achOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'achOverlay') e.currentTarget.classList.remove('show');
+});
+
+/* ---------------------------------------------------------------------- */
+/*  UI — buttons, toast, hint                                              */
+/* ---------------------------------------------------------------------- */
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (!confirm(t('reset_confirm'))) return;
+  localStorage.removeItem(SAVE_KEY);
+  location.reload();
+});
+
+document.getElementById('camBtn').addEventListener('click', () => {
+  const back = new THREE.Vector3();
+  camera.getWorldDirection(back).negate();
+  back.y = 0.32;
+  back.normalize().multiplyScalar(CAM_DEFAULT_DIST);
+  camera.position.set(player.position.x + back.x, PLAYER_EYE_HEIGHT + back.y * CAM_DEFAULT_DIST * 0.35, player.position.z + back.z);
+  controls.target.set(player.position.x, PLAYER_EYE_HEIGHT, player.position.z);
+  controls.update();
+});
+
+const muteBtn = document.getElementById('muteBtn');
+function refreshMuteBtn() { muteBtn.textContent = muted ? '🔇' : '🔊'; }
+muteBtn.addEventListener('click', () => {
+  muted = !muted;
+  localStorage.setItem(MUTE_KEY, muted ? '1' : '0');
+  refreshMuteBtn();
+  if (!muted) { ensureAudio(); sfx.build(); }
+});
+refreshMuteBtn();
+
+/* ---------------------------------------------------------------------- */
+/*  LANGUAGE SWITCHING — applies `lang` to all DOM text and any already-   */
+/*  rendered canvas sprite labels (pad/upgrade-pad price tags).            */
+/* ---------------------------------------------------------------------- */
+function regenerateSprite(oldSprite, lines, scaleY) {
+  oldSprite.material.map.dispose();
+  oldSprite.material.dispose();
+  const sprite = makeLabelSprite(lines);
+  sprite.position.y = oldSprite.position.y;
+  if (scaleY) sprite.scale.set(2.4, scaleY, 1);
+  return sprite;
+}
+
+function applyLanguage() {
+  document.title = t('doc_title');
+  document.documentElement.lang = lang;
+  document.getElementById('resetBtn').textContent = t('reset');
+  document.getElementById('langBtn').textContent = lang === 'ru' ? 'EN' : 'RU';
+  document.getElementById('hintTitle').textContent = t('hint_title');
+  document.getElementById('hintBullets').innerHTML =
+    (STRINGS[lang].hint_bullets || STRINGS.ru.hint_bullets).map(b => `<li>${b}</li>`).join('');
+  document.getElementById('hintCloseBtn').textContent = t('hint_button');
+  document.getElementById('achTitleText').textContent = t('ach_title');
+
+  if (currentPad) {
+    const stage = STAGES[currentPad.index];
+    const sprite = regenerateSprite(currentPad.sprite, [`${stage.emoji} ${stageName(stage)}`, `${fmt(stage.cost)} 💰`]);
+    currentPad.group.remove(currentPad.sprite);
+    currentPad.group.add(sprite);
+    currentPad.sprite = sprite;
+  }
+  for (const b of buildings) {
+    if (!b.upgradePad) continue;
+    const sprite = regenerateSprite(b.upgradePad.sprite, [
+      t('upgrade_level_line', { level: b.level + 1 }),
+      `${fmt(buildingUpgradeCost(b.index, b.level))} 💰`,
+    ], 1.15);
+    b.upgradePad.group.remove(b.upgradePad.sprite);
+    b.upgradePad.group.add(sprite);
+    b.upgradePad.sprite = sprite;
+  }
+  if (workerPad) {
+    const cost = workerHireCost(workers.length);
+    const sprite = regenerateSprite(workerPad.sprite, [
+      t('worker_pad_line', { n: workers.length, max: WORKER_MAX }),
+      `${fmt(cost.money)} 💰 ${fmt(cost.planks)} 🪵`,
+    ], 1.15);
+    workerPad.group.remove(workerPad.sprite);
+    workerPad.group.add(sprite);
+    workerPad.sprite = sprite;
+  }
+
+  renderAchList();
+  updateHUD();
+}
+
+document.getElementById('langBtn').addEventListener('click', () => {
+  lang = lang === 'ru' ? 'en' : 'ru';
+  localStorage.setItem(LANG_KEY, lang);
+  applyLanguage();
+});
+
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+const hintOverlay = document.getElementById('hintOverlay');
+document.getElementById('hintCloseBtn').addEventListener('click', () => {
+  localStorage.setItem(HINT_KEY, '1');
+  hintOverlay.classList.remove('show');
+});
+
+/* ---------------------------------------------------------------------- */
+/*  COMPASS — points at the next pad when it's off-screen                  */
+/* ---------------------------------------------------------------------- */
+const compassEl = document.getElementById('compass');
+const _padNdc = new THREE.Vector3();
+function updateCompass() {
+  if (!currentPad) { compassEl.style.display = 'none'; return; }
+  _padNdc.set(currentPad.pos.x, 1.2, currentPad.pos.z).project(camera);
+  const behind = _padNdc.z > 1;
+  const onScreen = !behind && Math.abs(_padNdc.x) < 0.85 && Math.abs(_padNdc.y) < 0.8;
+  if (onScreen) { compassEl.style.display = 'none'; return; }
+  let x = _padNdc.x, y = _padNdc.y;
+  if (behind) { x = -x; y = -y; }
+  const angle = Math.atan2(y, x); // math convention: 0 = right, 90deg = up
+  const margin = 0.42;
+  compassEl.style.left = `${50 + Math.cos(angle) * margin * 100}%`;
+  compassEl.style.top = `${50 - Math.sin(angle) * margin * 100}%`;
+  compassEl.style.transform = `translate(-50%, -50%) rotate(${90 - angle * 180 / Math.PI}deg)`;
+  compassEl.style.display = 'block';
+}
+
+/* ---------------------------------------------------------------------- */
+/*  STAMINA BAR                                                            */
+/* ---------------------------------------------------------------------- */
+const staminaWrap = document.getElementById('staminaWrap');
+const staminaFill = document.getElementById('staminaFill');
+function updateStaminaBar() {
+  const pct = Math.max(0, Math.min(100, (stamina / STAMINA_MAX) * 100));
+  staminaFill.style.width = pct + '%';
+  staminaWrap.style.opacity = pct < 99.5 ? '1' : '0';
+}
+
+/* ---------------------------------------------------------------------- */
+/*  CAMERA SHAKE — purchase juice                                          */
+/* ---------------------------------------------------------------------- */
+let shakeTime = 0;
+let shakeStrength = 0;
+const shakeOffset = new THREE.Vector3();
+function triggerShake(strength, duration) {
+  shakeTime = duration;
+  shakeStrength = strength;
+}
+
+/* ---------------------------------------------------------------------- */
+/*  INPUT — keyboard + virtual joystick                                    */
+/* ---------------------------------------------------------------------- */
+const keys = new Set();
+addEventListener('keydown', (e) => keys.add(e.code));
+addEventListener('keyup', (e) => keys.delete(e.code));
+
+const joyBase = document.getElementById('joyBase');
+const joyKnob = document.getElementById('joyKnob');
+const joyVec = { x: 0, z: 0 }; // x = strafe, z = forward, both in [-1, 1]
+let joyPointerId = null;
+const JOY_RADIUS = 44;
+
+function joyReset() {
+  joyVec.x = 0; joyVec.z = 0;
+  joyKnob.style.transform = 'translate(-50%, -50%)';
+}
+
+joyBase.addEventListener('pointerdown', (e) => {
+  joyPointerId = e.pointerId;
+  joyBase.setPointerCapture(e.pointerId);
+  updateJoy(e);
+});
+joyBase.addEventListener('pointermove', (e) => {
+  if (e.pointerId !== joyPointerId) return;
+  updateJoy(e);
+});
+function endJoy(e) {
+  if (e.pointerId !== joyPointerId) return;
+  joyPointerId = null;
+  joyReset();
+}
+joyBase.addEventListener('pointerup', endJoy);
+joyBase.addEventListener('pointercancel', endJoy);
+
+function updateJoy(e) {
+  const rect = joyBase.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  let dx = e.clientX - cx;
+  let dy = e.clientY - cy;
+  const dist = Math.min(Math.hypot(dx, dy), JOY_RADIUS);
+  const angle = Math.atan2(dy, dx);
+  dx = Math.cos(angle) * dist;
+  dy = Math.sin(angle) * dist;
+  joyKnob.style.transform = `translate(${dx - 26}px, ${dy - 26}px)`;
+  joyVec.x = dx / JOY_RADIUS;
+  joyVec.z = -dy / JOY_RADIUS; // screen up = forward
+}
+
+/* ---------------------------------------------------------------------- */
+/*  SAVE / LOAD                                                            */
+/* ---------------------------------------------------------------------- */
+function save() {
+  localStorage.setItem(SAVE_KEY, JSON.stringify({
+    money, stageIndex, stats, unlocked: [...unlockedAch], planks,
+    buildings: buildings.map(b => ({ index: b.index, level: b.level })),
+    player: { x: player.position.x, z: player.position.z },
+    workerCount: workers.length,
+  }));
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    money = typeof data.money === 'number' ? data.money : money;
+    planks = typeof data.planks === 'number' ? data.planks : planks;
+    stageIndex = Math.min(typeof data.stageIndex === 'number' ? data.stageIndex : 0, STAGES.length);
+    if (data.stats) Object.assign(stats, data.stats);
+    (data.unlocked || []).forEach(id => unlockedAch.add(id));
+    if (Array.isArray(data.buildings)) {
+      data.buildings.forEach(({ index, level }) => {
+        if (STAGES[index]) spawnBuilding(index, Math.min(level || 1, MAX_BUILDING_LEVEL), { grow: false });
+      });
+    } else {
+      // Back-compat with saves from before per-building levels existed.
+      for (let i = 0; i < stageIndex; i++) spawnBuilding(i, 1, { grow: false });
+    }
+    if (data.player) {
+      player.position.set(
+        THREE.MathUtils.clamp(data.player.x || 0, -GROUND_HALF + 2, GROUND_HALF - 2),
+        0,
+        THREE.MathUtils.clamp(data.player.z || 0, -GROUND_HALF + 2, GROUND_HALF - 2)
+      );
+    }
+    const savedWorkers = Math.min(typeof data.workerCount === 'number' ? data.workerCount : 0, WORKER_MAX);
+    for (let i = 0; i < savedWorkers; i++) hireWorker({ free: true });
+  } catch (e) {
+    console.warn('save corrupted, ignoring', e);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/*  RESIZE                                                                  */
+/* ---------------------------------------------------------------------- */
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------------------------------------------------------------------- */
+/*  MOVEMENT + ANIMATE                                                      */
+/* ---------------------------------------------------------------------- */
+const worldUp = new THREE.Vector3(0, 1, 0);
+const camForward = new THREE.Vector3();
+const camRight = new THREE.Vector3();
+const moveDir = new THREE.Vector3();
+let runCycle = 0;
+let lastFootstepPhase = 0;
+
+function updatePlayer(dt) {
+  const prevX = player.position.x;
+  const prevZ = player.position.z;
+
+  let inZ = 0, inX = 0;
+  if (keys.has('KeyW') || keys.has('ArrowUp')) inZ += 1;
+  if (keys.has('KeyS') || keys.has('ArrowDown')) inZ -= 1;
+  if (keys.has('KeyD') || keys.has('ArrowRight')) inX += 1;
+  if (keys.has('KeyA') || keys.has('ArrowLeft')) inX -= 1;
+  inZ += joyVec.z;
+  inX += joyVec.x;
+  inZ = THREE.MathUtils.clamp(inZ, -1, 1);
+  inX = THREE.MathUtils.clamp(inX, -1, 1);
+
+  const moving = Math.abs(inZ) > 0.05 || Math.abs(inX) > 0.05;
+  const sprintRequested = moving && (keys.has('ShiftLeft') || keys.has('ShiftRight') || Math.hypot(joyVec.x, joyVec.z) > 0.92);
+  const sprinting = sprintRequested && stamina > 0.5;
+  stamina = THREE.MathUtils.clamp(stamina + (sprinting ? -STAMINA_DRAIN : STAMINA_REGEN) * dt, 0, STAMINA_MAX);
+  updateStaminaBar();
+
+  if (moving) {
+    camera.getWorldDirection(camForward);
+    camForward.y = 0;
+    camForward.normalize();
+    camRight.crossVectors(camForward, worldUp).normalize();
+
+    moveDir.set(0, 0, 0)
+      .addScaledVector(camForward, inZ)
+      .addScaledVector(camRight, inX);
+    if (moveDir.lengthSq() > 1) moveDir.normalize();
+
+    const speed = PLAYER_SPEED * (sprinting ? SPRINT_MULT : 1);
+    const step = speed * dt;
+    let nx = THREE.MathUtils.clamp(player.position.x + moveDir.x * step, -GROUND_HALF + 1, GROUND_HALF - 1);
+    let nz = THREE.MathUtils.clamp(player.position.z + moveDir.z * step, -GROUND_HALF + 1, GROUND_HALF - 1);
+
+    // Push the player out of any building it would otherwise walk into, sliding along its edge
+    // (both the spiral's buildings and the sawmill's two static buildings).
+    const pushOut = (pos, radius) => {
+      const cd = radius + PLAYER_RADIUS;
+      const dx = nx - pos.x;
+      const dz = nz - pos.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < cd && dist > 0.0001) {
+        const push = cd - dist;
+        nx += (dx / dist) * push;
+        nz += (dz / dist) * push;
+      }
+    };
+    for (const b of buildings) pushOut(b.pos, BUILDING_RADIUS);
+    for (const c of STATIC_COLLIDERS) pushOut(c.pos, c.radius);
+
+    stats.distanceRun += Math.hypot(nx - player.position.x, nz - player.position.z);
+    player.position.x = nx;
+    player.position.z = nz;
+
+    const targetYaw = Math.atan2(moveDir.x, moveDir.z);
+    let delta = targetYaw - player.rotation.y;
+    delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+    player.rotation.y += delta * Math.min(1, dt * 10);
+
+    runCycle += dt * (sprinting ? 14 : 9);
+    const swing = Math.sin(runCycle) * 0.55;
+    legL.rotation.x = swing;
+    legR.rotation.x = -swing;
+    armL.rotation.x = -swing;
+    armR.rotation.x = swing;
+
+    const footPhase = Math.floor(runCycle / Math.PI);
+    if (footPhase !== lastFootstepPhase) {
+      lastFootstepPhase = footPhase;
+      sfx.footstep(footPhase % 2 === 0);
+    }
+  } else {
+    legL.rotation.x = THREE.MathUtils.lerp(legL.rotation.x, 0, dt * 8);
+    legR.rotation.x = THREE.MathUtils.lerp(legR.rotation.x, 0, dt * 8);
+    armL.rotation.x = THREE.MathUtils.lerp(armL.rotation.x, 0, dt * 8);
+    armR.rotation.x = THREE.MathUtils.lerp(armR.rotation.x, 0, dt * 8);
+  }
+
+  // Pad trigger check
+  if (currentPad) {
+    const dist = Math.hypot(player.position.x - currentPad.pos.x, player.position.z - currentPad.pos.z);
+    if (dist < PAD_TRIGGER_RADIUS) {
+      const stage = STAGES[currentPad.index];
+      if (money >= stage.cost) {
+        purchaseCurrentPad();
+      } else if (!currentPad.insufficientShown) {
+        currentPad.insufficientShown = true;
+        sfx.error();
+        toast(t('toast_need_more', { amount: fmt(stage.cost - money) }));
+      }
+    } else if (dist > PAD_TRIGGER_RADIUS * 1.6) {
+      currentPad.insufficientShown = false;
+    }
+  }
+
+  // Upgrade-pad trigger check — several of these can be active at once (one per built building).
+  for (const b of buildings) {
+    const up = b.upgradePad;
+    if (!up) continue;
+    const dist = Math.hypot(player.position.x - up.pos.x, player.position.z - up.pos.z);
+    if (dist < PAD_TRIGGER_RADIUS) {
+      const cost = buildingUpgradeCost(b.index, b.level);
+      if (money >= cost) {
+        upgradeBuilding(b);
+      } else if (!up.insufficientShown) {
+        up.insufficientShown = true;
+        sfx.error();
+        toast(t('toast_need_more_upgrade', { amount: fmt(cost - money) }));
+      }
+    } else if (dist > PAD_TRIGGER_RADIUS * 1.6) {
+      up.insufficientShown = false;
+    }
+  }
+
+  // Worker-hire pad trigger check, same pattern as the building pads above.
+  if (workerPad) {
+    const dist = Math.hypot(player.position.x - workerPad.pos.x, player.position.z - workerPad.pos.z);
+    if (dist < PAD_TRIGGER_RADIUS) {
+      const cost = workerHireCost(workers.length);
+      if (money >= cost.money && planks >= cost.planks) {
+        hireWorker();
+      } else if (!workerPad.insufficientShown) {
+        workerPad.insufficientShown = true;
+        sfx.error();
+        toast(t('toast_need_more_worker', {
+          money: fmt(Math.max(0, cost.money - money)),
+          planks: fmt(Math.max(0, cost.planks - planks)),
+        }));
+      }
+    } else if (dist > PAD_TRIGGER_RADIUS * 1.6) {
+      workerPad.insufficientShown = false;
+    }
+  }
+
+  // OrbitControls.update() recomputes its spherical offset from (camera.position - target)
+  // on every call. Since target now teleports to the player each frame, the camera must be
+  // shifted by the exact same delta first — otherwise the offset (and thus distance) balloons
+  // every frame until it's clamped at maxDistance, leaving the camera stranded far behind.
+  camera.position.x += player.position.x - prevX;
+  camera.position.z += player.position.z - prevZ;
+  controls.target.set(player.position.x, PLAYER_EYE_HEIGHT, player.position.z);
+}
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1);
+
+  updatePlayer(dt);
+  updateSawmill(dt);
+  updateWorkers(dt);
+  updateSmoke(dt);
+
+  for (let i = growingMeshes.length - 1; i >= 0; i--) {
+    const m = growingMeshes[i];
+    const s = m.scale.x;
+    const ns = Math.min(1, s + dt * 4);
+    m.scale.set(ns, ns, ns);
+    if (ns >= 1) growingMeshes.splice(i, 1);
+  }
+
+  if (currentPad) {
+    currentPad.beacon.material.opacity = 0.25 + Math.sin(performance.now() / 300) * 0.12;
+    currentPad.group.rotation.y += dt * 0.6;
+  }
+  for (const b of buildings) {
+    if (b.upgradePad) b.upgradePad.group.rotation.y += dt * 0.9;
+  }
+
+  clouds.forEach(c => {
+    c.position.x += c.userData.speed * dt;
+    if (c.position.x > GROUND_HALF * 1.35) c.position.x = -GROUND_HALF * 1.35;
+  });
+
+  for (let i = particleBursts.length - 1; i >= 0; i--) {
+    const p = particleBursts[i];
+    p.life -= dt;
+    if (p.life <= 0) {
+      scene.remove(p.points);
+      p.points.geometry.dispose();
+      p.points.material.dispose();
+      particleBursts.splice(i, 1);
+      continue;
+    }
+    const pos = p.points.geometry.attributes.position;
+    for (let j = 0; j < p.velocities.length; j++) {
+      const v = p.velocities[j];
+      v.y -= 9 * dt;
+      pos.array[j * 3] += v.x * dt;
+      pos.array[j * 3 + 1] += v.y * dt;
+      pos.array[j * 3 + 2] += v.z * dt;
+    }
+    pos.needsUpdate = true;
+    p.points.material.opacity = Math.max(0, p.life / p.maxLife);
+  }
+
+  updateCompass();
+
+  displayedMoney += (money - displayedMoney) * Math.min(1, dt * 8);
+  if (Math.abs(money - displayedMoney) < 0.5) displayedMoney = money;
+  document.getElementById('money').textContent = fmt(displayedMoney);
+
+  controls.update();
+
+  // Camera shake is a purely visual jitter applied to the already-resolved camera position;
+  // it's undone before the next frame so it never pollutes the follow-cam's base position.
+  camera.position.sub(shakeOffset);
+  if (shakeTime > 0) {
+    shakeTime -= dt;
+    const s = shakeStrength * Math.max(0, shakeTime);
+    shakeOffset.set((Math.random() - 0.5) * s, (Math.random() - 0.5) * s, (Math.random() - 0.5) * s);
+    camera.position.add(shakeOffset);
+  } else {
+    shakeOffset.set(0, 0, 0);
+  }
+
+  renderer.render(scene, camera);
+}
+
+/* ---------------------------------------------------------------------- */
+/*  INIT                                                                   */
+/* ---------------------------------------------------------------------- */
+load();
+applyLanguage();
+if (stageIndex < STAGES.length && !currentPad) spawnPad(stageIndex);
+if (workers.length < WORKER_MAX && !workerPad) spawnWorkerPad();
+
+// Position the camera behind the player, facing the next objective pad (or a sensible
+// default direction once everything is built), so new/returning players immediately see where to run.
+{
+  const aimIndex = Math.min(stageIndex, STAGES.length - 1);
+  const aimPos = stagePosition(aimIndex);
+  const aimDir = new THREE.Vector3(aimPos.x - player.position.x, 0, aimPos.z - player.position.z);
+  if (aimDir.lengthSq() < 0.0001) aimDir.set(0, 0, -1); else aimDir.normalize();
+  camera.position.set(
+    player.position.x - aimDir.x * CAM_DEFAULT_DIST,
+    PLAYER_EYE_HEIGHT + 3.2,
+    player.position.z - aimDir.z * CAM_DEFAULT_DIST
+  );
+  controls.target.set(player.position.x, PLAYER_EYE_HEIGHT, player.position.z);
+  controls.update();
+}
+
+updateHUD();
+updateAchBadge();
+checkAchievements();
+if (!localStorage.getItem(HINT_KEY)) hintOverlay.classList.add('show');
+animate();
+</script>
+</body>
+</html>
