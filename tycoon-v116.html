@@ -3041,26 +3041,54 @@ function buildSawmillScenery() {
     addConveyorSpanBox(scene, a, b, 1.5, 0.28, 0.12, beltMaterialBase);
     addConveyorSpanBox(scene, a, b, 1.12, 0.07, 0.24, beltMaterialTop);
   }
-  for (let i = 0; i < 8; i++) {
+  // v116: support posts used to be spread evenly across the WHOLE belt (i/7 for i=0..7,
+  // mostly along the flat ground run where the belt already rests on the ground and a post
+  // is purely decorative) instead of concentrated where the belt is actually elevated. With
+  // that spacing (~1.36 units) the short ramp transitions (0.55 units each) always landed
+  // fully inside the gap between one ground-level post and the next full-height one --
+  // measured live, no post base ever sat under the ramp itself -- so each slope read as an
+  // unsupported cantilever hanging off the nearest tall post instead of a built bridge. Two
+  // sparse posts still mark the flat ground run at each end for continuity; the bridge itself
+  // (both ramps plus the elevated flat span) now gets a dense, evenly spaced run of trestle
+  // bents sized so one always lands at each ramp's own toe and crest, closing that gap.
+  function addConveyorSupport(worldT) {
     const support = new THREE.Group();
-    const t = i / 7;
-    const elev = conveyorElevationAt(t * beltLen);
-    const pos = new THREE.Vector3().lerpVectors(GENERATOR_POS, SAWMILL_POS, t);
+    const elev = conveyorElevationAt(worldT);
+    const pos = GENERATOR_POS.clone().lerp(SAWMILL_POS, worldT / beltLen);
     // Posts grow to reach the elevated deck instead of floating in mid-air at the old fixed
     // height -- outside the bridge span elev===0 and this is byte-identical to the old geometry.
     const postH = 0.44 + elev;
-    const postL = new THREE.Mesh(new THREE.BoxGeometry(0.12, postH, 0.12), createMetalMaterial(0x746955, { roughness: 0.84, metalness: 0.12 }));
+    const postMat = createMetalMaterial(0x746955, { roughness: 0.84, metalness: 0.12 });
+    const postL = new THREE.Mesh(new THREE.BoxGeometry(0.12, postH, 0.12), postMat);
     const postR = postL.clone();
     postL.position.set(-0.38, postH / 2, 0);
     postR.position.set(0.38, postH / 2, 0);
+    postL.castShadow = postR.castShadow = true;
     const beam = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.08, 0.12), createMetalMaterial(0x8a826f, { roughness: 0.82 }));
     beam.position.set(0, postH, 0);
     support.add(postL, postR, beam);
+    // A real trestle bent braces its two legs with a diagonal cross -- tall bridge posts get
+    // one (thin enough it doesn't compete with the deck above) so the span reads as a built
+    // structure instead of two bare studs holding up a heavy box.
+    if (elev > 0.25) {
+      const dy = postH - 0.14, braceLen = Math.hypot(0.76, dy), braceAngle = Math.atan2(0.76, dy);
+      const braceMat = createMetalMaterial(0x746955, { roughness: 0.84, metalness: 0.12 });
+      for (const sign of [-1, 1]) {
+        const brace = new THREE.Mesh(new THREE.BoxGeometry(0.06, braceLen, 0.06), braceMat);
+        brace.position.set(0, dy / 2 + 0.07, 0);
+        brace.rotation.z = sign * braceAngle;
+        support.add(brace);
+      }
+    }
     support.position.set(pos.x, 0.02, pos.z);
     support.rotation.y = beltAngle;
     support.userData.v116Conveyor = true;
     scene.add(support);
   }
+  const bridgeLoT = CONVEYOR_BRIDGE_T0 - CONVEYOR_BRIDGE_RAMP, bridgeHiT = CONVEYOR_BRIDGE_T1 + CONVEYOR_BRIDGE_RAMP;
+  const bridgeSteps = Math.max(2, Math.round((bridgeHiT - bridgeLoT) / 0.9));
+  for (const f of [0, 1 / 7, 6 / 7, 1]) addConveyorSupport(f * beltLen);
+  for (let i = 0; i <= bridgeSteps; i++) addConveyorSupport(bridgeLoT + (bridgeHiT - bridgeLoT) * i / bridgeSteps);
   for (let i = 0; i < 12; i++) {
     const slat = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.03, 0.16), createWoodMaterial(0x7d6242, { roughness: 0.9 }));
     slat.rotation.y = beltAngle;
@@ -29168,6 +29196,27 @@ function rebuildServiceRoadsV66(){
         addDeckV66(group,a,b,legWidth(a,b),{role:'public-spine',shift:0,awayFrom:null,curb:false,edgeMarks:false});
       }
       if(hubPath.length>2)addJointV66(group,hubPath[1],Math.max(legWidth(hubPath[0],hubPath[1]),legWidth(hubPath[1],hubPath[2]))*.5);
+
+      // v116: the spine above hugs the junction's own X going north, then bends east far
+      // above the depot cluster's own pavement (deck A/the loading apron/liftBay's junction
+      // fillet only reach up to roughly Z=-1.5..-2.4). That leaves a real, unpaved pocket
+      // boxed in by asphalt on every side -- west/north by the spine, south/east by the
+      // depot cluster -- which used to be ordinary open field (nothing enclosed it) and now
+      // reads as a fully-enclosed grass notch cut into the road. Measured live
+      // (roadUnionContours() reports it as an honest 16-point hole, not a union-algorithm
+      // artefact -- scratchpad/conveyor116/loops.json): bbox x[-17.17,-14.52] z[-2.36,-0.91].
+      // Close it with one infill deck, sized generously past every neighbour's own edge so
+      // it only ever overlaps existing asphalt and never opens a new seam.
+      if(hubPath.length>1&&nodes.get('liftBay')&&nodes.get('sawmillBypass')){
+        const spineHalfW=legWidth(hubPath[0],hubPath[1])*.5;
+        const gapX0=hubPath[0].x+spineHalfW-.15,gapX1=nodes.get('liftBay').p.x-.15;
+        const gapZ0=nodes.get('sawmillBypass').p.z+base*.5-.2,gapZ1=hubPath[1].z-spineHalfW+.15;
+        if(gapX1>gapX0&&gapZ1>gapZ0){
+          const midZ=(gapZ0+gapZ1)*.5;
+          const infill=addDeckV66(group,new THREE.Vector3(gapX0,0,midZ),new THREE.Vector3(gapX1,0,midZ),gapZ1-gapZ0,{role:'public-spine',shift:0,awayFrom:null,curb:false,edgeMarks:false});
+          if(infill)infill.userData.v116SpineGapInfill=true;
+        }
+      }
     }
 
     scene.add(group);cityWorldRuntime.transportAccessRoads=group;roadGroupV66=group;
@@ -29201,17 +29250,21 @@ function rebuildServiceRoadsV66(){
     }
     const fleet=safe(()=>window.__TYCOON_V65_TRAFFIC__?.run?.())||null;
     const group=cityWorldRuntime?.transportAccessRoads;
-    const decks=[];let hasApron=false,hasMouth=false;
-    group?.traverse?.(o=>{if(o.userData?.v66ServiceRoad)decks.push(o);if(o.userData?.v66SawmillApron)hasApron=true;if(o.userData?.v67SawmillMouth)hasMouth=true;});
+    const decks=[];let hasApron=false,hasMouth=false,hasSpineGapInfill=false;
+    group?.traverse?.(o=>{if(o.userData?.v66ServiceRoad)decks.push(o);if(o.userData?.v66SawmillApron)hasApron=true;if(o.userData?.v67SawmillMouth)hasMouth=true;if(o.userData?.v116SpineGapInfill)hasSpineGapInfill=true;});
     return {
       version:VERSION,
       serviceDecks:decks.length,
       sawmillApron:hasApron,
       sawmillMouth:hasMouth,
+      spineGapInfill:hasSpineGapInfill,
       colliderIssues,
       fleet,
       checks:{
-        serviceRoadsRendered:decks.length===nodes0.filter(n=>{const p=nodes.get(n.parent);return p&&!(n.p.z>=4.4&&p.p.z>=4.4&&n.p.x>=-14.6&&n.p.x<=-2.8);}).length&&hasApron&&hasMouth,
+        // v116: +1 accounts for the spine/depot-cluster gap-infill deck added above -- it has
+        // no matching graph edge (it bridges two already-drawn systems, not a node pair), so
+        // the raw graph-edge count alone would always read one short once it exists.
+        serviceRoadsRendered:decks.length===nodes0.filter(n=>{const p=nodes.get(n.parent);return p&&!(n.p.z>=4.4&&p.p.z>=4.4&&n.p.x>=-14.6&&n.p.x<=-2.8);}).length+(hasSpineGapInfill?1:0)&&hasApron&&hasMouth,
         noRoadBuildingOverlap:colliderIssues.length===0,
         v65FleetAuditOk:!fleet||((fleet.overlaps?.length||0)===0&&(fleet.sourceQueues?.length||0)===0)
       }
