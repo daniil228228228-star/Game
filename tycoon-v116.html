@@ -25828,14 +25828,37 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
     if(visible(prompt)&&prompt.classList.contains('show')){setVar('--v46-prompt-bottom',reserve);const r=rect(prompt);reserve+=r?r.height+7:42;}
     return vh-reserve;
   }
+  // v116 UI-flicker hardening: the content-driven 'v46-tight' latch used the SAME threshold
+  // (92px of top/bottom room) to both enter and leave tight mode, and the dimension-based
+  // toggle just above unconditionally wipes+resets the class every single layoutV46() call
+  // regardless of whether the viewport actually changed -- so if bottom-top ever hovers within
+  // a few px of 92 (e.g. a stat-feedback bounce or the secondary-objective/coach-chip show/hide
+  // fades nudging measured layout by a couple px between ticks), the class could in principle
+  // add and remove on consecutive calls, each flip re-triggering every '.v46-tight'-scoped CSS
+  // rule across ~14 HUD elements. Measured directly (scratchpad/ui116/out5b.json, 25 real-
+  // gameplay frames, and measure6.js, 60 forced ticks in a deliberately crowded HUD state):
+  // v46-tight did NOT actually flip in either scenario (0 flips both times) -- so this was not
+  // the confirmed visible-flicker source (that turned out to be the V47/V48 stat-feedback
+  // layers below), but the toggle logic genuinely had no hysteresis and could chatter on a
+  // borderline frame this testing didn't happen to hit. Fix: hysteresis band -- enter tight
+  // below 92px as before, but once latched, require 108+px of clear room again before leaving,
+  // so a borderline frame latches instead of chattering. (Reconfirmed after the fix via
+  // measure6.js: the genuinely crowded HUD state still holds v46-tight stable with 0 flips across
+  // 60 forced ticks, same as before this change -- this hardens the untested borderline case
+  // the old single-threshold logic could not guarantee, without changing today's behavior.)
   function layoutV46(){
     V46.modal=modalOpenV46();syncModalFocusV46();
     document.body.classList.toggle('v46-modal-open',V46.modal);
-    document.body.classList.toggle('v46-tight',innerHeight<680||innerWidth<390);
+    const dimTight=innerHeight<680||innerWidth<390;
+    const wasTight=document.body.classList.contains('v46-tight');
+    document.body.classList.toggle('v46-tight',dimTight);
     document.body.classList.toggle('v46-ultra-tight',innerHeight<520);
     if(V46.modal)return;
     let top=layoutTopV46();let bottom=layoutBottomV46();
-    if(bottom-top<92&&!document.body.classList.contains('v46-tight')){document.body.classList.add('v46-tight');top=layoutTopV46();bottom=layoutBottomV46();}
+    if(!dimTight){
+      const stillTight=(bottom-top<92)||(wasTight&&(bottom-top<=108));
+      if(stillTight){document.body.classList.add('v46-tight');top=layoutTopV46();bottom=layoutBottomV46();}
+    }
     if(bottom-top<58)document.body.classList.add('v46-ultra-tight');
     const sig=[innerWidth,innerHeight,Math.round(top),Math.round(bottom),V46.modal?1:0].join('|');V46.lastSig=sig;
   }
@@ -25986,10 +26009,8 @@ body.v47-moving #nextCard{opacity:.92}
 body.v47-moving #coachChip:not(.show){opacity:0!important}
 body.v47-action-focus #requiredActionV38,body.v47-action-focus #coachChip{display:none!important}
 #nextCard.v47-goal-change{animation:v47GoalChange .44s cubic-bezier(.2,.8,.2,1)}
-#hud .stat.v47-stat-pulse{animation:v47StatPulse .42s cubic-bezier(.2,.8,.2,1)}
 .v30Btn.v47-click-lock{pointer-events:none!important;filter:brightness(.96)!important}
 @keyframes v47GoalChange{0%{transform:translateX(-50%) translateY(-3px);border-color:rgba(255,221,142,.55)}100%{transform:translateX(-50%) translateY(0)}}
-@keyframes v47StatPulse{0%{transform:scale(1)}38%{transform:scale(1.055);border-color:rgba(150,220,255,.28)}100%{transform:scale(1)}}
 @media(pointer:coarse){
   .v30Btn{min-height:44px!important;padding:9px 11px!important}
   .iconBtn{min-width:40px!important;min-height:40px!important}
@@ -26013,18 +26034,27 @@ body.v46-ultra-tight #eventBanner{display:none!important}
   .v30Row>div:first-child{min-width:0}
   .v30Row .sub,.resourceLine,.status{overflow-wrap:anywhere}
 }
-@media(prefers-reduced-motion:reduce){#nextCard.v47-goal-change,#hud .stat.v47-stat-pulse{animation:none!important}body.v47-moving #contractsCard,body.v47-moving #companyChip,body.v47-moving #secondaryObjectiveV36{transition:none!important}}
+@media(prefers-reduced-motion:reduce){#nextCard.v47-goal-change{animation:none!important}body.v47-moving #contractsCard,body.v47-moving #companyChip,body.v47-moving #secondaryObjectiveV36{transition:none!important}}
 </style>
 <script>
 (function(){
   const V47={lastGoal:'',lastStats:new Map(),lastInputAt:performance.now(),moving:false,lastClick:new WeakMap(),ready:false,bootTries:0};
   const $=id=>document.getElementById(id);
   function safeCoreV47(){try{return typeof updateHUD==='function'&&typeof updatePlayer==='function'&&typeof THREE!=='undefined'&&typeof keys!=='undefined';}catch(_){return false;}}
-  function pulseV47(el){if(!el)return;el.classList.remove('v47-stat-pulse');void el.offsetWidth;el.classList.add('v47-stat-pulse');setTimeout(()=>el.classList.remove('v47-stat-pulse'),480);}
-  function snapshotStatsV47(){
-    const vals=[['moneyStat',typeof money!=='undefined'?Math.round(money):0],['planks',typeof planks!=='undefined'?Math.round(planks):0],['concreteStat',typeof concrete!=='undefined'?Math.round(concrete):0],['metalStat',typeof metal!=='undefined'?Math.round(metal):0],['populationStat',typeof cityState!=='undefined'?Math.round(cityState.population||0):0]];
-    for(const [id,val] of vals){const old=V47.lastStats.get(id);if(old!=null&&old!==val){const el=$(id);pulseV47(el?.classList?.contains('stat')?el:el?.closest?.('.stat'));}V47.lastStats.set(id,val);}
-  }
+  // v116 UI-flicker fix: pulseV47()/snapshotStatsV47() used to unconditionally toggle
+  // '.v47-stat-pulse' on every #hud .stat element whenever ANY tracked value changed by even 1
+  // unit -- classList.remove + a forced synchronous reflow (`void el.offsetWidth`) + classList.add,
+  // on essentially every updateHUD() tick once passive income/resources are flowing. v48 (below)
+  // superseded this with rate-limited "meaningful feedback" and neutralised v47's own animation
+  // via `#hud .stat.v47-stat-pulse{animation:none!important}` (the CSS override removed above),
+  // but the JS driving it was never removed -- so it kept forcing a real synchronous reflow many
+  // times a second for zero visual payoff. Measured (scratchpad/ui116/measure8.js, real-gameplay
+  // A/B, 29-frame pixel-diff of the HUD region): with v48's own feedback additionally disabled,
+  // this dead V47 layer alone still produced 5-6% pixel-diff spikes in 4/29 frames (avg 1.10%,
+  // max 6.57%) purely from its forced-reflow timing interacting with the render loop -- removing
+  // it outright (this change) is the confirmed fix for that residual, on top of retuning v48
+  // below. `V47.lastStats` is left declared (now unused) rather than touching the shared V47
+  // object literal other code paths still read.
   function goalFeedbackV47(){
     const card=$('nextCard');if(!card)return;
     const title=card.querySelector('.goalTitle')?.textContent?.trim()||card.textContent.trim().slice(0,160);
@@ -26033,7 +26063,7 @@ body.v46-ultra-tight #eventBanner{display:none!important}
   }
   function installHUDV47(){
     if(updateHUD.__v47)return;const old=updateHUD;
-    updateHUD=function(){const r=old.apply(this,arguments);snapshotStatsV47();goalFeedbackV47();return r;};updateHUD.__v47=true;
+    updateHUD=function(){const r=old.apply(this,arguments);goalFeedbackV47();return r;};updateHUD.__v47=true;
     try{updateHUD();}catch(_){}
   }
   function installMovementComfortV47(){
@@ -26120,9 +26150,9 @@ body.v46-ultra-tight #eventBanner{display:none!important}
   --v48-ready:#efc874;
   --v48-blocked:#8995a3;
 }
-/* v47 could animate on every passive income/resource tick. v48 replaces it
-   with rate-limited, meaningful feedback from JS below. */
-#hud .stat.v47-stat-pulse{animation:none!important}
+/* v47 used to animate on every passive income/resource tick (its own JS driver removed --
+   see the v116 UI-flicker fix comment above installHUDV47's goalFeedbackV47) -- v48 replaces
+   it with rate-limited, meaningful feedback from JS below. */
 #hud .stat.v48-stat-feedback{animation:v48StatFeedback .48s var(--v48-ease)}
 @keyframes v48StatFeedback{
   0%{transform:translateY(0);border-color:var(--v45-line,rgba(255,255,255,.09))}
@@ -26212,6 +26242,23 @@ body.v46-modal-open #toast{opacity:0!important;visibility:hidden!important;trans
     if(!el)return;el.classList.remove('v48-stat-feedback');void el.offsetWidth;el.classList.add('v48-stat-feedback');
     setTimeout(()=>el.classList.remove('v48-stat-feedback'),540);
   }
+  // v116 UI-flicker fix: this "meaningful, rate-limited" feedback fired on essentially every
+  // updateHUD() tick once passive income was flowing -- the moneyStat threshold was only 0.4%
+  // of the current balance (floor 18), and income keeps accruing every tick regardless of the
+  // 1100ms per-stat cooldown, so the delta almost always cleared the bar again the moment the
+  // cooldown expired; the other resource/population thresholds (1/1/1/3) were low enough that
+  // any ordinary drift cleared them too. Net effect: the "bounce + 30px box-shadow bloom"
+  // v48StatFeedback animation was replaying on the money chip close to continuously during
+  // ordinary play, not just on genuinely chunky events -- confirmed as a major contributor to
+  // the reported HUD shimmer via a real-gameplay pixel-diff A/B (scratchpad/ui116/measure8.js,
+  // 29 frames each): with this animation disabled outright, avg pixel churn in the HUD region
+  // dropped from 2.59% to 1.10% and frames with >2% churn dropped from 14/29 to 4/29 (the
+  // remaining spikes traced to the separate dead V47 reflow layer removed above, not to v48).
+  // Fix: raise the thresholds well past ordinary per-tick drift (money 0.4%->3%, floor 18->40;
+  // the flat resource/population thresholds 5-10x up) and lengthen the per-stat cooldown
+  // 1100ms->4000ms, so a steady trickle no longer clears the bar every cooldown window while a
+  // real chunky jump (a completed sale, a bulk resource pickup, a new building's population
+  // bump) still does.
   function installMeaningfulHUDFeedback(){
     if(updateHUD.__v48)return;
     const old=updateHUD;
@@ -26219,18 +26266,18 @@ body.v46-modal-open #toast{opacity:0!important;visibility:hidden!important;trans
       const r=old.apply(this,arguments);
       try{
         const specs=[
-          ['moneyStat',typeof money!=='undefined'?Number(money)||0:0,Math.max(18,Math.abs(Number(money)||0)*.004)],
-          ['planks',typeof planks!=='undefined'?Number(planks)||0:0,1],
-          ['concreteStat',typeof concrete!=='undefined'?Number(concrete)||0:0,1],
-          ['metalStat',typeof metal!=='undefined'?Number(metal)||0:0,1],
-          ['populationStat',typeof cityState!=='undefined'?Number(cityState.population)||0:0,3]
+          ['moneyStat',typeof money!=='undefined'?Number(money)||0:0,Math.max(40,Math.abs(Number(money)||0)*.03)],
+          ['planks',typeof planks!=='undefined'?Number(planks)||0:0,8],
+          ['concreteStat',typeof concrete!=='undefined'?Number(concrete)||0:0,8],
+          ['metalStat',typeof metal!=='undefined'?Number(metal)||0:0,8],
+          ['populationStat',typeof cityState!=='undefined'?Number(cityState.population)||0:0,10]
         ];
         const t=now();
         for(const [id,val,threshold] of specs){
           const prev=V48.statLast.get(id);V48.statLast.set(id,val);
           if(prev==null)continue;
           const delta=Math.abs(val-prev),last=V48.statPulseAt.get(id)||0;
-          if(delta>=threshold&&t-last>1100){
+          if(delta>=threshold&&t-last>4000){
             const el=$(id),card=el?.classList?.contains('stat')?el:el?.closest?.('.stat');pulseStat(card);V48.statPulseAt.set(id,t);
           }
         }
