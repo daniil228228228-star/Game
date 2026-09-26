@@ -1974,10 +1974,8 @@ function projectToMasterRoadGridV116(pos){
    connects to `junction` -- a second, independent fix, needed only because of the relocation).
    Measured after both changes (scratchpad/zone116/regress1.js, real OBB-vs-OBB, not naive
    AABB): 0 overlaps between the belt and any service-road deck (was 2, then 3 more appeared
-   from the entry-side issue before that was fixed too) -- the elevated conveyor bridge
-   (CONVEYOR_BRIDGE_*, still in place as of this commit) is therefore geometrically unnecessary
-   now; de-elevating it is a separate, following commit so the two changes can be reviewed and
-   reverted independently.
+   from the entry-side issue before that was fixed too) -- so the elevated conveyor bridge is
+   no longer needed at all (see buildSawmillScenery(), belt de-elevated to ground).
    This reroute also fixes a second, independently-reported issue: `sawmillBypass` used to be
    a real 4-way junction (public road in, depotWest out, plankBay out, liftBay out) serving
    only 3 actual destination groups, with one of those 4 decks (`plankBay`'s, back toward
@@ -2859,51 +2857,27 @@ const STATIC_COLLIDERS = [
   { pos: METAL_YARD_POS, radius: 1.75 },
 ];
 
-/* v116: the depot service road segment `sawmillBypass`->`depotWest` (serviceAccessGraph(),
-   rendered as `v66Role:'sawmill-access'` in v67-sawmill-road-surface-final) runs directly
-   across this belt's real footprint. Measured live with an actual OBB-vs-OBB test (not a naive
-   AABB check, which false-positives on ~100+ unrelated meshes here -- see
-   scratchpad/roads116/conveyor_measure3.js): 2 real overlaps (beltBase depth 1.5, beltTop depth
-   1.12 -- i.e. the road's whole paved width sits inside the belt's footprint at the crossing).
-   A lateral road detour does NOT fix this: `geom_solve.js`/`geom_solve2.js` prove the road
-   segment's two endpoints (sawmillBypass, depotWest) sit on OPPOSITE sides of the belt's
-   centerline, well inside its length -- not near either end -- so any kink between them either
-   still crosses the belt or has to swing wide enough to cut through the generator/sawmill
-   building collider. Real mill conveyors commonly span a yard access road on a short raised
-   bridge; that's the fix applied in buildSawmillScenery() below -- only the belt's own meshes
-   move (up, over the exact stretch the road crosses), the road/route graph is untouched. */
-const CONVEYOR_BRIDGE_T0 = 2.10;   // world units from GENERATOR_POS along the belt centerline
-const CONVEYOR_BRIDGE_T1 = 5.60;   // .. measured extent of the real road/belt OBB overlap + margin
-const CONVEYOR_BRIDGE_RAMP = 0.55; // extra run for each sloped transition either side of the span
-const CONVEYOR_BRIDGE_H = 1.42;    // belt underside clearance over the tallest service-truck roof (~1.0) with margin
-function conveyorElevationAt(t) {
-  const t0 = CONVEYOR_BRIDGE_T0, t1 = CONVEYOR_BRIDGE_T1, r = CONVEYOR_BRIDGE_RAMP;
-  if (t <= t0 - r) return 0;
-  if (t < t0) return CONVEYOR_BRIDGE_H * (t - (t0 - r)) / r;
-  if (t <= t1) return CONVEYOR_BRIDGE_H;
-  if (t < t1 + r) return CONVEYOR_BRIDGE_H * (1 - (t - t1) / r);
-  return 0;
-}
-// Builds one straight belt-deck slice between two points ALONG the belt centerline (world units
-// from GENERATOR_POS), each end independently elevated via conveyorElevationAt(). Reuses the
-// exact yaw-only basis the flat single-box version used (verified: with zAxis=beltDirNorm and no
-// tilt, cross(worldUp,zAxis) reduces to the same local-X the old `rotation.y=beltAngle` produced)
-// so a flat span (elev(a)===elev(b)) renders pixel-identical to the pre-fix geometry.
-function addConveyorSpanBox(container, t0, t1, width, thickness, baseY, material) {
-  const dir = new THREE.Vector3().subVectors(SAWMILL_POS, GENERATOR_POS).normalize();
-  const A = GENERATOR_POS.clone().addScaledVector(dir, t0); A.y = baseY + conveyorElevationAt(t0);
-  const B = GENERATOR_POS.clone().addScaledVector(dir, t1); B.y = baseY + conveyorElevationAt(t1);
-  const zAxis = new THREE.Vector3().subVectors(B, A).normalize();
-  const worldUp = new THREE.Vector3(0, 1, 0);
-  let xAxis = new THREE.Vector3().crossVectors(worldUp, zAxis);
-  if (xAxis.lengthSq() < 1e-8) xAxis.set(1, 0, 0); else xAxis.normalize();
-  const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, thickness, A.distanceTo(B)), material);
-  mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis));
-  mesh.position.set((A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2);
+/* v116 (de-elevation): this belt used to cross the depot service road segment
+   `sawmillBypass`->`depotWest` (measured live with a real OBB-vs-OBB test: 2 overlaps, depth
+   1.5/1.12 -- see git history / ROADS_V116_NOTES.md for the original investigation), so it was
+   raised onto a short bridge over the exact stretch the road crossed (`CONVEYOR_BRIDGE_*`,
+   `conveyorElevationAt()`, `addConveyorSpanBox()`, plus braced support posts). The industrial-
+   zone relocation above did not remove that crossing by itself (a road segment launching from
+   BETWEEN the belt's two endpoints in X will always cross it, wherever the cluster sits) -- what
+   removes it is the companion change in serviceAccessGraph() (see its own big v116 comment):
+   `depotWest` no longer descends off `sawmillBypass` directly between GENERATOR_POS and
+   SAWMILL_POS; it now reaches the concrete/metal corridor via `depotDetourE`/`depotDetourS`,
+   which stay east of BOTH building anchors the whole way down. Measured after that reroute
+   (scratchpad/zone116/conveyor_crossing_after.js, same real OBB-vs-OBB method as the original
+   investigation): 0 overlaps between the belt and any service-road deck. With nothing left to
+   clear, the belt is back to two simple flat boxes at ground level -- no ramp, no elevation
+   profile, no bracing. */
+function addConveyorFlatBox(width, thickness, baseY, material, beltAngle, beltLen) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, thickness, beltLen), material);
+  mesh.position.set((GENERATOR_POS.x + SAWMILL_POS.x) / 2, baseY, (GENERATOR_POS.z + SAWMILL_POS.z) / 2);
+  mesh.rotation.y = beltAngle;
   mesh.receiveShadow = true;
   mesh.userData.v116Conveyor = true;
-  container.add(mesh);
   return mesh;
 }
 
@@ -3134,43 +3108,18 @@ function buildSawmillScenery() {
   const beltAngle = Math.atan2(beltDir.x, beltDir.z);
   const beltDirNorm = beltDir.clone().normalize();
 
-  // v116: beltBase/beltTop used to be ONE flat box each, spanning generator->sawmill straight
-  // through the depot service road (see the CONVEYOR_BRIDGE_* comment above STATIC_COLLIDERS).
-  // Sliced into 5 co-linear spans -- ground / ramp-up / elevated / ramp-down / ground -- so the
-  // belt rises into a short bridge exactly over the stretch the road actually crosses and is
-  // flat everywhere else (a flat span, where both ends share the same elevation, renders
-  // identically to the old single box; only the bridged stretch looks different).
+  // v116 (de-elevation): back to two simple flat boxes -- see the comment above
+  // addConveyorFlatBox() for why the bridge is gone.
   const beltMaterialBase = createCorrugatedMaterial(0x2b2f38, { roughness: 0.88, metalness: 0.16 });
   const beltMaterialTop = createCorrugatedMaterial(0x3a3f49, { roughness: 0.84, metalness: 0.16 });
-  const beltSpansV116 = [
-    [0, CONVEYOR_BRIDGE_T0 - CONVEYOR_BRIDGE_RAMP],
-    [CONVEYOR_BRIDGE_T0 - CONVEYOR_BRIDGE_RAMP, CONVEYOR_BRIDGE_T0],
-    [CONVEYOR_BRIDGE_T0, CONVEYOR_BRIDGE_T1],
-    [CONVEYOR_BRIDGE_T1, CONVEYOR_BRIDGE_T1 + CONVEYOR_BRIDGE_RAMP],
-    [CONVEYOR_BRIDGE_T1 + CONVEYOR_BRIDGE_RAMP, beltLen],
-  ];
-  for (const [a, b] of beltSpansV116) {
-    if (b - a < 0.02) continue;
-    addConveyorSpanBox(scene, a, b, 1.5, 0.28, 0.12, beltMaterialBase);
-    addConveyorSpanBox(scene, a, b, 1.12, 0.07, 0.24, beltMaterialTop);
-  }
-  // v116: support posts used to be spread evenly across the WHOLE belt (i/7 for i=0..7,
-  // mostly along the flat ground run where the belt already rests on the ground and a post
-  // is purely decorative) instead of concentrated where the belt is actually elevated. With
-  // that spacing (~1.36 units) the short ramp transitions (0.55 units each) always landed
-  // fully inside the gap between one ground-level post and the next full-height one --
-  // measured live, no post base ever sat under the ramp itself -- so each slope read as an
-  // unsupported cantilever hanging off the nearest tall post instead of a built bridge. Two
-  // sparse posts still mark the flat ground run at each end for continuity; the bridge itself
-  // (both ramps plus the elevated flat span) now gets a dense, evenly spaced run of trestle
-  // bents sized so one always lands at each ramp's own toe and crest, closing that gap.
+  scene.add(addConveyorFlatBox(1.5, 0.28, 0.12, beltMaterialBase, beltAngle, beltLen));
+  scene.add(addConveyorFlatBox(1.12, 0.07, 0.24, beltMaterialTop, beltAngle, beltLen));
+  // v116 (de-elevation): support posts back to a constant height, evenly spread across the
+  // whole belt -- no more bridge, so no dense run of tall braced posts concentrated over it.
   function addConveyorSupport(worldT) {
     const support = new THREE.Group();
-    const elev = conveyorElevationAt(worldT);
     const pos = GENERATOR_POS.clone().lerp(SAWMILL_POS, worldT / beltLen);
-    // Posts grow to reach the elevated deck instead of floating in mid-air at the old fixed
-    // height -- outside the bridge span elev===0 and this is byte-identical to the old geometry.
-    const postH = 0.44 + elev;
+    const postH = 0.44;
     const postMat = createMetalMaterial(0x746955, { roughness: 0.84, metalness: 0.12 });
     const postL = new THREE.Mesh(new THREE.BoxGeometry(0.12, postH, 0.12), postMat);
     const postR = postL.clone();
@@ -3180,28 +3129,12 @@ function buildSawmillScenery() {
     const beam = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.08, 0.12), createMetalMaterial(0x8a826f, { roughness: 0.82 }));
     beam.position.set(0, postH, 0);
     support.add(postL, postR, beam);
-    // A real trestle bent braces its two legs with a diagonal cross -- tall bridge posts get
-    // one (thin enough it doesn't compete with the deck above) so the span reads as a built
-    // structure instead of two bare studs holding up a heavy box.
-    if (elev > 0.25) {
-      const dy = postH - 0.14, braceLen = Math.hypot(0.76, dy), braceAngle = Math.atan2(0.76, dy);
-      const braceMat = createMetalMaterial(0x746955, { roughness: 0.84, metalness: 0.12 });
-      for (const sign of [-1, 1]) {
-        const brace = new THREE.Mesh(new THREE.BoxGeometry(0.06, braceLen, 0.06), braceMat);
-        brace.position.set(0, dy / 2 + 0.07, 0);
-        brace.rotation.z = sign * braceAngle;
-        support.add(brace);
-      }
-    }
     support.position.set(pos.x, 0.02, pos.z);
     support.rotation.y = beltAngle;
     support.userData.v116Conveyor = true;
     scene.add(support);
   }
-  const bridgeLoT = CONVEYOR_BRIDGE_T0 - CONVEYOR_BRIDGE_RAMP, bridgeHiT = CONVEYOR_BRIDGE_T1 + CONVEYOR_BRIDGE_RAMP;
-  const bridgeSteps = Math.max(2, Math.round((bridgeHiT - bridgeLoT) / 0.9));
-  for (const f of [0, 1 / 7, 6 / 7, 1]) addConveyorSupport(f * beltLen);
-  for (let i = 0; i <= bridgeSteps; i++) addConveyorSupport(bridgeLoT + (bridgeHiT - bridgeLoT) * i / bridgeSteps);
+  for (let i = 0; i <= 7; i++) addConveyorSupport((i / 7) * beltLen);
   for (let i = 0; i < 12; i++) {
     const slat = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.03, 0.16), createWoodMaterial(0x7d6242, { roughness: 0.9 }));
     slat.rotation.y = beltAngle;
@@ -3213,19 +3146,17 @@ function buildSawmillScenery() {
   const rollerMat = createMetalMaterial(0x9099a6, { roughness: 0.46, metalness: 0.5 });
   for (let i = 0; i < 10; i++) {
     const t = (i + 0.5) / 10;
-    const elev = conveyorElevationAt(t * beltLen);
     const pos = new THREE.Vector3().lerpVectors(GENERATOR_POS, SAWMILL_POS, t);
     const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.02, 14), rollerMat);
     roller.rotation.z = Math.PI / 2;
     roller.rotation.y = beltAngle;
-    roller.position.set(pos.x, 0.27 + elev, pos.z);
+    roller.position.set(pos.x, 0.27, pos.z);
     roller.userData.v116Conveyor = true;
     scene.add(roller);
   }
   const motor = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.5, 0.72), createMetalMaterial(0x3d6b85, { roughness: 0.5, metalness: 0.24 }));
   const motorPos = new THREE.Vector3().lerpVectors(GENERATOR_POS, SAWMILL_POS, 0.82);
-  const motorElev = conveyorElevationAt(0.82 * beltLen);
-  motor.position.set(motorPos.x + Math.cos(beltAngle) * 0.94, 0.3 + motorElev, motorPos.z - Math.sin(beltAngle) * 0.94);
+  motor.position.set(motorPos.x + Math.cos(beltAngle) * 0.94, 0.3, motorPos.z - Math.sin(beltAngle) * 0.94);
   motor.rotation.y = beltAngle;
   motor.userData.v116Conveyor = true;
   scene.add(motor);
@@ -4320,11 +4251,8 @@ function updateSawmill(dt) {
     for (const slat of conveyorSlats) {
       slat.offset = (slat.offset + dt * 2.8) % conveyorData.length;
       const pos = conveyorData.flatStart.clone().addScaledVector(conveyorData.dir, slat.offset);
-      // v116: flatStart already sits ~0.02*beltLen along from GENERATOR_POS -- fold that back in
-      // so a moving slat picks up the same bridge elevation as the static belt deck beneath it
-      // instead of floating at a fixed height through the raised span (see CONVEYOR_BRIDGE_*).
-      const beltT = (conveyorData.length * 0.02 + slat.offset) % conveyorData.length;
-      slat.mesh.position.set(pos.x, 0.24 + conveyorElevationAt(beltT), pos.z);
+      // v116 (de-elevation): belt is flat again, so a moving slat just sits at the deck height.
+      slat.mesh.position.set(pos.x, 0.24, pos.z);
       slat.mesh.rotation.y = conveyorData.angle;
     }
   }
@@ -4865,9 +4793,8 @@ function addBollard(group, x, z, color = 0xffbf50) {
 
 // v116 industrial-cluster art pass: a straight pipe/conduit between two arbitrary points, used to
 // visually connect process equipment (e.g. silo -> mixer feed) instead of leaving them as
-// unconnected props. Shares the "compute length + orient via quaternion" approach the file
-// already uses for spans (see addConveyorSpanBox above), just simplified to a single cylinder
-// since a pipe has no need for the belt's per-slice elevation profile.
+// unconnected props. Same "compute length + orient" idea the file uses for the conveyor belt
+// box (addConveyorFlatBox above), just as a single cylinder instead of an oriented box.
 function addPipeSpan(group, a, b, radius, material) {
   const dir = new THREE.Vector3().subVectors(b, a);
   const len = dir.length();
