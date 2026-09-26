@@ -28535,6 +28535,12 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
   function rebuildParkingV65(){
     if(parkingGroupV65){scene.remove(parkingGroupV65);safe(()=>disposeObject3D(parkingGroupV65));}
     const g=new THREE.Group();g.name='v116FleetYard';
+    // Every child below carries its own absolute world-ish local coordinate (e.g. lot at
+    // -8.70/6.72). This root group itself MUST stay at the origin -- see the v116FleetYard
+    // exclusion in v102-label-and-road-clearance's nudgeGroup() for why: it was previously
+    // walked and shifted by an unrelated "keep UI pads off the road" pass because this whole
+    // root's name happened to match a text regex meant for small UI pads, not infrastructure.
+    g.position.set(0,0,0);
 
     // v116: this is a PARKING LOT, not another road family.
     // The visible service road stops at the gate. Vehicle graph nodes may continue
@@ -32103,7 +32109,34 @@ function addDashes(root,footprints=[]){
   addExposedEdges(root,layer,footprints);
   if(layer.children.length)root.add(layer);return count;
 }
+  // v116.1 root-cause fix: apply() used to tear down and rebuild every dash/edge-paint mesh
+  // (addDashes -> removeLayer+recreate) on EVERY call, even when nothing about the road network
+  // had changed -- this is the actual mechanism behind "the road gets relaid after every upgrade"
+  // (an unrelated action like a garage purchase still funnels into syncAll() -> apply()). The
+  // underlying asphalt union already skips unchanged geometry via lastUnionSignature; markings had
+  // no equivalent guard. Same idiom as serviceGraphSignature()/drivewaySig() elsewhere in this file:
+  // compute a cheap structural signature of the real road-deck meshes and skip the whole pass,
+  // returning the previous result, when it is unchanged. A real add/remove (new stage, new district
+  // road level, new access spur) always changes the uuid set or a condition value, so it still
+  // rebuilds -- this only removes churn that produced literally the same output.
+  let lastApplyInputSignature='',lastApplyOutput=null;
+  function applyInputSignature(){
+    const parts=[];
+    for(const r of roots()){
+      r?.traverse?.(o=>{
+        if(!o?.isMesh)return;
+        const u=o.userData||{};
+        if(!(u.v59RoadDeck||u.v66ServiceRoad||u.v86StageRoad||u.v86Curve||u.v59Intersection||u.v86Junction||u.v105PullInBay))return;
+        parts.push(o.uuid+':'+(o.visible!==false?1:0));
+      });
+    }
+    const districtConditions=(typeof CITY_DISTRICTS!=='undefined'&&typeof roadConditionV40==='function')
+      ?CITY_DISTRICTS.map(c=>Math.floor(roadConditionV40(c.id)/5)).join(',') : '';
+    return parts.length+'|'+districtConditions+'|'+parts.join(',');
+  }
   function apply(){
+    const sig=applyInputSignature();
+    if(lastApplyOutput&&sig===lastApplyInputSignature)return lastApplyOutput;
     let dashes=0;const all=roots();for(const r of all){hideLegacy(r);normalizeAsphalt(r);}const footprints=surfaceFootprints();
     let union;
     try{union=rebuildRoadUnion(footprints);}catch(error){
@@ -32113,7 +32146,9 @@ function addDashes(root,footprints=[]){
       for(const f of footprints)if(f.mesh.userData.v113UnionSource){f.mesh.visible=true;delete f.mesh.userData.v113UnionSource;}
       lastUnionSignature='';union=lastUnionResult={error:String(error)};console.error('[road union]',error);
     }
-    for(const r of all)dashes+=addDashes(r,footprints);return {...audit(dashes),union};
+    for(const r of all)dashes+=addDashes(r,footprints);
+    lastApplyInputSignature=sig;
+    return lastApplyOutput={...audit(dashes),union};
   }
   function scheduleApply(delay=90){
     clearTimeout(markingApplyTimer);
@@ -32513,14 +32548,25 @@ function addDashes(root,footprints=[]){
       }
       // Nudge the actual interaction pads/groups that tend to sit too close to roads:
       // team / city / fleet pads, world buttons, logistics pads.
-      const txt=(obj?.userData?.labelText||'')+' '+(obj?.name||'');
-      const padLike=
+      // v116.1 root-cause fix: this used to also match on obj.name (via `txt`), so any whole
+      // infrastructure root whose OWN name happened to contain "Fleet"/"City"/"Team" -- e.g. the
+      // real 'v116FleetYard' parking-lot group -- was treated as a small relocatable UI pad.
+      // nudgeGroup() reads the GROUP's own position (which is (0,0,0) for a root whose children
+      // carry their own absolute local coordinates, not a real pad anchor), found it "on the road"
+      // at the origin, and shoved the WHOLE parking lot sideways. Repeated refreshes compounded
+      // this every time, which is the actual mechanism behind "the road crosses the parking lot":
+      // the parking visual was dragged toward the road, not the road routed through parking.
+      // Only match real UI label text now, never an internal Object3D name, and never a known
+      // infrastructure root regardless of its name.
+      const infraRoot=obj?.name==='v116FleetYard'||obj===cityWorldRuntime?.stageRoads||obj===cityWorldRuntime?.masterRoads||obj===cityWorldRuntime?.transportAccessRoads;
+      const labelTxt=obj?.userData?.labelText||'';
+      const padLike=!infraRoot&&(
         obj?.userData?.worldButton ||
         obj?.userData?.logisticsZone ||
         obj?.userData?.fleetPad ||
         obj?.userData?.staffPad ||
         obj?.userData?.cityPad ||
-        /Автопарк|Команда|Город|Fleet|Team|City/i.test(txt);
+        /Автопарк|Команда|Город|Fleet|Team|City/i.test(labelTxt));
       if(padLike && obj.type==='Group'){
         if(nudgeGroup(obj))movedGroups++;
       }
