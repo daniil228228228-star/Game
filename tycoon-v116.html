@@ -2778,6 +2778,54 @@ const STATIC_COLLIDERS = [
   { pos: METAL_YARD_POS, radius: 1.75 },
 ];
 
+/* v116: the depot service road segment `sawmillBypass`->`depotWest` (serviceAccessGraph(),
+   rendered as `v66Role:'sawmill-access'` in v67-sawmill-road-surface-final) runs directly
+   across this belt's real footprint. Measured live with an actual OBB-vs-OBB test (not a naive
+   AABB check, which false-positives on ~100+ unrelated meshes here -- see
+   scratchpad/roads116/conveyor_measure3.js): 2 real overlaps (beltBase depth 1.5, beltTop depth
+   1.12 -- i.e. the road's whole paved width sits inside the belt's footprint at the crossing).
+   A lateral road detour does NOT fix this: `geom_solve.js`/`geom_solve2.js` prove the road
+   segment's two endpoints (sawmillBypass, depotWest) sit on OPPOSITE sides of the belt's
+   centerline, well inside its length -- not near either end -- so any kink between them either
+   still crosses the belt or has to swing wide enough to cut through the generator/sawmill
+   building collider. Real mill conveyors commonly span a yard access road on a short raised
+   bridge; that's the fix applied in buildSawmillScenery() below -- only the belt's own meshes
+   move (up, over the exact stretch the road crosses), the road/route graph is untouched. */
+const CONVEYOR_BRIDGE_T0 = 2.10;   // world units from GENERATOR_POS along the belt centerline
+const CONVEYOR_BRIDGE_T1 = 5.60;   // .. measured extent of the real road/belt OBB overlap + margin
+const CONVEYOR_BRIDGE_RAMP = 0.55; // extra run for each sloped transition either side of the span
+const CONVEYOR_BRIDGE_H = 1.42;    // belt underside clearance over the tallest service-truck roof (~1.0) with margin
+function conveyorElevationAt(t) {
+  const t0 = CONVEYOR_BRIDGE_T0, t1 = CONVEYOR_BRIDGE_T1, r = CONVEYOR_BRIDGE_RAMP;
+  if (t <= t0 - r) return 0;
+  if (t < t0) return CONVEYOR_BRIDGE_H * (t - (t0 - r)) / r;
+  if (t <= t1) return CONVEYOR_BRIDGE_H;
+  if (t < t1 + r) return CONVEYOR_BRIDGE_H * (1 - (t - t1) / r);
+  return 0;
+}
+// Builds one straight belt-deck slice between two points ALONG the belt centerline (world units
+// from GENERATOR_POS), each end independently elevated via conveyorElevationAt(). Reuses the
+// exact yaw-only basis the flat single-box version used (verified: with zAxis=beltDirNorm and no
+// tilt, cross(worldUp,zAxis) reduces to the same local-X the old `rotation.y=beltAngle` produced)
+// so a flat span (elev(a)===elev(b)) renders pixel-identical to the pre-fix geometry.
+function addConveyorSpanBox(container, t0, t1, width, thickness, baseY, material) {
+  const dir = new THREE.Vector3().subVectors(SAWMILL_POS, GENERATOR_POS).normalize();
+  const A = GENERATOR_POS.clone().addScaledVector(dir, t0); A.y = baseY + conveyorElevationAt(t0);
+  const B = GENERATOR_POS.clone().addScaledVector(dir, t1); B.y = baseY + conveyorElevationAt(t1);
+  const zAxis = new THREE.Vector3().subVectors(B, A).normalize();
+  const worldUp = new THREE.Vector3(0, 1, 0);
+  let xAxis = new THREE.Vector3().crossVectors(worldUp, zAxis);
+  if (xAxis.lengthSq() < 1e-8) xAxis.set(1, 0, 0); else xAxis.normalize();
+  const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, thickness, A.distanceTo(B)), material);
+  mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis));
+  mesh.position.set((A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2);
+  mesh.receiveShadow = true;
+  mesh.userData.v116Conveyor = true;
+  container.add(mesh);
+  return mesh;
+}
+
 const logsInTransit = []; // { mesh, path, segment, t }
 const sourceTrees = []; // { mesh, state: 'grown'|'chopping'|'regrowing', timer, baseScale, logSpawned }
 let carriedLogs = 0;
@@ -2972,52 +3020,73 @@ function buildSawmillScenery() {
   const beltLen = beltDir.length();
   const beltAngle = Math.atan2(beltDir.x, beltDir.z);
   const beltDirNorm = beltDir.clone().normalize();
-  const beltMid = new THREE.Vector3().addVectors(GENERATOR_POS, SAWMILL_POS).multiplyScalar(0.5);
 
-  const beltBase = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.28, beltLen), createCorrugatedMaterial(0x2b2f38, { roughness: 0.88, metalness: 0.16 }));
-  beltBase.position.set(beltMid.x, 0.12, beltMid.z);
-  beltBase.rotation.y = beltAngle;
-  scene.add(beltBase);
-  const beltTop = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.07, beltLen - 0.25), createCorrugatedMaterial(0x3a3f49, { roughness: 0.84, metalness: 0.16 }));
-  beltTop.position.set(beltMid.x, 0.24, beltMid.z);
-  beltTop.rotation.y = beltAngle;
-  scene.add(beltTop);
+  // v116: beltBase/beltTop used to be ONE flat box each, spanning generator->sawmill straight
+  // through the depot service road (see the CONVEYOR_BRIDGE_* comment above STATIC_COLLIDERS).
+  // Sliced into 5 co-linear spans -- ground / ramp-up / elevated / ramp-down / ground -- so the
+  // belt rises into a short bridge exactly over the stretch the road actually crosses and is
+  // flat everywhere else (a flat span, where both ends share the same elevation, renders
+  // identically to the old single box; only the bridged stretch looks different).
+  const beltMaterialBase = createCorrugatedMaterial(0x2b2f38, { roughness: 0.88, metalness: 0.16 });
+  const beltMaterialTop = createCorrugatedMaterial(0x3a3f49, { roughness: 0.84, metalness: 0.16 });
+  const beltSpansV116 = [
+    [0, CONVEYOR_BRIDGE_T0 - CONVEYOR_BRIDGE_RAMP],
+    [CONVEYOR_BRIDGE_T0 - CONVEYOR_BRIDGE_RAMP, CONVEYOR_BRIDGE_T0],
+    [CONVEYOR_BRIDGE_T0, CONVEYOR_BRIDGE_T1],
+    [CONVEYOR_BRIDGE_T1, CONVEYOR_BRIDGE_T1 + CONVEYOR_BRIDGE_RAMP],
+    [CONVEYOR_BRIDGE_T1 + CONVEYOR_BRIDGE_RAMP, beltLen],
+  ];
+  for (const [a, b] of beltSpansV116) {
+    if (b - a < 0.02) continue;
+    addConveyorSpanBox(scene, a, b, 1.5, 0.28, 0.12, beltMaterialBase);
+    addConveyorSpanBox(scene, a, b, 1.12, 0.07, 0.24, beltMaterialTop);
+  }
   for (let i = 0; i < 8; i++) {
     const support = new THREE.Group();
     const t = i / 7;
+    const elev = conveyorElevationAt(t * beltLen);
     const pos = new THREE.Vector3().lerpVectors(GENERATOR_POS, SAWMILL_POS, t);
-    const postL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.44, 0.12), createMetalMaterial(0x746955, { roughness: 0.84, metalness: 0.12 }));
+    // Posts grow to reach the elevated deck instead of floating in mid-air at the old fixed
+    // height -- outside the bridge span elev===0 and this is byte-identical to the old geometry.
+    const postH = 0.44 + elev;
+    const postL = new THREE.Mesh(new THREE.BoxGeometry(0.12, postH, 0.12), createMetalMaterial(0x746955, { roughness: 0.84, metalness: 0.12 }));
     const postR = postL.clone();
-    postL.position.set(-0.38, 0.22, 0);
-    postR.position.set(0.38, 0.22, 0);
+    postL.position.set(-0.38, postH / 2, 0);
+    postR.position.set(0.38, postH / 2, 0);
     const beam = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.08, 0.12), createMetalMaterial(0x8a826f, { roughness: 0.82 }));
-    beam.position.set(0, 0.44, 0);
+    beam.position.set(0, postH, 0);
     support.add(postL, postR, beam);
     support.position.set(pos.x, 0.02, pos.z);
     support.rotation.y = beltAngle;
+    support.userData.v116Conveyor = true;
     scene.add(support);
   }
   for (let i = 0; i < 12; i++) {
     const slat = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.03, 0.16), createWoodMaterial(0x7d6242, { roughness: 0.9 }));
     slat.rotation.y = beltAngle;
     slat.castShadow = true;
+    slat.userData.v116Conveyor = true;
     scene.add(slat);
     conveyorSlats.push({ mesh: slat, offset: (i / 12) * beltLen });
   }
   const rollerMat = createMetalMaterial(0x9099a6, { roughness: 0.46, metalness: 0.5 });
   for (let i = 0; i < 10; i++) {
     const t = (i + 0.5) / 10;
+    const elev = conveyorElevationAt(t * beltLen);
     const pos = new THREE.Vector3().lerpVectors(GENERATOR_POS, SAWMILL_POS, t);
     const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.02, 14), rollerMat);
     roller.rotation.z = Math.PI / 2;
     roller.rotation.y = beltAngle;
-    roller.position.set(pos.x, 0.27, pos.z);
+    roller.position.set(pos.x, 0.27 + elev, pos.z);
+    roller.userData.v116Conveyor = true;
     scene.add(roller);
   }
   const motor = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.5, 0.72), createMetalMaterial(0x3d6b85, { roughness: 0.5, metalness: 0.24 }));
   const motorPos = new THREE.Vector3().lerpVectors(GENERATOR_POS, SAWMILL_POS, 0.82);
-  motor.position.set(motorPos.x + Math.cos(beltAngle) * 0.94, 0.3, motorPos.z - Math.sin(beltAngle) * 0.94);
+  const motorElev = conveyorElevationAt(0.82 * beltLen);
+  motor.position.set(motorPos.x + Math.cos(beltAngle) * 0.94, 0.3 + motorElev, motorPos.z - Math.sin(beltAngle) * 0.94);
   motor.rotation.y = beltAngle;
+  motor.userData.v116Conveyor = true;
   scene.add(motor);
 
   conveyorData = {
@@ -3955,7 +4024,11 @@ function updateSawmill(dt) {
     for (const slat of conveyorSlats) {
       slat.offset = (slat.offset + dt * 2.8) % conveyorData.length;
       const pos = conveyorData.flatStart.clone().addScaledVector(conveyorData.dir, slat.offset);
-      slat.mesh.position.set(pos.x, 0.24, pos.z);
+      // v116: flatStart already sits ~0.02*beltLen along from GENERATOR_POS -- fold that back in
+      // so a moving slat picks up the same bridge elevation as the static belt deck beneath it
+      // instead of floating at a fixed height through the raised span (see CONVEYOR_BRIDGE_*).
+      const beltT = (conveyorData.length * 0.02 + slat.offset) % conveyorData.length;
+      slat.mesh.position.set(pos.x, 0.24 + conveyorElevationAt(beltT), pos.z);
       slat.mesh.rotation.y = conveyorData.angle;
     }
   }
@@ -14785,6 +14858,42 @@ function masterRoadSegmentsV362(){
     [new THREE.Vector3(0,0,-16),new THREE.Vector3(0,0,16),1.82],
     [new THREE.Vector3(-18,0,0),new THREE.Vector3(18,0,0),1.82],
   ];
+}
+/* v116: global (not IIFE-local) so both the stage-road router (v86-canonical-stage-roads,
+   buildRoute()) and the depot's own always-rendered service-road deck
+   (v67-sawmill-road-surface-final, rebuildServiceRoadsV66()) trace the exact same path -- the
+   route a truck is told to drive and the pavement drawn under it must agree, or the "no paved
+   path to the site" bug (ROADS_V116_NOTES.md item 2) just moves rather than closing.
+   masterRoadSegmentsV362()'s 6 segments are the one part of the road network whose LOGICAL shape
+   is always defined (independent of stageIndex/unlocked districts) -- but, measured live, they
+   are only actually PAVED end to end once a district's own arterial connector happens to trace
+   over them (refreshArterialRoads(), gated on districtUnlocked()); with none unlocked, most of
+   the grid is bare logical geometry with no deck. Given any point `p` that already sits on one
+   of those 6 fixed segments (true for the depot's own `junction` node --
+   projectToMasterRoadGridV116() guarantees it), this returns the short (<=2-leg) path from `p`
+   to the origin along that fixed grid: the axis segments already pass through the origin
+   directly, and each perimeter edge is crossed by an axis leg, so at most one 90-degree hop is
+   ever needed. Callers that need this to be real pavement (not just a routing waypoint list),
+   like the depot's own always-on service deck, must still render it themselves -- see
+   rebuildServiceRoadsV66()'s own "public spine" step. */
+function masterGridPathToHub(p){
+  const segs=masterRoadSegmentsV362();
+  let best=null,bestD2=Infinity;
+  for(const [a,b] of segs){
+    const vx=b.x-a.x,vz=b.z-a.z,l2=vx*vx+vz*vz;
+    const t=l2?THREE.MathUtils.clamp(((p.x-a.x)*vx+(p.z-a.z)*vz)/l2,0,1):0;
+    const x=a.x+vx*t,z=a.z+vz*t,d2=(p.x-x)**2+(p.z-z)**2;
+    if(d2<bestD2){bestD2=d2;best={a,b};}
+  }
+  const origin=new THREE.Vector3(0,0,0);
+  if(!best)return [p.clone(),origin];
+  if(best.a.x===best.b.x&&best.a.x===0)return [p.clone(),origin];
+  if(best.a.z===best.b.z&&best.a.z===0)return [p.clone(),origin];
+  let hop=null;
+  if(best.a.z===best.b.z)hop=new THREE.Vector3(0,0,best.a.z);
+  else if(best.a.x===best.b.x)hop=new THREE.Vector3(best.a.x,0,0);
+  if(!hop)return [p.clone(),origin];
+  return [p.clone(),hop,origin];
 }
 function districtConnectorPathV362(id){
   const cfg=CITY_DISTRICTS.find(d=>d.id===id);if(!cfg)return [];
@@ -28900,6 +29009,39 @@ function rebuildServiceRoadsV66(){
     }
     addLoadingApronV66(group,nodes);
 
+    // v116: `junction` is pinned onto masterRoadSegmentsV362() (projectToMasterRoadGridV116()),
+    // but that grid's own pavement is otherwise only drawn once a district unlocks its own
+    // arterial connector across it (refreshArterialRoads(), gated on districtUnlocked()) -- with
+    // none unlocked yet (the common early-game state the user's screenshots were taken in), a
+    // truck routed via masterGridPathToHub() (buildRoadRoute -> v86's buildRoute(), see its own
+    // comment) would be driving over bare logical geometry with no deck at all: measured live,
+    // 0 road meshes within 1.6 units of that stretch (scratchpad/roads116/gap1_probe.js). This is
+    // the "only a stub near the building, no road from the depot to the site" bug the user
+    // reported. Render this one small, fixed, always-on "public spine" connector here so the
+    // depot's own deck reaches the same origin every stage road is rooted at, regardless of
+    // district state -- using masterGridPathToHub() so this always matches what buildRoute()
+    // actually tells trucks to drive, and each leg's own masterRoadSegmentsV362() width so a
+    // district's later arterial deck lines up with it exactly if it ever draws over the same
+    // stretch.
+    if(nodes.get('junction')){
+      const hubPath=masterGridPathToHub(nodes.get('junction').p);
+      const legWidth=(a,b)=>{
+        const vertical=Math.abs(a.x-b.x)<.02;
+        for(const [sa,sb,w] of masterRoadSegmentsV362()){
+          if(Math.abs(sa.x-sb.x)<.02!==vertical)continue;
+          if(vertical&&Math.abs(sa.x-a.x)<.05)return w;
+          if(!vertical&&Math.abs(sa.z-a.z)<.05)return w;
+        }
+        return base;
+      };
+      for(let i=0;i<hubPath.length-1;i++){
+        const a=hubPath[i],b=hubPath[i+1];
+        if(a.distanceTo(b)<.05)continue;
+        addDeckV66(group,a,b,legWidth(a,b),{role:'public-spine',shift:0,awayFrom:null,curb:false,edgeMarks:false});
+      }
+      if(hubPath.length>2)addJointV66(group,hubPath[1],Math.max(legWidth(hubPath[0],hubPath[1]),legWidth(hubPath[1],hubPath[2]))*.5);
+    }
+
     scene.add(group);cityWorldRuntime.transportAccessRoads=group;roadGroupV66=group;
     safe(()=>window.__TYCOON_V64_HOTFIX__?.refresh?.());
     return group;
@@ -31681,7 +31823,32 @@ function makeGroup(){ensureSig();const g=new THREE.Group();g.name='v86CanonicalS
   function pathFromHub(pr){const p=[pr.path[0].clone()];for(let j=1;j<=pr.leg;j++)p.push(pr.path[j].clone());p.push(pr.point.clone());return compress(p);}
   function append(out,p){if(!p)return;if(!out.length||out[out.length-1].distanceToSquared(p)>.0025)out.push(p.clone());}
   function serviceChain(desc){return typeof serviceNodeChain==='function'?serviceNodeChain(desc):[];}
-  function buildRoute(fromPos,toPos){const r=[];append(r,fromPos);const fa=serviceAccessDescriptor(fromPos),ta=serviceAccessDescriptor(toPos);if(fa&&ta){const cf=serviceChain(fa),ct=serviceChain(ta),m=new Map(ct.map((n,i)=>[n.id,i]));let fi=cf.length-1,ti=ct.length-1;for(let i=0;i<cf.length;i++)if(m.has(cf[i].id)){fi=i;ti=m.get(cf[i].id);break;}append(r,fa.node.p);for(let i=1;i<=fi;i++)append(r,cf[i].p);for(let i=ti-1;i>=0;i--)append(r,ct[i].p);append(r,toPos);return smooth(r,.68);}let fp=fromPos,tp=toPos;if(fa){const c=serviceChain(fa);append(r,fa.node.p);for(let i=1;i<c.length;i++)append(r,c[i].p);if(c.length)fp=c[c.length-1].p;}const pa=project(fp);for(const p of pathToHub(pa))append(r,p);let tc=null;if(ta){tc=serviceChain(ta);if(tc.length)tp=tc[tc.length-1].p;}const pb=project(tp);for(const p of pathFromHub(pb))append(r,p);if(tc)for(let i=tc.length-2;i>=0;i--)append(r,tc[i].p);append(r,toPos);return smooth(r,.86);}
+  /* v116: `serviceChain(fa)`'s root is always the depot's `junction` node, which
+     `projectToMasterRoadGridV116()` (v116, see its own comment) pins exactly onto
+     `masterRoadSegmentsV362()` -- the fixed square+cross frame that is the one part of the road
+     network whose LOGICAL shape is always defined, regardless of stageIndex/built houses/unlocked
+     districts. The code this replaces instead called `project(fp)` directly on that junction
+     point -- v86's OWN "nearest point on any active STAGE centerline" search, which has no notion
+     of the master grid at all and can legitimately return a point far away, anywhere an active
+     stage's centerline happens to pass closest to. Measured live
+     (scratchpad/roads116/delivery_path_measure.js, a real `spawnBuilding` game state with 7
+     finished houses + 1 under construction, source = the real planks pickup point
+     `cargoInfo('planks').source`, target = the under-construction 8th house): the resulting route
+     had a real, paved-vs-unpaved-length walk showing a straight, unpaved jump across open field
+     between two points that both sit on the master grid's own west-edge line, even though a path
+     along that line exists. This is (part of) the "only a stub near the building, no road from
+     the depot to the site" bug the user reported. Fix, part 1 (this call): walk the fixed
+     master-grid graph (`masterGridPathToHub()`, global -- see its own comment by
+     `masterRoadSegmentsV362()`) from the depot junction to the origin, which every stage
+     centerline is rooted at, instead of guessing via the stage-centerline-only projection. Fix,
+     part 2: that logical frame is only actually PAVED end to end once a district unlocks its own
+     arterial connector (`refreshArterialRoads()`) -- with none unlocked yet (the common early-game
+     case the user's screenshots were taken in), the depot-to-hub stretch this now routes through
+     had no real deck at all. `rebuildServiceRoadsV66()` (v67-sawmill-road-surface-final) now
+     renders that one small, fixed, always-on connector unconditionally, using the exact same
+     `masterGridPathToHub()` path, so the route this function returns and the pavement drawn under
+     it always agree. */
+  function buildRoute(fromPos,toPos){const r=[];append(r,fromPos);const fa=serviceAccessDescriptor(fromPos),ta=serviceAccessDescriptor(toPos);if(fa&&ta){const cf=serviceChain(fa),ct=serviceChain(ta),m=new Map(ct.map((n,i)=>[n.id,i]));let fi=cf.length-1,ti=ct.length-1;for(let i=0;i<cf.length;i++)if(m.has(cf[i].id)){fi=i;ti=m.get(cf[i].id);break;}append(r,fa.node.p);for(let i=1;i<=fi;i++)append(r,cf[i].p);for(let i=ti-1;i>=0;i--)append(r,ct[i].p);append(r,toPos);return smooth(r,.68);}let fp=fromPos,tp=toPos;if(fa){const c=serviceChain(fa);append(r,fa.node.p);for(let i=1;i<c.length;i++)append(r,c[i].p);if(c.length)fp=c[c.length-1].p;}if(fa){for(const p of masterGridPathToHub(fp))append(r,p);}else{const pa=project(fp);for(const p of pathToHub(pa))append(r,p);}let tc=null;if(ta){tc=serviceChain(ta);if(tc.length)tp=tc[tc.length-1].p;}if(ta){const hubPath=masterGridPathToHub(tp).slice().reverse();for(const p of hubPath)append(r,p);}else{const pb=project(tp);for(const p of pathFromHub(pb))append(r,p);}if(tc)for(let i=tc.length-2;i>=0;i--)append(r,tc[i].p);append(r,toPos);return smooth(r,.86);}
 
   function collisionAudit(){const bad=[];for(const i of activeStageIdsV92()){const lv=Math.max(1,maxRoadLevelV37()),w=Math.max(SPECS.widths?.stageTrunk?.[lv]||2.70,SPECS.widths?.stageSpur?.[lv]||1.58),obs=obstacles(i,w),p=plan(i);for(let j=0;j<p.length-1;j++){for(const e of obs){const pad=e.category==='future-stage'?0:(e._pad||0);if(segHits(p[j],p[j+1],e,pad-.01)){bad.push({stage:i,leg:j,obstacle:e.label||e.category});break;}}}}return bad;}
   function audit(){ensureSig();const bad=collisionAudit(),g=cityWorldRuntime.stageRoads,net=g?.userData?.v86StageNetwork||null;return{version:VERSION,generation,routeCache:routeCache.size,centerlineCache:centerlineCache.size,stageRoadAssetCollisions:bad,network:net,checks:{canonicalOwner:stageRoadPolylineV367===publicApi.route&&makeStageRoadGroupV367===publicApi.makeGroup,renderedCanonical:g?.name==='v86CanonicalStageRoads',routesClear:bad.length===0,navigationUsesCanonical:buildRoadRoute===publicApi.buildRoute,projectionUsesCanonical:projectToRoad===publicApi.project,noDuplicateLiveStageGroup:scene.children.filter(x=>x===g||x?.name==='v86CanonicalStageRoads').length<=1}};}
