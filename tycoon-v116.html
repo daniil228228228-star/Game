@@ -13883,7 +13883,15 @@ refreshDrivewaysV35=function(force=false){_refreshDrivewaysV352(force);refreshPl
    every important built object has a finite curb/front point and reports suspicious distances. */
 function auditV352AccessNetwork(){
   const issues=[];let checked=0;
-  for(const b of buildings){if(!b?.pos)continue;checked++;const g=stageDrivewayGeometryV351(b);if(!Number.isFinite(g.bay.x)||!Number.isFinite(g.bay.z))issues.push(`stage-${b.index}: invalid bay`);if(b.pos.distanceTo(g.bay)<(buildingCollisionRadius(b)+.45))issues.push(`stage-${b.index}: bay too close`);}
+  for(const b of buildings){if(!b?.pos)continue;checked++;const g=stageDrivewayGeometryV351(b);if(!Number.isFinite(g.bay.x)||!Number.isFinite(g.bay.z))issues.push(`stage-${b.index}: invalid bay`);
+    // v116: the .45 threshold here used to be calibrated to stageRoadEndpointV367's old,
+    // buggy 1.82 standoff (see that function) -- it was never a real collision check, just a
+    // sanity floor loosely matching whatever the driveway math produced at the time. Now that
+    // the endpoint intentionally sits at the building's own true-edge margin (+.12, same
+    // constant this function uses for `g.edge`), the floor is tightened to match: it still
+    // catches a bay accidentally placed inside the building, but no longer flags the fixed gap
+    // this same pass now closes.
+    if(b.pos.distanceTo(g.bay)<(buildingCollisionRadius(b)+.05))issues.push(`stage-${b.index}: bay too close`);}
   for(const cfg of CITY_DISTRICTS){for(const pos of districtBuiltAccessTargets(cfg.id)){checked++;const f=districtBuildingFront(cfg.id,pos);if(!Number.isFinite(f.x)||!Number.isFinite(f.z))issues.push(`${cfg.id}: invalid front`);if(f.distanceTo(pos)<1.25)issues.push(`${cfg.id}: front too close`);}}
   if(issues.length)console.warn('[v35.2 access audit]',issues);
   return {checked,issues};
@@ -15328,9 +15336,22 @@ function stageAccessRadiusV92(i){
   return Math.max(BUILDING_RADIUS,(STAGES[i]?.baseSize||2.4)*.64+.05);
 }
 function stageRoadEndpointV367(i){
-  // Pull the driveway mouth slightly farther away from the building frontage so
-  // the road no longer visually clips into the first houses / sawmill block.
-  return buildingPosition(i).clone().addScaledVector(stageAccessAxisV92(i),-(stageAccessRadiusV92(i)+1.82));
+  // v116: this used to add a flat 1.82 standoff on top of the building's own collision
+  // radius, on the theory that a fixed buffer would keep the driveway mouth from visually
+  // clipping into the building. That reasoning predates buildingCollisionRadius() deriving
+  // the radius per archetype (stage.baseSize) -- once the radius already tracks the real
+  // footprint, an *additional* flat 1.82 units is just dead grass between the paved stage
+  // road/driveway (which terminates exactly here, see plan()/addStraight() in
+  // v86-canonical-stage-roads and the stageRoadPolylineV367 fallback) and the building's
+  // real edge (stageDrivewayGeometryV351's own `edge` point uses only +.12). Independent
+  // measurement (scratchpad/roads116/diag_driveway.js) confirmed roads/driveways stopped
+  // ~1.8-3.5 units short of the building footprint because of exactly this extra buffer.
+  // .12 matches stageDrivewayGeometryV351's own definition of the building's real edge, so
+  // the paved deck (which node-caps at 0 trim on this END node, see addStraight()/nodeCut())
+  // now actually terminates AT that edge instead of ~1.7 units short of it. The old
+  // auditV352AccessNetwork "too close" threshold (radius+.45) was calibrated to this same
+  // buggy 1.82 standoff and is updated alongside it below.
+  return buildingPosition(i).clone().addScaledVector(stageAccessAxisV92(i),-(stageAccessRadiusV92(i)+.12));
 }
 function stageRoadApproachV92(i){
   // Give the junction renderer a little more run-up, which creates cleaner
