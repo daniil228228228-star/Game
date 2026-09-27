@@ -750,15 +750,22 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
     <div class="v30Section">
       <div class="v30SectionTitle" id="companySectionTitle">Прогресс компании</div>
       <div id="companySummary"></div>
-      <div class="v30Row"><div><b id="rowLabelMeta">🧬 Мета-прогрессия</b><div class="sub" id="metaSummaryText"></div></div><button class="v30Btn primary" id="openMetaBtn">Открыть</button></div>
-      <div class="v30Row"><div><b id="rowLabelStaff">👷 Команда</b><div class="sub" id="staffSummaryText"></div></div><button class="v30Btn" id="openStaffBtn">Управлять</button></div>
+      <!-- v116 market pass: Meta/Team/Fleet/Operations/Tenders/Bonuses moved from this menu to
+           physical stalls at the new market plaza (nearestManualTargetV53's 'stall' candidate) --
+           see CHANGELOG_V116.md. Rows kept in the DOM (hidden) rather than deleted so their
+           renderXPanel()/openXBtn plumbing (still called internally, e.g. buyStaffUpgrade ->
+           renderStaffPanel) has no null-element crashes. City/Projects/Base stay here unchanged --
+           out of this pass's scope, see the ninth-pass rationale in CHANGELOG_V116.md. -->
+      <div class="v30Row" id="metaMenuRow" hidden><div><b id="rowLabelMeta">🧬 Мета-прогрессия</b><div class="sub" id="metaSummaryText"></div></div><button class="v30Btn primary" id="openMetaBtn">Открыть</button></div>
+      <div class="v30Row" id="staffMenuRow" hidden><div><b id="rowLabelStaff">👷 Команда</b><div class="sub" id="staffSummaryText"></div></div><button class="v30Btn" id="openStaffBtn">Управлять</button></div>
       <div class="v30Row"><div><b id="rowLabelProjects">🏗️ Спецпроекты</b><div class="sub" id="projectSummaryText"></div></div><button class="v30Btn" id="openProjectsBtn">Открыть</button></div>
-      <div class="v30Row"><div><b id="rowLabelFleet">🚚 Автопарк</b><div class="sub" id="fleetSummaryText"></div></div><button class="v30Btn" id="openFleetBtn">Управлять</button></div>
+      <div class="v30Row" id="fleetMenuRow" hidden><div><b id="rowLabelFleet">🚚 Автопарк</b><div class="sub" id="fleetSummaryText"></div></div><button class="v30Btn" id="openFleetBtn">Управлять</button></div>
       <div class="v30Row"><div><b id="rowLabelBase">🏢 База компании</b><div class="sub" id="baseSummaryText"></div></div><button class="v30Btn" id="openBaseBtn">Развивать</button></div>
-      <div class="v30Row"><div><b id="rowLabelOperations">🛰️ Операционный центр</b><div class="sub" id="operationsSummaryText"></div></div><button class="v30Btn" id="openOperationsBtn">Открыть</button></div>
+      <div class="v30Row" id="operationsMenuRow" hidden><div><b id="rowLabelOperations">🛰️ Операционный центр</b><div class="sub" id="operationsSummaryText"></div></div><button class="v30Btn" id="openOperationsBtn">Открыть</button></div>
       <div class="v30Row"><div><b id="rowLabelCity">🌆 Город и развитие</b><div class="sub" id="citySummaryText"></div></div><button class="v30Btn primary" id="openCityBtn">Развивать</button></div>
-      <div class="v30Row"><div><b id="rowLabelTenders">📋 Крупные тендеры</b><div class="sub" id="tenderSummaryText"></div></div><button class="v30Btn" id="openTendersBtn">Открыть</button></div>
+      <div class="v30Row" id="tendersMenuRow" hidden><div><b id="rowLabelTenders">📋 Крупные тендеры</b><div class="sub" id="tenderSummaryText"></div></div><button class="v30Btn" id="openTendersBtn">Открыть</button></div>
       <div class="v30Row" id="bonusMenuRow" hidden><div><b id="rowLabelBonus">🎁 Бонусы</b><div class="sub" id="bonusSummaryText"></div></div><button class="v30Btn" id="openBonusBtn">Открыть</button></div>
+      <div class="v30Row"><div><b id="rowLabelMarket">🏪 Рынок</b><div class="sub" id="marketSummaryText">Наём, автопарк, тендеры, операции, развитие и бонусы теперь на рынке в мире</div></div><button class="v30Btn primary" id="pingMarketBtn">Показать путь</button></div>
     </div>
     <div class="v30Section">
       <div class="v30SectionTitle" id="settingsSectionTitle">Настройки</div>
@@ -8319,6 +8326,13 @@ function currentGuidanceTarget() {
   if (currentPad) return { pos: currentPad.pos.clone(), label: lang === 'ru' ? 'Стройка' : 'Build' };
   return null;
 }
+// v116: #pingMarketBtn (systemsOverlay, replaces the old menu-opening rows for these systems)
+// pings the compass toward the market plaza for a few seconds instead of opening a panel.
+const _currentGuidanceTargetV116 = currentGuidanceTarget;
+currentGuidanceTarget = function(){
+  if(typeof marketPingUntilV116!=='undefined' && Date.now()<marketPingUntilV116) return { pos:MARKET_PLAZA_CENTER_V116.clone(), label: lang==='ru'?'Рынок':'Market' };
+  return _currentGuidanceTargetV116();
+};
 
 function updateHUD() {
   document.getElementById('income').textContent =
@@ -9072,8 +9086,12 @@ function renderSystemsPanel(){
   const metaTxt=document.getElementById('metaSummaryText'); if(metaTxt) metaTxt.textContent=lang==='ru'?`${metaState.points} очк. доступно`:`${metaState.points} point(s) available`;
   const staffTxt=document.getElementById('staffSummaryText'); if(staffTxt){ const total=Object.keys(staffState).reduce((s,k)=>s+staffLevel(k),0); staffTxt.textContent=lang==='ru'?`${total}/12 уровней специалистов`:`${total}/12 staff levels`; }
   const projectTxt=document.getElementById('projectSummaryText'); if(projectTxt){ const a=specialProjectState.active; projectTxt.textContent=a?(lang==='ru'?`В работе: ${specialProjectTemplate(a.id)?.ru||''}`:`In progress: ${specialProjectTemplate(a.id)?.en||''}`):(lang==='ru'?`${specialProjectState.completed.length}/${SPECIAL_PROJECTS.length} завершено`:`${specialProjectState.completed.length}/${SPECIAL_PROJECTS.length} completed`); }
-  const bonusRow=document.getElementById('bonusMenuRow'); if(bonusRow) bonusRow.hidden=!rewardedAvailable();
+  // v116 market pass: bonusMenuRow (and 5 siblings -- meta/staff/fleet/operations/tenders) stay
+  // permanently hidden now that these systems live at the market's physical stalls -- this row
+  // no longer toggles visible based on rewardedAvailable(), see market's #pingMarketBtn instead.
   const bonusTxt=document.getElementById('bonusSummaryText'); if(bonusTxt) bonusTxt.textContent=lang==='ru'?'Только добровольные rewarded-бонусы':'Optional rewarded bonuses only';
+  const marketTxt=document.getElementById('marketSummaryText'); if(marketTxt) marketTxt.textContent=lang==='ru'?'Наём, автопарк, тендеры, операции, развитие и бонусы теперь на рынке в мире':'Hiring, fleet, tenders, operations, development and bonuses are now stalls at the world market';
+  const pingBtn=document.getElementById('pingMarketBtn'); if(pingBtn) pingBtn.textContent=lang==='ru'?'Показать путь':'Show the way';
   const on=(v)=>v?(lang==='ru'?'ВКЛ':'ON'):(lang==='ru'?'ВЫКЛ':'OFF');
   const sound=document.getElementById('soundToggle'); if(sound) sound.textContent=on(!muted);
   const music=document.getElementById('musicToggle'); if(music) music.textContent=on(gameSettings.music);
@@ -9095,6 +9113,7 @@ function renderSystemsPanel(){
     rowLabelCity:['🌆 Город и развитие','🌆 City & Development'],
     rowLabelTenders:['📋 Крупные тендеры','📋 Major Tenders'],
     rowLabelBonus:['🎁 Бонусы','🎁 Bonuses'],
+    rowLabelMarket:['🏪 Рынок','🏪 Market'],
     rowLabelSound:['🔊 Звуки','🔊 Sound'],
     rowLabelMusic:['🎵 Музыка','🎵 Music'],
     rowLabelHaptic:['📳 Вибрация','📳 Vibration'],
@@ -9575,6 +9594,280 @@ updateHUD=function(){
   if(baseOverlay?.classList.contains('show')&&_nowV55-_panelRenderThrottleV55.base>=PANEL_RENDER_THROTTLE_MS_V55){_panelRenderThrottleV55.base=_nowV55;renderBasePanel();}
   if(tendersOverlay?.classList.contains('show')&&_nowV55-_panelRenderThrottleV55.tenders>=PANEL_RENDER_THROTTLE_MS_V55){_panelRenderThrottleV55.tenders=_nowV55;renderTendersPanel();}
 };
+
+/* ---------------------------------------------------------------------- */
+/*  v116 MARKET — physical stalls for Team/Fleet/Tenders/Operations/Meta/  */
+/*  Bonuses (previously #systemsBtn-only overlay rows, see ninth-pass       */
+/*  rationale in CHANGELOG_V116.md) plus a new resource-exchange stall.     */
+/*  User request: "прям рынок настоящий и палатками типа" -- a real market  */
+/*  plaza with tent/canopy stalls the player walks up to, not a menu.      */
+/*  Interaction reuses nearestManualTargetV53()/#actionPrompt/#actionBtn   */
+/*  verbatim (the same mechanism as district/project/road/factory pads),  */
+/*  and every stall calls the SAME purchase function/cost formula its      */
+/*  system already used behind the overlay -- no rebalancing here.         */
+/* ---------------------------------------------------------------------- */
+// Plaza sits in the open pocket east of spawn/residential spiral and well clear of the
+// industrial zone (GENERATOR_POS et al. sit around x=-39..-51) -- see CHANGELOG_V116.md for the
+// live Box3/distance check against STATIC_COLLIDERS, stagePosition(0..9), CITY_DISTRICTS and
+// SPECIAL_PROJECTS that picked this spot.
+const MARKET_PLAZA_CENTER_V116 = new THREE.Vector3(14, 0, -16);
+const MARKET_STALL_RING_RADIUS_V116 = 4.6;
+const MARKET_STALLS_V116 = [
+  { id:'team', emoji:'👷', ru:'Наём персонала', en:'Hiring', accent:0x5ab0ff },
+  { id:'fleet', emoji:'🚚', ru:'Автопарк', en:'Fleet', accent:0xff9d4d },
+  { id:'tenders', emoji:'📋', ru:'Тендеры', en:'Tenders', accent:0x9b87ef },
+  { id:'operations', emoji:'🛰️', ru:'Операции', en:'Operations', accent:0x6dbce8 },
+  { id:'meta', emoji:'🧬', ru:'Развитие', en:'Development', accent:0xffd479 },
+  { id:'bonus', emoji:'🎁', ru:'Бонусы', en:'Bonuses', accent:0xff6f91 },
+  { id:'exchange', emoji:'💱', ru:'Обмен ресурсов', en:'Resource Exchange', accent:0x74c97b },
+].map((cfg,i,arr)=>{
+  const a = -Math.PI/2 + i*(Math.PI*2/arr.length);
+  const pos = MARKET_PLAZA_CENTER_V116.clone().add(new THREE.Vector3(Math.cos(a)*MARKET_STALL_RING_RADIUS_V116, 0, Math.sin(a)*MARKET_STALL_RING_RADIUS_V116));
+  return { ...cfg, pos, facing:a+Math.PI };
+});
+function marketStallConfig(id){ return MARKET_STALLS_V116.find(c=>c.id===id) || null; }
+
+// A single tent/canopy stall: 4 posts, a counter, a low back wall and a pitched canopy roof --
+// same construction-helper vocabulary (createFoundation/createGableRoof/createWoodMaterial/
+// createSidingMaterial/createCorrugatedMaterial) as buildHouse()/the special-project landmarks,
+// for palette consistency (cream siding, wood trim) per VISION.md's house palette.
+function createMarketStall(cfg){
+  const g = new THREE.Group(); g.name = 'marketStallV116_' + cfg.id;
+  const hw=1.05, hd=0.72, postH=1.85;
+  g.add(createFoundation(hw*2+.3, hd*2+.3, .12, 0xd7d0c4));
+  const postMat = createWoodMaterial(0x6d4a2c, { roughness:.87 });
+  const trimMat = createWoodMaterial(0x4a2f1a, { roughness:.8 });
+  const counterMat = createWoodMaterial(0xc9a874, { roughness:.8 });
+  const sidingMat = createSidingMaterial(0xefe6d6, { roughness:.9 });
+  const canopyMat = createCorrugatedMaterial(cfg.accent, { roughness:.6, metalness:.06 });
+  for(const sx of [-1,1]) for(const sz of [-1,1]){
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(.055,.07,postH,8), postMat);
+    post.position.set(sx*hw, postH/2+.12, sz*hd); post.castShadow=true; g.add(post);
+  }
+  const back = new THREE.Mesh(new THREE.BoxGeometry(hw*2-.12, 1.25, .1), sidingMat);
+  back.position.set(0,.75,-hd+.05); back.castShadow=true; back.receiveShadow=true; g.add(back);
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(hw*2-.1, .6, .46), counterMat);
+  counter.position.set(0,.42,hd-.14); counter.castShadow=true; counter.receiveShadow=true; g.add(counter);
+  const counterTop = new THREE.Mesh(new THREE.BoxGeometry(hw*2, .05, .54), trimMat);
+  counterTop.position.set(0,.73,hd-.14); g.add(counterTop);
+  const roof = createGableRoof(hw*2+.55, hd*2+.5, .68, canopyMat);
+  roof.position.set(0, postH+.1, 0); g.add(roof);
+  const valance = new THREE.Mesh(new THREE.BoxGeometry(hw*2+.5, .2, .05), canopyMat);
+  valance.position.set(0, postH+.02, hd+.17); g.add(valance);
+  const poleTip = new THREE.Mesh(new THREE.ConeGeometry(.09,.28,6), new THREE.MeshStandardMaterial({ color:cfg.accent, roughness:.5 }));
+  poleTip.position.set(0, postH+.68+.14, 0); g.add(poleTip);
+  const icon = makeIconSprite(cfg.emoji, 0.82); icon.position.set(0, postH+1.02, 0); g.add(icon);
+  const sign = makeLabelSprite([lang==='ru'?cfg.ru:cfg.en]);
+  sign.position.set(0, postH+.42, hd+.24); sign.scale.set(1.55,.5,1); g.add(sign);
+  const infoSign = makeLabelSprite(['...']);
+  infoSign.position.set(0, 1.02, hd+.32); infoSign.scale.set(1.55,.42,1); g.add(infoSign);
+  g.position.copy(cfg.pos); g.rotation.y = cfg.facing || 0;
+  scene.add(g);
+  return { group:g, icon, sign, infoSign, cfg };
+}
+
+const marketRuntimeV116 = { stalls:new Map() };
+function buildMarketPlazaV116(){
+  const plazaGroup = new THREE.Group(); plazaGroup.name = 'marketPlazaV116';
+  const outerR = MARKET_STALL_RING_RADIUS_V116 + 2.1;
+  const plaza = new THREE.Mesh(new THREE.CylinderGeometry(outerR, outerR, .06, 40), createConcreteMaterial(0xc9c2b4, { roughness:.92 }));
+  plaza.position.copy(MARKET_PLAZA_CENTER_V116); plaza.position.y=.03; plaza.receiveShadow=true; plazaGroup.add(plaza);
+  const curb = new THREE.Mesh(new THREE.TorusGeometry(outerR+.06, .1, 8, 44), createConcreteMaterial(0x9a948a, { roughness:.9 }));
+  curb.rotation.x=Math.PI/2; curb.position.copy(MARKET_PLAZA_CENTER_V116); curb.position.y=.07; plazaGroup.add(curb);
+  // Gate/sign on the side facing the origin (spawn + early residential spiral), so it reads
+  // "market" before the player is even close enough to see individual stalls.
+  const gateDir = new THREE.Vector3(-MARKET_PLAZA_CENTER_V116.x, 0, -MARKET_PLAZA_CENTER_V116.z).normalize();
+  const gatePos = MARKET_PLAZA_CENTER_V116.clone().addScaledVector(gateDir, outerR - .1);
+  const tangent = new THREE.Vector3(-gateDir.z, 0, gateDir.x);
+  for(const sx of [-1,1]){
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(.09,.11,2.6,8), createWoodMaterial(0x5b3622,{roughness:.8}));
+    post.position.copy(gatePos).addScaledVector(tangent, sx*1.15); post.position.y=1.3; post.castShadow=true; plazaGroup.add(post);
+  }
+  const gateSign = makeLabelSprite([lang==='ru'?'РЫНОК':'MARKET']);
+  gateSign.position.copy(gatePos); gateSign.position.y=2.55; gateSign.scale.set(2.3,.75,1); plazaGroup.add(gateSign);
+  const gateIcon = makeIconSprite('🏪', 1.1); gateIcon.position.copy(gatePos); gateIcon.position.y=3.15; plazaGroup.add(gateIcon);
+  for(let i=0;i<4;i++){
+    const a = i*Math.PI/2 + Math.PI/4;
+    const p = MARKET_PLAZA_CENTER_V116.clone().add(new THREE.Vector3(Math.cos(a)*(outerR-.55), 0, Math.sin(a)*(outerR-.55)));
+    const lamp = makeLamp(); lamp.position.copy(p); lamp.scale.setScalar(.85); plazaGroup.add(lamp);
+  }
+  scene.add(plazaGroup);
+  for(const cfg of MARKET_STALLS_V116) marketRuntimeV116.stalls.set(cfg.id, createMarketStall(cfg));
+}
+buildMarketPlazaV116();
+
+// --- Resource exchange: genuinely new mechanic, not part of any of the 6 relocated systems.
+// Relative value derived from STAGES' late-game resource quantities (Office..Empire all need
+// planks+concrete+metal at the same money-cost tier): summed across those 4 rows, planks:
+// concrete:metal request quantities are 80:56:29 -- i.e. the game already asks for ~2.76x as
+// many planks as metal, and ~1.43x as many concrete as planks, to reach the same building tier,
+// which means (inverted) a unit of metal is worth roughly 2.76x a unit of planks and a unit of
+// concrete is worth roughly 1.43x a unit of planks. Rounded to clean ratios: 1 : 1.5 : 3. The
+// opsCost() fleet/base upgrade formula corroborates the ordering (flat small concrete/metal
+// amounts vs. wood scaling with level n) without needing to match it exactly. A 10% trader's cut
+// (MARKET_EXCHANGE_FEE_V116) stops any A->B->A loop from being a free-resource exploit.
+const MARKET_EXCHANGE_VALUE_V116 = { planks:1, concrete:1.5, metal:3 };
+const MARKET_EXCHANGE_FEE_V116 = 0.9;
+// Money side chosen conservatively (not solved from STAGES like the ratios above) specifically
+// to avoid a sell/build money-printing loop; kept proportional to the same 1:1.5:3 ratio.
+const MARKET_SELL_PRICE_V116 = { planks:8, concrete:12, metal:24 };
+const MARKET_RESOURCE_EMOJI_V116 = { planks:'🪵', concrete:'🧱', metal:'🔩', money:'💰' };
+function marketExchangeHave(key){ return key==='planks'?planks:key==='concrete'?concrete:key==='metal'?metal:Infinity; }
+function marketExchangeOut(offer){
+  if(offer.to==='money') return Math.round(offer.amountIn * MARKET_SELL_PRICE_V116[offer.from] * MARKET_EXCHANGE_FEE_V116);
+  return Math.max(0, Math.floor(offer.amountIn * MARKET_EXCHANGE_VALUE_V116[offer.from] / MARKET_EXCHANGE_VALUE_V116[offer.to] * MARKET_EXCHANGE_FEE_V116));
+}
+function marketExchangeOfferLabel(offer){ return `${offer.amountIn} ${MARKET_RESOURCE_EMOJI_V116[offer.from]} → ${marketExchangeOut(offer)} ${MARKET_RESOURCE_EMOJI_V116[offer.to]}`; }
+const MARKET_EXCHANGE_OFFERS_V116 = [
+  { from:'planks', to:'concrete', amountIn:10, minStage:CONCRETE_UNLOCK_STAGE },
+  { from:'concrete', to:'planks', amountIn:10, minStage:CONCRETE_UNLOCK_STAGE },
+  { from:'planks', to:'metal', amountIn:10, minStage:METAL_UNLOCK_STAGE },
+  { from:'metal', to:'planks', amountIn:10, minStage:METAL_UNLOCK_STAGE },
+  { from:'concrete', to:'metal', amountIn:10, minStage:METAL_UNLOCK_STAGE },
+  { from:'metal', to:'concrete', amountIn:10, minStage:METAL_UNLOCK_STAGE },
+  { from:'planks', to:'money', amountIn:10, minStage:0 },
+  { from:'concrete', to:'money', amountIn:10, minStage:CONCRETE_UNLOCK_STAGE },
+  { from:'metal', to:'money', amountIn:10, minStage:METAL_UNLOCK_STAGE },
+];
+let marketExchangeCycleV116 = 0;
+function marketExchangeCurrentOffer(){
+  const n = MARKET_EXCHANGE_OFFERS_V116.length;
+  for(let i=0;i<n;i++){ const idx=(marketExchangeCycleV116+i)%n; const offer=MARKET_EXCHANGE_OFFERS_V116[idx]; if(stageIndex>=offer.minStage) return { offer, idx }; }
+  return { offer:MARKET_EXCHANGE_OFFERS_V116[0], idx:0 };
+}
+function marketExchangeExecute(offer){
+  if(marketExchangeHave(offer.from) < offer.amountIn) return false;
+  const out = marketExchangeOut(offer); if(out<=0) return false;
+  if(offer.from==='planks') planks-=offer.amountIn; else if(offer.from==='concrete') concrete-=offer.amountIn; else if(offer.from==='metal') metal-=offer.amountIn;
+  if(offer.to==='money') earn(out);
+  else if(offer.to==='planks') planks+=out;
+  else if(offer.to==='concrete') concrete=Math.min(concreteCapacity(), concrete+out);
+  else if(offer.to==='metal') metal=Math.min(metalCapacity(), metal+out);
+  return true;
+}
+
+// --- Per-stall "what does pressing this stall do right now" + the actual purchase, reusing each
+// system's existing config/cost/purchase function verbatim (grepped from the overlay panels
+// above: STAFF_CONFIG/buyStaffUpgrade, FLEET_CONFIG/buyFleetUpgrade, MAJOR_TENDERS/
+// startMajorTender, setConstructionPriority, V30_META_UPGRADES/buyMetaUpgrade,
+// claimRewardedBonus). Multi-item systems cycle to the next not-yet-maxed item on repeated
+// presses (skips items already at max automatically); Bonus/Exchange rotate through their fixed
+// list of kinds/offers on every press since none of them "max out".
+function marketNextStaffCfg(){ return STAFF_CONFIG.find(c=>stageIndex>=c.unlock && staffLevel(c.key)<3) || null; }
+function marketNextFleetCfg(){ return FLEET_CONFIG.find(c=>stageIndex>=c.unlock && fleetLevel(c.key)<3) || null; }
+// Fleet also exposes "service" (repair condition, fleetServiceCost/serviceFleetKey) as a second
+// distinct purchasable line-item alongside "upgrade" -- once every vehicle is maxed, the stall
+// falls back to offering a service on whichever one needs it most, so that action stays reachable
+// now that fleetOverlay's own per-vehicle service button is unopenable (row hidden, see below).
+function marketNextFleetServiceKey(){
+  const keys = Object.keys(fleetOpsState.condition).filter(k => k!=='lift' ? true : stageIndex>=(fleetConfig('lift')?.unlock||5));
+  let best=null, bestCond=101;
+  for(const k of keys){ if(k!=='universal' && !fleetVehicleForKey(k)) continue; if(k==='universal' && !(fleetOpsState.universalTrucks>0)) continue; const c=fleetConditionValue(k); if(c<100 && c<bestCond){bestCond=c; best=k;} }
+  return best;
+}
+function marketNextTenderTpl(){ if(tenderState.active) return majorTenderTemplate(tenderState.active.id); return MAJOR_TENDERS.find(t=>stageIndex>=t.unlock && !tenderState.completed.includes(t.id)) || null; }
+function marketNextMetaCfg(){ return V30_META_UPGRADES.find(c=>metaLevel(c.key)<c.max) || null; }
+function marketNextOperationsBuild(){ return growingMeshes.find(b=>b?.entry?.underConstruction) || null; }
+let marketBonusCycleV116 = 0;
+const MARKET_BONUS_KINDS_V116 = ['income','construction','resources'];
+function marketBonusKindLabel(kind){
+  return kind==='income' ? (lang==='ru'?'x2 доход':'x2 Income')
+    : kind==='construction' ? (lang==='ru'?'Быстрая стройка':'Fast Construction')
+    : (lang==='ru'?'Пакет снабжения':'Supply Package');
+}
+function marketStallInfo(stallId){
+  if(stallId==='team'){
+    const cfg=marketNextStaffCfg(); if(!cfg) return { name:lang==='ru'?'Команда':'Team', maxed:true };
+    const cost=staffUpgradeCost(cfg.key); return { name:`${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}`, sub:`${fmt(cost)} 💰`, ready:money>=cost, cfg };
+  }
+  if(stallId==='fleet'){
+    const cfg=marketNextFleetCfg();
+    if(cfg){ const cost=fleetUpgradeCost(cfg.key); return { name:`${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}`, sub:opsCostText(cost), ready:canPayResources(cost), cfg }; }
+    const serviceKey=marketNextFleetServiceKey();
+    if(serviceKey){ const cost=fleetServiceCost(serviceKey); const vcfg=fleetConfig(serviceKey); const vname=vcfg?(lang==='ru'?vcfg.ru:vcfg.en):(lang==='ru'?'Универсальный грузовик':'Utility truck'); return { name:`🔧 ${lang==='ru'?'Обслужить':'Service'}: ${vname}`, sub:`${fmt(cost)} 💰`, ready:money>=cost, serviceKey }; }
+    return { name:lang==='ru'?'Автопарк':'Fleet', maxed:true };
+  }
+  if(stallId==='tenders'){
+    const tpl=marketNextTenderTpl(); if(!tpl) return { name:lang==='ru'?'Тендеры':'Tenders', maxed:true };
+    const active=tenderState.active?.id===tpl.id;
+    return { name:`${tpl.emoji} ${lang==='ru'?tpl.ru:tpl.en}`, sub:active?(lang==='ru'?`Этап ${tenderState.active.step+1}/${tpl.steps.length}`:`Stage ${tenderState.active.step+1}/${tpl.steps.length}`):'', ready:!active, active, tpl };
+  }
+  if(stallId==='operations'){
+    const build=marketNextOperationsBuild(); if(!build) return { name:lang==='ru'?'Операции':'Operations', maxed:true };
+    const next=(normalizeConstructionPriority(build.opsPriority)+1)%3;
+    return { name:constructionJobName(build), sub:constructionPriorityLabel(next), ready:true, build };
+  }
+  if(stallId==='meta'){
+    const cfg=marketNextMetaCfg(); if(!cfg) return { name:lang==='ru'?'Развитие':'Development', maxed:true };
+    const cost=1+Math.floor(metaLevel(cfg.key)/2); return { name:`${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}`, sub:`${cost} 🧬`, ready:metaState.points>=cost, cfg };
+  }
+  if(stallId==='bonus'){
+    const kind=MARKET_BONUS_KINDS_V116[marketBonusCycleV116%MARKET_BONUS_KINDS_V116.length];
+    return { name:marketBonusKindLabel(kind), sub:'', ready:rewardedAvailable(), kind };
+  }
+  if(stallId==='exchange'){
+    const { offer } = marketExchangeCurrentOffer();
+    return { name:marketExchangeOfferLabel(offer), sub:'', ready:marketExchangeHave(offer.from)>=offer.amountIn, offer };
+  }
+  return { name:'?' };
+}
+const marketStallInsufficientV116 = {};
+function marketStallBuy(stallId){
+  const info = marketStallInfo(stallId);
+  if(info.maxed) return;
+  if(stallId==='team'){ buyStaffUpgrade(info.cfg.key); return; }
+  if(stallId==='fleet'){ if(info.cfg) buyFleetUpgrade(info.cfg.key); else if(info.serviceKey) serviceFleetKey(info.serviceKey); return; }
+  if(stallId==='tenders'){
+    if(info.active){ toast(lang==='ru'?`📋 В работе: ${info.name}`:`📋 In progress: ${info.name}`); return; }
+    startMajorTender(info.tpl.id); return;
+  }
+  if(stallId==='operations'){
+    if(!info.build){ sfx.error(); toast(lang==='ru'?'Нет активных строек':'No active construction'); return; }
+    setConstructionPriority(info.build.entry.index, normalizeConstructionPriority(info.build.opsPriority)+1);
+    return;
+  }
+  if(stallId==='meta'){ buyMetaUpgrade(info.cfg.key); return; }
+  if(stallId==='bonus'){
+    const kind = MARKET_BONUS_KINDS_V116[marketBonusCycleV116%MARKET_BONUS_KINDS_V116.length];
+    marketBonusCycleV116++;
+    claimRewardedBonus(kind);
+    return;
+  }
+  if(stallId==='exchange'){
+    const { offer, idx } = marketExchangeCurrentOffer();
+    marketExchangeCycleV116 = (idx+1) % MARKET_EXCHANGE_OFFERS_V116.length;
+    if(marketExchangeExecute(offer)){
+      sfx.purchase(); haptic('light');
+      toast(lang==='ru'?`💱 Обмен: ${marketExchangeOfferLabel(offer)}`:`💱 Trade: ${marketExchangeOfferLabel(offer)}`);
+      updateHUD(); save();
+    } else if(!marketStallInsufficientV116.exchange){
+      marketStallInsufficientV116.exchange = true;
+      sfx.error();
+      toast(lang==='ru'?`Не хватает ${offer.amountIn} ${MARKET_RESOURCE_EMOJI_V116[offer.from]} для обмена`:`Need ${offer.amountIn} ${MARKET_RESOURCE_EMOJI_V116[offer.from]} to trade`);
+    }
+    return;
+  }
+}
+// Signs refresh on the same lightweight cadence the field-upgrade/district-hub signs already use
+// elsewhere in this file (a plain setInterval calling a cheap idempotent regenerateSprite swap).
+setInterval(()=>{
+  for(const cfg of MARKET_STALLS_V116){
+    const stall = marketRuntimeV116.stalls.get(cfg.id); if(!stall) continue;
+    const info = marketStallInfo(cfg.id);
+    const line = info.maxed ? (lang==='ru'?'MAX':'MAX') : `${info.name}${info.sub?(' · '+info.sub):''}`;
+    const newSprite = regenerateSprite(stall.infoSign, [line]);
+    stall.group.remove(stall.infoSign); stall.group.add(newSprite); stall.infoSign = newSprite;
+  }
+}, 700);
+
+// v116: ping the compass toward the market instead of opening a panel -- see #pingMarketBtn in
+// systemsOverlay and currentGuidanceTarget()'s new first check below.
+let marketPingUntilV116 = 0;
+document.getElementById('pingMarketBtn')?.addEventListener('click', ()=>{
+  marketPingUntilV116 = Date.now()+8000;
+  systemsOverlay.classList.remove('show');
+  toast(lang==='ru'?'🏪 Рынок отмечен на компасе':'🏪 Market marked on the compass');
+});
 
 /* ---------------------------------------------------------------------- */
 /*  v30.3 — GARAGE ECONOMY, UNIVERSAL TRUCKS, DISPATCH PRIORITIES          */
@@ -12999,6 +13292,7 @@ function manualCandidateKeyV53(type, obj){
   if(type==='project') return `project:${obj?.id ?? 'x'}`;
   if(type==='road') return `road:${obj ?? 'x'}`;
   if(type==='factory') return 'factory:x';
+  if(type==='stall') return `stall:${obj?.id ?? 'x'}`;
   return `${type}:x`;
 }
 function nearestManualTargetV53(){
@@ -13055,6 +13349,16 @@ function nearestManualTargetV53(){
       const d=Math.hypot(player.position.x-pos.x,player.position.z-pos.z);
       if(d<PAD_TRIGGER_RADIUS+V53_TARGET_RELEASE_PAD)candidates.push({type:'factory',pos,dist:d,key:manualCandidateKeyV53('factory')});
       if(d>PAD_TRIGGER_RADIUS*1.6)factoryPadInsufficientV116=false;
+    }
+    // v116 market: physical stalls for the six previously menu-only systems + resource exchange.
+    // See MARKET_STALLS_V116/marketStallInfo()/marketStallBuy() -- one fixed plaza, same
+    // interaction pattern as district/project/road/factory candidates above.
+    if(typeof MARKET_STALLS_V116!=='undefined'){
+      for(const cfg of MARKET_STALLS_V116){
+        const d=Math.hypot(player.position.x-cfg.pos.x,player.position.z-cfg.pos.z);
+        if(d<PAD_TRIGGER_RADIUS+V53_TARGET_RELEASE_PAD)candidates.push({type:'stall',stall:cfg,dist:d,key:manualCandidateKeyV53('stall',cfg)});
+        if(d>PAD_TRIGGER_RADIUS*1.6)marketStallInsufficientV116[cfg.id]=false;
+      }
     }
   }catch(_){return null;}
   if(!candidates.length){v53InteractionTarget.key=null;v53InteractionTarget.ref=null;v53InteractionTarget.dist=Infinity;return null;}
@@ -13259,6 +13563,15 @@ function updatePlayer(dt) {
         sfx.error();
         toast(lang === 'ru' ? `Не хватает: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰` : `Missing: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰`);
       }
+    } else if (nearestManual?.type === 'stall') {
+      // v116 market stall: each id's marketStallBuy() reuses that system's own existing purchase
+      // function verbatim (buyStaffUpgrade/buyFleetUpgrade/startMajorTender/buyMetaUpgrade all
+      // already show their own sfx.error()+toast on insufficient funds -- no need to duplicate
+      // that here). Only "already maxed" (nothing left to buy) is a true no-op.
+      consumed = true;
+      const stallId = nearestManual.stall.id;
+      const info = marketStallInfo(stallId);
+      if (!info.maxed) marketStallBuy(stallId);
     }
     if (consumed) {
       interactRequested = false;
@@ -26481,6 +26794,20 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
             const ready=canPayResources(INDUSTRIAL_ZONE_PAD_COST_V116);
             prompt.textContent=ready?(lang==='ru'?'🏭 Построить завод':'🏭 Build the factory'):(lang==='ru'?`📦 Нужно: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰`:`📦 Need: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰`);
             btn.hidden=false;btn.textContent=ready?(lang==='ru'?'Построить':'Build'):(lang==='ru'?'Не хватает денег':'Not enough money');prompt.classList.add('show');
+          }else if(ctx.type==='stall'){
+            // v116 market stall: prompt shows the stall's next action (marketStallInfo()), same
+            // physical-pad pattern as district/project/factory above.
+            const info=marketStallInfo(ctx.stall.id),stallName=lang==='ru'?ctx.stall.ru:ctx.stall.en;
+            if(info.maxed){
+              prompt.textContent=`${stallName}: ${lang==='ru'?'всё куплено':'all bought'}`;
+              btn.hidden=false;btn.textContent='MAX';prompt.classList.add('show');
+            }else{
+              const ready=!!info.ready;
+              prompt.textContent=`🏪 ${stallName}: ${info.name}${info.sub?` · ${info.sub}`:''}`;
+              btn.hidden=false;
+              btn.textContent=ready?(lang==='ru'?'Купить':'Buy'):(info.active?(lang==='ru'?'В работе':'In progress'):(lang==='ru'?'Не хватает':'Not enough'));
+              prompt.classList.add('show');
+            }
           }
           requestLayoutV46();
         };
