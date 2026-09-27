@@ -8050,8 +8050,120 @@ function purchaseCurrentPad(options = {}) {
   if (newEra !== prevEra) showMilestone(newEra);
   currentPad = null;
   if (stageIndex < STAGES.length) spawnPad(stageIndex);
+  refreshManualRoadPadMarkersV116();
   updateHUD();
   checkAchievements();
+  save();
+  return true;
+}
+
+/* ---------------------------------------------------------------------- */
+/*  v116 MANUAL ROADS -- one "build road" ground pad per bought house that */
+/*  has no road yet (see manualRoadModeV116/manualRoadStagesV116 near the  */
+/*  top of the file, and the 'road' candidates in nearestManualTargetV53). */
+/*  This only ever runs anything when manualRoadModeV116 is true (a fresh  */
+/*  v116 save) -- every existing save keeps its automatic per-house road,  */
+/*  completely untouched by this block.                                    */
+/* ---------------------------------------------------------------------- */
+const roadPadMarkersV116 = new Map(); // stage index -> THREE.Group
+function spawnRoadPadMarkerV116(i) {
+  if (roadPadMarkersV116.has(i)) return;
+  const pos = stageRoadEndpointV367(i);
+  const group = new THREE.Group();
+  const disc = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.6, 0.6, 0.06, 24),
+    new THREE.MeshStandardMaterial({ color: 0x4a4f57, emissive: 0x1c2026, emissiveIntensity: 0.22, roughness: 0.72, metalness: 0.08 })
+  );
+  disc.position.y = 0.04;
+  disc.receiveShadow = true;
+  group.add(disc);
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.66, 0.045, 8, 28),
+    new THREE.MeshStandardMaterial({ color: 0xb7bec7, emissive: 0x33383f, emissiveIntensity: 0.18, roughness: 0.6, metalness: 0.1 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.08;
+  group.add(ring);
+  group.userData.pulseRing = ring;
+  const sprite = makeLabelSprite([lang === 'ru' ? 'ДОРОГА' : 'ROAD']);
+  sprite.position.y = 1.35;
+  sprite.scale.set(0.82, 0.34, 1);
+  group.add(sprite);
+  group.position.set(pos.x, 0, pos.z);
+  scene.add(group);
+  roadPadMarkersV116.set(i, group);
+}
+function removeRoadPadMarkerV116(i) {
+  const g = roadPadMarkersV116.get(i);
+  if (!g) return;
+  scene.remove(g);
+  disposeObject3D(g);
+  roadPadMarkersV116.delete(i);
+}
+// Keeps the set of visible "build road" pads in sync with buildings/manualRoadStagesV116.
+// Call after any purchase/upgrade that adds a building and after load() restores buildings.
+function refreshManualRoadPadMarkersV116() {
+  if (!manualRoadModeV116) return;
+  for (const b of buildings) {
+    if (!Number.isInteger(b?.index)) continue;
+    if (manualRoadStagesV116.has(b.index)) removeRoadPadMarkerV116(b.index);
+    else spawnRoadPadMarkerV116(b.index);
+  }
+}
+function buildManualRoadStageV116(i, pos) {
+  if (!Number.isInteger(i) || manualRoadStagesV116.has(i)) return false;
+  manualRoadStagesV116.add(i);
+  removeRoadPadMarkerV116(i);
+  // Reuse the EXACT existing canonical stage-road pipeline (addStraight/addCorner/addJunction,
+  // append-only asphalt, the v86 corner-rebuild fix from the eighth road pass) -- the only thing
+  // that changed is what feeds activeStageIdsV92() (see that function), not how any of this
+  // geometry is built or rendered.
+  try { refreshStageRoadsV367?.(); } catch (err) { console.warn('[v116 manual road]', err); }
+  spawnBurst(pos || stageRoadEndpointV367(i), 0x9099a6);
+  sfx.build();
+  toast(lang === 'ru' ? '🛣️ Дорога проложена' : '🛣️ Road built');
+  updateHUD();
+  save();
+  return true;
+}
+
+/* ---------------------------------------------------------------------- */
+/*  v116 INDUSTRIAL-ZONE BUILD PAD -- one ground pad ("Построить завод")   */
+/*  that builds the sawmill/concrete plant/metal yard/fleet depot cluster  */
+/*  all at once, reusing the exact same build functions this session's art */
+/*  pass already improved -- only WHEN they run changes (pad press instead */
+/*  of unconditional boot), see industrialZoneBuiltV116 near the top.      */
+/* ---------------------------------------------------------------------- */
+function buildIndustrialZoneV116() {
+  if (industrialZoneBuiltV116) return false;
+  if (!tryPayResources(INDUSTRIAL_ZONE_PAD_COST_V116)) {
+    sfx.error();
+    toast(lang === 'ru' ? `Не хватает: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰` : `Missing: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰`);
+    return false;
+  }
+  industrialZoneBuiltV116 = true;
+  STATIC_COLLIDERS.push(
+    { pos: GENERATOR_POS, radius: 1.9 },
+    { pos: SAWMILL_POS, radius: 2.15 },
+    { pos: CONCRETE_PLANT_POS, radius: 1.7 },
+    { pos: METAL_YARD_POS, radius: 1.75 }
+  );
+  buildSawmillScenery();
+  concretePlant = buildConcretePlant();
+  metalPlant = buildMetalYard();
+  spawnIndustrialCampLifeV116(4);
+  syncDeliveryFleet();
+  // rawRebuild, not refresh -- see the comment on window.__TYCOON_V67_ROADS__'s definition.
+  try { window.__TYCOON_V67_ROADS__?.rawRebuild?.() || window.__TYCOON_V67_ROADS__?.refresh?.(); } catch (err) { console.warn('[v116 factory pad] service roads', err); }
+  try { window.__TYCOON_V65_TRAFFIC__?.refresh?.(); } catch (err) { console.warn('[v116 factory pad] fleet yard', err); }
+  try { window.__TYCOON_V83_COLLISIONS__?.rebuild?.(); } catch (err) { console.warn('[v116 factory pad] collisions', err); }
+  spawnBurst(INDUSTRIAL_ZONE_PAD_POS_V116, 0xffd479);
+  triggerShake(0.16, 0.26);
+  sfx.build();
+  toast(lang === 'ru'
+    ? '🏭 Завод построен! Лесопилка, бетонный завод, металлобаза и автопарк готовы'
+    : '🏭 Factory built! Sawmill, concrete plant, steel yard and fleet depot are ready');
+  updateHUD();
   save();
   return true;
 }
@@ -12222,6 +12334,12 @@ function save() {
       activeBuilds,
       constructionQueue: constructionQueue.map(job => ({ type: job.type, index: job.index, level: job.level })),
       player: { x: player.position.x, z: player.position.z },
+      // v116 empty-world boot / manual roads: absent entirely on any save from before this
+      // change, which is exactly what makes an existing save keep loading unaffected (see the
+      // defaulting logic near knownSaveRawV64 at the top of the file).
+      industrialZoneBuiltV116: !!industrialZoneBuiltV116,
+      manualRoadModeV116: !!manualRoadModeV116,
+      manualRoadStagesV116: [...manualRoadStagesV116],
     });
     const previous = localStorage.getItem(SAVE_KEY);
     if (previous !== knownSaveRawV64) {
@@ -12568,6 +12686,15 @@ function load() {
       while (firstMissing < STAGES.length && present.has(firstMissing)) firstMissing++;
       stageIndex = firstMissing;
     }
+    // v116 empty-world boot / manual roads: reconcile the boot-time coarse guesses (set before
+    // this save's JSON was even fully parsed, see the top of the file) against the actual saved
+    // fields now that we have them. On an existing save these fields are simply absent, so
+    // industrialZoneBuiltV116/manualRoadModeV116 both stay at their safe "already built" /
+    // "automatic roads" defaults -- nothing here changes behaviour for a returning player.
+    if (typeof data.industrialZoneBuiltV116 === 'boolean') industrialZoneBuiltV116 = data.industrialZoneBuiltV116;
+    if (typeof data.manualRoadModeV116 === 'boolean') manualRoadModeV116 = data.manualRoadModeV116;
+    if (Array.isArray(data.manualRoadStagesV116)) manualRoadStagesV116 = new Set(data.manualRoadStagesV116.filter(Number.isInteger));
+    refreshManualRoadPadMarkersV116();
     constructionQueue.length = 0;
     if (Array.isArray(data.constructionQueue)) {
       for (const rawJob of data.constructionQueue.slice(0, 12)) {
@@ -12864,11 +12991,14 @@ const V53_TARGET_RELEASE_PAD = 0.22;
 // keyed state object stands in for it).
 const districtPadInsufficientV116={};
 const projectPadInsufficientV116={};
+let factoryPadInsufficientV116=false;
 function manualCandidateKeyV53(type, obj){
   if(type==='upgrade') return `upgrade:${obj?.index ?? 'x'}:${obj?.level ?? 'x'}`;
   if(type==='field') return `field:${obj?.cfg?.key ?? 'x'}`;
   if(type==='district') return `district:${obj?.id ?? 'x'}`;
   if(type==='project') return `project:${obj?.id ?? 'x'}`;
+  if(type==='road') return `road:${obj ?? 'x'}`;
+  if(type==='factory') return 'factory:x';
   return `${type}:x`;
 }
 function nearestManualTargetV53(){
@@ -12902,6 +13032,29 @@ function nearestManualTargetV53(){
       const d=Math.hypot(player.position.x-p.pos.x,player.position.z-p.pos.z);
       if(d<PAD_TRIGGER_RADIUS+V53_TARGET_RELEASE_PAD)candidates.push({type:'project',project:p,dist:d,key:manualCandidateKeyV53('project',p)});
       if(d>PAD_TRIGGER_RADIUS*1.6)projectPadInsufficientV116[p.id]=false;
+    }
+    // v116 manual roads: one "build road" pad per house the player has already bought but has
+    // not yet paved a road to (see manualRoadStagesV116/activeStageIdsV92()). Positioned at the
+    // house's own driveway endpoint (stageRoadEndpointV367) -- the same point the canonical
+    // stage-road renderer already terminates the paved deck at, so pressing this pad and having
+    // the road actually appear right under the player's feet are the same spot by construction.
+    if(typeof manualRoadModeV116!=='undefined'&&manualRoadModeV116){
+      for(const b of buildings){
+        if(!Number.isInteger(b?.index)||manualRoadStagesV116.has(b.index))continue;
+        const pos=stageRoadEndpointV367(b.index);
+        const d=Math.hypot(player.position.x-pos.x,player.position.z-pos.z);
+        if(d<PAD_TRIGGER_RADIUS+V53_TARGET_RELEASE_PAD)candidates.push({type:'road',stageIndexV116:b.index,pos,dist:d,key:manualCandidateKeyV53('road',b.index)});
+      }
+    }
+    // v116 industrial-zone build pad: a single "Построить завод" ground pad at the (fixed,
+    // already-relocated) industrial zone, reachable on foot with no road required, same as any
+    // other ground pad. Only exists before the player has built the cluster -- see
+    // buildIndustrialZoneV116().
+    if(typeof industrialZoneBuiltV116!=='undefined'&&!industrialZoneBuiltV116){
+      const pos=INDUSTRIAL_ZONE_PAD_POS_V116;
+      const d=Math.hypot(player.position.x-pos.x,player.position.z-pos.z);
+      if(d<PAD_TRIGGER_RADIUS+V53_TARGET_RELEASE_PAD)candidates.push({type:'factory',pos,dist:d,key:manualCandidateKeyV53('factory')});
+      if(d>PAD_TRIGGER_RADIUS*1.6)factoryPadInsufficientV116=false;
     }
   }catch(_){return null;}
   if(!candidates.length){v53InteractionTarget.key=null;v53InteractionTarget.ref=null;v53InteractionTarget.dist=Infinity;return null;}
@@ -13093,6 +13246,18 @@ function updatePlayer(dt) {
         projectPadInsufficientV116[p.id] = true;
         sfx.error();
         toast(lang === 'ru' ? `Не хватает ресурсов: ${projectCostText(p)}` : `Not enough resources: ${projectCostText(p)}`);
+      }
+    } else if (nearestManual?.type === 'road') {
+      consumed = true;
+      buildManualRoadStageV116(nearestManual.stageIndexV116, nearestManual.pos);
+    } else if (nearestManual?.type === 'factory') {
+      consumed = true;
+      if (canPayResources(INDUSTRIAL_ZONE_PAD_COST_V116)) {
+        buildIndustrialZoneV116();
+      } else if (!factoryPadInsufficientV116) {
+        factoryPadInsufficientV116 = true;
+        sfx.error();
+        toast(lang === 'ru' ? `Не хватает: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰` : `Missing: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰`);
       }
     }
     if (consumed) {
@@ -26307,6 +26472,15 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
             const p=ctx.project,ready=canPayResources(p.cost),name=lang==='ru'?p.ru:p.en;
             prompt.textContent=ready?(lang==='ru'?`🏗️ Начать: ${name}`:`🏗️ Start: ${name}`):(lang==='ru'?`📦 Нужно: ${projectCostText(p)}`:`📦 Need: ${projectCostText(p)}`);
             btn.hidden=false;btn.textContent=ready?(lang==='ru'?'Начать':'Start'):(lang==='ru'?'Не хватает ресурсов':'Resources needed');prompt.classList.add('show');
+          }else if(ctx.type==='road'){
+            // v116 manual roads: "build road" pad at a bought house's own driveway endpoint.
+            prompt.textContent=lang==='ru'?'🛣️ Проложить дорогу к дому':'🛣️ Pave the road to this house';
+            btn.hidden=false;btn.textContent=lang==='ru'?'Строить':'Build';prompt.classList.add('show');
+          }else if(ctx.type==='factory'){
+            // v116 industrial-zone build pad: one pad builds the whole cluster at once.
+            const ready=canPayResources(INDUSTRIAL_ZONE_PAD_COST_V116);
+            prompt.textContent=ready?(lang==='ru'?'🏭 Построить завод':'🏭 Build the factory'):(lang==='ru'?`📦 Нужно: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰`:`📦 Need: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰`);
+            btn.hidden=false;btn.textContent=ready?(lang==='ru'?'Построить':'Build'):(lang==='ru'?'Не хватает денег':'Not enough money');prompt.classList.add('show');
           }
           requestLayoutV46();
         };
@@ -32023,6 +32197,14 @@ function obstacles(i,width){
     const ids=new Set();
     for(let i=0;i<Math.min(STAGES.length,Math.max(0,Number(stageIndex)||0));i++)ids.add(i);
     for(const b of (typeof buildings!=='undefined'?buildings:[]))if(Number.isInteger(b?.index)&&b.index>=0&&b.index<STAGES.length)ids.add(b.index);
+    // v116 manual roads: a fresh-world save (manualRoadModeV116) no longer treats "this house
+    // exists" as "its road exists" -- only a stage the player actually paved via the road pad
+    // (manualRoadStagesV116, see nearestManualTargetV53()'s 'road' candidates) counts as active
+    // here, so the canonical renderer below only ever draws roads the player asked for. An
+    // existing save (manualRoadModeV116 false) never reaches this branch at all.
+    if(typeof manualRoadModeV116!=='undefined'&&manualRoadModeV116){
+      return [...ids].filter(i=>manualRoadStagesV116.has(i)).sort((a,b)=>a-b);
+    }
     return [...ids].sort((a,b)=>a-b);
   }
 
