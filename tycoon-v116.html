@@ -950,6 +950,48 @@ let otherTabSaveLockV63 = false;
 // synchronously at save time also catches writes before a queued storage event runs.
 let knownSaveRawV64 = null;
 try { knownSaveRawV64 = localStorage.getItem(SAVE_KEY); } catch (_) {}
+
+/* v116 (empty-world boot, 2026-09-27 user request): "я хочу чтобы игрок был один в мире --
+   ничего не было, ни лесопилок, ни дорог -- сам всё строит, наступая на кружочки". A brand
+   new save (SAVE_KEY entirely absent from localStorage) now boots into an empty world: grass,
+   the player, and nothing else -- no sawmill/concrete/metal scenery, no industrial service
+   roads, no fleet yard/parking, no industrial ambient workforce or delivery trucks. The player
+   builds all of that via ground pads (see buildIndustrialZoneV116() and the manual road pads
+   further down this file).
+   CRITICAL invariant (non-negotiable, see VISION.md): any EXISTING save keeps loading exactly
+   as it always has. This flag defaults to "already built" the instant a save is present at
+   all -- including every save written before this change, which has no opinion on this field
+   whatsoever -- and only becomes "not yet built" when localStorage genuinely has no save under
+   SAVE_KEY. A save that already recorded this field (a fresh v116 game that saved before or
+   after building the factory pad) always wins over the coarse guess. */
+let industrialZoneBuiltV116 = true;
+// v116 manual roads (same user request): a fresh save also stops auto-paving a house's road
+// the instant the house is bought. Instead each built-but-unrouted house gets its own "build
+// road" ground pad (see nearestManualTargetV53()'s 'road' candidates); stepping on it is the
+// only thing that adds that stage's id to manualRoadStagesV116, which is what
+// activeStageIdsV92() (v86-canonical-stage-roads) now checks before rendering that stage's
+// road. An existing save (manualRoadModeV116 false) never consults this set at all -- every
+// built house's road keeps appearing automatically, exactly as before this change.
+let manualRoadModeV116 = false;
+let manualRoadStagesV116 = new Set();
+try {
+  if (!knownSaveRawV64) {
+    industrialZoneBuiltV116 = false;
+    manualRoadModeV116 = true;
+  } else {
+    const parsedBootSaveV116 = JSON.parse(knownSaveRawV64);
+    if (parsedBootSaveV116 && typeof parsedBootSaveV116.industrialZoneBuiltV116 === 'boolean') {
+      industrialZoneBuiltV116 = parsedBootSaveV116.industrialZoneBuiltV116;
+    }
+    if (parsedBootSaveV116 && typeof parsedBootSaveV116.manualRoadModeV116 === 'boolean') {
+      manualRoadModeV116 = parsedBootSaveV116.manualRoadModeV116;
+    }
+    if (parsedBootSaveV116 && Array.isArray(parsedBootSaveV116.manualRoadStagesV116)) {
+      manualRoadStagesV116 = new Set(parsedBootSaveV116.manualRoadStagesV116.filter(Number.isInteger));
+    }
+  }
+} catch (_) { /* corrupt/foreign save -- fall back to the safe "already built"/"automatic roads" default */ }
+
 function lockForeignSaveV64() {
   if (otherTabSaveLockV63) return;
   otherTabSaveLockV63 = true;
@@ -2850,12 +2892,27 @@ const METAL_YARD_POS = new THREE.Vector3(-7.3 + INDUSTRIAL_ZONE_OFFSET_X, 0, -10
 
 // Static colliders for the sawmill's two buildings, so they're as solid as any spiral
 // building (checked in updatePlayer() alongside the `buildings` array).
-const STATIC_COLLIDERS = [
+// v116 empty-world boot: base modules/special projects push their own entries onto this same
+// array later (see STATIC_COLLIDERS.push() elsewhere), so it can't just be skipped wholesale
+// when the industrial zone isn't built yet -- only these 4 fixed industrial entries are
+// conditional; buildIndustrialZoneV116() pushes the exact same 4 objects once the player
+// builds the factory pad, so nothing is an invisible wall over grass in a fresh world.
+const STATIC_COLLIDERS = industrialZoneBuiltV116 ? [
   { pos: GENERATOR_POS, radius: 1.9 },
   { pos: SAWMILL_POS, radius: 2.15 },
   { pos: CONCRETE_PLANT_POS, radius: 1.7 },
   { pos: METAL_YARD_POS, radius: 1.75 },
-];
+] : [];
+
+// v116 industrial-zone build pad: a single ground pad the player can reach on foot (no road
+// needed, same as any other pad) that builds the whole cluster at once. Positioned in the open
+// service yard just north of the generator camp -- clear of all 4 building footprints/colliders
+// above, verified live with a screenshot (scratchpad/emptyworld116/factory_pad_*.png).
+const INDUSTRIAL_ZONE_PAD_POS_V116 = new THREE.Vector3(GENERATOR_POS.x + 2.6, 0, GENERATOR_POS.z + 3.6);
+// Money-only and cheap enough to reach right after the free first house (STAGES[0].cost 50,
+// starting money 300) -- see CHANGELOG_V116.md for the progression-sanity-check reasoning.
+// No plank/concrete/metal requirement: those resources don't exist until this pad is built.
+const INDUSTRIAL_ZONE_PAD_COST_V116 = { money: 150, wood: 0, concrete: 0, metal: 0 };
 
 /* v116 (de-elevation): this belt used to cross the depot service road segment
    `sawmillBypass`->`depotWest` (measured live with a real OBB-vs-OBB test: 2 overlaps, depth
@@ -3171,7 +3228,10 @@ function buildSawmillScenery() {
   };
 }
 
-buildSawmillScenery();
+// v116 empty-world boot: skipped entirely for a genuinely fresh save (see
+// industrialZoneBuiltV116 above); buildIndustrialZoneV116() calls this once the player
+// builds the factory pad. Every existing save keeps building it here, unchanged.
+if (industrialZoneBuiltV116) buildSawmillScenery();
 
 /* ---------------------------------------------------------------------- */
 /*  CONCRETE — the third resource (spec section 3: "add resources          */
@@ -3388,11 +3448,11 @@ function buildConcretePlant() {
   scene.add(group);
   return { group, drumPivot, label };
 }
-concretePlant = buildConcretePlant();
+if (industrialZoneBuiltV116) concretePlant = buildConcretePlant(); // v116 empty-world boot
 
 function updateConcretePlant(dt) {
-  if (concretePlant.drumPivot) concretePlant.drumPivot.rotation.x += dt * (stageIndex >= CONCRETE_UNLOCK_STAGE ? 2.2 : 0.3);
-  if (stageIndex < CONCRETE_UNLOCK_STAGE) return;
+  if (concretePlant?.drumPivot) concretePlant.drumPivot.rotation.x += dt * (stageIndex >= CONCRETE_UNLOCK_STAGE ? 2.2 : 0.3);
+  if (!concretePlant || stageIndex < CONCRETE_UNLOCK_STAGE) return;
   concretePlantTimer += dt;
   const concreteInterval = CONCRETE_AUTO_INTERVAL / productionSpeedMultiplier();
   if (concretePlantTimer >= concreteInterval) {
@@ -3464,7 +3524,7 @@ function buildMetalYard() {
   scene.add(group);
   return { group, cutterWheel, label, loadRing };
 }
-metalPlant = buildMetalYard();
+if (industrialZoneBuiltV116) metalPlant = buildMetalYard(); // v116 empty-world boot
 
 
 const LOGISTICS_ZONES = {};
@@ -7561,45 +7621,48 @@ function hasDeliveryVehicle(cargo) {
 }
 
 function syncDeliveryFleet() {
-  if (LOGISTICS_ZONES.planks) LOGISTICS_ZONES.planks.group.visible = true;
+  // v116 empty-world boot: the plank loading zone/truck used to be unconditional (the very
+  // first resource loop in the game). In a fresh world there is no sawmill to load from yet --
+  // both stay gated on industrialZoneBuiltV116, exactly like concrete/metal already gate on
+  // their own unlock stage. Once buildIndustrialZoneV116() flips the flag, the very next
+  // syncDeliveryFleet() tick (updateAmbientLife runs it every .3-.55s) picks this up on its own.
+  if (LOGISTICS_ZONES.planks) LOGISTICS_ZONES.planks.group.visible = industrialZoneBuiltV116;
   if (LOGISTICS_ZONES.concrete) LOGISTICS_ZONES.concrete.group.visible = stageIndex >= CONCRETE_UNLOCK_STAGE;
   if (LOGISTICS_ZONES.metal) LOGISTICS_ZONES.metal.group.visible = stageIndex >= METAL_UNLOCK_STAGE;
   // v116: initial homes translated with the fleet yard (INDUSTRIAL_ZONE_OFFSET_X). Superseded
   // by v65's applyFleetHomesV65()/desiredHomeV65() shortly after boot, but kept in sync so
   // there is no stale-position flash before that first refresh runs.
-  if (!hasDeliveryVehicle('planks')) {
+  if (industrialZoneBuiltV116 && !hasDeliveryVehicle('planks')) {
     addDeliveryVehicle(createPlankDeliveryTruck(), 'planks', new THREE.Vector3(-16.20 + INDUSTRIAL_ZONE_OFFSET_X, 0, -1.15), 3.5);
   }
-  if (stageIndex >= CONCRETE_UNLOCK_STAGE && !hasDeliveryVehicle('concrete')) {
+  if (industrialZoneBuiltV116 && stageIndex >= CONCRETE_UNLOCK_STAGE && !hasDeliveryVehicle('concrete')) {
     addDeliveryVehicle(createConcreteMixerTruck(), 'concrete', new THREE.Vector3(-8.25 + INDUSTRIAL_ZONE_OFFSET_X, 0, -5.80), 3.05);
     toast(lang === 'ru' ? '🚚 Открыта бетономешалка' : '🚚 Concrete mixer unlocked');
   }
-  if (stageIndex >= METAL_UNLOCK_STAGE && !hasDeliveryVehicle('metal')) {
+  if (industrialZoneBuiltV116 && stageIndex >= METAL_UNLOCK_STAGE && !hasDeliveryVehicle('metal')) {
     addDeliveryVehicle(createMetalDeliveryTruck(), 'metal', new THREE.Vector3(-5.25 + INDUSTRIAL_ZONE_OFFSET_X, 0, -5.15), 3.25);
     toast(lang === 'ru' ? '🚚 Открыт металловоз' : '🚚 Steel truck unlocked');
   }
   syncUniversalFleet();
 }
 
-function spawnAmbientLife() {
-  // 7 workers cycling through the 4 roles (builder/rigger/foreman/loader), each anchored to
-  // a home base they return to (and wander only near) whenever there's no construction to
-  // help with. Two are stationed near each of the sawmill's two buildings, two at the
-  // central plaza, one at the fourth spiral stage -- close to where they're actually likely
-  // to be needed rather than scattered arbitrarily.
-  const workerCount = VISUAL_MOBILE ? 4 : 7;
-  for (let i = 0; i < workerCount; i++) {
+// v116 empty-world boot: the industrial-camp workforce (2 workers at GENERATOR_POS + 2 at
+// SAWMILL_POS) and the stored scissor lift both live at the industrial zone, which a fresh
+// world doesn't have yet. Extracted out of spawnAmbientLife() so buildIndustrialZoneV116()
+// can call the exact same code once the player builds the factory pad, instead of duplicating
+// it. On an existing save (industrialZoneBuiltV116 already true) this still runs at boot from
+// spawnAmbientLife() below, unchanged from before this pass.
+function spawnIndustrialCampLifeV116(industrialWorkerCount) {
+  for (let i = 0; i < industrialWorkerCount; i++) {
     const role = WORKER_ROLES[i % WORKER_ROLES.length];
     const worker = createWorkerNPC(role.key);
-    const base = i < 2 ? GENERATOR_POS : (i < 4 ? SAWMILL_POS : (i < 6 ? new THREE.Vector3(0, 0, 0) : stagePosition(3)));
+    const base = i < 2 ? GENERATOR_POS : SAWMILL_POS;
     worker.homeBase = base.clone();
     worker.group.position.set(base.x + (Math.random() - 0.5) * 2.8, 0, base.z + (Math.random() - 0.5) * 2.8);
     chooseWorkerTarget(worker);
     scene.add(worker.group);
     npcWorkers.push(worker);
   }
-
-  syncDeliveryFleet();
 
   // v74: the scissor lift is construction-site equipment, not a road vehicle.
   // It stays out of serviceVehicles entirely, eliminating a low-value source of traffic deadlocks.
@@ -7614,6 +7677,35 @@ function spawnAmbientLife() {
   for (const leg of lift.userData.outriggers || []) leg.visible = false;
   scene.add(lift);
   scene.userData.siteLiftEquipmentV74 = lift;
+}
+
+function spawnAmbientLife() {
+  // 7 workers cycling through the 4 roles (builder/rigger/foreman/loader), each anchored to
+  // a home base they return to (and wander only near) whenever there's no construction to
+  // help with. Two are stationed near each of the sawmill's two buildings, two at the
+  // central plaza, one at the fourth spiral stage -- close to where they're actually likely
+  // to be needed rather than scattered arbitrarily.
+  const workerCount = VISUAL_MOBILE ? 4 : 7;
+  const industrialWorkerCount = Math.min(4, workerCount);
+  // v116 empty-world boot: this loop now only ever covers the non-industrial slots (hub +
+  // stage3); the industrial-camp slots (i<4, GENERATOR_POS/SAWMILL_POS) are always created via
+  // spawnIndustrialCampLifeV116() instead (called first, same as before this pass, to keep
+  // npcWorkers' creation order identical for an existing save), gated on
+  // industrialZoneBuiltV116, so a fresh world can skip them without touching this loop's own
+  // indices/roles at all.
+  if (industrialZoneBuiltV116) spawnIndustrialCampLifeV116(industrialWorkerCount);
+  for (let i = industrialWorkerCount; i < workerCount; i++) {
+    const role = WORKER_ROLES[i % WORKER_ROLES.length];
+    const worker = createWorkerNPC(role.key);
+    const base = i < 6 ? new THREE.Vector3(0, 0, 0) : stagePosition(3);
+    worker.homeBase = base.clone();
+    worker.group.position.set(base.x + (Math.random() - 0.5) * 2.8, 0, base.z + (Math.random() - 0.5) * 2.8);
+    chooseWorkerTarget(worker);
+    scene.add(worker.group);
+    npcWorkers.push(worker);
+  }
+
+  syncDeliveryFleet();
 }
 spawnAmbientLife();
 
@@ -29088,6 +29180,11 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
   ------------------------------------------------------------------ */
   let parkingGroupV65=null;
   function rebuildParkingV65(){
+    // v116 empty-world boot: no fleet yard until the player builds the factory pad.
+    if(typeof industrialZoneBuiltV116!=='undefined'&&!industrialZoneBuiltV116){
+      if(parkingGroupV65){scene.remove(parkingGroupV65);safe(()=>disposeObject3D(parkingGroupV65));parkingGroupV65=null;}
+      return;
+    }
     if(parkingGroupV65){scene.remove(parkingGroupV65);safe(()=>disposeObject3D(parkingGroupV65));}
     const g=new THREE.Group();g.name='v116FleetYard';
     // Every child below carries its own absolute world-ish local coordinate (e.g. lot at
@@ -29368,6 +29465,10 @@ function rebuildServiceRoadsV66(){
       scene.remove(oldRoad);safe(()=>disposeObject3D(oldRoad));
       cityWorldRuntime.transportAccessRoads=null;
     }
+    // v116 empty-world boot: this is the industrial service-road network (sawmill/concrete/
+    // metal/fleet access). Nothing to draw until the player builds the factory pad -- the old
+    // road (if any, e.g. a stale one from before a mid-run reset) has just been removed above.
+    if(typeof industrialZoneBuiltV116!=='undefined'&&!industrialZoneBuiltV116)return null;
     if(roadGroupV66&&roadGroupV66!==oldRoad&&roadGroupV66.parent){
       scene.remove(roadGroupV66);safe(()=>disposeObject3D(roadGroupV66));
     }
@@ -29527,7 +29628,13 @@ function rebuildServiceRoadsV66(){
     setTimeout(rebuildServiceRoadsV66,700);
     setTimeout(()=>{rebuildServiceRoadsV66();console.log('[v66 road audit]',roadAuditV66());},1950);
   }
-  window.__TYCOON_V67_ROADS__={version:VERSION,refresh:rebuildServiceRoadsV66,run:roadAuditV66};
+  // v116: rawRebuild stays pointed at the actual geometry-building function even after a later
+  // layer (v113-stable-road-blueprint) overwrites .refresh to its own append-only
+  // syncServiceRoads() below -- buildIndustrialZoneV116() needs the real, one-time full build
+  // (syncServiceRoads() only ever appends on top of a network rebuildServiceRoadsV66() already
+  // drew; calling it first, before any network exists, just seeds its bookkeeping against
+  // nothing and permanently thinks every edge is "already covered").
+  window.__TYCOON_V67_ROADS__={version:VERSION,refresh:rebuildServiceRoadsV66,run:roadAuditV66,rawRebuild:rebuildServiceRoadsV66};
   window.__TYCOON_V66_ROADS__=window.__TYCOON_V67_ROADS__;
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initV66,{once:true});else initV66();
 })();
@@ -34584,6 +34691,12 @@ Do not treat this geometry block as completion of the entire road/transport audi
   }
 
   function syncServiceRoads(){
+    // v116 empty-world boot: nothing to sync/seed until the factory pad actually builds the
+    // industrial service-road network (rebuildServiceRoadsV66(), called directly from
+    // buildIndustrialZoneV116()). Seeding this layer's bookkeeping against a graph that has no
+    // rendered geometry yet would wrongly mark those edges "already covered" once the network
+    // is finally built, and appendServiceV116() would then never draw them.
+    if(typeof industrialZoneBuiltV116!=='undefined'&&!industrialZoneBuiltV116)return cityWorldRuntime.transportAccessRoads;
     const sig=serviceGraphSignature();
     if(!runtime.serviceSignature){runtime.serviceSignature=sig;seedPersistentServiceV116();return cityWorldRuntime.transportAccessRoads;}
     if(!sig||sig===runtime.serviceSignature)return cityWorldRuntime.transportAccessRoads;
