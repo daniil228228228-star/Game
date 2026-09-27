@@ -1708,6 +1708,12 @@ const sfx = {
   prestige: () => { beep(440, 0, 0.12, 'sine', 0.1); beep(660, 0.1, 0.12, 'sine', 0.1); beep(880, 0.2, 0.12, 'sine', 0.1); beep(1320, 0.3, 0.3, 'sine', 0.13); },
   plank: () => { beep(300, 0, 0.08, 'triangle', 0.05); beep(450, 0.05, 0.1, 'triangle', 0.05); },
   purchase: () => { beep(460, 0, 0.07, 'triangle', 0.055); beep(620, 0.045, 0.09, 'triangle', 0.045); },
+  // v117 juice pass: these two keys were already being called (sfx.click?.() at 3 fleet/ops UI
+  // sites, no sfx call at all at the delivery-arrival site) but neither existed on this object,
+  // so the click taps were silent no-ops and delivery had no sound whatsoever. Root-caused here
+  // instead of adding a new patch layer -- see CHANGELOG_V116.md for the audit that found this.
+  click: () => { beep(920, 0, 0.035, 'sine', 0.045); },
+  delivery: () => { beep(500, 0, 0.08, 'sine', 0.06); beep(750, 0.06, 0.14, 'sine', 0.07); },
 };
 
 /* ---------------------------------------------------------------------- */
@@ -7494,6 +7500,7 @@ function moveWorkVehicle(vehicle, dt) {
         const build = ud.assignedBuild;
         if (ud._v77PendingUnload && build && completeVehicleDelivery(ud)) {
           spawnBurst(build.entry.pos, ud.cargo === 'concrete' ? 0xb9b3a6 : (ud.cargo === 'metal' ? 0x9aa3ad : 0xc68a4a));
+          sfx.delivery();
           toast(lang === 'ru'
             ? '🚚 Разгружено: ' + cargoName(ud.cargo) + ' → ' + stageName(STAGES[build.entry.index])
             : '🚚 Unloaded: ' + cargoName(ud.cargo) + ' → ' + stageName(STAGES[build.entry.index]));
@@ -8136,6 +8143,7 @@ function buildManualRoadStageV116(i, pos) {
   // geometry is built or rendered.
   try { refreshStageRoadsV367?.(); } catch (err) { console.warn('[v116 manual road]', err); }
   spawnBurst(pos || stageRoadEndpointV367(i), 0x9099a6);
+  triggerShake(0.09, 0.16);
   sfx.build();
   toast(lang === 'ru' ? '🛣️ Дорога проложена' : '🛣️ Road built');
   spawnFloatingTextV117(pos || stageRoadEndpointV367(i), lang === 'ru' ? '🛣️ Дорога' : '🛣️ Road');
