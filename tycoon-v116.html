@@ -4147,7 +4147,10 @@ function deliverCarriedLogs() {
   }
   spawnBurst(SAWMILL_DROPOFF_POS, 0xffcf74);
   sfx.build();
-  toast(t('toast_logs_delivered'));
+  // v116: no floating toast for this delivery-accepted event -- per the user's stated design
+  // rule, guidance/status now lives only on the ground pads and in-world signage, not floating
+  // 2D panels (see the note by #nextCard's CSS hide in v62-qa-style). The logs/burst/sound
+  // feedback above still plays; only the toast popup is removed.
   updateHUD();
   save();
 }
@@ -8271,7 +8274,11 @@ function checkAchievements() {
       unlockedAch.add(a.id);
       unseenAchievementCount += 1;
       earn(a.reward);
-      toast(t('toast_achievement', { name: achName(a), reward: a.reward }));
+      // v116: no floating achievement toast -- per the user's stated design rule, only the
+      // ground pads/in-world signage carry progression feedback (see the note by #nextCard's
+      // CSS hide in v62-qa-style). The achievement itself, its money reward and the unseen-count
+      // badge on the achievements menu button (updateAchBadge(), called below) are unaffected --
+      // the player still sees it there and in the achievements list.
       sfx.achievement();
       unlockedAny = true;
     }
@@ -13185,9 +13192,11 @@ function animate() {
         if (build.waitingForDelivery !== pendingDelivery.cargo) {
           build.waitingForDelivery = pendingDelivery.cargo;
           build.waitingSince = performance.now(); // v63 hotfix 0.3(c): see deliveryWaitExceedsOneTrip()
-          toast(lang === 'ru'
-            ? '🚚 ' + stageName(STAGES[build.entry.index]) + ' ждёт доставку: ' + cargoName(pendingDelivery.cargo)
-            : '🚚 ' + stageName(STAGES[build.entry.index]) + ' is waiting for: ' + cargoName(pendingDelivery.cargo));
+          // v116: no floating toast for this -- the site's own in-world "Разгрузка/Unloading"
+          // label (refreshSiteUnloadZone(), called a few lines below on every tick regardless)
+          // already carries this status as world-anchored signage on the construction site
+          // itself, which the user's stated design rule leaves alone; only the floating 2D
+          // toast popup is removed.
           updateHUD();
         }
       }
@@ -28704,6 +28713,20 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
   #actionPrompt{max-width:min(330px,calc(100vw - 110px))!important;font-size:11px!important;line-height:1.28!important}
   #toast{max-width:min(330px,calc(100vw - 28px))!important}
 }
+/* v116: the user's stated design rule (confirmed twice) is that progression/guidance happens
+   ONLY through the circular world-space pads on the ground -- no separate floating 2D panels
+   for objectives/tutorials/achievements. #nextCard (both its compact delivery-wait form and its
+   full "premium guide card" onboarding form -- title/chapter-progress dots/"Show" button) and
+   #requiredActionV38 (the bottom "REQUIRED STEP" banner) are exactly that: floating quest UI, on
+   every viewport, not just the mobile-only decluttering above. #eventBanner is the same for the
+   periodic world-event announcements ("Property demand: income +35%" etc.). Hidden unconditionally
+   here, the same way this block already hides #secondaryObjectiveV36/#companyChip/#coachChip on
+   mobile -- the underlying quest/event/achievement systems (currentGuideQuest(), activeWorldEvent,
+   ACHIEVEMENTS) are untouched, they just no longer render as floating cards. The ground pads
+   (worldNavPad/upgradePad/fieldUpgradePad, already highlighted when recommended -- see
+   updateRecommendedPadsV351()/updateWorldNavPadsV362()) remain the one on-screen guidance channel.
+*/
+#nextCard,#requiredActionV38,#eventBanner{display:none!important}
 </style>
 <script id="v62-final-qa-script">
 (()=>{
