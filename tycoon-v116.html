@@ -34631,6 +34631,26 @@ Do not treat this geometry block as completion of the entire road/transport audi
       safe(()=>window.__TYCOON_V84_ROADS__?.cleanScenery?.());
       safe(()=>window.__TYCOON_V83_COLLISIONS__?.rebuild?.());
       safe(()=>window.__TYCOON_V82_TRAFFIC__?.refresh?.());
+      // v116: a genuinely new stage was just appended as a corner-less straight deck (this
+      // function's own job, see the comment above -- append-only, no addCorner()/addJunction()
+      // step). The ONLY thing that ever draws the rounded corner/junction fill for the stage-road
+      // network is v86-canonical-stage-roads' raw refresh() (window.__TYCOON_V61_AUDIT__.refresh,
+      // the same raw rebuild v84's fullSync() calls behind its own generation-guard to avoid the
+      // old "rebuilds every idle tick" bug). That guard compares v86's ensureSig()/sigNow(), which
+      // is driven entirely by window.__TYCOON_V83_COLLISIONS__'s registry -- and confirmed live,
+      // this registry never gains a 'building'/'construction' entry for stage houses at all (its
+      // only matching entries are the fixed industrial statics), so sigNow() never changes when a
+      // stage house is built and the guard permanently reads "unchanged", even calling it directly
+      // through window.__TYCOON_V84_ROADS__.refresh(). Net effect, confirmed live: building all 10
+      // stage houses through the normal purchaseCurrentPad() path left window.__TYCOON_STAGE_ROADS__'s
+      // own canonical group stuck at its pre-boot (0-stage) snapshot forever, so every stage
+      // T-junction/corner added since then stayed two straight decks meeting at a raw, unmitred
+      // angle -- the exact "zigzag" the user's screenshot shows. Bypassing that broken registry-based
+      // guard here and calling the raw rebuild directly is still safe and bounded: this whole branch
+      // already only runs when `added` is true, i.e. once per genuine new stage (appendStageV116()
+      // found a stage not yet in runtime.stagePaths) -- never on an idle re-sync, since every already-
+      // appended stage keeps failing that same check on every later call.
+      safe(()=>window.__TYCOON_V61_AUDIT__?.refresh?.());
     }
     return cityWorldRuntime.stageRoads;
   }
