@@ -1,0 +1,11 @@
+{
+  "name": "tycoon-city-3d",
+  "private": true,
+  "description": "Mobile 3D city-builder tycoon game (tycoon-v116.html). See VISION.md / CHANGELOG_V116.md / ROADS_V116_NOTES.md.",
+  "scripts": {
+    "test": "node tests/run-all.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}
