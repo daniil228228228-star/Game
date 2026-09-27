@@ -14314,7 +14314,21 @@ function ensureGroundArrowV117() {
   shape.closePath();
   const arrow = new THREE.Mesh(
     new THREE.ShapeGeometry(shape),
-    new THREE.MeshBasicMaterial({ color: 0xffd479, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false })
+    // v116 first-hour polish (Этап 1 п.2 audit): depthTest:false added after a live screenshot
+    // audit found the arrow effectively invisible on a fresh boot -- GROUND_ARROW_FORWARD_OFFSET_V117
+    // (1.65) places it only just past the player's own feet, and with this file's real
+    // over-the-shoulder follow camera (elevated + pitched down behind the player, see
+    // updatePlayer()'s "Follow-cam v2" block), that position sits almost exactly behind the
+    // player's own body from camera whenever the target direction is roughly the way the camera
+    // is already looking -- which is the common case, including the very first frame of a new
+    // game. Increasing the forward offset does not fix this (verified live at 1.65/2.2/2.6/3.0/3.6
+    // -- the marker only moves along the same view ray, staying occluded or moving further/smaller);
+    // disabling depth-test is the standard fix for an always-relevant waypoint marker and keeps it
+    // literally on the ground (VISION.md "по земле ведёт стрелка"), just drawn on top instead of
+    // behind solid geometry. renderOrder=6 below already draws it late/on top of most transparent
+    // geometry; depthTest:false makes that guarantee hold against opaque meshes (the player, other
+    // buildings) too.
+    new THREE.MeshBasicMaterial({ color: 0xffd479, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false, depthTest: false })
   );
   arrow.rotation.x = -Math.PI / 2;
   g.add(arrow);
@@ -31219,6 +31233,19 @@ window.__TYCOON_V74_BUILD__={
   constructionPriorityMultiplier=function(build){
     const base=priorityBeforeV80(build);
     if(!build?.entry?.underConstruction||build.waitingForDelivery)return base;
+    // v116 first-hour polish (Этап 1 п.2 audit): a genuinely fresh empty-world save (VISION.md
+    // "Старт новой игры: пустой мир", commit f9ade3a) has ZERO npcWorkers of ANY role until the
+    // player builds the industrial zone -- spawnIndustrialCampLifeV116() is the only place that
+    // creates the first ones, and it only runs from buildIndustrialZoneV116(). Before that, house
+    // 0's construction can never find an on-site crew and was stuck in this function's "no crew"
+    // branch below (a hard freeze for the first 4.2s of real time, then an 18% crawl) for its
+    // ENTIRE duration -- measured live at ~59s wall-clock for a building whose own
+    // constructionDuration() is ~2.9s, on the very first building of the game. That is not a wait
+    // the player can shorten by doing anything (no crew can physically exist yet), so skip the
+    // crew penalty while no crew exists anywhere in the game -- once the factory pad is built,
+    // npcWorkers.length becomes >0 immediately and this bypass stops applying for every build
+    // from then on (house 1 onward keeps the existing crew-arrival pacing, unchanged).
+    if(typeof npcWorkers!=='undefined' && npcWorkers.length===0) return base;
     const crew=onSiteCrewV80(build);
     if(crew.length){
       build._v80CrewWaitStarted=0;build._v80CrewWaitSeconds=0;build._v80CrewWaiting=false;
