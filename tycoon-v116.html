@@ -3239,6 +3239,13 @@ function buildSawmillScenery() {
 // industrialZoneBuiltV116 above); buildIndustrialZoneV116() calls this once the player
 // builds the factory pad. Every existing save keeps building it here, unchanged.
 if (industrialZoneBuiltV116) buildSawmillScenery();
+// v117's spawnFactoryPadMarkerV117() call for the !industrialZoneBuiltV116 case lives at the
+// very end of the file (after load()), not here -- calling it this early hit the `let
+// factoryPadMarkerV117` binding declared much further down before that line had executed
+// (temporal dead zone), threw, and silently aborted the rest of this entire top-level script
+// pass (player/CITY_DISTRICTS/cityWorldRuntime/etc. never got initialized). Same class of bug
+// this file already warns about elsewhere ("uncaught ReferenceError aborts the rest of this
+// whole <script> block").
 
 /* ---------------------------------------------------------------------- */
 /*  CONCRETE — the third resource (spec section 3: "add resources          */
@@ -7490,6 +7497,7 @@ function moveWorkVehicle(vehicle, dt) {
           toast(lang === 'ru'
             ? '🚚 Разгружено: ' + cargoName(ud.cargo) + ' → ' + stageName(STAGES[build.entry.index])
             : '🚚 Unloaded: ' + cargoName(ud.cargo) + ' → ' + stageName(STAGES[build.entry.index]));
+          spawnFloatingTextV117(build.entry.pos, `📦 ${cargoName(ud.cargo)}`);
           checkContracts();updateHUD();save();
         }
         ud._v77PendingUnload = false;
@@ -8092,6 +8100,7 @@ function spawnRoadPadMarkerV116(i) {
   ring.position.y = 0.08;
   group.add(ring);
   group.userData.pulseRing = ring;
+  group.userData.disc = disc; // v117: read by setPadHighlightVisualV117()
   const sprite = makeLabelSprite([lang === 'ru' ? 'ДОРОГА' : 'ROAD']);
   sprite.position.y = 1.35;
   sprite.scale.set(0.82, 0.34, 1);
@@ -8129,9 +8138,50 @@ function buildManualRoadStageV116(i, pos) {
   spawnBurst(pos || stageRoadEndpointV367(i), 0x9099a6);
   sfx.build();
   toast(lang === 'ru' ? '🛣️ Дорога проложена' : '🛣️ Road built');
+  spawnFloatingTextV117(pos || stageRoadEndpointV367(i), lang === 'ru' ? '🛣️ Дорога' : '🛣️ Road');
   updateHUD();
   save();
   return true;
+}
+
+// v117: the factory pad had a real interaction radius (nearestManualTargetV53()'s 'factory'
+// candidate) but no visible ground marker at all -- unlike every other manual pad in the game
+// (currentPad, the manual road pads below, upgrade pads, district hubs), there was nothing to
+// see or walk toward until the player was already standing inside the trigger radius. Same
+// disc+ring+label shape language as spawnRoadPadMarkerV116() below, just for one fixed spot.
+let factoryPadMarkerV117 = null;
+function spawnFactoryPadMarkerV117() {
+  if (factoryPadMarkerV117 || industrialZoneBuiltV116) return;
+  const group = new THREE.Group();
+  const disc = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.72, 0.72, 0.06, 24),
+    new THREE.MeshStandardMaterial({ color: 0x4a4f57, emissive: 0x1c2026, emissiveIntensity: 0.22, roughness: 0.72, metalness: 0.08 })
+  );
+  disc.position.y = 0.04;
+  disc.receiveShadow = true;
+  group.add(disc);
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.78, 0.05, 8, 28),
+    new THREE.MeshStandardMaterial({ color: 0xb7bec7, emissive: 0x33383f, emissiveIntensity: 0.18, roughness: 0.6, metalness: 0.1 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.08;
+  group.add(ring);
+  group.userData.pulseRing = ring;
+  group.userData.disc = disc;
+  const sprite = makeLabelSprite([lang === 'ru' ? 'ЗАВОД' : 'FACTORY']);
+  sprite.position.y = 1.4;
+  sprite.scale.set(0.9, 0.37, 1);
+  group.add(sprite);
+  group.position.set(INDUSTRIAL_ZONE_PAD_POS_V116.x, 0, INDUSTRIAL_ZONE_PAD_POS_V116.z);
+  scene.add(group);
+  factoryPadMarkerV117 = group;
+}
+function removeFactoryPadMarkerV117() {
+  if (!factoryPadMarkerV117) return;
+  scene.remove(factoryPadMarkerV117);
+  disposeObject3D(factoryPadMarkerV117);
+  factoryPadMarkerV117 = null;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -8146,9 +8196,11 @@ function buildIndustrialZoneV116() {
   if (!tryPayResources(INDUSTRIAL_ZONE_PAD_COST_V116)) {
     sfx.error();
     toast(lang === 'ru' ? `Не хватает: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰` : `Missing: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰`);
+    spawnFloatingTextV117(INDUSTRIAL_ZONE_PAD_POS_V116, lang === 'ru' ? '❗ Нужны деньги' : '❗ Need money');
     return false;
   }
   industrialZoneBuiltV116 = true;
+  removeFactoryPadMarkerV117();
   STATIC_COLLIDERS.push(
     { pos: GENERATOR_POS, radius: 1.9 },
     { pos: SAWMILL_POS, radius: 2.15 },
@@ -8170,6 +8222,7 @@ function buildIndustrialZoneV116() {
   toast(lang === 'ru'
     ? '🏭 Завод построен! Лесопилка, бетонный завод, металлобаза и автопарк готовы'
     : '🏭 Factory built! Sawmill, concrete plant, steel yard and fleet depot are ready');
+  spawnFloatingTextV117(INDUSTRIAL_ZONE_PAD_POS_V116, lang === 'ru' ? '🏭 Завод построен' : '🏭 Factory built');
   updateHUD();
   save();
   return true;
@@ -8297,6 +8350,50 @@ function deliveryWaitExceedsOneTrip(build) {
 function nextBuildFallbackAvailable() {
   return !!currentPad && stageIndex < STAGES.length && constructionSlotAvailable() && canAffordStage(stageIndex);
 }
+// v117: in-world guidance for the empty-world start (see VISION.md "Старт новой игры: пустой
+// мир", commit f9ade3a) and the manual-road pads (commit d67901b) -- neither the manual "build
+// road" pads (nearestManualTargetV53()'s 'road' candidates) nor the "Построить завод" pad were
+// ever wired into currentGuidanceTarget(), which is the single source both updateCompass() (the
+// #compass edge-of-screen arrow) and updateGuideWorldMarker() (the in-world pulsing "ЦЕЛЬ"
+// ring, see ensureGuideWorldMarker() below) already read from. This is the priority-ordered
+// check requested for that gap; it reuses the exact same availability checks the rest of the
+// file already uses for these systems (canAffordStage/constructionSlotAvailable for the stage
+// pad, canPayResources for the factory pad) rather than re-deriving them.
+//
+// Deliberate ordering note (documented per the brief's own "adjust based on what you find"
+// allowance): a literal reading of "road, then factory, then house" would rank the factory pad
+// above a brand-new player's very first (money-only, always-affordable) house pad, because both
+// are affordable simultaneously with the default starting cash. VISION.md's own progression
+// table is explicit that the first house comes before the factory walk ("Первый дом ... Дошёл
+// пешком до промзоны"), so the affordable stage/house pad is checked before the factory pad --
+// this only changes anything in the narrow window where BOTH are affordable at once, and it
+// still leaves the factory pad reachable the moment the next house needs materials the factory
+// hasn't unlocked yet (canAffordStage(stageIndex) then correctly returns false).
+function nextActionableTargetV117() {
+  // 1. A bought house with no road yet always wins: it's a visibly half-finished thing (a lone
+  // pad next to an unconnected building) and pressing it is always free -- never resource-gated.
+  if (typeof manualRoadModeV116 !== 'undefined' && manualRoadModeV116 && typeof manualRoadStagesV116 !== 'undefined') {
+    let bestPos = null, bestDistSq = Infinity, bestIndex = null;
+    for (const b of buildings) {
+      if (!Number.isInteger(b?.index) || manualRoadStagesV116.has(b.index)) continue;
+      const pos = stageRoadEndpointV367(b.index);
+      const d = player.position.distanceToSquared(new THREE.Vector3(pos.x, 0, pos.z));
+      if (d < bestDistSq) { bestDistSq = d; bestPos = pos; bestIndex = b.index; }
+    }
+    if (bestPos) return { pos: bestPos.clone(), label: lang === 'ru' ? 'Дорога' : 'Road', type: 'road', stageIndexV117: bestIndex };
+  }
+  // 2. The next house/upgrade pad, but only while genuinely actionable right now (paid for AND
+  // a build crew is free) -- see the ordering note above for why this is checked before #3.
+  if (currentPad && stageIndex < STAGES.length && canAffordStage(stageIndex) && constructionSlotAvailable()) {
+    return { pos: currentPad.pos.clone(), label: lang === 'ru' ? 'Стройка' : 'Build', type: 'stage' };
+  }
+  // 3. The one-press industrial-zone pad, once it's actually affordable -- before this, the
+  // player has no sawmill/concrete/metal source at all (see buildIndustrialZoneV116()).
+  if (typeof industrialZoneBuiltV116 !== 'undefined' && !industrialZoneBuiltV116 && canPayResources(INDUSTRIAL_ZONE_PAD_COST_V116)) {
+    return { pos: INDUSTRIAL_ZONE_PAD_POS_V116.clone(), label: lang === 'ru' ? 'Завод' : 'Factory', type: 'factory' };
+  }
+  return null;
+}
 function currentGuidanceTarget() {
   const logisticsBuild = growingMeshes.find(b => b?.entry?.underConstruction && nextPendingDelivery(b));
   if (logisticsBuild) {
@@ -8306,6 +8403,8 @@ function currentGuidanceTarget() {
       return { pos: logisticsBuild.entry.pos.clone(), label: lang === 'ru' ? 'Разгрузка' : 'Unload' };
     }
   }
+  const manualTargetV117 = nextActionableTargetV117();
+  if (manualTargetV117) return manualTargetV117;
   if (stageIndex < STAGES.length) {
     const cost = stageResourceCost(stageIndex);
     if (cost) {
@@ -13523,6 +13622,7 @@ function updatePlayer(dt) {
         sfx.error();
         const missing = missingStageResources(currentPad.index);
         toast(lang === 'ru' ? `Не хватает: ${missing}` : `Missing: ${missing}`);
+        spawnFloatingTextV117(currentPad.pos, lang === 'ru' ? `❗ Нужно: ${missing}` : `❗ Need: ${missing}`);
       }
     } else if (nearestManual?.type === 'upgrade') {
       consumed = true;
@@ -13884,6 +13984,7 @@ function animate() {
       toast(lang === 'ru'
         ? `✅ ${stageName(STAGES[build.entry.index])} готов${build.upgrading ? ' — уровень ' + build.entry.level : ''}`
         : `✅ ${stageName(STAGES[build.entry.index])} complete${build.upgrading ? ' — level ' + build.entry.level : ''}`);
+      spawnFloatingTextV117(build.entry.pos, `✅ ${stageName(STAGES[build.entry.index])}`);
       updateHUD();
       save();
       growingMeshes.splice(i, 1);
@@ -13924,6 +14025,14 @@ function animate() {
       currentPad.group.userData.pulseRing.scale.set(k, k, k);
     }
   }
+  // v117: pad highlight + ground arrow for nextActionableTargetV117() -- same throttle as the
+  // currentPad visual-state block just above (recompute on the updateVisualUi cadence, not
+  // every raw frame; the pulse itself still reads performance.now() each call so it stays smooth).
+  if (updateVisualUi) safeFrameCallV54('updateActionableHighlightV117', () => updateActionableHighlightV117());
+  // Floating event text (build complete/delivery/purchase) is rare (a handful of times a
+  // minute at most) and each popup is a handful of scale/opacity writes on already-created
+  // sprites, so this runs every frame like the other cheap per-frame visual updates above.
+  safeFrameCallV54('updateFloatingTextPopupsV117', () => updateFloatingTextPopupsV117(dt));
   if (updateVisualUi) for (const b of buildings) {
     if (b.upgradePad) {
       const d = Math.hypot(player.position.x - b.upgradePad.pos.x, player.position.z - b.upgradePad.pos.z);
@@ -14119,6 +14228,147 @@ function auditV342MobilityIntegrity(){
 }
 
 
+
+/* ---------------------------------------------------------------------- */
+/*  v117 — IN-WORLD GUIDANCE: pad highlight, ground arrow, event popups    */
+/*  (see nextActionableTargetV117() near currentGuidanceTarget()). This    */
+/*  is the "только кружочки на земле" replacement for the removed          */
+/*  #nextCard/#requiredActionV38/#eventBanner stack (commit 6ccb464):       */
+/*  "нужный кружок подсвечивается или пульсирует, по земле ведёт стрелка,   */
+/*  над зданием на миг всплывает короткий текст" -- VISION.md.              */
+/* ---------------------------------------------------------------------- */
+
+// ---- 1. Pad highlight: pulse + warm-gold tint on whichever pad is the current
+// nextActionableTargetV117() target. Reuses each pad's own existing disc/pulseRing fields
+// (road pads: spawnRoadPadMarkerV116(); factory pad: spawnFactoryPadMarkerV117() above) instead
+// of inventing a new visual language -- the stage/house pad already has its own ready/queued
+// highlight (see the currentPad block just above this call site) and isn't touched here.
+let highlightedPadKeyV117 = null;
+function setPadHighlightVisualV117(group, on) {
+  if (!group) return;
+  const disc = group.userData.disc, ring = group.userData.pulseRing;
+  if (disc?.material) {
+    disc.material.color.setHex(on ? 0xE9AD3D : 0x4a4f57);
+    disc.material.emissive.setHex(on ? 0x4a2f00 : 0x1c2026);
+    disc.material.emissiveIntensity = on ? 0.55 : 0.22;
+  }
+  if (ring?.material) {
+    ring.material.color.setHex(on ? 0xffd479 : 0xb7bec7);
+    ring.material.emissive.setHex(on ? 0x8a5a12 : 0x33383f);
+    ring.material.emissiveIntensity = on ? 0.7 : 0.18;
+  }
+}
+function updateActionableHighlightV117() {
+  const target = nextActionableTargetV117();
+  const key = target ? `${target.type}:${target.stageIndexV117 ?? ''}` : null;
+  if (key !== highlightedPadKeyV117) {
+    // Reset whatever was previously highlighted (cheap: at most one road pad + the factory pad
+    // exist at a time in the early game this system targets).
+    if (highlightedPadKeyV117) {
+      for (const g of roadPadMarkersV116.values()) setPadHighlightVisualV117(g, false);
+      setPadHighlightVisualV117(factoryPadMarkerV117, false);
+    }
+    highlightedPadKeyV117 = key;
+    if (target?.type === 'road') setPadHighlightVisualV117(roadPadMarkersV116.get(target.stageIndexV117), true);
+    else if (target?.type === 'factory') setPadHighlightVisualV117(factoryPadMarkerV117, true);
+  }
+  // The pulse itself (scale) runs every call regardless of whether the target changed, same
+  // pattern as currentPad's own pulseRing animation just above.
+  if (target?.type === 'road' || target?.type === 'factory') {
+    const g = target.type === 'road' ? roadPadMarkersV116.get(target.stageIndexV117) : factoryPadMarkerV117;
+    const ring = g?.userData?.pulseRing;
+    if (ring) { const k = 1 + Math.sin(performance.now() / 220) * 0.09; ring.scale.set(k, k, k); }
+  }
+  updateGroundArrowV117(target);
+}
+
+// ---- 2. Ground arrow: a small gold chevron a fixed distance in front of the player, oriented
+// toward nextActionableTargetV117()'s target, hidden once the target is close enough that the
+// pad's own highlight (above) is the real guide -- "по земле ведёт стрелка", not a full
+// pathfinding trail (recomputed on the same throttle as the highlight, not per frame).
+const GROUND_ARROW_HIDE_DIST_V117 = 9;
+const GROUND_ARROW_FORWARD_OFFSET_V117 = 1.65;
+let groundArrowGroupV117 = null;
+function ensureGroundArrowV117() {
+  if (groundArrowGroupV117) return groundArrowGroupV117;
+  const g = new THREE.Group();
+  const shape = new THREE.Shape();
+  // Tip at -Y, base at +Y in local (pre-rotation) space -- after rotation.x=-PI/2 this maps the
+  // tip to +Z, matching this file's own yaw convention (Math.atan2(dx,dz), forward = +Z at
+  // yaw 0, see updatePlayer()'s targetYaw) so `g.rotation.y = Math.atan2(dx,dz)` just works.
+  shape.moveTo(0, -0.6);
+  shape.lineTo(-0.32, 0.05);
+  shape.lineTo(-0.13, 0.05);
+  shape.lineTo(-0.13, 0.34);
+  shape.lineTo(0.13, 0.34);
+  shape.lineTo(0.13, 0.05);
+  shape.lineTo(0.32, 0.05);
+  shape.closePath();
+  const arrow = new THREE.Mesh(
+    new THREE.ShapeGeometry(shape),
+    new THREE.MeshBasicMaterial({ color: 0xffd479, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false })
+  );
+  arrow.rotation.x = -Math.PI / 2;
+  g.add(arrow);
+  g.userData.arrowMesh = arrow;
+  g.renderOrder = 6;
+  g.visible = false;
+  scene.add(g);
+  groundArrowGroupV117 = g;
+  return g;
+}
+function updateGroundArrowV117(target) {
+  const g = ensureGroundArrowV117();
+  if (!target?.pos) { g.visible = false; return; }
+  const dx = target.pos.x - player.position.x, dz = target.pos.z - player.position.z;
+  const dist = Math.hypot(dx, dz);
+  if (dist < GROUND_ARROW_HIDE_DIST_V117) { g.visible = false; return; }
+  const yaw = Math.atan2(dx, dz);
+  g.position.set(
+    player.position.x + Math.sin(yaw) * GROUND_ARROW_FORWARD_OFFSET_V117,
+    0.05,
+    player.position.z + Math.cos(yaw) * GROUND_ARROW_FORWARD_OFFSET_V117
+  );
+  g.rotation.y = yaw;
+  g.visible = true;
+  const k = 1 + Math.sin(performance.now() / 260) * 0.14;
+  g.userData.arrowMesh.scale.set(k, k, 1);
+}
+
+// ---- 3. Transient event text ("+50", "нужны доски" -- VISION.md's UI section) -- a short-lived
+// billboard sprite at a world position, reusing makeLabelSprite()'s existing canvas-texture
+// approach (the same one every pad label/market sign already uses) instead of a new rendering
+// path. Spawned only on discrete real events (build complete, delivery arrival, road/factory
+// purchase, missing-resources tap -- see the call sites near each of those), never per tick.
+const floatingTextPopupsV117 = [];
+function spawnFloatingTextV117(pos, text) {
+  if (!pos || !text) return;
+  const sprite = makeLabelSprite([text]);
+  sprite.material.opacity = 0;
+  sprite.scale.multiplyScalar(0.6);
+  sprite.position.set(pos.x, (pos.y || 0) + 2.15, pos.z);
+  scene.add(sprite);
+  floatingTextPopupsV117.push({ sprite, age: 0, life: 1.35 });
+}
+function updateFloatingTextPopupsV117(dt) {
+  if (!floatingTextPopupsV117.length) return;
+  for (let i = floatingTextPopupsV117.length - 1; i >= 0; i--) {
+    const p = floatingTextPopupsV117[i];
+    p.age += dt;
+    const t = p.age / p.life;
+    if (t >= 1) {
+      scene.remove(p.sprite);
+      p.sprite.material.map?.dispose();
+      p.sprite.material.dispose();
+      floatingTextPopupsV117.splice(i, 1);
+      continue;
+    }
+    p.sprite.position.y += dt * 0.5;
+    const fadeIn = Math.min(1, t / 0.12);
+    const fadeOut = 1 - Math.max(0, (t - 0.65) / 0.35);
+    p.sprite.material.opacity = Math.max(0, Math.min(fadeIn, fadeOut));
+  }
+}
 
 /* ---------------------------------------------------------------------- */
 /*  v35.0 — GUIDED PROGRESSION, UI STEP MARKERS AND DRIVEWAY ACCESS        */
@@ -18638,6 +18888,15 @@ window.__TYCOON_V42__={
 /*  INIT                                                                   */
 /* ---------------------------------------------------------------------- */
 load();
+// v117: give the factory pad its own always-visible ground marker (spawnFactoryPadMarkerV117(),
+// same disc+ring+label shape as spawnRoadPadMarkerV116()) whenever it isn't built yet -- placed
+// here, after load() (not up near buildSawmillScenery()'s own boot gate), specifically because
+// this is a `let`-declared runtime object further down the file: calling it before its own `let
+// factoryPadMarkerV117 = null;` line has executed throws a temporal-dead-zone ReferenceError
+// that aborts the rest of the script's top-level pass -- see the comment where the old call site
+// used to be, near buildSawmillScenery(), for the exact regression this caused and how it was
+// found (boot.test.mjs/hud.test.mjs/nav-pads.test.mjs all failing with "player is not defined").
+if (!industrialZoneBuiltV116) spawnFactoryPadMarkerV117();
 ensureInfrastructureStateV37();
 initializeGuideRewardsV351();
 syncUniversalFleet();
