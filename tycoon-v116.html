@@ -4867,16 +4867,9 @@ function makeIconSprite(symbol, size) {
   const canvas=makeIconCanvasV36(symbol);
   const texture=new THREE.CanvasTexture(canvas);texture.encoding=THREE.sRGBEncoding;const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,depthTest:false,transparent:true}));sprite.scale.set(size,size,1);sprite.renderOrder=5;return sprite;
 }
-// v36.2 fix: buildWorldNavPadV362 (introduced upstream, outside this session) called
-// createIconSpriteV36(cfg.icon) expecting a texture it could hand to its own SpriteMaterial,
-// but that function was never defined anywhere in the file -- confirmed via grep and via a
-// live ReferenceError thrown from inside createWorldNavPadsV362 on every boot. It shares the
-// exact same icon-drawing logic as makeIconSprite (now factored into makeIconCanvasV36 above)
-// but returns just the CanvasTexture instead of a ready-made Sprite, matching the call site.
-function createIconSpriteV36(symbol) {
-  const canvas=makeIconCanvasV36(symbol);
-  const texture=new THREE.CanvasTexture(canvas);texture.encoding=THREE.sRGBEncoding;return texture;
-}
+// createIconSpriteV36() used to live here purely to feed buildWorldNavPadV362()'s icon
+// sprites. Removed together with the whole world-nav-pad hub (see the v116 nav-pad-hub
+// changelog entry) -- nothing else in the file called it.
 
 function buildHouse(stage, height, baseSize) {
   const group = new THREE.Group();
@@ -8694,7 +8687,7 @@ const SPECIAL_PROJECTS = [
 ];
 function specialProjectTemplate(id){ return SPECIAL_PROJECTS.find(p=>p.id===id) || null; }
 function projectCostText(p){ const c=p.cost; return [`${fmt(c.money)} 💰`,c.wood?`${c.wood} 🪵`:'',c.concrete?`${c.concrete} 🧱`:'',c.metal?`${c.metal} 🔩`:''].filter(Boolean).join('  '); }
-const specialProjectRuntime={ site:null, landmarks:new Map(), colliders:new Map() };
+const specialProjectRuntime={ site:null, landmarks:new Map(), colliders:new Map(), available:new Map() };
 function clearSpecialProjectSite(){
   const site=specialProjectRuntime.site; if(!site)return;
   const idx=constructionSites.indexOf(site); if(idx>=0) constructionSites.splice(idx,1);
@@ -8706,6 +8699,8 @@ function clearSpecialProjectWorld(){
   specialProjectRuntime.landmarks.clear();
   for(const c of specialProjectRuntime.colliders.values()){ const i=STATIC_COLLIDERS.indexOf(c); if(i>=0) STATIC_COLLIDERS.splice(i,1); }
   specialProjectRuntime.colliders.clear();
+  for(const g of specialProjectRuntime.available.values()){ scene.remove(g); disposeObject3D(g); }
+  specialProjectRuntime.available.clear();
 }
 function resetSpecialProjectRun(){ clearSpecialProjectWorld(); specialProjectState={completed:[],active:null}; }
 function createSpecialProjectLandmark(p){
@@ -8737,6 +8732,21 @@ function ensureSpecialProjectCollider(p){
   if(specialProjectRuntime.colliders.has(p.id)) return;
   const c={pos:p.pos.clone(),radius:p.id==='park'?2.7:(p.id==='hub'?3.1:2.9)}; STATIC_COLLIDERS.push(c); specialProjectRuntime.colliders.set(p.id,c);
 }
+// v116: a walkable ground marker for a special project that is unlocked but not yet
+// started -- so the removed world-nav-hub's "Проекты" menu pad isn't the only way to
+// find/start one. No collider (unlike the completed landmark/active site): the player
+// must be able to walk right up to it and press interact, exactly like a field-upgrade
+// pad. See nearestManualTargetV53()'s 'project' candidates for the interaction itself.
+function createSpecialProjectAvailableMarker(p){
+  const g=new THREE.Group();
+  const disc=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.56,.1,28),new THREE.MeshStandardMaterial({color:0xffb84d,roughness:.5,metalness:.05,emissive:0x8a5216,emissiveIntensity:.24}));
+  disc.position.y=.06; disc.receiveShadow=true; g.add(disc);
+  const icon=makeIconSprite(p.emoji,0.95); icon.position.y=1.05; g.add(icon);
+  const sign=makeLabelSprite([`${lang==='ru'?p.ru:p.en}`, projectCostText(p)]);
+  sign.position.set(0,2.2,0); sign.scale.set(2.15,.76,1); g.add(sign);
+  g.position.copy(p.pos); scene.add(g);
+  return g;
+}
 function refreshSpecialProjectWorld(){
   for(const id of specialProjectState.completed){
     const p=specialProjectTemplate(id); if(!p)continue;
@@ -8747,6 +8757,13 @@ function refreshSpecialProjectWorld(){
       const fake={color:0xffb84d,baseSize:p.size,height:p.height,archetype:p.archetype};
       const site=spawnConstructionSite(p.pos,fake,specialProjectState.active.duration); site.buildRef=specialProjectState.active; specialProjectRuntime.site=site;
     }
+  }
+  // Vacant-site markers for every unlocked project that hasn't been started or finished yet.
+  for(const p of SPECIAL_PROJECTS){
+    const shouldShow=stageIndex>=p.unlock && !specialProjectState.completed.includes(p.id) && specialProjectState.active?.id!==p.id;
+    const has=specialProjectRuntime.available.has(p.id);
+    if(shouldShow && !has) specialProjectRuntime.available.set(p.id,createSpecialProjectAvailableMarker(p));
+    else if(!shouldShow && has){ const g=specialProjectRuntime.available.get(p.id); scene.remove(g); disposeObject3D(g); specialProjectRuntime.available.delete(p.id); }
   }
 }
 function startSpecialProject(id){
@@ -12748,9 +12765,18 @@ function resolveAgentPosition(nx, nz, radius, circles) {
 const v53InteractionTarget = { key:null, type:null, ref:null, dist:Infinity, switchedAt:0 };
 const V53_TARGET_SWITCH_MARGIN = 0.34;
 const V53_TARGET_RELEASE_PAD = 0.22;
+// v116: per-id "already toasted an insufficient-funds error" debounce for the district/
+// project ground pads, mirroring the per-pad `insufficientShown` flag buildings/field
+// upgrades already carry on their own pad object (these two don't have one pad object
+// each -- district hubs/project markers are plain data + a shared Map -- so a small
+// keyed state object stands in for it).
+const districtPadInsufficientV116={};
+const projectPadInsufficientV116={};
 function manualCandidateKeyV53(type, obj){
   if(type==='upgrade') return `upgrade:${obj?.index ?? 'x'}:${obj?.level ?? 'x'}`;
   if(type==='field') return `field:${obj?.cfg?.key ?? 'x'}`;
+  if(type==='district') return `district:${obj?.id ?? 'x'}`;
+  if(type==='project') return `project:${obj?.id ?? 'x'}`;
   return `${type}:x`;
 }
 function nearestManualTargetV53(){
@@ -12768,6 +12794,22 @@ function nearestManualTargetV53(){
       const d=Math.hypot(player.position.x-pad.cfg.pos.x,player.position.z-pad.cfg.pos.z);
       if(d<PAD_TRIGGER_RADIUS+V53_TARGET_RELEASE_PAD)candidates.push({type:'field',pad,dist:d,key:manualCandidateKeyV53('field',pad)});
       if(d>PAD_TRIGGER_RADIUS*1.55)pad.insufficientShown=false;
+    }
+    // v116: the removed world-nav-hub's "Город" pad -- each district's own already-existing
+    // physical hub marker (createDistrictHub) becomes directly interactive once unlocked.
+    for(const cfg of CITY_DISTRICTS){
+      if(!districtUnlocked(cfg)||districtLevel(cfg.id)>=3)continue;
+      const d=Math.hypot(player.position.x-cfg.pos.x,player.position.z-cfg.pos.z);
+      if(d<PAD_TRIGGER_RADIUS+V53_TARGET_RELEASE_PAD)candidates.push({type:'district',cfg,dist:d,key:manualCandidateKeyV53('district',cfg)});
+      if(d>PAD_TRIGGER_RADIUS*1.6)districtPadInsufficientV116[cfg.id]=false;
+    }
+    // v116: the removed world-nav-hub's "Проекты" pad -- an unlocked-but-not-started special
+    // project gets a vacant-site marker (refreshSpecialProjectWorld) at its own real position.
+    for(const p of SPECIAL_PROJECTS){
+      if(!specialProjectRuntime.available.has(p.id))continue;
+      const d=Math.hypot(player.position.x-p.pos.x,player.position.z-p.pos.z);
+      if(d<PAD_TRIGGER_RADIUS+V53_TARGET_RELEASE_PAD)candidates.push({type:'project',project:p,dist:d,key:manualCandidateKeyV53('project',p)});
+      if(d>PAD_TRIGGER_RADIUS*1.6)projectPadInsufficientV116[p.id]=false;
     }
   }catch(_){return null;}
   if(!candidates.length){v53InteractionTarget.key=null;v53InteractionTarget.ref=null;v53InteractionTarget.dist=Infinity;return null;}
@@ -12940,12 +12982,29 @@ function updatePlayer(dt) {
     } else if (nearestManual?.type === 'field') {
       consumed = true;
       tryPurchaseFieldUpgrade(nearestManual.pad);
+    } else if (nearestManual?.type === 'district') {
+      consumed = true;
+      const cfg = nearestManual.cfg, cost = districtUpgradeCost(cfg);
+      if (canPayResources(cost)) {
+        upgradeCityDistrict(cfg.id);
+      } else if (!districtPadInsufficientV116[cfg.id]) {
+        districtPadInsufficientV116[cfg.id] = true;
+        sfx.error();
+        toast(lang === 'ru' ? `Не хватает для развития района: ${districtCostText(cost)}` : `Missing for district upgrade: ${districtCostText(cost)}`);
+      }
+    } else if (nearestManual?.type === 'project') {
+      consumed = true;
+      const p = nearestManual.project;
+      if (canPayResources(p.cost)) {
+        startSpecialProject(p.id);
+      } else if (!projectPadInsufficientV116[p.id]) {
+        projectPadInsufficientV116[p.id] = true;
+        sfx.error();
+        toast(lang === 'ru' ? `Не хватает ресурсов: ${projectCostText(p)}` : `Not enough resources: ${projectCostText(p)}`);
+      }
     }
     if (consumed) {
       interactRequested = false;
-      // v52: one physical press must never fall through into a command-circle action
-      // after a build/upgrade changed the nearby-world state in the same frame.
-      try { if (typeof worldNavRuntimeV362 !== 'undefined') worldNavRuntimeV362.interact = false; } catch (_) {}
     }
   }
 
@@ -14971,130 +15030,34 @@ setTimeout(()=>{
 
 
 /* ====================================================================== */
-/* v36.2 — WORLD NAV PADS + REALER CITY STREET MASTERPLAN                 */
+/* v116 — WORLD-NAV-PAD HUB REMOVED                                       */
 /* ====================================================================== */
-const worldNavRuntimeV362={group:null,pads:[],active:null,interact:false,lastOpenAt:0};
-cityWorldRuntime.masterRoads=cityWorldRuntime.masterRoads||null;
-
-const WORLD_NAV_CONFIG_V362=[
-  {key:'systems', triggerId:'systemsBtn', icon:'☰', color:0x6f7f95, ru:'Компания', en:'Company', subRu:'Разделы', subEn:'Sections'},
-  {key:'city', buttonId:'openCityBtn', icon:'🌆', color:0x4fb181, ru:'Город', en:'City', subRu:'Районы', subEn:'Districts'},
-  {key:'staff', buttonId:'openStaffBtn', icon:'👷', color:0x5ea1df, ru:'Команда', en:'Team', subRu:'Люди', subEn:'People'},
-  {key:'fleet', buttonId:'openFleetBtn', icon:'🚚', color:0x7d93e8, ru:'Автопарк', en:'Fleet', subRu:'Техника', subEn:'Vehicles'},
-  {key:'base', buttonId:'openBaseBtn', icon:'🏢', color:0xd0915f, ru:'База', en:'Base', subRu:'Здания', subEn:'Buildings'},
-  {key:'projects', buttonId:'openProjectsBtn', icon:'🏗️', color:0xe0a44f, ru:'Проекты', en:'Projects', subRu:'Рост', subEn:'Growth'},
-  {key:'tenders', buttonId:'openTendersBtn', icon:'📋', color:0x95a4bc, ru:'Тендеры', en:'Tenders', subRu:'Контракты', subEn:'Contracts'},
-  {key:'operations', buttonId:'openOperationsBtn', icon:'🛰️', color:0xa77be4, ru:'Операции', en:'Ops', subRu:'Логистика', subEn:'Logistics'},
-  {key:'meta', buttonId:'openMetaBtn', icon:'🧬', color:0x69c7c2, ru:'Мета', en:'Meta', subRu:'Престиж', subEn:'Prestige'},
-  {key:'bonus', buttonId:'openBonusBtn', icon:'🎁', color:0xe395b5, ru:'Бонусы', en:'Boosts', subRu:'Награды', subEn:'Rewards'}
-];
-const WORLD_NAV_PAD_LAYOUT_V362=[
-  new THREE.Vector3(-12,0,17),new THREE.Vector3(-8.3,0,13.5),new THREE.Vector3(-3.2,0,11.6),new THREE.Vector3(2.6,0,11.2),new THREE.Vector3(8,0,13.2),
-  new THREE.Vector3(12,0,17),new THREE.Vector3(-4.9,0,19.4),new THREE.Vector3(4.9,0,19.4),new THREE.Vector3(-10.3,0,22.5),new THREE.Vector3(10.3,0,22.5)
-];
-function worldNavUnlockedV362(key){
-  if(key==='systems')return true;
-  if(key==='city')return stageIndex>=3;
-  if(key==='staff')return stageIndex>=2;
-  if(key==='fleet')return stageIndex>=3;
-  if(key==='base')return stageIndex>=5;
-  if(key==='projects')return stageIndex>=6;
-  if(key==='tenders')return stageIndex>=6;
-  if(key==='operations')return stageIndex>=7;
-  if(key==='meta')return stats.prestige>0||stageIndex>=STAGES.length;
-  if(key==='bonus')return !document.getElementById('bonusMenuRow')?.hidden;
-  return false;
-}
-function worldNavLabelV362(cfg){
-  return lang==='ru'?[cfg.icon+' '+cfg.ru,cfg.subRu]:[cfg.icon+' '+cfg.en,cfg.subEn];
-}
-function buildWorldNavPadV362(cfg,pos){
-  const group=new THREE.Group();group.position.copy(pos);
-  const disc=new THREE.Mesh(new THREE.CylinderGeometry(1.18,1.18,.12,32),new THREE.MeshStandardMaterial({color:cfg.color,roughness:.48,metalness:.05,emissive:cfg.color,emissiveIntensity:.22}));
-  disc.position.y=.075;disc.receiveShadow=true;group.add(disc);
-  // v116: this pad used to also carry a TorusGeometry collar ring around the disc, colored
-  // 0xe6edf7 normally / 0xffefc7 when recommended -- both near-white, so from a normal play
-  // camera angle (steep, mostly top-down) it read as a bare, undecorated flattened white ring
-  // sitting on the grass next to the pad's own colored disc+icon+label, not as part of the
-  // button. Confirmed live (Playwright raycast + projected screen position at the user's
-  // reported location): the pad's icon/label/disc are a separate, wanted element; this ring was
-  // the specific "white circle" the user asked to remove. Removed outright -- the `pulse` ring
-  // below already carries the "this is the recommended action" highlight, so no replacement
-  // decal is needed.
-  const pulse=new THREE.Mesh(new THREE.RingGeometry(1.62,1.92,32),new THREE.MeshBasicMaterial({color:0xffd479,transparent:true,opacity:.16,side:THREE.DoubleSide}));
-  pulse.rotation.x=-Math.PI/2;pulse.position.y=.095;group.add(pulse);
-  const icon=new THREE.Sprite(new THREE.SpriteMaterial({map:createIconSpriteV36(cfg.icon),transparent:true,depthWrite:false}));
-  icon.position.set(0,1.05,0);icon.scale.set(1.28,1.28,1.28);group.add(icon);
-  const sprite=makeLabelSprite(worldNavLabelV362(cfg));sprite.position.set(0,2.22,0);sprite.scale.set(2.05,0.84,1);group.add(sprite);
-  group.userData={cfg,disc,pulse,icon,sprite};
-  return {cfg,group,pos:pos.clone(),disc,pulse,icon,sprite,lastSig:''};
-}
-function createWorldNavPadsV362(){
-  if(worldNavRuntimeV362.group){scene.remove(worldNavRuntimeV362.group);disposeObject3D(worldNavRuntimeV362.group);}
-  const g=new THREE.Group();worldNavRuntimeV362.group=g;worldNavRuntimeV362.pads=[];
-  WORLD_NAV_CONFIG_V362.forEach((cfg,i)=>{const pad=buildWorldNavPadV362(cfg,WORLD_NAV_PAD_LAYOUT_V362[i]||new THREE.Vector3(i*3,0,16));worldNavRuntimeV362.pads.push(pad);g.add(pad.group);});
-  scene.add(g);updateWorldNavPadsV362(true);
-}
-function updateWorldNavPadsV362(force=false){
-  const rec=recommendedMenuButtonV36();
-  for(const pad of worldNavRuntimeV362.pads){
-    const visible=worldNavUnlockedV362(pad.cfg.key);
-    pad.group.visible=visible;
-    if(!visible)continue;
-    const recommended=(pad.cfg.buttonId===rec)||(pad.cfg.key==='systems'&&rec===null&&stageIndex<2);
-    const sig=`${lang}|${recommended?1:0}`;
-    if(force||pad.lastSig!==sig){
-      pad.lastSig=sig;
-      const lines=worldNavLabelV362(pad.cfg);
-      const ns=regenerateSprite(pad.sprite,lines,.84);
-      pad.group.remove(pad.sprite);pad.group.add(ns);pad.sprite=ns;pad.group.userData.sprite=ns;ns.position.set(0,2.22,0);
-    }
-    const baseColor=pad.cfg.color;
-    pad.disc.material.color.setHex(recommended?0xf0b85a:baseColor);
-    pad.disc.material.emissive.setHex(recommended?0x8d5a16:baseColor);
-    pad.disc.material.emissiveIntensity=recommended?.48:.22;
-  }
-}
-function worldNavBlockedByPriorityV362(){
-  const padBusy=currentPad&&Math.hypot(player.position.x-currentPad.pos.x,player.position.z-currentPad.pos.z)<3.6;
-  return !!(nearSawmillDropoff&&carriedLogs>0)||!!nearbyHarvestTree||padBusy;
-}
-function anyOverlayOpenV362(){return !!document.querySelector('.show#systemsOverlay,.show#metaOverlay,.show#staffOverlay,.show#projectsOverlay,.show#bonusOverlay,.show#fleetOverlay,.show#baseOverlay,.show#tendersOverlay,.show#operationsOverlay,.show#cityOverlay,.show#achOverlay,.show#hintOverlay') || document.body.classList.contains('modal-open');}
-function nearestWorldNavPadV362(){
-  let best=null,bestDist=Infinity;
-  for(const pad of worldNavRuntimeV362.pads){if(!pad.group.visible)continue;const d=Math.hypot(player.position.x-pad.pos.x,player.position.z-pad.pos.z);if(d<bestDist){bestDist=d;best=pad;}}
-  return best&&bestDist<3.1?{pad:best,dist:bestDist}:null;
-}
-function openWorldNavPadV362(pad){
-  const now=performance.now();if(now-worldNavRuntimeV362.lastOpenAt<600)return;
-  worldNavRuntimeV362.lastOpenAt=now;
-  const trigger=document.getElementById(pad.cfg.triggerId||pad.cfg.buttonId);
-  if(trigger&&!trigger.disabled){trigger.click();sfx.pickup?.();haptic?.('light');}
-}
-let worldNavPromptLastV54=0;
-function syncWorldNavPromptV362(){
-  const nowV54=performance.now();
-  if(nowV54-worldNavPromptLastV54<80){requestAnimationFrame(syncWorldNavPromptV362);return;}
-  worldNavPromptLastV54=nowV54;
-  updateWorldNavPadsV362();
-  const actionPrompt=document.getElementById('actionPrompt'),actionBtn=document.getElementById('actionBtn');
-  const near=!anyOverlayOpenV362()&&!worldNavBlockedByPriorityV362()?nearestWorldNavPadV362():null;
-  worldNavRuntimeV362.active=near?.pad||null;
-  if(near){
-    const name=lang==='ru'?near.pad.cfg.ru:near.pad.cfg.en;
-    actionPrompt.textContent=lang==='ru'?`🟡 Круг управления · открыть: ${name}`:`🟡 Command circle · open ${name}`;
-    actionPrompt.classList.add('show');
-    actionBtn.hidden=false;actionBtn.textContent=lang==='ru'?'Открыть':'Open';
-    const t=performance.now()*0.0045;const k=1+Math.sin(t)*.08;near.pad.pulse.scale.set(k,k,1);near.pad.sprite.visible=true;
-  }else if(worldNavRuntimeV362.active===null && actionBtn && actionBtn.textContent=== (lang==='ru'?'Открыть':'Open')){
-    actionPrompt.classList.remove('show');actionBtn.hidden=true;
-  }
-  if(worldNavRuntimeV362.interact&&near){openWorldNavPadV362(near.pad);} 
-  worldNavRuntimeV362.interact=false;
-  requestAnimationFrame(syncWorldNavPromptV362);
-}
-addEventListener('keydown',e=>{const t=e.target,ui=t instanceof Element&&!!t.closest('button,.v30Btn,.iconBtn,[role="button"],input,textarea,select,[contenteditable="true"],[contenteditable=""]');const modal=document.body?.classList?.contains('v46-modal-open')||document.body?.classList?.contains('modal-open');if(!ui&&!modal&&!e.repeat&&(e.code==='KeyE'||e.code==='Space'))worldNavRuntimeV362.interact=true;},true);
-const _worldNavBtn=document.getElementById('actionBtn');if(_worldNavBtn)_worldNavBtn.addEventListener('click',()=>{worldNavRuntimeV362.interact=true;},true);
+// v36.2 used to spawn a cluster of ~10 world-space "menu shortcut" pads here
+// (WORLD_NAV_CONFIG_V362: systems/city/staff/fleet/base/projects/tenders/operations/
+// meta/bonus), clustered together near spawn, each just calling .click() on a 2D HUD
+// button (systemsBtn/openCityBtn/...) to open one of the game's 2D overlay panels.
+// Removed outright per the user's explicit design direction (VISION.md: "Всё
+// прокачивается через круглые кнопки на траве... Никаких вкладок, меню-списков и
+// плашек поверх экрана") -- a cluster of circles whose only job is to open another
+// menu is exactly the anti-pattern that rule forbids, not a real ground action.
+// See CHANGELOG_V116.md's nav-pad-hub entry for the full per-system breakdown of
+// where each pad's underlying action went:
+//  - systems/"Компания": deleted with no replacement -- it only ever duplicated the
+//    pre-existing #systemsBtn icon already sitting in the persistent top-right HUD
+//    corner (same trigger id), so nothing reachable was lost.
+//  - city/"Город" and projects/"Проекты": each item already has its own fixed real
+//    world position (CITY_DISTRICTS[].pos / SPECIAL_PROJECTS[].pos) and, for
+//    districts, an already-existing physical marker (createDistrictHub). Both are
+//    now directly interactive at that real location (see nearestManualTargetV53()'s
+//    'district'/'project' candidates below and refreshSpecialProjectWorld()'s new
+//    vacant-site markers) instead of being picked from a shared hub menu.
+//  - staff/"Команда", fleet/"Автопарк", base/"База", tenders/"Тендеры",
+//    operations/"Операции", meta/"Мета", bonus/"Бонусы": kept exactly as they were
+//    (reachable through the pre-existing #systemsBtn -> systemsOverlay row list,
+//    unchanged, predates this hub). Each is a genuinely abstract/company-wide system
+//    (global stat multipliers, a live construction queue/priority dashboard, a
+//    prestige tree, ad-reward claims) with no single honest physical location to
+//    pin a ground pad to -- see the changelog entry for the reasoning per system.
 
 const DISTRICT_BLOCK_V362={suburb:{hw:5.2,hh:4.1},industrial:{hw:5.5,hh:4.3},business:{hw:5.3,hh:4.1},waterfront:{hw:5.7,hh:4.4}};
 function districtBlockDimsV362(id){return DISTRICT_BLOCK_V362[id]||{hw:5.2,hh:4.2};}
@@ -15197,13 +15160,11 @@ districtArterialPath=function(id){ return districtConnectorPathV362(id); };
 
 setTimeout(()=>{
   try{
-    createWorldNavPadsV362();
     refreshLivingDistrictStreets();
     refreshArterialRoads();
     refreshDistrictAccessRoads();
     refreshTransportAccessRoads();
     refreshDrivewaysV35(true);
-    syncWorldNavPromptV362();
   }catch(err){console.error('v36.2 init failed',err);}
 },0);
 
@@ -16603,6 +16564,11 @@ const _syncLivingCityActorsV39=syncLivingCityActors;
 syncLivingCityActors=function(){const r=_syncLivingCityActorsV39.apply(this,arguments);livingCityRuntime.districtCars.forEach(c=>{if(c?.group?.visible&&(!infrastructureReadyV38(c.districtId)||districtRoadLevelV37(c.districtId)<2))c.group.visible=false;});livingCityRuntime.arterialCars.forEach(c=>{if(c?.group?.visible&&(!infrastructureReadyV38(c.districtId)||districtRoadLevelV37(c.districtId)<1))c.group.visible=false;});livingCityRuntime.residents.forEach(r=>{const id=r?.districtId;if(r?.group?.visible&&id&&!infrastructureReadyV38(id))r.group.visible=false;});return r;};
 
 let cityVisualSigV39='';setInterval(()=>{try{const sig=cityVisualSignatureV39();if(sig!==cityVisualSigV39){cityVisualSigV39=sig;refreshDistrictDressingV39();refreshCityConstructionSitesV39();for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.hubs.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);}const g=createDistrictHub(cfg);cityWorldRuntime.hubs.set(cfg.id,g);}if(document.getElementById('cityOverlay')?.classList.contains('show'))renderCityPanel();syncLivingCityActors();}}catch(e){console.warn('v39 visual refresh',e);}},650);
+// v116: re-sync special-project vacant-site markers on the same cadence as the district
+// hubs above, so a project that just got unlocked by a new stage gets its ground marker
+// without needing a reload. refreshSpecialProjectWorld() is a cheap no-op when nothing
+// changed (Map.has() checks only), so an unconditional poll here is safe.
+setInterval(()=>{try{refreshSpecialProjectWorld();}catch(e){console.warn('v116 special project marker sync',e);}},700);
 
 window.__TYCOON_V39_CITY__={maturity:districtMaturityV39,assets:districtBuiltAssetCountV39,refresh(){refreshCityExpansionWorld();refreshDistrictDressingV39();refreshCityConstructionSitesV39();renderCityPanel();}};
 
@@ -26233,10 +26199,22 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
             const b=ctx.building,ready=canAffordStage(b.index,b.level),name=stageName(STAGES[b.index]);
             prompt.textContent=ready?(lang==='ru'?`⬆️ Улучшить: ${name}`:`⬆️ Upgrade: ${name}`):(lang==='ru'?`📦 Для улучшения не хватает: ${missingStageResources(b.index,b.level)}`:`📦 Upgrade missing: ${missingStageResources(b.index,b.level)}`);
             btn.hidden=false;btn.textContent=ready?(lang==='ru'?'Улучшить':'Upgrade'):(lang==='ru'?'Не хватает ресурсов':'Resources needed');prompt.classList.add('show');
-          }else{
+          }else if(ctx.type==='field'){
             const pad=ctx.pad,cfg=pad.cfg,cost=fieldUpgradeCosts(cfg),ready=money>=cost.money&&planks>=cost.wood,name=lang==='ru'?cfg.ru:cfg.en;
             prompt.textContent=ready?(lang==='ru'?`🔧 Улучшение: ${name}`:`🔧 Upgrade: ${name}`):(lang==='ru'?`📦 Нужно: ${fmt(cost.money)} 💰 · ${cost.wood} 🪵`:`📦 Need: ${fmt(cost.money)} 💰 · ${cost.wood} 🪵`);
             btn.hidden=false;btn.textContent=ready?(lang==='ru'?'Улучшить':'Upgrade'):(lang==='ru'?'Не хватает ресурсов':'Resources needed');prompt.classList.add('show');
+          }else if(ctx.type==='district'){
+            // v116: direct ground-pad interaction for the city district hub this player is
+            // standing next to -- replaces the removed world-nav-hub's "Город" menu pad.
+            const cfg=ctx.cfg,cost=districtUpgradeCost(cfg),ready=canPayResources(cost),name=lang==='ru'?cfg.ru:cfg.en;
+            prompt.textContent=ready?(lang==='ru'?`🌆 Развить: ${name}`:`🌆 Develop: ${name}`):(lang==='ru'?`📦 Нужно: ${districtCostText(cost)}`:`📦 Need: ${districtCostText(cost)}`);
+            btn.hidden=false;btn.textContent=ready?(lang==='ru'?'Развить':'Develop'):(lang==='ru'?'Не хватает ресурсов':'Resources needed');prompt.classList.add('show');
+          }else if(ctx.type==='project'){
+            // v116: direct ground-pad interaction for a special project's vacant-site marker --
+            // replaces the removed world-nav-hub's "Проекты" menu pad.
+            const p=ctx.project,ready=canPayResources(p.cost),name=lang==='ru'?p.ru:p.en;
+            prompt.textContent=ready?(lang==='ru'?`🏗️ Начать: ${name}`:`🏗️ Start: ${name}`):(lang==='ru'?`📦 Нужно: ${projectCostText(p)}`:`📦 Need: ${projectCostText(p)}`);
+            btn.hidden=false;btn.textContent=ready?(lang==='ru'?'Начать':'Start'):(lang==='ru'?'Не хватает ресурсов':'Resources needed');prompt.classList.add('show');
           }
           requestLayoutV46();
         };
