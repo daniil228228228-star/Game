@@ -11975,7 +11975,15 @@ function landPlotWorldPosition(id,index){
 function refreshTransportAccessRoads(){
   if(cityWorldRuntime.transportAccessRoads){scene.remove(cityWorldRuntime.transportAccessRoads);disposeObject3D(cityWorldRuntime.transportAccessRoads);cityWorldRuntime.transportAccessRoads=null;}
   const nodes=serviceAccessGraph(),byId=new Map(nodes.map(n=>[n.id,n])),g=new THREE.Group();
-  for(const n of nodes){if(!n.parent)continue;const p=byId.get(n.parent);if(p)addRoadSegment(g,n.p,p.p,n.id==='garage'||n.id==='garageMid'?1.12:1.22);}
+  // Root-cause fix (see CHANGELOG_V116.md, "road union" investigation): concreteBay/metalBay sit
+  // directly ON the depotWest-concreteBypass-metalBypass corridor line, not on a side branch, so
+  // drawing their own parent-edge here stacks a second deck directly on top of the main
+  // through-corridor deck -- the same overlap this file's later road layers (rebuildServiceRoadsV66)
+  // already exclude these two nodes to avoid. This hoisted stub is only ever live for a short,
+  // timing-dependent window right after boot (confirmed live: it can still be the bound function
+  // when the setTimeout(120)/(180) road-init cascade below fires, before later layers finish
+  // reassigning it), so it must not reintroduce that overlap during that window.
+  for(const n of nodes){if(!n.parent)continue;if(n.id==='concreteBay'||n.id==='metalBay')continue;const p=byId.get(n.parent);if(p)addRoadSegment(g,n.p,p.p,n.id==='garage'||n.id==='garageMid'?1.12:1.22);}
   // Loading/parking pockets prevent trucks looking as if they stop in the middle of grass.
   for(const n of nodes.filter(n=>['plankBay','plankHome','concreteBay','concreteHome','metalBay','metalHome','liftHome','garage','garage2'].includes(n.id))){
     const bay=new THREE.Mesh(new THREE.CircleGeometry(.92,18),new THREE.MeshStandardMaterial({color:0x50565e,roughness:.97}));bay.rotation.x=-Math.PI/2;bay.position.set(n.p.x,.059,n.p.z);bay.scale.set(1.35,.72,1);g.add(bay);
@@ -28908,11 +28916,32 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
     for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.districtAccessRoads.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);cityWorldRuntime.districtAccessRoads.delete(cfg.id);}const lv=districtRoadLevelV37(cfg.id);if(lv<=0)continue;const g=new THREE.Group(),segments=[];for(const pos of districtBuiltAccessTargets(cfg.id)){const angle=districtAngleToPoint(cfg.id,pos),gate=districtRingRoadPoint(cfg.id,angle,3.70),front=districtBuildingFront(cfg.id,pos);if(gate.distanceTo(front)>.3)segments.push({a:gate,b:front,w:ROAD59.widths.access[lv],lv,role:'building-access',twoWay:false,sidewalk:false,center:false,curb:false});}renderNetwork59(g,segments,lv);g.userData.v59District=cfg.id;if(g.children.length){scene.add(g);cityWorldRuntime.districtAccessRoads.set(cfg.id,g);}}
   };
 
-  refreshTransportAccessRoads=function(){
-    if(cityWorldRuntime.transportAccessRoads){scene.remove(cityWorldRuntime.transportAccessRoads);disposeObject3D(cityWorldRuntime.transportAccessRoads);cityWorldRuntime.transportAccessRoads=null;}const lv=Math.max(1,maxRoadLevelV37()),nodes0=serviceAccessGraph(),byId=new Map(nodes0.map(n=>[n.id,n])),g=new THREE.Group(),segments=[],seen=new Set();
-    for(const n of nodes0){if(!n.parent)continue;const p=byId.get(n.parent);if(!p)continue;const key=[k59(n.p),k59(p.p)].sort().join('|');if(seen.has(key))continue;seen.add(key);segments.push({a:n.p.clone(),b:p.p.clone(),w:ROAD59.widths.service[lv],lv,role:'service-yard',twoWay:false,sidewalk:false,center:false,curb:false});}
-    renderNetwork59(g,segments,lv);if(g.children.length){scene.add(g);cityWorldRuntime.transportAccessRoads=g;}
-  };
+  /* Root-cause fix (see CHANGELOG_V116.md, "road union" investigation, двенадцатый заход): this
+     block used to read `refreshTransportAccessRoads=function(){...}`, reassigning the transport-
+     road renderer to a renderNetwork59()/addIntersection59()-based rebuild for the remainder of
+     this <script> block's lifetime (until v66/v113 reassign it again further down). Confirmed
+     live (Playwright, ~150 boot samples, direct instrumentation of every layer's call site) that
+     this specific intermediate definition is reachable during a real, if narrow, boot-time race:
+     the v36.5/v36.6 setTimeout(120)/(180) road-init cascade (see refreshTransportAccessRoads's
+     other hoisted stub near line 11975 and its own comment) calls refreshTransportAccessRoads()
+     by name, and on a slow-enough boot (heavy scene construction under swiftshader; observed
+     ~5-25% of loads) that call still resolves to THIS definition, not the final v66/v113 one.
+     addIntersection59()'s T/X junction fill -- unlike the plain circular caps every other layer
+     in this file uses for the same graph -- degenerates at metalBypass's real T-junction (three
+     edges: clusterGate, concreteBypass, metalHome, where clusterGate and metalHome leave in
+     nearly the same direction, a real, permanent property of serviceAccessGraph()'s topology, not
+     a data bug): it leaves a ~0.2-unit dangling boundary edge right at that node, which is exactly
+     what made roadUnionContours() throw "Open road union contour" -- reproduced byte-for-byte
+     identical (same two boundary vertices, every failing run) whether or not the loading-bay taps
+     (concreteBay/metalBay, a separate, also-real "stacked asphalt" defect this same block used to
+     have and no longer needs fixing here since the block is gone) were excluded. Deleting this
+     reassignment removes the ONLY code path that ever builds this network via
+     renderNetwork59()/addIntersection59() -- the name now keeps whichever value it already has
+     (the safe, addRoadSegment()-based hoisted stub near line 11975, which trims each edge
+     independently and never calls addIntersection59()) for that same race window, and is reassigned
+     again exactly as before once the v66/v113 layers reach their own turn. Verified live: 0/50
+     "Open road union contour" occurrences after this change (same save, same iteration count, same
+     harness that showed 6-12/40-60 before it -- see tests/road-union.test.mjs). */
 
 
   function rebuildOuter59(){
