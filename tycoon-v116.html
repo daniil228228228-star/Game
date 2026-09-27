@@ -15003,15 +15003,22 @@ function buildWorldNavPadV362(cfg,pos){
   const group=new THREE.Group();group.position.copy(pos);
   const disc=new THREE.Mesh(new THREE.CylinderGeometry(1.18,1.18,.12,32),new THREE.MeshStandardMaterial({color:cfg.color,roughness:.48,metalness:.05,emissive:cfg.color,emissiveIntensity:.22}));
   disc.position.y=.075;disc.receiveShadow=true;group.add(disc);
-  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.48,.11,14,28),new THREE.MeshStandardMaterial({color:0xe6edf7,roughness:.34,metalness:.12,emissive:0x3e536a,emissiveIntensity:.35}));
-  ring.rotation.x=Math.PI/2;ring.position.y=.09;group.add(ring);
+  // v116: this pad used to also carry a TorusGeometry collar ring around the disc, colored
+  // 0xe6edf7 normally / 0xffefc7 when recommended -- both near-white, so from a normal play
+  // camera angle (steep, mostly top-down) it read as a bare, undecorated flattened white ring
+  // sitting on the grass next to the pad's own colored disc+icon+label, not as part of the
+  // button. Confirmed live (Playwright raycast + projected screen position at the user's
+  // reported location): the pad's icon/label/disc are a separate, wanted element; this ring was
+  // the specific "white circle" the user asked to remove. Removed outright -- the `pulse` ring
+  // below already carries the "this is the recommended action" highlight, so no replacement
+  // decal is needed.
   const pulse=new THREE.Mesh(new THREE.RingGeometry(1.62,1.92,32),new THREE.MeshBasicMaterial({color:0xffd479,transparent:true,opacity:.16,side:THREE.DoubleSide}));
   pulse.rotation.x=-Math.PI/2;pulse.position.y=.095;group.add(pulse);
   const icon=new THREE.Sprite(new THREE.SpriteMaterial({map:createIconSpriteV36(cfg.icon),transparent:true,depthWrite:false}));
   icon.position.set(0,1.05,0);icon.scale.set(1.28,1.28,1.28);group.add(icon);
   const sprite=makeLabelSprite(worldNavLabelV362(cfg));sprite.position.set(0,2.22,0);sprite.scale.set(2.05,0.84,1);group.add(sprite);
-  group.userData={cfg,disc,ring,pulse,icon,sprite};
-  return {cfg,group,pos:pos.clone(),disc,ring,pulse,icon,sprite,lastSig:''};
+  group.userData={cfg,disc,pulse,icon,sprite};
+  return {cfg,group,pos:pos.clone(),disc,pulse,icon,sprite,lastSig:''};
 }
 function createWorldNavPadsV362(){
   if(worldNavRuntimeV362.group){scene.remove(worldNavRuntimeV362.group);disposeObject3D(worldNavRuntimeV362.group);}
@@ -15037,9 +15044,6 @@ function updateWorldNavPadsV362(force=false){
     pad.disc.material.color.setHex(recommended?0xf0b85a:baseColor);
     pad.disc.material.emissive.setHex(recommended?0x8d5a16:baseColor);
     pad.disc.material.emissiveIntensity=recommended?.48:.22;
-    pad.ring.material.color.setHex(recommended?0xffefc7:0xe6edf7);
-    pad.ring.material.emissive.setHex(recommended?0x9f6d1c:0x3e536a);
-    pad.ring.material.emissiveIntensity=recommended?.58:.35;
   }
 }
 function worldNavBlockedByPriorityV362(){
