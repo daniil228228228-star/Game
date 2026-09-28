@@ -19195,13 +19195,27 @@ body{color:var(--v43-text);-webkit-font-smoothing:antialiased;text-rendering:opt
   }
   function tuneMechanicsV43(){
     try{
-      const _constructionDurationV42=constructionDuration;
-      constructionDuration=function(stageIdx, level=1, upgrading=false){
-        const base=2.75 + stageIdx*0.18 + (level-1)*0.34;
-        const speedMult=Math.pow(0.85, fieldUpgrades.construction||0) / Math.max(.72, constructionSpeedMultiplier());
-        const qualityPass=upgrading?0.34:0;
-        return Math.max(1.7, Math.min(5.35, (base + qualityPass) * speedMult));
-      };
+      // v116 construction-timing fix (fifteenth-pass follow-up): this used to unconditionally
+      // reassign `constructionDuration` here to its own standalone formula (base=2.75+...,
+      // clamp [1.7,5.35]) with no reference to whatever function was live before it ran. That
+      // was harmless at the time this ran synchronously during initial parse (nothing later
+      // depended on the old value), but v80-crew-construction-loop (tycoon-v116.html, function
+      // constructionPriorityMultiplier's sibling assignment) was added far later in the file and
+      // wraps `constructionDuration` to deliberately lengthen it (*1.62, clamped [5.1,10.4]) so a
+      // crew has physical time to walk to the site before construction can finish. Because this
+      // function is only ever invoked from runV43Polish() via a DEFERRED
+      // DOMContentLoaded+setTimeout(...,80) (see below), it actually executes AFTER v80's
+      // synchronous top-level assignment has already run (v80's script block sits later in
+      // source order but still executes synchronously during initial parse, before this deferred
+      // timer fires) -- so this reassignment silently clobbered v80's lengthened value back to
+      // the short pre-v80 one on every boot, for every build, on every save. Confirmed live:
+      // constructionDuration(0,1,false) returned 2.75 (this function's own formula) instead of
+      // the intended ~5.1-5.3 (v80's clamp floor) at every point after boot settled. Since v80 is
+      // the deliberate, later-authored owner of this constant (see its own comment block), this
+      // function simply no longer touches `constructionDuration` at all -- letting v80's
+      // synchronous wrap (of whatever constructionDuration was at v80's own script-parse time)
+      // stand as the final, permanently-active formula. The rest of this function's tuning
+      // (districtTrafficSpeedFactor, HUD refresh) is untouched.
       districtTrafficSpeedFactor=function(id){
         const t=THREE.MathUtils.clamp(Number(cityState.districtStats[id]?.traffic)||0,0,100);
         const tr=typeof transitLevelV40==='function'?transitLevelV40(id):0;
