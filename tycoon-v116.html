@@ -7314,12 +7314,28 @@ function serviceVehicleYieldFactor(vehicle, target) {
     if ((ud._v85RightOfWayUntil || 0) > arbitrationNow && (other.userData?._v85YieldUntil || 0) > arbitrationNow) continue;
     let yieldToOther = true;
     if (other.userData?.state !== 'idle') {
-      const mineLoaded = ud.role === 'delivery' && ud.state === 'outbound' && !!ud.deliveryTicket && !ud.deliveryTicket.delivered;
-      const theirs = other.userData;
-      const otherLoaded = theirs?.role === 'delivery' && theirs.state === 'outbound' && !!theirs.deliveryTicket && !theirs.deliveryTicket.delivered;
-      // Cargo priority resolves only a genuine crossing conflict. It never controls following.
-      yieldToOther = mineLoaded !== otherLoaded ? otherLoaded :
-        String(ud.logisticsId || ud.role || 'z') > String(theirs?.logisticsId || theirs?.role || 'z');
+      // Fairness override: the cargo/ID tie-break below is static, so at a corner two vehicles
+      // pass repeatedly (e.g. a round-trip route funnelling past the same junction) the SAME
+      // vehicle loses every single time no matter how long it has already waited -- confirmed
+      // live (scratchpad/traffic116/repro3.mjs): a vehicle stuck 6s at a real crossing still
+      // got factor=0 against a freely-moving rival with no wait time at all. `_auditStuck`
+      // (updateVehicleProgressWatch, above) already measures real elapsed wait time for every
+      // vehicle every frame, so reuse it here: once one side has been genuinely stuck for a
+      // couple of seconds longer than the other, it takes priority over the static rule. This
+      // never overrides the sameLane car-following stop above (a real body ahead), only this
+      // crossing-priority choice, so it cannot cause a visible clip -- it only stops the loser
+      // from being reselected forever once it has clearly waited the longer share of time.
+      const myStuck = ud._auditStuck || 0, otherStuck = other.userData?._auditStuck || 0;
+      if (myStuck > 2.0 && myStuck > otherStuck + 1.2) {
+        yieldToOther = false;
+      } else {
+        const mineLoaded = ud.role === 'delivery' && ud.state === 'outbound' && !!ud.deliveryTicket && !ud.deliveryTicket.delivered;
+        const theirs = other.userData;
+        const otherLoaded = theirs?.role === 'delivery' && theirs.state === 'outbound' && !!theirs.deliveryTicket && !theirs.deliveryTicket.delivered;
+        // Cargo priority resolves only a genuine crossing conflict. It never controls following.
+        yieldToOther = mineLoaded !== otherLoaded ? otherLoaded :
+          String(ud.logisticsId || ud.role || 'z') > String(theirs?.logisticsId || theirs?.role || 'z');
+      }
     }
     if (!yieldToOther) continue;
     if (distance <= crossStop) return 0;
