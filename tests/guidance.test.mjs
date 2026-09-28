@@ -10,9 +10,10 @@ async function main() {
   const ok = (msg) => console.log('ok:', msg);
 
   // --- 1. Fresh empty-world boot: the very first target must be the (always-affordable,
-  //         money-only) first house pad -- not the factory pad, even though the factory pad's
-  //         150-money cost is also affordable with the default starting cash. See the "ordering
-  //         note" comment on nextActionableTargetV117() for why this is checked in that order. ---
+  //         money-only) first house pad -- not the depot pad (v118: first of the four staged
+  //         industrial pads, was the single factory pad), even though the depot's 60-money cost
+  //         is also affordable with the default starting cash. See the "ordering note" comment
+  //         on nextActionableTargetV117() for why this is checked in that order. ---
   {
     const game = await openGame({ save: 'clear', waitMs: 2500 });
     const { page } = game;
@@ -24,14 +25,14 @@ async function main() {
           label: t?.label,
           posMatchesCurrentPad: t && currentPad ? (Math.abs(t.pos.x - currentPad.pos.x) < 1e-6 && Math.abs(t.pos.z - currentPad.pos.z) < 1e-6) : false,
           moneyAtBoot: money,
-          factoryCost: INDUSTRIAL_ZONE_PAD_COST_V116.money,
+          depotCost: industrialStepV118('depot').cost.money,
         };
       });
       console.log('fresh-boot target:', JSON.stringify(state));
-      assertEqual(state.type, 'stage', 'fresh boot must target the first house pad (stage), not the factory pad');
+      assertEqual(state.type, 'stage', 'fresh boot must target the first house pad (stage), not the depot pad');
       assert(state.posMatchesCurrentPad, 'stage target position must equal currentPad.pos');
-      assert(state.moneyAtBoot >= state.factoryCost, 'sanity: starting money must already cover the factory pad cost (this is the ambiguous case the ordering note documents)');
-      ok('fresh boot targets the first house pad ahead of the also-affordable factory pad');
+      assert(state.moneyAtBoot >= state.depotCost, 'sanity: starting money must already cover the depot pad cost (this is the ambiguous case the ordering note documents)');
+      ok('fresh boot targets the first house pad ahead of the also-affordable depot pad');
     } catch (e) { fail(e.message); } finally { await game.close(); }
   }
 
@@ -62,26 +63,18 @@ async function main() {
     } catch (e) { fail(e.message); } finally { await game.close(); }
   }
 
-  // --- 3. After paving that road (still no factory), with stage 1 needing planks the player
-  //         cannot get yet, the target must move to the (still unbuilt, affordable) factory pad
-  //         -- and a real, visible ground marker must exist there (spawnFactoryPadMarkerV117()). ---
+  // --- 3. After paving that road (still no industrial buildings), with stage 1 needing planks
+  //         the player cannot get yet, the target must move to the (still unbuilt, affordable,
+  //         and FIRST in the chain) depot pad -- v118: was the single factory pad -- and a real,
+  //         visible ground marker must exist there (spawnIndustrialPadMarkerV118()). ---
   {
     const game = await openGame({ save: 'clear', waitMs: 2500 });
     const { page } = game;
     try {
-      const before = await page.evaluate(() => ({
-        factoryMarkerExists: !!scene.getObjectByName === 'function', // placeholder, real check below
+      const state0 = await page.evaluate(() => ({
+        depotMarkerExists: !!industrialPadMarkersV118.get('depot'),
       }));
-      const state0 = await page.evaluate(() => {
-        // The factory pad marker is a THREE.Group with no explicit .name -- find it by world
-        // position instead (it's the only such marker there before the zone is built).
-        let found = false;
-        scene.traverse((o) => {
-          if (o.isGroup && Math.abs(o.position.x - INDUSTRIAL_ZONE_PAD_POS_V116.x) < 1e-6 && Math.abs(o.position.z - INDUSTRIAL_ZONE_PAD_POS_V116.z) < 1e-6) found = true;
-        });
-        return { factoryMarkerExistsBeforeAnyHouse: found };
-      });
-      assert(state0.factoryMarkerExistsBeforeAnyHouse, 'the factory pad ground marker must exist from the very start of a fresh empty-world save (spawnFactoryPadMarkerV117)');
+      assert(state0.depotMarkerExists, 'the depot pad ground marker must exist from the very start of a fresh empty-world save (spawnIndustrialPadMarkerV118)');
 
       await page.evaluate(() => { purchaseCurrentPad(); });
       await page.waitForTimeout(300);
@@ -89,42 +82,52 @@ async function main() {
       await page.waitForTimeout(300);
       const state = await page.evaluate(() => {
         const t = nextActionableTargetV117();
+        const depot = industrialStepV118('depot');
         return {
           type: t?.type,
-          posMatchesFactory: t ? (Math.abs(t.pos.x - INDUSTRIAL_ZONE_PAD_POS_V116.x) < 1e-6 && Math.abs(t.pos.z - INDUSTRIAL_ZONE_PAD_POS_V116.z) < 1e-6) : false,
+          stepId: t?.stepId,
+          posMatchesDepot: t ? (Math.abs(t.pos.x - depot.pos.x) < 1e-6 && Math.abs(t.pos.z - depot.pos.z) < 1e-6) : false,
           stageIndex,
           planksNeeded: STAGES[1]?.plankCost,
           planks,
-          industrialZoneBuiltV116,
         };
       });
-      console.log('after road, before factory:', JSON.stringify(state));
-      assertEqual(state.type, 'factory', 'target must move to the factory pad once house 0 is roaded and stage 1 needs planks the player cannot source yet');
-      assert(state.posMatchesFactory, 'factory target position must equal INDUSTRIAL_ZONE_PAD_POS_V116');
+      console.log('after road, before depot:', JSON.stringify(state));
+      assertEqual(state.type, 'industrial', 'target must move to an industrial pad once house 0 is roaded and stage 1 needs planks the player cannot source yet');
+      assertEqual(state.stepId, 'depot', 'the depot pad must be first in the chain (delivery-softlock finding -- see CHANGELOG_V116.md eighteenth pass)');
+      assert(state.posMatchesDepot, 'target position must equal the depot pad position');
       assert(state.planksNeeded > state.planks, 'sanity: stage 1 must actually require more planks than the player has (that is WHY the stage pad is not chosen)');
-      ok('target moves to the factory pad once the next house needs materials the factory unlocks');
+      ok('target moves to the depot pad once the next house needs materials the industrial chain unlocks');
 
-      // --- 4. Building the factory removes its marker and (per priority order) hands guidance
-      //         back to the resource-fetch chain (go chop a tree) since stage 1 still needs
-      //         planks and the base currentGuidanceTarget() already knows how to route that. ---
-      await page.evaluate(() => { buildIndustrialZoneV116(); });
+      // --- 4. Building the depot removes its marker and reveals the sawmill pad next; building
+      //         the sawmill in turn hands guidance back to the resource-fetch chain (go chop a
+      //         tree) since stage 1 still needs planks the sawmill has not yet produced. ---
+      await page.evaluate(() => { buildIndustrialStepV118(industrialStepV118('depot')); });
       await page.waitForTimeout(300);
-      const after = await page.evaluate(() => {
-        let markerStillThere = false;
-        scene.traverse((o) => {
-          if (o.isGroup && Math.abs(o.position.x - INDUSTRIAL_ZONE_PAD_POS_V116.x) < 1e-6 && Math.abs(o.position.z - INDUSTRIAL_ZONE_PAD_POS_V116.z) < 1e-6) markerStillThere = true;
-        });
-        return {
-          industrialZoneBuiltV116,
-          nextActionableNull: nextActionableTargetV117() === null,
-          fallbackTarget: currentGuidanceTarget(),
-          markerStillThere,
-        };
-      });
-      console.log('after building factory:', JSON.stringify(after));
-      assert(after.industrialZoneBuiltV116, 'factory must actually be built');
-      assert(!after.markerStillThere, 'the factory pad ground marker must be removed once built (removeFactoryPadMarkerV117)');
-      assert(after.nextActionableNull, 'nextActionableTargetV117() must return null once the factory is built and stage 1 is still unaffordable (falls through to the pre-existing resource-fetch chain)');
+      const midState = await page.evaluate(() => ({
+        depotBuilt: fleetDepotBuiltV118,
+        depotMarkerGone: !industrialPadMarkersV118.get('depot'),
+        nextType: nextActionableTargetV117()?.type,
+        nextStepId: nextActionableTargetV117()?.stepId,
+      }));
+      console.log('after building depot:', JSON.stringify(midState));
+      assert(midState.depotBuilt, 'depot must actually be built');
+      assert(midState.depotMarkerGone, 'the depot pad ground marker must be removed once built (removeIndustrialPadMarkerV118)');
+      assertEqual(midState.nextType, 'industrial', 'guidance must move on to the next industrial step');
+      assertEqual(midState.nextStepId, 'sawmill', 'the sawmill pad must be revealed as soon as the depot is built (its prereq)');
+
+      await page.evaluate(() => { buildIndustrialStepV118(industrialStepV118('sawmill')); });
+      await page.waitForTimeout(300);
+      const after = await page.evaluate(() => ({
+        sawmillBuiltV118,
+        sawmillMarkerGone: !industrialPadMarkersV118.get('sawmill'),
+        nextActionableNull: nextActionableTargetV117() === null,
+        fallbackTarget: currentGuidanceTarget(),
+      }));
+      console.log('after building sawmill:', JSON.stringify(after));
+      assert(after.sawmillBuiltV118, 'sawmill must actually be built');
+      assert(after.sawmillMarkerGone, 'the sawmill pad ground marker must be removed once built');
+      assert(after.nextActionableNull, 'nextActionableTargetV117() must return null once concrete/metal are unlocked but not yet affordable (falls through to the pre-existing resource-fetch chain)');
       assert(!!after.fallbackTarget, 'currentGuidanceTarget() must still return SOMETHING (the pre-existing tree/sawmill fetch guidance) -- zero regression to that chain');
       ok('factory marker removed on build; guidance falls through cleanly to the existing resource-fetch chain');
     } catch (e) { fail(e.message); console.error(e.stack); } finally { await game.close(); }

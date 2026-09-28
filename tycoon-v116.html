@@ -963,8 +963,9 @@ try { knownSaveRawV64 = localStorage.getItem(SAVE_KEY); } catch (_) {}
    new save (SAVE_KEY entirely absent from localStorage) now boots into an empty world: grass,
    the player, and nothing else -- no sawmill/concrete/metal scenery, no industrial service
    roads, no fleet yard/parking, no industrial ambient workforce or delivery trucks. The player
-   builds all of that via ground pads (see buildIndustrialZoneV116() and the manual road pads
-   further down this file).
+   builds all of that via ground pads (see buildIndustrialStepV118() -- v118: was
+   buildIndustrialZoneV116(), one pad per building instead of one pad for the whole cluster --
+   and the manual road pads further down this file).
    CRITICAL invariant (non-negotiable, see VISION.md): any EXISTING save keeps loading exactly
    as it always has. This flag defaults to "already built" the instant a save is present at
    all -- including every save written before this change, which has no opinion on this field
@@ -972,6 +973,17 @@ try { knownSaveRawV64 = localStorage.getItem(SAVE_KEY); } catch (_) {}
    SAVE_KEY. A save that already recorded this field (a fresh v116 game that saved before or
    after building the factory pad) always wins over the coarse guess. */
 let industrialZoneBuiltV116 = true;
+// v118 (eighteenth pass, staged industrial-zone unlock -- user request "с заводом сделал бы,
+// что всё прокачивалось отдельно"): the single "build the factory" pad (tenth pass) that put up
+// the sawmill+concrete+metal+depot cluster in one press is split into four independently built
+// things, each with its own ground pad/cost/flag. `industrialZoneBuiltV116` above is kept as a
+// derived legacy convenience for old code that only ever asked "has the zone been started at
+// all" (see the assignment right after this try/catch) -- it now just mirrors sawmillBuiltV118,
+// the first of the four. Every NEW check added by this pass reads the specific flag it needs.
+let sawmillBuiltV118 = true;
+let fleetDepotBuiltV118 = true;
+let concretePlantBuiltV118 = true;
+let metalYardBuiltV118 = true;
 // v116 manual roads (same user request): a fresh save also stops auto-paving a house's road
 // the instant the house is bought. Instead each built-but-unrouted house gets its own "build
 // road" ground pad (see nearestManualTargetV53()'s 'road' candidates); stepping on it is the
@@ -984,11 +996,30 @@ let manualRoadStagesV116 = new Set();
 try {
   if (!knownSaveRawV64) {
     industrialZoneBuiltV116 = false;
+    sawmillBuiltV118 = fleetDepotBuiltV118 = concretePlantBuiltV118 = metalYardBuiltV118 = false;
     manualRoadModeV116 = true;
   } else {
     const parsedBootSaveV116 = JSON.parse(knownSaveRawV64);
     if (parsedBootSaveV116 && typeof parsedBootSaveV116.industrialZoneBuiltV116 === 'boolean') {
       industrialZoneBuiltV116 = parsedBootSaveV116.industrialZoneBuiltV116;
+      // v118: a save from before this pass only ever recorded this one coarse flag, and under
+      // the old single-pad model it could only ever mean "the whole cluster" (true) or "none of
+      // it" (false) -- so it is the correct shared default for all four granular flags below.
+      // A save already written by THIS pass carries its own per-building fields, which the
+      // checks right after this one then override individually.
+      sawmillBuiltV118 = fleetDepotBuiltV118 = concretePlantBuiltV118 = metalYardBuiltV118 = industrialZoneBuiltV116;
+    }
+    if (parsedBootSaveV116 && typeof parsedBootSaveV116.sawmillBuiltV118 === 'boolean') {
+      sawmillBuiltV118 = parsedBootSaveV116.sawmillBuiltV118;
+    }
+    if (parsedBootSaveV116 && typeof parsedBootSaveV116.fleetDepotBuiltV118 === 'boolean') {
+      fleetDepotBuiltV118 = parsedBootSaveV116.fleetDepotBuiltV118;
+    }
+    if (parsedBootSaveV116 && typeof parsedBootSaveV116.concretePlantBuiltV118 === 'boolean') {
+      concretePlantBuiltV118 = parsedBootSaveV116.concretePlantBuiltV118;
+    }
+    if (parsedBootSaveV116 && typeof parsedBootSaveV116.metalYardBuiltV118 === 'boolean') {
+      metalYardBuiltV118 = parsedBootSaveV116.metalYardBuiltV118;
     }
     if (parsedBootSaveV116 && typeof parsedBootSaveV116.manualRoadModeV116 === 'boolean') {
       manualRoadModeV116 = parsedBootSaveV116.manualRoadModeV116;
@@ -998,6 +1029,26 @@ try {
     }
   }
 } catch (_) { /* corrupt/foreign save -- fall back to the safe "already built"/"automatic roads" default */ }
+// Legacy convenience mirror -- see the big comment above. Kept live (not just this boot-time
+// snapshot) by buildIndustrialStepV118('sawmill') re-asserting it the moment the sawmill is actually built.
+industrialZoneBuiltV116 = sawmillBuiltV118;
+// v118 market: like the four industrial buildings above, each of the market plaza's 7 stalls now
+// unlocks/builds individually instead of the whole plaza appearing fully built on first reach
+// (eleventh pass, commit 8c9c741). `marketStallsBuiltV118` holds the ids of stalls the player has
+// actually paid to build; defaults to "all 7" the instant a save exists at all (so a returning
+// player's market stays exactly as they left it) and to "none yet" only on a genuinely fresh
+// save, mirroring the industrial-zone flags' own defaulting rule one section up.
+let marketStallsBuiltV118 = new Set(['team', 'fleet', 'tenders', 'operations', 'meta', 'bonus', 'exchange']);
+try {
+  if (!knownSaveRawV64) {
+    marketStallsBuiltV118 = new Set();
+  } else {
+    const parsedBootMarketV118 = JSON.parse(knownSaveRawV64);
+    if (parsedBootMarketV118 && Array.isArray(parsedBootMarketV118.marketStallsBuiltV118)) {
+      marketStallsBuiltV118 = new Set(parsedBootMarketV118.marketStallsBuiltV118.filter((id) => typeof id === 'string'));
+    }
+  }
+} catch (_) { /* corrupt/foreign save -- fall back to the safe "already built" default */ }
 
 function lockForeignSaveV64() {
   if (otherTabSaveLockV63) return;
@@ -2907,25 +2958,75 @@ const METAL_YARD_POS = new THREE.Vector3(-7.3 + INDUSTRIAL_ZONE_OFFSET_X, 0, -10
 // building (checked in updatePlayer() alongside the `buildings` array).
 // v116 empty-world boot: base modules/special projects push their own entries onto this same
 // array later (see STATIC_COLLIDERS.push() elsewhere), so it can't just be skipped wholesale
-// when the industrial zone isn't built yet -- only these 4 fixed industrial entries are
-// conditional; buildIndustrialZoneV116() pushes the exact same 4 objects once the player
-// builds the factory pad, so nothing is an invisible wall over grass in a fresh world.
-const STATIC_COLLIDERS = industrialZoneBuiltV116 ? [
-  { pos: GENERATOR_POS, radius: 1.9 },
-  { pos: SAWMILL_POS, radius: 2.15 },
-  { pos: CONCRETE_PLANT_POS, radius: 1.7 },
-  { pos: METAL_YARD_POS, radius: 1.75 },
-] : [];
+// when the industrial zone isn't built yet.
+// v118 (staged industrial-zone unlock): these 4 fixed entries used to be one all-or-nothing
+// block behind the single industrialZoneBuiltV116 flag; now each building pushes its own
+// collider(s) the moment its own pad is actually built (buildIndustrialStepV118(), one shared
+// function for all four steps, below), so a partially-built zone never leaves an invisible wall
+// over grass for a building that doesn't exist yet.
+const STATIC_COLLIDERS = [
+  ...(sawmillBuiltV118 ? [{ pos: GENERATOR_POS, radius: 1.9 }, { pos: SAWMILL_POS, radius: 2.15 }] : []),
+  ...(concretePlantBuiltV118 ? [{ pos: CONCRETE_PLANT_POS, radius: 1.7 }] : []),
+  ...(metalYardBuiltV118 ? [{ pos: METAL_YARD_POS, radius: 1.75 }] : []),
+];
 
-// v116 industrial-zone build pad: a single ground pad the player can reach on foot (no road
-// needed, same as any other pad) that builds the whole cluster at once. Positioned in the open
-// service yard just north of the generator camp -- clear of all 4 building footprints/colliders
-// above, verified live with a screenshot (scratchpad/emptyworld116/factory_pad_*.png).
-const INDUSTRIAL_ZONE_PAD_POS_V116 = new THREE.Vector3(GENERATOR_POS.x + 2.6, 0, GENERATOR_POS.z + 3.6);
-// Money-only and cheap enough to reach right after the free first house (STAGES[0].cost 50,
-// starting money 300) -- see CHANGELOG_V116.md for the progression-sanity-check reasoning.
-// No plank/concrete/metal requirement: those resources don't exist until this pad is built.
-const INDUSTRIAL_ZONE_PAD_COST_V116 = { money: 150, wood: 0, concrete: 0, metal: 0 };
+/* ---------------------------------------------------------------------- */
+/*  v118 STAGED INDUSTRIAL-ZONE UNLOCK -- four separate ground pads        */
+/*  (depot -> sawmill -> concrete/metal in parallel) replacing the single  */
+/*  "build the factory" pad (tenth pass) that put the whole cluster up in  */
+/*  one press. See CHANGELOG_V116.md, eighteenth pass, for the full order/ */
+/*  cost reasoning and the delivery-softlock finding that put the depot    */
+/*  FIRST rather than last (a construction site's plank delivery ticket    */
+/*  gates its progress bar on a real truck actually existing -- see        */
+/*  addConstructionProgress()/createBuildDeliveryPlan() -- so the truck's  */
+/*  home yard cannot come after the sawmill that needs it to deliver).     */
+/* ---------------------------------------------------------------------- */
+// All 4 positioned in the open service yard around the (already relocated, seventh-pass)
+// industrial zone, clear of every collider above and of each other's trigger radius -- verified
+// live with a real Box3/overlap check (scratchpad/staged116/, not committed) the same way the
+// original single factory pad was in the tenth pass.
+const FLEET_DEPOT_PAD_POS_V118 = new THREE.Vector3(-8.70 + INDUSTRIAL_ZONE_OFFSET_X, 0, 3.4);
+const SAWMILL_PAD_POS_V118 = new THREE.Vector3(GENERATOR_POS.x + 2.6, 0, GENERATOR_POS.z + 3.6); // = old INDUSTRIAL_ZONE_PAD_POS_V116
+// v118: concrete/metal are pressed AFTER the sawmill already exists (see build order below), so
+// unlike the old single-pad system (which built the whole cluster -- trees included -- in the
+// same instant its own pad was removed) these two positions have to coexist with the sawmill's
+// own 6-tree ring around GENERATOR_POS for real gameplay time. A live probe
+// (scratchpad/staged116/verify_pads.mjs, not committed) found the straightforward "3 units
+// toward the generator" offset actually sits inside TREE_INTERACT_RADIUS (2.65) of that ring
+// (1.35/2.13 units away) -- updateTreeInteraction() then wins the #actionPrompt every frame and
+// the industrial-pad prompt never has a chance to show, even though nearestManualTargetV53()
+// itself still returns the right candidate. Offsetting AWAY from the generator instead (south)
+// clears both the tree ring and every collider by 6.7+ units, live-verified with the same probe.
+const CONCRETE_PAD_POS_V118 = new THREE.Vector3(CONCRETE_PLANT_POS.x, 0, CONCRETE_PLANT_POS.z - 3.0);
+const METAL_PAD_POS_V118 = new THREE.Vector3(METAL_YARD_POS.x, 0, METAL_YARD_POS.z - 3.0);
+// Money-only for the same reason the old single pad was: no plank/concrete/metal requirement,
+// because those resources don't exist yet at the point each of these is first reachable (depot
+// and sawmill genuinely can't -- concrete/metal COULD ask for planks since those already flow by
+// then, and concrete/metal's own cost below does, once modestly, for exactly that reason).
+// Costs deliberately split the old single 150-money total across depot+sawmill (the pair that
+// must both exist before the very first plank delivery) rather than inflating it, per the user's
+// own "more decisions, not more waiting" framing -- see CHANGELOG_V116.md for the full STAGES-
+// scale comparison that picked the concrete/metal numbers.
+const FLEET_DEPOT_PAD_COST_V118 = { money: 60, wood: 0, concrete: 0, metal: 0 };
+const SAWMILL_PAD_COST_V118 = { money: 100, wood: 0, concrete: 0, metal: 0 };
+const CONCRETE_PAD_COST_V118 = { money: 380, wood: 6, concrete: 0, metal: 0 };
+const METAL_PAD_COST_V118 = { money: 520, wood: 8, concrete: 0, metal: 0 };
+// The ordered chain itself: `built`/`prereq` are functions (not booleans) so the array can be
+// declared once here yet always read the CURRENT value of each `let` flag above, however it
+// changes later. `id`/`ru`/`en`/`pos`/`cost` are read by nearestManualTargetV53(),
+// installManualPromptV46(), nextActionableTargetV117() and the marker/highlight helpers below --
+// one shared config table instead of four near-duplicate code paths.
+const INDUSTRIAL_BUILD_STEPS_V118 = [
+  { id: 'depot', ru: 'Автопарк', en: 'Fleet Depot', pos: FLEET_DEPOT_PAD_POS_V118, cost: FLEET_DEPOT_PAD_COST_V118,
+    built: () => fleetDepotBuiltV118, prereq: () => true },
+  { id: 'sawmill', ru: 'Лесопилка', en: 'Sawmill', pos: SAWMILL_PAD_POS_V118, cost: SAWMILL_PAD_COST_V118,
+    built: () => sawmillBuiltV118, prereq: () => fleetDepotBuiltV118 },
+  { id: 'concrete', ru: 'Бетонный завод', en: 'Concrete Plant', pos: CONCRETE_PAD_POS_V118, cost: CONCRETE_PAD_COST_V118,
+    built: () => concretePlantBuiltV118, prereq: () => sawmillBuiltV118 },
+  { id: 'metal', ru: 'Металлобаза', en: 'Metal Yard', pos: METAL_PAD_POS_V118, cost: METAL_PAD_COST_V118,
+    built: () => metalYardBuiltV118, prereq: () => sawmillBuiltV118 },
+];
+function industrialStepV118(id) { return INDUSTRIAL_BUILD_STEPS_V118.find((s) => s.id === id) || null; }
 
 /* v116 (de-elevation): this belt used to cross the depot service road segment
    `sawmillBypass`->`depotWest` (measured live with a real OBB-vs-OBB test: 2 overlaps, depth
@@ -3242,12 +3343,13 @@ function buildSawmillScenery() {
 }
 
 // v116 empty-world boot: skipped entirely for a genuinely fresh save (see
-// industrialZoneBuiltV116 above); buildIndustrialZoneV116() calls this once the player
-// builds the factory pad. Every existing save keeps building it here, unchanged.
-if (industrialZoneBuiltV116) buildSawmillScenery();
-// v117's spawnFactoryPadMarkerV117() call for the !industrialZoneBuiltV116 case lives at the
-// very end of the file (after load()), not here -- calling it this early hit the `let
-// factoryPadMarkerV117` binding declared much further down before that line had executed
+// sawmillBuiltV118 above, v118: was industrialZoneBuiltV116); buildIndustrialStepV118() calls
+// this once the player builds the sawmill pad. Every existing save keeps building it here,
+// unchanged.
+if (sawmillBuiltV118) buildSawmillScenery();
+// v117's marker-spawn call (now refreshIndustrialPadMarkersV118(), v118) lives at the very end
+// of the file (after load()), not here -- calling it this early hit `let`/`const` bindings
+// declared much further down (industrialPadMarkersV118 et al.) before those lines had executed
 // (temporal dead zone), threw, and silently aborted the rest of this entire top-level script
 // pass (player/CITY_DISTRICTS/cityWorldRuntime/etc. never got initialized). Same class of bug
 // this file already warns about elsewhere ("uncaught ReferenceError aborts the rest of this
@@ -3468,7 +3570,7 @@ function buildConcretePlant() {
   scene.add(group);
   return { group, drumPivot, label };
 }
-if (industrialZoneBuiltV116) concretePlant = buildConcretePlant(); // v116 empty-world boot
+if (concretePlantBuiltV118) concretePlant = buildConcretePlant(); // v118 staged industrial-zone unlock
 
 function updateConcretePlant(dt) {
   if (concretePlant?.drumPivot) concretePlant.drumPivot.rotation.x += dt * (stageIndex >= CONCRETE_UNLOCK_STAGE ? 2.2 : 0.3);
@@ -3544,7 +3646,7 @@ function buildMetalYard() {
   scene.add(group);
   return { group, cutterWheel, label, loadRing };
 }
-if (industrialZoneBuiltV116) metalPlant = buildMetalYard(); // v116 empty-world boot
+if (metalYardBuiltV118) metalPlant = buildMetalYard(); // v118 staged industrial-zone unlock
 
 
 const LOGISTICS_ZONES = {};
@@ -7660,24 +7762,28 @@ function hasDeliveryVehicle(cargo) {
 
 function syncDeliveryFleet() {
   // v116 empty-world boot: the plank loading zone/truck used to be unconditional (the very
-  // first resource loop in the game). In a fresh world there is no sawmill to load from yet --
-  // both stay gated on industrialZoneBuiltV116, exactly like concrete/metal already gate on
-  // their own unlock stage. Once buildIndustrialZoneV116() flips the flag, the very next
-  // syncDeliveryFleet() tick (updateAmbientLife runs it every .3-.55s) picks this up on its own.
-  if (LOGISTICS_ZONES.planks) LOGISTICS_ZONES.planks.group.visible = industrialZoneBuiltV116;
-  if (LOGISTICS_ZONES.concrete) LOGISTICS_ZONES.concrete.group.visible = stageIndex >= CONCRETE_UNLOCK_STAGE;
-  if (LOGISTICS_ZONES.metal) LOGISTICS_ZONES.metal.group.visible = stageIndex >= METAL_UNLOCK_STAGE;
+  // first resource loop in the game). In a fresh world there is no sawmill to load from yet.
+  // v118 (staged industrial-zone unlock): each zone now gates on its OWN specific building
+  // flag(s) instead of the single industrialZoneBuiltV116 -- a delivery truck also needs the
+  // fleet depot to actually exist (its home yard), which is exactly the softlock risk that put
+  // the depot pad FIRST in the build order (see INDUSTRIAL_BUILD_STEPS_V118's comment): without
+  // this, a construction site's plank delivery ticket (createBuildDeliveryPlan()) would gate its
+  // progress bar forever on a truck that can never spawn. Once each build*V118() flips its flag,
+  // the very next syncDeliveryFleet() tick (updateAmbientLife runs it every .3-.55s) picks it up.
+  if (LOGISTICS_ZONES.planks) LOGISTICS_ZONES.planks.group.visible = sawmillBuiltV118;
+  if (LOGISTICS_ZONES.concrete) LOGISTICS_ZONES.concrete.group.visible = concretePlantBuiltV118 && stageIndex >= CONCRETE_UNLOCK_STAGE;
+  if (LOGISTICS_ZONES.metal) LOGISTICS_ZONES.metal.group.visible = metalYardBuiltV118 && stageIndex >= METAL_UNLOCK_STAGE;
   // v116: initial homes translated with the fleet yard (INDUSTRIAL_ZONE_OFFSET_X). Superseded
   // by v65's applyFleetHomesV65()/desiredHomeV65() shortly after boot, but kept in sync so
   // there is no stale-position flash before that first refresh runs.
-  if (industrialZoneBuiltV116 && !hasDeliveryVehicle('planks')) {
+  if (sawmillBuiltV118 && fleetDepotBuiltV118 && !hasDeliveryVehicle('planks')) {
     addDeliveryVehicle(createPlankDeliveryTruck(), 'planks', new THREE.Vector3(-16.20 + INDUSTRIAL_ZONE_OFFSET_X, 0, -1.15), 3.5);
   }
-  if (industrialZoneBuiltV116 && stageIndex >= CONCRETE_UNLOCK_STAGE && !hasDeliveryVehicle('concrete')) {
+  if (concretePlantBuiltV118 && fleetDepotBuiltV118 && stageIndex >= CONCRETE_UNLOCK_STAGE && !hasDeliveryVehicle('concrete')) {
     addDeliveryVehicle(createConcreteMixerTruck(), 'concrete', new THREE.Vector3(-8.25 + INDUSTRIAL_ZONE_OFFSET_X, 0, -5.80), 3.05);
     toast(lang === 'ru' ? '🚚 Открыта бетономешалка' : '🚚 Concrete mixer unlocked');
   }
-  if (industrialZoneBuiltV116 && stageIndex >= METAL_UNLOCK_STAGE && !hasDeliveryVehicle('metal')) {
+  if (metalYardBuiltV118 && fleetDepotBuiltV118 && stageIndex >= METAL_UNLOCK_STAGE && !hasDeliveryVehicle('metal')) {
     addDeliveryVehicle(createMetalDeliveryTruck(), 'metal', new THREE.Vector3(-5.25 + INDUSTRIAL_ZONE_OFFSET_X, 0, -5.15), 3.25);
     toast(lang === 'ru' ? '🚚 Открыт металловоз' : '🚚 Steel truck unlocked');
   }
@@ -7686,10 +7792,11 @@ function syncDeliveryFleet() {
 
 // v116 empty-world boot: the industrial-camp workforce (2 workers at GENERATOR_POS + 2 at
 // SAWMILL_POS) and the stored scissor lift both live at the industrial zone, which a fresh
-// world doesn't have yet. Extracted out of spawnAmbientLife() so buildIndustrialZoneV116()
-// can call the exact same code once the player builds the factory pad, instead of duplicating
-// it. On an existing save (industrialZoneBuiltV116 already true) this still runs at boot from
-// spawnAmbientLife() below, unchanged from before this pass.
+// world doesn't have yet. Extracted out of spawnAmbientLife() so buildIndustrialStepV118()
+// (v118: was buildIndustrialZoneV116()) can call the exact same code once the player builds the
+// sawmill pad specifically, instead of duplicating it. On an existing save (sawmillBuiltV118
+// already true) this still runs at boot from spawnAmbientLife() below, unchanged from before
+// this pass.
 function spawnIndustrialCampLifeV116(industrialWorkerCount) {
   for (let i = 0; i < industrialWorkerCount; i++) {
     const role = WORKER_ROLES[i % WORKER_ROLES.length];
@@ -7729,9 +7836,9 @@ function spawnAmbientLife() {
   // stage3); the industrial-camp slots (i<4, GENERATOR_POS/SAWMILL_POS) are always created via
   // spawnIndustrialCampLifeV116() instead (called first, same as before this pass, to keep
   // npcWorkers' creation order identical for an existing save), gated on
-  // industrialZoneBuiltV116, so a fresh world can skip them without touching this loop's own
-  // indices/roles at all.
-  if (industrialZoneBuiltV116) spawnIndustrialCampLifeV116(industrialWorkerCount);
+  // sawmillBuiltV118 (v118: was industrialZoneBuiltV116), so a fresh world can skip them
+  // without touching this loop's own indices/roles at all.
+  if (sawmillBuiltV118) spawnIndustrialCampLifeV116(industrialWorkerCount);
   for (let i = industrialWorkerCount; i < workerCount; i++) {
     const role = WORKER_ROLES[i % WORKER_ROLES.length];
     const worker = createWorkerNPC(role.key);
@@ -8173,9 +8280,15 @@ function buildManualRoadStageV116(i, pos) {
 // (currentPad, the manual road pads below, upgrade pads, district hubs), there was nothing to
 // see or walk toward until the player was already standing inside the trigger radius. Same
 // disc+ring+label shape language as spawnRoadPadMarkerV116() below, just for one fixed spot.
-let factoryPadMarkerV117 = null;
-function spawnFactoryPadMarkerV117() {
-  if (factoryPadMarkerV117 || industrialZoneBuiltV116) return;
+// v118: generalized from one single marker to one PER unbuilt-but-unlocked step in
+// INDUSTRIAL_BUILD_STEPS_V118 (depot/sawmill/concrete/metal), keyed by step id instead of a
+// single `let` binding -- same disc+ring+label shape, same on-build teardown, just four of them
+// (at most; a not-yet-unlocked step, see `prereq`, has no marker at all, same as a
+// not-yet-unlocked special project has no vacant-site marker -- see
+// createSpecialProjectAvailableMarker()).
+const industrialPadMarkersV118 = new Map(); // step id -> THREE.Group
+function spawnIndustrialPadMarkerV118(step) {
+  if (industrialPadMarkersV118.has(step.id) || step.built()) return;
   const group = new THREE.Group();
   const disc = new THREE.Mesh(
     new THREE.CylinderGeometry(0.72, 0.72, 0.06, 24),
@@ -8193,60 +8306,82 @@ function spawnFactoryPadMarkerV117() {
   group.add(ring);
   group.userData.pulseRing = ring;
   group.userData.disc = disc;
-  const sprite = makeLabelSprite([lang === 'ru' ? 'ЗАВОД' : 'FACTORY']);
+  const sprite = makeLabelSprite([lang === 'ru' ? step.ru.toUpperCase() : step.en.toUpperCase()]);
   sprite.position.y = 1.4;
   sprite.scale.set(0.9, 0.37, 1);
   group.add(sprite);
-  group.position.set(INDUSTRIAL_ZONE_PAD_POS_V116.x, 0, INDUSTRIAL_ZONE_PAD_POS_V116.z);
+  group.position.set(step.pos.x, 0, step.pos.z);
   scene.add(group);
-  factoryPadMarkerV117 = group;
+  industrialPadMarkersV118.set(step.id, group);
 }
-function removeFactoryPadMarkerV117() {
-  if (!factoryPadMarkerV117) return;
-  scene.remove(factoryPadMarkerV117);
-  disposeObject3D(factoryPadMarkerV117);
-  factoryPadMarkerV117 = null;
+function removeIndustrialPadMarkerV118(id) {
+  const g = industrialPadMarkersV118.get(id);
+  if (!g) return;
+  scene.remove(g);
+  disposeObject3D(g);
+  industrialPadMarkersV118.delete(id);
+}
+// Keeps the set of visible industrial-pad markers in sync with which steps are built/unlocked --
+// call after boot, after load(), and after every buildIndustrialStepV118() (mirrors
+// refreshManualRoadPadMarkersV116()'s own role for the road pads).
+function refreshIndustrialPadMarkersV118() {
+  for (const step of INDUSTRIAL_BUILD_STEPS_V118) {
+    if (step.built()) { removeIndustrialPadMarkerV118(step.id); continue; }
+    if (step.prereq()) spawnIndustrialPadMarkerV118(step); else removeIndustrialPadMarkerV118(step.id);
+  }
 }
 
 /* ---------------------------------------------------------------------- */
-/*  v116 INDUSTRIAL-ZONE BUILD PAD -- one ground pad ("Построить завод")   */
-/*  that builds the sawmill/concrete plant/metal yard/fleet depot cluster  */
-/*  all at once, reusing the exact same build functions this session's art */
-/*  pass already improved -- only WHEN they run changes (pad press instead */
-/*  of unconditional boot), see industrialZoneBuiltV116 near the top.      */
+/*  v118 STAGED INDUSTRIAL-ZONE UNLOCK -- one shared build function for    */
+/*  all four steps (depot/sawmill/concrete/metal), each reusing the exact  */
+/*  same art-passed build functions this session's earlier passes already  */
+/*  wrote (buildSawmillScenery()/buildConcretePlant()/buildMetalYard()/     */
+/*  rebuildParkingV65()) -- only WHEN each runs changes (its own pad press  */
+/*  instead of the old single-pad unconditional boot). Replaces the tenth-  */
+/*  pass buildIndustrialZoneV116(); see CHANGELOG_V116.md, eighteenth pass. */
 /* ---------------------------------------------------------------------- */
-function buildIndustrialZoneV116() {
-  if (industrialZoneBuiltV116) return false;
-  if (!tryPayResources(INDUSTRIAL_ZONE_PAD_COST_V116)) {
+function buildIndustrialStepV118(step) {
+  if (step.built() || !step.prereq()) return false;
+  if (!tryPayResources(step.cost)) {
     sfx.error();
-    toast(lang === 'ru' ? `Не хватает: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰` : `Missing: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰`);
-    spawnFloatingTextV117(INDUSTRIAL_ZONE_PAD_POS_V116, lang === 'ru' ? '❗ Нужны деньги' : '❗ Need money');
+    toast(lang === 'ru' ? `Не хватает: ${opsCostText(step.cost)}` : `Missing: ${opsCostText(step.cost)}`);
+    spawnFloatingTextV117(step.pos, lang === 'ru' ? '❗ Не хватает ресурсов' : '❗ Not enough resources');
     return false;
   }
-  industrialZoneBuiltV116 = true;
-  removeFactoryPadMarkerV117();
-  STATIC_COLLIDERS.push(
-    { pos: GENERATOR_POS, radius: 1.9 },
-    { pos: SAWMILL_POS, radius: 2.15 },
-    { pos: CONCRETE_PLANT_POS, radius: 1.7 },
-    { pos: METAL_YARD_POS, radius: 1.75 }
-  );
-  buildSawmillScenery();
-  concretePlant = buildConcretePlant();
-  metalPlant = buildMetalYard();
-  spawnIndustrialCampLifeV116(4);
+  removeIndustrialPadMarkerV118(step.id);
+  let builtLabel = '';
+  if (step.id === 'depot') {
+    fleetDepotBuiltV118 = true;
+    builtLabel = lang === 'ru' ? '🚚 Автопарк построен' : '🚚 Fleet depot built';
+  } else if (step.id === 'sawmill') {
+    sawmillBuiltV118 = true;
+    industrialZoneBuiltV116 = true; // legacy convenience mirror, see its declaration up top
+    STATIC_COLLIDERS.push({ pos: GENERATOR_POS, radius: 1.9 }, { pos: SAWMILL_POS, radius: 2.15 });
+    buildSawmillScenery();
+    spawnIndustrialCampLifeV116(4);
+    builtLabel = lang === 'ru' ? '🪵 Лесопилка построена' : '🪵 Sawmill built';
+  } else if (step.id === 'concrete') {
+    concretePlantBuiltV118 = true;
+    STATIC_COLLIDERS.push({ pos: CONCRETE_PLANT_POS, radius: 1.7 });
+    concretePlant = buildConcretePlant();
+    builtLabel = lang === 'ru' ? '🧱 Бетонный завод построен' : '🧱 Concrete plant built';
+  } else if (step.id === 'metal') {
+    metalYardBuiltV118 = true;
+    STATIC_COLLIDERS.push({ pos: METAL_YARD_POS, radius: 1.75 });
+    metalPlant = buildMetalYard();
+    builtLabel = lang === 'ru' ? '🔩 Металлобаза построена' : '🔩 Metal yard built';
+  }
   syncDeliveryFleet();
   // rawRebuild, not refresh -- see the comment on window.__TYCOON_V67_ROADS__'s definition.
-  try { window.__TYCOON_V67_ROADS__?.rawRebuild?.() || window.__TYCOON_V67_ROADS__?.refresh?.(); } catch (err) { console.warn('[v116 factory pad] service roads', err); }
-  try { window.__TYCOON_V65_TRAFFIC__?.refresh?.(); } catch (err) { console.warn('[v116 factory pad] fleet yard', err); }
-  try { window.__TYCOON_V83_COLLISIONS__?.rebuild?.(); } catch (err) { console.warn('[v116 factory pad] collisions', err); }
-  spawnBurst(INDUSTRIAL_ZONE_PAD_POS_V116, 0xffd479);
+  try { window.__TYCOON_V67_ROADS__?.rawRebuild?.() || window.__TYCOON_V67_ROADS__?.refresh?.(); } catch (err) { console.warn('[v118 industrial pad] service roads', err); }
+  try { window.__TYCOON_V65_TRAFFIC__?.refresh?.(); } catch (err) { console.warn('[v118 industrial pad] fleet yard', err); }
+  try { window.__TYCOON_V83_COLLISIONS__?.rebuild?.(); } catch (err) { console.warn('[v118 industrial pad] collisions', err); }
+  refreshIndustrialPadMarkersV118(); // reveals the next step's marker, if its prereq just cleared
+  spawnBurst(step.pos, 0xffd479);
   triggerShake(0.16, 0.26);
   sfx.build();
-  toast(lang === 'ru'
-    ? '🏭 Завод построен! Лесопилка, бетонный завод, металлобаза и автопарк готовы'
-    : '🏭 Factory built! Sawmill, concrete plant, steel yard and fleet depot are ready');
-  spawnFloatingTextV117(INDUSTRIAL_ZONE_PAD_POS_V116, lang === 'ru' ? '🏭 Завод построен' : '🏭 Factory built');
+  toast(builtLabel);
+  spawnFloatingTextV117(step.pos, builtLabel);
   updateHUD();
   save();
   return true;
@@ -8411,10 +8546,15 @@ function nextActionableTargetV117() {
   if (currentPad && stageIndex < STAGES.length && canAffordStage(stageIndex) && constructionSlotAvailable()) {
     return { pos: currentPad.pos.clone(), label: lang === 'ru' ? 'Стройка' : 'Build', type: 'stage' };
   }
-  // 3. The one-press industrial-zone pad, once it's actually affordable -- before this, the
-  // player has no sawmill/concrete/metal source at all (see buildIndustrialZoneV116()).
-  if (typeof industrialZoneBuiltV116 !== 'undefined' && !industrialZoneBuiltV116 && canPayResources(INDUSTRIAL_ZONE_PAD_COST_V116)) {
-    return { pos: INDUSTRIAL_ZONE_PAD_POS_V116.clone(), label: lang === 'ru' ? 'Завод' : 'Factory', type: 'factory' };
+  // 3. v118: the next not-yet-built industrial step (depot -> sawmill -> concrete/metal), once
+  // it's actually affordable -- before the sawmill exists, the player has no plank source at
+  // all (see INDUSTRIAL_BUILD_STEPS_V118/buildIndustrialStepV118()).
+  if (typeof INDUSTRIAL_BUILD_STEPS_V118 !== 'undefined') {
+    for (const step of INDUSTRIAL_BUILD_STEPS_V118) {
+      if (step.built() || !step.prereq()) continue;
+      if (canPayResources(step.cost)) return { pos: step.pos.clone(), label: lang === 'ru' ? step.ru : step.en, type: 'industrial', stepId: step.id };
+      break; // next unbuilt step isn't affordable yet -- don't skip ahead to a later one
+    }
   }
   return null;
 }
@@ -9735,20 +9875,29 @@ updateHUD=function(){
 // SPECIAL_PROJECTS that picked this spot.
 const MARKET_PLAZA_CENTER_V116 = new THREE.Vector3(14, 0, -16);
 const MARKET_STALL_RING_RADIUS_V116 = 4.6;
+// v118 (eighteenth pass, staged market unlock -- user request "чтобы открывалась каждая лавочка
+// по отдельности"): each stall now carries its own `unlock` (stageIndex threshold) and `cost`
+// (money to build it), instead of the whole plaza appearing fully built the moment the player
+// first reaches it. Order/cost reasoning -- what each stall actually does and when that starts
+// mattering, cross-checked against STAGES' own cost curve -- is in CHANGELOG_V116.md, eighteenth
+// pass. Array order (and therefore each stall's RING POSITION) is unchanged from the eleventh
+// pass; unlock order is independent of ring position, same as a real market fills in non-
+// sequentially around its own layout.
 const MARKET_STALLS_V116 = [
-  { id:'team', emoji:'👷', ru:'Наём персонала', en:'Hiring', accent:0x5ab0ff },
-  { id:'fleet', emoji:'🚚', ru:'Автопарк', en:'Fleet', accent:0xff9d4d },
-  { id:'tenders', emoji:'📋', ru:'Тендеры', en:'Tenders', accent:0x9b87ef },
-  { id:'operations', emoji:'🛰️', ru:'Операции', en:'Operations', accent:0x6dbce8 },
-  { id:'meta', emoji:'🧬', ru:'Развитие', en:'Development', accent:0xffd479 },
-  { id:'bonus', emoji:'🎁', ru:'Бонусы', en:'Bonuses', accent:0xff6f91 },
-  { id:'exchange', emoji:'💱', ru:'Обмен ресурсов', en:'Resource Exchange', accent:0x74c97b },
+  { id:'team', emoji:'👷', ru:'Наём персонала', en:'Hiring', accent:0x5ab0ff, unlock:1, cost:{ money:130, wood:0, concrete:0, metal:0 } },
+  { id:'fleet', emoji:'🚚', ru:'Автопарк', en:'Fleet', accent:0xff9d4d, unlock:2, cost:{ money:260, wood:0, concrete:0, metal:0 } },
+  { id:'tenders', emoji:'📋', ru:'Тендеры', en:'Tenders', accent:0x9b87ef, unlock:3, cost:{ money:420, wood:0, concrete:0, metal:0 } },
+  { id:'operations', emoji:'🛰️', ru:'Операции', en:'Operations', accent:0x6dbce8, unlock:2, cost:{ money:220, wood:0, concrete:0, metal:0 } },
+  { id:'meta', emoji:'🧬', ru:'Развитие', en:'Development', accent:0xffd479, unlock:6, cost:{ money:1600, wood:0, concrete:0, metal:0 } },
+  { id:'bonus', emoji:'🎁', ru:'Бонусы', en:'Bonuses', accent:0xff6f91, unlock:4, cost:{ money:650, wood:0, concrete:0, metal:0 } },
+  { id:'exchange', emoji:'💱', ru:'Обмен ресурсов', en:'Resource Exchange', accent:0x74c97b, unlock:1, cost:{ money:90, wood:0, concrete:0, metal:0 } },
 ].map((cfg,i,arr)=>{
   const a = -Math.PI/2 + i*(Math.PI*2/arr.length);
   const pos = MARKET_PLAZA_CENTER_V116.clone().add(new THREE.Vector3(Math.cos(a)*MARKET_STALL_RING_RADIUS_V116, 0, Math.sin(a)*MARKET_STALL_RING_RADIUS_V116));
   return { ...cfg, pos, facing:a+Math.PI };
 });
 function marketStallConfig(id){ return MARKET_STALLS_V116.find(c=>c.id===id) || null; }
+function marketStallCostText(cfg){ return opsCostText(cfg.cost); }
 
 // A single tent/canopy stall: 4 posts, a counter, a low back wall and a pitched canopy roof --
 // same construction-helper vocabulary (createFoundation/createGableRoof/createWoodMaterial/
@@ -9789,7 +9938,58 @@ function createMarketStall(cfg){
   return { group:g, icon, sign, infoSign, cfg };
 }
 
-const marketRuntimeV116 = { stalls:new Map() };
+// v118: an unlocked-but-not-yet-built stall reads as "vacant, buildable here" -- reusing
+// createSpecialProjectAvailableMarker()'s exact visual language (disc + icon + cost sign), per
+// the brief's own instruction not to invent a new visual pattern for this.
+function createMarketStallVacantMarker(cfg){
+  const g=new THREE.Group();
+  const disc=new THREE.Mesh(new THREE.CylinderGeometry(1.05,1.1,.1,24),new THREE.MeshStandardMaterial({color:0xffb84d,roughness:.5,metalness:.05,emissive:0x8a5216,emissiveIntensity:.24}));
+  disc.position.y=.06; disc.receiveShadow=true; g.add(disc);
+  const icon=makeIconSprite(cfg.emoji,0.72); icon.position.y=.85; g.add(icon);
+  const sign=makeLabelSprite([lang==='ru'?cfg.ru:cfg.en, marketStallCostText(cfg)]);
+  sign.position.set(0,1.7,0); sign.scale.set(1.7,.6,1); g.add(sign);
+  g.position.copy(cfg.pos); scene.add(g);
+  return g;
+}
+const marketRuntimeV116 = { stalls:new Map(), vacant:new Map() };
+// Keeps built-stall tents / unlocked-vacant markers in sync with marketStallsBuiltV118 and
+// stageIndex -- call after boot, after load(), and after every marketStallBuild().
+function refreshMarketStallsV118(){
+  for(const cfg of MARKET_STALLS_V116){
+    const built=marketStallsBuiltV118.has(cfg.id);
+    if(built){
+      if(marketRuntimeV116.vacant.has(cfg.id)){ const g=marketRuntimeV116.vacant.get(cfg.id); scene.remove(g); disposeObject3D(g); marketRuntimeV116.vacant.delete(cfg.id); }
+      if(!marketRuntimeV116.stalls.has(cfg.id)) marketRuntimeV116.stalls.set(cfg.id, createMarketStall(cfg));
+    } else if(stageIndex>=cfg.unlock){
+      if(!marketRuntimeV116.vacant.has(cfg.id)) marketRuntimeV116.vacant.set(cfg.id, createMarketStallVacantMarker(cfg));
+    } else if(marketRuntimeV116.vacant.has(cfg.id)){
+      const g=marketRuntimeV116.vacant.get(cfg.id); scene.remove(g); disposeObject3D(g); marketRuntimeV116.vacant.delete(cfg.id);
+    }
+  }
+}
+// Builds one stall (pays its cost, swaps its vacant marker for the real tent). Reuses the exact
+// same purchase mechanics/effects every other ground pad in this file already uses.
+function marketStallBuild(id){
+  const cfg=marketStallConfig(id);
+  if(!cfg||marketStallsBuiltV118.has(id)||stageIndex<cfg.unlock) return false;
+  if(!tryPayResources(cfg.cost)){
+    sfx.error();
+    toast(lang==='ru'?`Не хватает: ${marketStallCostText(cfg)}`:`Missing: ${marketStallCostText(cfg)}`);
+    spawnFloatingTextV117(cfg.pos, lang==='ru'?'❗ Не хватает ресурсов':'❗ Not enough resources');
+    return false;
+  }
+  marketStallsBuiltV118.add(id);
+  refreshMarketStallsV118();
+  spawnBurst(cfg.pos, cfg.accent);
+  triggerShake(0.1,0.18);
+  sfx.build();
+  const name=lang==='ru'?cfg.ru:cfg.en;
+  toast(lang==='ru'?`🏪 Лавка открыта: ${name}`:`🏪 Stall opened: ${name}`);
+  spawnFloatingTextV117(cfg.pos, lang==='ru'?`🏪 ${name}`:`🏪 ${name}`);
+  updateHUD();
+  save();
+  return true;
+}
 function buildMarketPlazaV116(){
   const plazaGroup = new THREE.Group(); plazaGroup.name = 'marketPlazaV116';
   const outerR = MARKET_STALL_RING_RADIUS_V116 + 2.1;
@@ -9815,7 +10015,11 @@ function buildMarketPlazaV116(){
     const lamp = makeLamp(); lamp.position.copy(p); lamp.scale.setScalar(.85); plazaGroup.add(lamp);
   }
   scene.add(plazaGroup);
-  for(const cfg of MARKET_STALLS_V116) marketRuntimeV116.stalls.set(cfg.id, createMarketStall(cfg));
+  // v118: only stalls the player has actually built get the full tent at boot -- unlocked-but-
+  // unbuilt ones get their vacant marker instead (see refreshMarketStallsV118()), and a stall
+  // that isn't even unlocked yet (stageIndex < cfg.unlock) gets nothing at all, same "no marker
+  // until unlocked" rule SPECIAL_PROJECTS already uses.
+  refreshMarketStallsV118();
 }
 buildMarketPlazaV116();
 
@@ -9935,6 +10139,10 @@ function marketStallInfo(stallId){
   return { name:'?' };
 }
 const marketStallInsufficientV116 = {};
+// v118: the "already showed insufficient" dedup flag for the SEPARATE not-yet-built ('stallBuild')
+// candidate path -- kept apart from marketStallInsufficientV116 above (which is for an already-
+// built stall's own purchase) since the two are genuinely different actions with different costs.
+const marketStallBuildInsufficientV118 = {};
 function marketStallBuy(stallId){
   const info = marketStallInfo(stallId);
   if(info.maxed) return;
@@ -9971,6 +10179,11 @@ function marketStallBuy(stallId){
     return;
   }
 }
+// v118: keeps newly-unlocked stalls' vacant markers appearing as stageIndex rises during normal
+// play (buying a house doesn't itself call refreshMarketStallsV118() -- nothing about a stage
+// purchase should need to know about the market). Same lightweight 700ms cadence/idempotent-swap
+// pattern refreshSpecialProjectWorld() already uses for its own vacant-site markers.
+setInterval(()=>{try{refreshMarketStallsV118();}catch(e){console.warn('v118 market stall marker sync',e);}},700);
 // Signs refresh on the same lightweight cadence the field-upgrade/district-hub signs already use
 // elsewhere in this file (a plain setInterval calling a cheap idempotent regenerateSprite swap).
 setInterval(()=>{
@@ -12764,6 +12977,14 @@ function save() {
       industrialZoneBuiltV116: !!industrialZoneBuiltV116,
       manualRoadModeV116: !!manualRoadModeV116,
       manualRoadStagesV116: [...manualRoadStagesV116],
+      // v118 (staged industrial-zone/market unlock): absent entirely on any save from before
+      // this pass, which -- same as above -- is exactly what makes it default correctly (see the
+      // defaulting logic near knownSaveRawV64 at the top of the file).
+      sawmillBuiltV118: !!sawmillBuiltV118,
+      fleetDepotBuiltV118: !!fleetDepotBuiltV118,
+      concretePlantBuiltV118: !!concretePlantBuiltV118,
+      metalYardBuiltV118: !!metalYardBuiltV118,
+      marketStallsBuiltV118: [...marketStallsBuiltV118],
     });
     const previous = localStorage.getItem(SAVE_KEY);
     if (previous !== knownSaveRawV64) {
@@ -13116,6 +13337,15 @@ function load() {
     // industrialZoneBuiltV116/manualRoadModeV116 both stay at their safe "already built" /
     // "automatic roads" defaults -- nothing here changes behaviour for a returning player.
     if (typeof data.industrialZoneBuiltV116 === 'boolean') industrialZoneBuiltV116 = data.industrialZoneBuiltV116;
+    // v118: same reconciliation for the four granular building flags and the market's built-stall
+    // set -- on an existing (pre-v118) save these are all absent, so they stay at whatever the
+    // boot-time coarse-flag fallback already computed (see knownSaveRawV64's block at the top).
+    if (typeof data.sawmillBuiltV118 === 'boolean') sawmillBuiltV118 = data.sawmillBuiltV118;
+    if (typeof data.fleetDepotBuiltV118 === 'boolean') fleetDepotBuiltV118 = data.fleetDepotBuiltV118;
+    if (typeof data.concretePlantBuiltV118 === 'boolean') concretePlantBuiltV118 = data.concretePlantBuiltV118;
+    if (typeof data.metalYardBuiltV118 === 'boolean') metalYardBuiltV118 = data.metalYardBuiltV118;
+    industrialZoneBuiltV116 = sawmillBuiltV118;
+    if (Array.isArray(data.marketStallsBuiltV118)) marketStallsBuiltV118 = new Set(data.marketStallsBuiltV118.filter((id) => typeof id === 'string'));
     if (typeof data.manualRoadModeV116 === 'boolean') manualRoadModeV116 = data.manualRoadModeV116;
     if (Array.isArray(data.manualRoadStagesV116)) manualRoadStagesV116 = new Set(data.manualRoadStagesV116.filter(Number.isInteger));
     refreshManualRoadPadMarkersV116();
@@ -13415,14 +13645,16 @@ const V53_TARGET_RELEASE_PAD = 0.22;
 // keyed state object stands in for it).
 const districtPadInsufficientV116={};
 const projectPadInsufficientV116={};
-let factoryPadInsufficientV116=false;
+// v118: one keyed flag per industrial step (depot/sawmill/concrete/metal), replacing the single
+// factoryPadInsufficientV116 boolean the old one-pad system used.
+const industrialPadInsufficientV118={};
 function manualCandidateKeyV53(type, obj){
   if(type==='upgrade') return `upgrade:${obj?.index ?? 'x'}:${obj?.level ?? 'x'}`;
   if(type==='field') return `field:${obj?.cfg?.key ?? 'x'}`;
   if(type==='district') return `district:${obj?.id ?? 'x'}`;
   if(type==='project') return `project:${obj?.id ?? 'x'}`;
   if(type==='road') return `road:${obj ?? 'x'}`;
-  if(type==='factory') return 'factory:x';
+  if(type==='industrial') return `industrial:${obj?.id ?? 'x'}`;
   if(type==='stall') return `stall:${obj?.id ?? 'x'}`;
   return `${type}:x`;
 }
@@ -13471,24 +13703,35 @@ function nearestManualTargetV53(){
         if(d<PAD_TRIGGER_RADIUS+V53_TARGET_RELEASE_PAD)candidates.push({type:'road',stageIndexV116:b.index,pos,dist:d,key:manualCandidateKeyV53('road',b.index)});
       }
     }
-    // v116 industrial-zone build pad: a single "Построить завод" ground pad at the (fixed,
-    // already-relocated) industrial zone, reachable on foot with no road required, same as any
-    // other ground pad. Only exists before the player has built the cluster -- see
-    // buildIndustrialZoneV116().
-    if(typeof industrialZoneBuiltV116!=='undefined'&&!industrialZoneBuiltV116){
-      const pos=INDUSTRIAL_ZONE_PAD_POS_V116;
-      const d=Math.hypot(player.position.x-pos.x,player.position.z-pos.z);
-      if(d<PAD_TRIGGER_RADIUS+V53_TARGET_RELEASE_PAD)candidates.push({type:'factory',pos,dist:d,key:manualCandidateKeyV53('factory')});
-      if(d>PAD_TRIGGER_RADIUS*1.6)factoryPadInsufficientV116=false;
+    // v118 (was v116 single "Построить завод" pad): one ground pad per not-yet-built,
+    // unlocked industrial step (depot -> sawmill -> concrete/metal), reachable on foot with no
+    // road required, same as any other ground pad -- see INDUSTRIAL_BUILD_STEPS_V118/
+    // buildIndustrialStepV118().
+    if(typeof INDUSTRIAL_BUILD_STEPS_V118!=='undefined'){
+      for(const step of INDUSTRIAL_BUILD_STEPS_V118){
+        if(step.built()||!step.prereq())continue;
+        const pos=step.pos;
+        const d=Math.hypot(player.position.x-pos.x,player.position.z-pos.z);
+        if(d<PAD_TRIGGER_RADIUS+V53_TARGET_RELEASE_PAD)candidates.push({type:'industrial',step,pos,dist:d,key:manualCandidateKeyV53('industrial',step)});
+        if(d>PAD_TRIGGER_RADIUS*1.6)industrialPadInsufficientV118[step.id]=false;
+      }
     }
-    // v116 market: physical stalls for the six previously menu-only systems + resource exchange.
-    // See MARKET_STALLS_V116/marketStallInfo()/marketStallBuy() -- one fixed plaza, same
-    // interaction pattern as district/project/road/factory candidates above.
+    // v118 (was: all 7 stalls unconditionally): one candidate per not-yet-built, unlocked market
+    // stall -- an unbuilt stall isn't interactable at all until MARKET_STALL_UNLOCK_V118 says its
+    // stageIndex has been reached (mirrors the industrial steps' own `prereq`/vacant-marker
+    // pattern, and createSpecialProjectAvailableMarker()'s "no marker until unlocked" precedent).
+    // A stall the player has already built keeps its ORIGINAL 'stall' candidate/behaviour below,
+    // completely unchanged -- only the not-yet-built path is new.
     if(typeof MARKET_STALLS_V116!=='undefined'){
       for(const cfg of MARKET_STALLS_V116){
         const d=Math.hypot(player.position.x-cfg.pos.x,player.position.z-cfg.pos.z);
-        if(d<PAD_TRIGGER_RADIUS+V53_TARGET_RELEASE_PAD)candidates.push({type:'stall',stall:cfg,dist:d,key:manualCandidateKeyV53('stall',cfg)});
-        if(d>PAD_TRIGGER_RADIUS*1.6)marketStallInsufficientV116[cfg.id]=false;
+        if(marketStallsBuiltV118.has(cfg.id)){
+          if(d<PAD_TRIGGER_RADIUS+V53_TARGET_RELEASE_PAD)candidates.push({type:'stall',stall:cfg,dist:d,key:manualCandidateKeyV53('stall',cfg)});
+          if(d>PAD_TRIGGER_RADIUS*1.6)marketStallInsufficientV116[cfg.id]=false;
+        } else if(stageIndex>=cfg.unlock){
+          if(d<PAD_TRIGGER_RADIUS+V53_TARGET_RELEASE_PAD)candidates.push({type:'stallBuild',stall:cfg,dist:d,key:`stallBuild:${cfg.id}`});
+          if(d>PAD_TRIGGER_RADIUS*1.6)marketStallBuildInsufficientV118[cfg.id]=false;
+        }
       }
     }
   }catch(_){return null;}
@@ -13686,20 +13929,35 @@ function updatePlayer(dt) {
     } else if (nearestManual?.type === 'road') {
       consumed = true;
       buildManualRoadStageV116(nearestManual.stageIndexV116, nearestManual.pos);
-    } else if (nearestManual?.type === 'factory') {
+    } else if (nearestManual?.type === 'industrial') {
+      // v118: one of the four staged industrial-zone build pads (depot/sawmill/concrete/metal).
       consumed = true;
-      if (canPayResources(INDUSTRIAL_ZONE_PAD_COST_V116)) {
-        buildIndustrialZoneV116();
-      } else if (!factoryPadInsufficientV116) {
-        factoryPadInsufficientV116 = true;
+      const step = nearestManual.step;
+      if (canPayResources(step.cost)) {
+        buildIndustrialStepV118(step);
+      } else if (!industrialPadInsufficientV118[step.id]) {
+        industrialPadInsufficientV118[step.id] = true;
         sfx.error();
-        toast(lang === 'ru' ? `Не хватает: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰` : `Missing: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰`);
+        toast(lang === 'ru' ? `Не хватает: ${opsCostText(step.cost)}` : `Missing: ${opsCostText(step.cost)}`);
+      }
+    } else if (nearestManual?.type === 'stallBuild') {
+      // v118: an unlocked-but-not-yet-built market stall's own vacant marker.
+      consumed = true;
+      const cfg = nearestManual.stall;
+      if (canPayResources(cfg.cost)) {
+        marketStallBuild(cfg.id);
+      } else if (!marketStallBuildInsufficientV118[cfg.id]) {
+        marketStallBuildInsufficientV118[cfg.id] = true;
+        sfx.error();
+        toast(lang === 'ru' ? `Не хватает: ${marketStallCostText(cfg)}` : `Missing: ${marketStallCostText(cfg)}`);
       }
     } else if (nearestManual?.type === 'stall') {
       // v116 market stall: each id's marketStallBuy() reuses that system's own existing purchase
       // function verbatim (buyStaffUpgrade/buyFleetUpgrade/startMajorTender/buyMetaUpgrade all
       // already show their own sfx.error()+toast on insufficient funds -- no need to duplicate
-      // that here). Only "already maxed" (nothing left to buy) is a true no-op.
+      // that here). Only "already maxed" (nothing left to buy) is a true no-op. Unchanged by
+      // v118: this branch only ever runs for a stall already in marketStallsBuiltV118 (see the
+      // candidate loop in nearestManualTargetV53()), exactly like before that pass existed.
       consumed = true;
       const stallId = nearestManual.stall.id;
       const info = marketStallInfo(stallId);
@@ -14264,7 +14522,7 @@ function auditV342MobilityIntegrity(){
 
 // ---- 1. Pad highlight: pulse + warm-gold tint on whichever pad is the current
 // nextActionableTargetV117() target. Reuses each pad's own existing disc/pulseRing fields
-// (road pads: spawnRoadPadMarkerV116(); factory pad: spawnFactoryPadMarkerV117() above) instead
+// (road pads: spawnRoadPadMarkerV116(); industrial pads: spawnIndustrialPadMarkerV118() above) instead
 // of inventing a new visual language -- the stage/house pad already has its own ready/queued
 // highlight (see the currentPad block just above this call site) and isn't touched here.
 let highlightedPadKeyV117 = null;
@@ -14284,22 +14542,22 @@ function setPadHighlightVisualV117(group, on) {
 }
 function updateActionableHighlightV117() {
   const target = nextActionableTargetV117();
-  const key = target ? `${target.type}:${target.stageIndexV117 ?? ''}` : null;
+  const key = target ? `${target.type}:${target.stageIndexV117 ?? target.stepId ?? ''}` : null;
   if (key !== highlightedPadKeyV117) {
-    // Reset whatever was previously highlighted (cheap: at most one road pad + the factory pad
-    // exist at a time in the early game this system targets).
+    // Reset whatever was previously highlighted (cheap: at most one road pad + one industrial
+    // pad exist at a time in the early game this system targets).
     if (highlightedPadKeyV117) {
       for (const g of roadPadMarkersV116.values()) setPadHighlightVisualV117(g, false);
-      setPadHighlightVisualV117(factoryPadMarkerV117, false);
+      for (const g of industrialPadMarkersV118.values()) setPadHighlightVisualV117(g, false);
     }
     highlightedPadKeyV117 = key;
     if (target?.type === 'road') setPadHighlightVisualV117(roadPadMarkersV116.get(target.stageIndexV117), true);
-    else if (target?.type === 'factory') setPadHighlightVisualV117(factoryPadMarkerV117, true);
+    else if (target?.type === 'industrial') setPadHighlightVisualV117(industrialPadMarkersV118.get(target.stepId), true);
   }
   // The pulse itself (scale) runs every call regardless of whether the target changed, same
   // pattern as currentPad's own pulseRing animation just above.
-  if (target?.type === 'road' || target?.type === 'factory') {
-    const g = target.type === 'road' ? roadPadMarkersV116.get(target.stageIndexV117) : factoryPadMarkerV117;
+  if (target?.type === 'road' || target?.type === 'industrial') {
+    const g = target.type === 'road' ? roadPadMarkersV116.get(target.stageIndexV117) : industrialPadMarkersV118.get(target.stepId);
     const ring = g?.userData?.pulseRing;
     if (ring) { const k = 1 + Math.sin(performance.now() / 220) * 0.09; ring.scale.set(k, k, k); }
   }
@@ -18926,15 +19184,19 @@ window.__TYCOON_V42__={
 /*  INIT                                                                   */
 /* ---------------------------------------------------------------------- */
 load();
-// v117: give the factory pad its own always-visible ground marker (spawnFactoryPadMarkerV117(),
-// same disc+ring+label shape as spawnRoadPadMarkerV116()) whenever it isn't built yet -- placed
-// here, after load() (not up near buildSawmillScenery()'s own boot gate), specifically because
-// this is a `let`-declared runtime object further down the file: calling it before its own `let
-// factoryPadMarkerV117 = null;` line has executed throws a temporal-dead-zone ReferenceError
-// that aborts the rest of the script's top-level pass -- see the comment where the old call site
-// used to be, near buildSawmillScenery(), for the exact regression this caused and how it was
-// found (boot.test.mjs/hud.test.mjs/nav-pads.test.mjs all failing with "player is not defined").
-if (!industrialZoneBuiltV116) spawnFactoryPadMarkerV117();
+// v117: give each not-yet-built industrial pad its own always-visible ground marker (v118:
+// refreshIndustrialPadMarkersV118(), same disc+ring+label shape as spawnRoadPadMarkerV116())
+// -- placed here, after load() (not up near buildSawmillScenery()'s own boot gate),
+// specifically because this reads `const`/`let`-declared runtime objects further down the file
+// (industrialPadMarkersV118 et al.): calling it before those lines had executed throws a
+// temporal-dead-zone ReferenceError that aborts the rest of the script's top-level pass -- see
+// the comment where the old call site used to be, near buildSawmillScenery(), for the exact
+// regression this caused and how it was found (boot.test.mjs/hud.test.mjs/nav-pads.test.mjs all
+// failing with "player is not defined"). Also refreshes the market's vacant-stall markers
+// (refreshMarketStallsV118()) so a save loaded with a different stageIndex than boot-time's
+// coarse guess still shows the right set immediately.
+refreshIndustrialPadMarkersV118();
+refreshMarketStallsV118();
 ensureInfrastructureStateV37();
 initializeGuideRewardsV351();
 syncUniversalFleet();
@@ -27108,11 +27370,17 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
             // v116 manual roads: "build road" pad at a bought house's own driveway endpoint.
             prompt.textContent=lang==='ru'?'🛣️ Проложить дорогу к дому':'🛣️ Pave the road to this house';
             btn.hidden=false;btn.textContent=lang==='ru'?'Строить':'Build';prompt.classList.add('show');
-          }else if(ctx.type==='factory'){
-            // v116 industrial-zone build pad: one pad builds the whole cluster at once.
-            const ready=canPayResources(INDUSTRIAL_ZONE_PAD_COST_V116);
-            prompt.textContent=ready?(lang==='ru'?'🏭 Построить завод':'🏭 Build the factory'):(lang==='ru'?`📦 Нужно: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰`:`📦 Need: ${fmt(INDUSTRIAL_ZONE_PAD_COST_V116.money)} 💰`);
-            btn.hidden=false;btn.textContent=ready?(lang==='ru'?'Построить':'Build'):(lang==='ru'?'Не хватает денег':'Not enough money');prompt.classList.add('show');
+          }else if(ctx.type==='industrial'){
+            // v118: one of the four staged industrial-zone build pads (was: one pad for the
+            // whole cluster).
+            const step=ctx.step,ready=canPayResources(step.cost),name=lang==='ru'?step.ru:step.en;
+            prompt.textContent=ready?(lang==='ru'?`🏭 Построить: ${name}`:`🏭 Build: ${name}`):(lang==='ru'?`📦 Нужно: ${opsCostText(step.cost)}`:`📦 Need: ${opsCostText(step.cost)}`);
+            btn.hidden=false;btn.textContent=ready?(lang==='ru'?'Построить':'Build'):(lang==='ru'?'Не хватает ресурсов':'Resources needed');prompt.classList.add('show');
+          }else if(ctx.type==='stallBuild'){
+            // v118: an unlocked-but-not-yet-built market stall's vacant marker.
+            const cfg=ctx.stall,ready=canPayResources(cfg.cost),name=lang==='ru'?cfg.ru:cfg.en;
+            prompt.textContent=ready?(lang==='ru'?`🏪 Открыть лавку: ${name}`:`🏪 Open stall: ${name}`):(lang==='ru'?`📦 Нужно: ${marketStallCostText(cfg)}`:`📦 Need: ${marketStallCostText(cfg)}`);
+            btn.hidden=false;btn.textContent=ready?(lang==='ru'?'Открыть':'Open'):(lang==='ru'?'Не хватает денег':'Not enough money');prompt.classList.add('show');
           }else if(ctx.type==='stall'){
             // v116 market stall: prompt shows the stall's next action (marketStallInfo()), same
             // physical-pad pattern as district/project/factory above.
@@ -30021,8 +30289,10 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
   ------------------------------------------------------------------ */
   let parkingGroupV65=null;
   function rebuildParkingV65(){
-    // v116 empty-world boot: no fleet yard until the player builds the factory pad.
-    if(typeof industrialZoneBuiltV116!=='undefined'&&!industrialZoneBuiltV116){
+    // v118: no fleet yard until the player builds the depot pad specifically (was:
+    // industrialZoneBuiltV116, the single old "build the factory" flag) -- this yard IS the
+    // depot's own geometry.
+    if(typeof fleetDepotBuiltV118!=='undefined'&&!fleetDepotBuiltV118){
       if(parkingGroupV65){scene.remove(parkingGroupV65);safe(()=>disposeObject3D(parkingGroupV65));parkingGroupV65=null;}
       return;
     }
@@ -30306,10 +30576,18 @@ function rebuildServiceRoadsV66(){
       scene.remove(oldRoad);safe(()=>disposeObject3D(oldRoad));
       cityWorldRuntime.transportAccessRoads=null;
     }
-    // v116 empty-world boot: this is the industrial service-road network (sawmill/concrete/
-    // metal/fleet access). Nothing to draw until the player builds the factory pad -- the old
-    // road (if any, e.g. a stale one from before a mid-run reset) has just been removed above.
-    if(typeof industrialZoneBuiltV116!=='undefined'&&!industrialZoneBuiltV116)return null;
+    // v118: this is the industrial service-road network (sawmill/concrete/metal/fleet access).
+    // Gated on fleetDepotBuiltV118 (was: industrialZoneBuiltV116, the single old "build the
+    // factory" flag) -- the depot is now the FIRST of the four staged industrial buildings (see
+    // INDUSTRIAL_BUILD_STEPS_V118's comment for why), so gating the whole fixed graph on it
+    // draws the full spine as soon as there is anything at all to connect to, rather than
+    // rewriting this renderer to understand a partially-built cluster (the graph itself is one
+    // fixed tree of absolute node positions regardless of which buildings physically exist yet --
+    // see serviceAccessGraph() -- so a road reaching a not-yet-built concrete/metal lot simply
+    // reads as "infrastructure ready, waiting for the building", same as a real access road laid
+    // ahead of construction, not as a visual bug). The old road (if any, e.g. a stale one from
+    // before a mid-run reset) has just been removed above.
+    if(typeof fleetDepotBuiltV118!=='undefined'&&!fleetDepotBuiltV118)return null;
     if(roadGroupV66&&roadGroupV66!==oldRoad&&roadGroupV66.parent){
       scene.remove(roadGroupV66);safe(()=>disposeObject3D(roadGroupV66));
     }
@@ -31266,7 +31544,8 @@ window.__TYCOON_V74_BUILD__={
     // v116 first-hour polish (Этап 1 п.2 audit): a genuinely fresh empty-world save (VISION.md
     // "Старт новой игры: пустой мир", commit f9ade3a) has ZERO npcWorkers of ANY role until the
     // player builds the industrial zone -- spawnIndustrialCampLifeV116() is the only place that
-    // creates the first ones, and it only runs from buildIndustrialZoneV116(). Before that, house
+    // creates the first ones, and it only runs from buildIndustrialStepV118('sawmill') (v118:
+    // was buildIndustrialZoneV116()). Before that, house
     // 0's construction can never find an on-site crew and was stuck in this function's "no crew"
     // branch below (a hard freeze for the first 4.2s of real time, then an 18% crawl) for its
     // ENTIRE duration -- measured live at ~59s wall-clock for a building whose own
@@ -35553,12 +35832,13 @@ Do not treat this geometry block as completion of the entire road/transport audi
   }
 
   function syncServiceRoads(){
-    // v116 empty-world boot: nothing to sync/seed until the factory pad actually builds the
-    // industrial service-road network (rebuildServiceRoadsV66(), called directly from
-    // buildIndustrialZoneV116()). Seeding this layer's bookkeeping against a graph that has no
-    // rendered geometry yet would wrongly mark those edges "already covered" once the network
-    // is finally built, and appendServiceV116() would then never draw them.
-    if(typeof industrialZoneBuiltV116!=='undefined'&&!industrialZoneBuiltV116)return cityWorldRuntime.transportAccessRoads;
+    // v118: nothing to sync/seed until the depot pad actually builds the industrial
+    // service-road network (rebuildServiceRoadsV66(), called from buildIndustrialStepV118() --
+    // was industrialZoneBuiltV116/buildIndustrialZoneV116() before this pass). Seeding this
+    // layer's bookkeeping against a graph that has no rendered geometry yet would wrongly mark
+    // those edges "already covered" once the network is finally built, and appendServiceV116()
+    // would then never draw them.
+    if(typeof fleetDepotBuiltV118!=='undefined'&&!fleetDepotBuiltV118)return cityWorldRuntime.transportAccessRoads;
     const sig=serviceGraphSignature();
     if(!runtime.serviceSignature){runtime.serviceSignature=sig;seedPersistentServiceV116();return cityWorldRuntime.transportAccessRoads;}
     if(!sig||sig===runtime.serviceSignature)return cityWorldRuntime.transportAccessRoads;

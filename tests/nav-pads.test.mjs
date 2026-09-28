@@ -75,9 +75,12 @@ async function main() {
     } catch (e) { fail(e.message); } finally { await game.close(); }
   }
 
-  // --- 3. Manual-road pad + factory pad: fresh empty-world boot (manualRoadModeV116=true), buy
-  //         house 0 the normal way, walk to its unrouted driveway endpoint, press #actionBtn to
-  //         pave it, then walk to the fixed industrial-zone pad and press #actionBtn to build it. ---
+  // --- 3. Manual-road pad + the first (depot) industrial pad: fresh empty-world boot
+  //         (manualRoadModeV116=true), buy house 0 the normal way, walk to its unrouted driveway
+  //         endpoint, press #actionBtn to pave it, then walk to the depot pad (v118: first of the
+  //         four staged industrial pads, was the single factory pad) and press #actionBtn to
+  //         build it. The rest of the chain (sawmill/concrete/metal) is covered in full in
+  //         tests/staged-unlock.test.mjs. ---
   {
     const game = await openGame({ save: 'clear', waitMs: 2500 });
     const { page } = game;
@@ -96,17 +99,18 @@ async function main() {
       assert(roadedAfter, 'manual-road pad must pave the road via #actionBtn (manualRoadStagesV116 must gain stage 0)');
       ok('manual-road pad triggers buildManualRoadStageV116() via #actionBtn');
 
-      await page.evaluate(() => { player.position.set(INDUSTRIAL_ZONE_PAD_POS_V116.x, 0, INDUSTRIAL_ZONE_PAD_POS_V116.z); });
+      await page.evaluate(() => { const p = industrialStepV118('depot').pos; player.position.set(p.x, 0, p.z); });
       await page.waitForTimeout(400);
-      const factoryTarget = await page.evaluate(() => nearestManualTargetV53()?.type);
-      assertEqual(factoryTarget, 'factory', 'the nearest manual target at the industrial-zone pad must be the factory pad');
-      const builtBefore = await page.evaluate(() => industrialZoneBuiltV116);
+      const depotTarget = await page.evaluate(() => nearestManualTargetV53());
+      assertEqual(depotTarget?.type, 'industrial', 'the nearest manual target at the depot pad must be an industrial pad');
+      assertEqual(depotTarget?.step?.id, 'depot', 'it must specifically be the depot step (first in the chain)');
+      const builtBefore = await page.evaluate(() => fleetDepotBuiltV118);
       await pressActionBtn(page);
-      const builtAfter = await page.evaluate(() => industrialZoneBuiltV116);
-      console.log('industrialZoneBuiltV116 before/after:', builtBefore, builtAfter);
-      assertEqual(builtBefore, false, 'factory pad must not be pre-built on a fresh empty-world save');
-      assertEqual(builtAfter, true, 'factory pad must build the industrial zone via #actionBtn');
-      ok('factory pad triggers buildIndustrialZoneV116() via #actionBtn');
+      const builtAfter = await page.evaluate(() => fleetDepotBuiltV118);
+      console.log('fleetDepotBuiltV118 before/after:', builtBefore, builtAfter);
+      assertEqual(builtBefore, false, 'depot pad must not be pre-built on a fresh empty-world save');
+      assertEqual(builtAfter, true, 'depot pad must build the fleet depot via #actionBtn');
+      ok('depot pad triggers buildIndustrialStepV118() via #actionBtn');
     } catch (e) { fail(e.message); console.error(e.stack); } finally { await game.close(); }
   }
 
