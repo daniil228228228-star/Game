@@ -34,6 +34,8 @@ The file is 63 inline `<script>` blocks, many named `<script id="vNN-...">`, whe
 
 Major subsystems in v116 (names may differ in v161; grep first): stage-based house progression (`STAGES`, `purchaseCurrentPad()`, `spawnBuilding()`), road network (master grid + stage roads + service/industrial roads, rendered by `addCorner`/`addIntersection59`/union contours; `serviceAccessGraph()` is the industrial-zone node tree), logistics (`createBuildDeliveryPlan()` gates construction progress on a delivery ticket; trucks via `syncDeliveryFleet()`, yielding in `serviceVehicleYieldFactor()`), the market plaza (`MARKET_STALLS_V116`), in-world guidance (`nextActionableTargetV117()`), and feedback (`sfx`, `spawnBurst`, `triggerShake`).
 
+- **Yandex Games adapter:** `assets/yandex-platform.js` (loaded right after `development-core-v160.js`) defines `window.TycoonPlatform` for the existing `showRewardedAd`/`showInterstitialAd`/`cloudSave`/`cloudLoad`/`submitLeaderboardScore` wrappers, but only on a hostname containing `yandex` or with `?yandex=1`; elsewhere it is inert. Game-side hook: `animate()` returns early while `TycoonPlatform.paused`. Tested with a fake SDK in `tests/platform.test.mjs`; the real SDK is unverified.
+
 ## Design rules that constrain implementations
 
 - Progression UI is **circular ground pads** triggered through `nearestManualTargetV53()` → `#actionPrompt` / `#actionBtn`. Floating quest/toast/objective panels are intentionally hidden (`#nextCard`, `#requiredActionV38`, `#eventBanner`); the only sanctioned panel exceptions are the market's resource-exchange menu and the top resource bar. Reuse the pad mechanism for new interactions.

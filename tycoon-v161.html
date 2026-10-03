@@ -924,6 +924,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="assets/foliage-v154.js"></script>
 <script src="assets/work-session-v158.js"></script>
 <script src="assets/development-core-v160.js"></script>
+<script src="assets/yandex-platform.js"></script>
 <script>
 if (!window.THREE) { window.__showTycoonBootError && window.__showTycoonBootError('Не удалось загрузить Three.js.'); throw new Error('THREE unavailable'); }
 
@@ -14378,7 +14379,7 @@ function auditRuntimeIntegrity(dt) {
 let v30ContractTimer = 0;
 function animate() {
   requestAnimationFrame(animate);
-  if (document.hidden && !V54_STABILITY.forceVisible) return;
+  if ((document.hidden && !V54_STABILITY.forceVisible) || window.TycoonPlatform?.paused) return; // paused: Yandex ad / game_api_pause (assets/yandex-platform.js)
   const dt = Math.min(clock.getDelta(), 0.075);
   V54_STABILITY.frame++;V54_STABILITY.lastCoreFrame=performance.now();
   safeFrameCallV54('auditRuntimeIntegrity',()=>auditRuntimeIntegrity(dt));
