@@ -32835,6 +32835,21 @@ window.__TYCOON_V74_BUILD__={
   const safe=(fn,fallback=null)=>{try{return fn();}catch(err){console.warn('[v84 roads]',err);return fallback;}};
   const connectorCache=new Map();
   let accessGroup=null,accessSegments=[],syncPending=false,hiddenScenery=0;
+  // v161 (2026-10-03): signature of what a road group really contains (mesh geometry checksum + world matrix + material colour),
+  // used to keep an already-built group when a rebuild would lay out exactly the same roads. See CHANGELOG_V161.md.
+  function roadGroupLayoutSigV161(g){
+    if(!g)return '';
+    g.updateMatrixWorld(true);const out=[];
+    g.traverse(o=>{
+      if(!o.isMesh)return;
+      const pos=o.geometry?.attributes?.position;let sum=0;
+      if(pos&&pos.array){const arr=pos.array;for(let i=0;i<arr.length;i++)sum+=arr[i]*(1+(i%7));}
+      const c=o.material&&o.material.color?o.material.color.getHex():0;
+      out.push(`${o.geometry?.type}:${pos?pos.count:0}:${sum.toFixed(3)}:${c}:${o.matrixWorld.elements.map(x=>x.toFixed(3)).join(',')}`);
+    });
+    return out.sort().join('|');
+  }
+  window.__TYCOON_ROAD_LAYOUT_SIG_V161__=roadGroupLayoutSigV161;
 
   function pointSegDist(p,a,b){
     const vx=b.x-a.x,vz=b.z-a.z,l2=vx*vx+vz*vz,t=l2?THREE.MathUtils.clamp(((p.x-a.x)*vx+(p.z-a.z)*vz)/l2,0,1):0;
@@ -33058,7 +33073,7 @@ function renderPath(group,path,width,role,excludeOwner=null){
   else for(const s of segments)addUnifiedRoadV365(group,s.a,s.b,width,{markings:false,edgeMarks:false,dark:true,curb:false,sidewalk:false,kind:role});
 }
   function refreshAccessRoads(){
-    if(accessGroup){scene.remove(accessGroup);disposeObject3D(accessGroup);}accessGroup=new THREE.Group();accessGroup.name='v84RegistryAccessRoads';accessSegments=[];
+    const prevAccessGroupV161=accessGroup;accessGroup=new THREE.Group();accessGroup.name='v84RegistryAccessRoads';accessSegments=[];
     const base=roadSegmentsBase();
     for(const cfg of CITY_DISTRICTS){
       const state=districtLandState(cfg.id);for(let i=0;i<LAND_PLOTS_PER_DISTRICT;i++){
@@ -33075,7 +33090,11 @@ function renderPath(group,path,width,role,excludeOwner=null){
       const owner=targetOwnerAt(p.pos),end=accessFrontPoint(p.pos,near.point,owner),path=planOrthogonal(near.point,end,.78,owner,[]);
       if(path)renderPath(accessGroup,path,1.52,'special-access',owner);
     }
-    if(accessGroup.children.length)scene.add(accessGroup);
+    // v161: only swap the meshes when the laid-out access roads really differ (an unrelated base upgrade used to re-lay all of them).
+    // (the signature is stored at creation: later layers dress the live group with markings/hidden flags, so the live meshes are not comparable)
+    const nextSigV161=roadGroupLayoutSigV161(accessGroup);
+    if(prevAccessGroupV161&&prevAccessGroupV161.parent===scene&&prevAccessGroupV161.userData.v161LayoutSig===nextSigV161){disposeObject3D(accessGroup);accessGroup=prevAccessGroupV161;}
+    else{accessGroup.userData.v161LayoutSig=nextSigV161;if(prevAccessGroupV161){scene.remove(prevAccessGroupV161);disposeObject3D(prevAccessGroupV161);}if(accessGroup.children.length)scene.add(accessGroup);}
     hideSceneryOnRoads([...base,...accessSegments]);
     return accessSegments.length;
   }
@@ -33658,7 +33677,14 @@ function simplifyAtomic100(segs){
   return arr;
 }
 function makeGroup(){ensureSig();const g=new THREE.Group();g.name='v86CanonicalStageRoads';const stageIds=activeStageIdsV92(),raw=rawSegments(),segs=simplifyAtomic100(atomic(raw)),nmap=nodes(segs);for(const s of segs)addStraight(g,s,nmap);for(const n of nmap.values()){addCorner(g,n);addJunction(g,n);}g.userData.v86StageNetwork={generation,stageIds,raw:raw.length,segments:segs.length,nodes:nmap.size,kinds:[...nmap.values()].reduce((o,n)=>(o[nodeKind(n)]=(o[nodeKind(n)]||0)+1,o),{})};return g;}
-  function refresh(){ensureSig();if(cityWorldRuntime.stageRoads){scene.remove(cityWorldRuntime.stageRoads);disposeObject3D(cityWorldRuntime.stageRoads);cityWorldRuntime.stageRoads=null;}safe(()=>removeLegacyStageRoadVisualsV367?.());const g=makeGroup();scene.add(g);cityWorldRuntime.stageRoads=g;safe(()=>refreshStreetlightsWorld?.());safe(()=>refreshDrivewaysV35?.(true));safe(()=>window.__TYCOON_V84_ROADS__?.cleanScenery?.());safe(()=>window.__TYCOON_V83_COLLISIONS__?.rebuild?.());safe(()=>window.__TYCOON_V94_MARKINGS__?.apply?.());return g;}
+  function refresh(){ensureSig();
+    // v161: build the new group first; if it lays out exactly the roads that are already in the scene, keep the old meshes (and skip the follow-up passes that only exist to dress a NEW group). A base upgrade bumps ensureSig() through the registry although the stage roads do not change.
+    const prevV161=cityWorldRuntime.stageRoads,sigFn=window.__TYCOON_ROAD_LAYOUT_SIG_V161__;
+    const gNew=makeGroup();
+    const newSigV161=typeof sigFn==='function'?sigFn(gNew):null;
+    if(newSigV161!==null&&prevV161&&prevV161.parent===scene&&prevV161.userData.v161LayoutSig===newSigV161){prevV161.userData.v86StageNetwork=gNew.userData.v86StageNetwork;disposeObject3D(gNew);return prevV161;}
+    if(newSigV161!==null)gNew.userData.v161LayoutSig=newSigV161; // stored at creation, see v84 roadGroupLayoutSigV161
+    if(cityWorldRuntime.stageRoads){scene.remove(cityWorldRuntime.stageRoads);disposeObject3D(cityWorldRuntime.stageRoads);cityWorldRuntime.stageRoads=null;}safe(()=>removeLegacyStageRoadVisualsV367?.());const g=gNew;scene.add(g);cityWorldRuntime.stageRoads=g;safe(()=>refreshStreetlightsWorld?.());safe(()=>refreshDrivewaysV35?.(true));safe(()=>window.__TYCOON_V84_ROADS__?.cleanScenery?.());safe(()=>window.__TYCOON_V83_COLLISIONS__?.rebuild?.());safe(()=>window.__TYCOON_V94_MARKINGS__?.apply?.());return g;}
   function queueRefresh(){if(refreshQueued)return;refreshQueued=true;Promise.resolve().then(()=>{refreshQueued=false;refresh();});}
 
   function projectStage(i,pos){const p=centerline(i);let best={d2:Infinity,segment:i,leg:0,t:0,point:(p[0]||STAGE_HUB_V367).clone(),path:p};for(let j=0;j<p.length-1;j++){const a=p[j],b=p[j+1],vx=b.x-a.x,vz=b.z-a.z,l2=vx*vx+vz*vz,t=l2?THREE.MathUtils.clamp(((pos.x-a.x)*vx+(pos.z-a.z)*vz)/l2,0,1):0,x=a.x+vx*t,z=a.z+vz*t,d2=(pos.x-x)**2+(pos.z-z)**2;if(d2<best.d2)best={d2,segment:i,leg:j,t,point:new THREE.Vector3(x,0,z),path:p};}return best;}

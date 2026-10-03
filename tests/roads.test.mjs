@@ -137,6 +137,7 @@ check(geo.conveyorOverlaps === 0, `no road deck overlaps the conveyor (${geo.con
 
 // ---- 2. several houses through the real purchase path, then network pieces + driveways
 const before6 = await net();
+const stageBefore6 = (await roadSnapshot()).stage;
 for (let i = 0; i < 6; i++) {
   await ev(() => { purchaseCurrentPad(); });
   await page.waitForTimeout(150);
@@ -156,6 +157,8 @@ const okNet = await page.waitForFunction(() => {
 const network = await net();
 console.log('stage network before/after:', JSON.stringify(before6), JSON.stringify(network));
 check(okNet && network.stageIds.length >= 6, `stage-road network covers the new houses (${network?.stageIds?.length} stages)`);
+const stageAfter6 = (await roadSnapshot()).stage;
+check(diff(stageBefore6, stageAfter6).created > 0, `a real road change (6 new stage houses) still rebuilds stage roads (${JSON.stringify(diff(stageBefore6, stageAfter6))})`);
 check((network.kinds.CORNER || 0) > 0, `stage-road CORNER pieces exist (kinds ${JSON.stringify(network.kinds)})`);
 check((network.kinds.T || 0) + (network.kinds.X || 0) > 0, 'stage-road T or X junction exists once several houses share a stem');
 
@@ -186,9 +189,9 @@ let prev = await roadSnapshot(); // right after the upgrade; the idle ticks belo
 const upgradeChurn = diff(snap0.meshes, prev.meshes);
 const sameLayout = JSON.stringify(snap0.layout) === JSON.stringify(prev.layout);
 console.log('upgrade churn:', JSON.stringify({ ...upgradeChurn, unionKept: snap0.union === prev.union, sameLayout, meshesBefore: snap0.meshes.length, meshesAfter: prev.meshes.length }));
-if (upgradeChurn.destroyed === 0 && upgradeChurn.created === 0 && snap0.union === prev.union) check(true, 'an unrelated upgrade did not rebuild the road network');
-else if (sameLayout) console.log(`KNOWN ISSUE: an unrelated base upgrade (${unrelated.key}) destroys and recreates ${upgradeChurn.destroyed} road meshes and the unified surface although the laid-out roads are identical (v116 signature-guard churn is back)`);
-else console.log(`NOTE: the base upgrade (${unrelated.key}) changed the laid-out roads (${upgradeChurn.destroyed} meshes replaced, layout differs): not counted as churn, the new building may be a legitimate obstacle`);
+// hard check since 2026-10-03 (v161 guards in refreshAccessRoads / v86 refresh, see CHANGELOG_V161.md); a changed layout is still reported, never counted as churn
+if (!sameLayout) console.log(`NOTE: the base upgrade (${unrelated.key}) changed the laid-out roads (${upgradeChurn.destroyed} meshes replaced, layout differs): not counted as churn, the new building may be a legitimate obstacle`);
+else check(upgradeChurn.destroyed === 0 && upgradeChurn.created === 0 && snap0.union === prev.union, `an unrelated base upgrade (${unrelated.key}) does not rebuild the road network (destroyed ${upgradeChurn.destroyed}, created ${upgradeChurn.created}, unified surface kept ${snap0.union === prev.union})`);
 const churn = [];
 for (let i = 0; i < 3; i++) {
   await page.waitForTimeout(2200);
