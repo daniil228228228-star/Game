@@ -27224,6 +27224,9 @@ html,body{overscroll-behavior:none}
 #prestigeBtn{top:var(--v46-prestige-top,108px)!important}
 #eventBanner{top:var(--v46-event-top,154px)!important}
 #toast{top:var(--v46-toast-top,106px)!important;bottom:auto!important}
+/* v162 HUD top stack: #shiftGoalV127 sits under #carryRouteV139 when both are on screen (offset computed in layoutTopV46); the toast is raised above the floating panels (z 41/42) so it is never hidden behind them. */
+#shiftGoalV127{top:var(--v46-shift-top,calc(72px + var(--v46-safe-top)))!important}
+#toast{z-index:43!important}
 #requiredActionV38{bottom:var(--v46-required-bottom,78px)!important}
 #coachChip{bottom:var(--v46-coach-bottom,118px)!important}
 #actionPrompt{bottom:var(--v46-prompt-bottom,168px)!important}
@@ -27349,6 +27352,11 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
   function requestLayoutV46(){if(V46.raf)return;V46.raf=requestAnimationFrame(()=>{V46.raf=0;layoutV46();});}
   function intersects(a,b,pad=4){return !!a&&!!b&&a.left<b.right+pad&&a.right+pad>b.left&&a.top<b.bottom+pad&&a.bottom+pad>b.top;}
   function setVar(name,value){document.documentElement.style.setProperty(name,px(value));}
+  // v162: observe a lazily created floating panel once, so its show/hide/resize re-runs the layout like the static ones.
+  function watchLazyV162(el){
+    if(!el||el.__v162Watched)return;el.__v162Watched=true;
+    try{V46.resizeObs?.observe(el);V46.mutObs?.observe(el,{attributes:true,attributeFilter:['class','hidden']});}catch(_){}
+  }
   function layoutTopV46(){
     const vw=innerWidth,vh=innerHeight;
     const hud=rect($('hud'));let base=(hud?.bottom||8)+7;
@@ -27364,6 +27372,17 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
     if(intersects(cr,nr,7)){setVar('--v46-contracts-top',(nr?.bottom||base)+7);cr=rect(contracts);}
     if(intersects(cor,nr,7)){setVar('--v46-company-top',(nr?.bottom||base)+7);cor=rect(company);}
     let topOccupied=Math.max(centerBottom,cr?.bottom||0,cor?.bottom||0,hud?.bottom||0);
+    // v162: #carryRouteV139 (centre, top 68px) and #shiftGoalV127 (left, top 72px) are created lazily by later layers
+    // and used to sit at fixed offsets, overlapping each other and the toast in the first minute on a phone
+    // (CHANGELOG_V161.md). One stack now: the carry route keeps its own CSS top, the shift goal moves under it when
+    // they share horizontal space, and the event banner/toast go under both. Nothing is hidden.
+    const carry=$('carryRouteV139'),shift=$('shiftGoalV127');watchLazyV162(carry);watchLazyV162(shift);
+    const carryR=rect(carry);let shiftR=rect(shift);
+    if(shift){
+      if(shiftR&&carryR&&shiftR.left<carryR.right+6&&carryR.left<shiftR.right+6){setVar('--v46-shift-top',carryR.bottom+6);shiftR=rect(shift);}
+      else document.documentElement.style.removeProperty('--v46-shift-top');
+    }
+    topOccupied=Math.max(topOccupied,carryR?.bottom||0,shiftR?.bottom||0);
     const event=$('eventBanner');
     if(visible(event)){setVar('--v46-event-top',topOccupied+7);topOccupied=rect(event)?.bottom||topOccupied;}
     const toast=$('toast');
