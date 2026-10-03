@@ -995,6 +995,11 @@ let sawmillBuiltV118 = true;
 let fleetDepotBuiltV118 = true;
 let concretePlantBuiltV118 = true;
 let metalYardBuiltV118 = true;
+// v161 PRODUCTION LEVELS (CHANGELOG_V161.md, "Уровни производства"): sawmill/concrete plant/metal
+// yard each have level 1 (the building itself) and level 2 (its own ground pad, see
+// INDUSTRIAL_BUILD_STEPS_V118 entries with `upgradeOf`). Defaults to 1 for every save that has no
+// `industrialLevelsV161` field (all saves written before this change), so nothing changes there.
+let industrialLevelsV161 = { sawmill: 1, concrete: 1, metal: 1 };
 // v116 manual roads (same user request): a fresh save also stops auto-paving a house's road
 // the instant the house is bought. Instead each built-but-unrouted house gets its own "build
 // road" ground pad (see nearestManualTargetV53()'s 'road' candidates); stepping on it is the
@@ -3057,6 +3062,18 @@ const FLEET_DEPOT_PAD_COST_V118 = { money: 60, wood: 0, concrete: 0, metal: 0 };
 const SAWMILL_PAD_COST_V118 = { money: 100, wood: 0, concrete: 0, metal: 0 };
 const CONCRETE_PAD_COST_V118 = { money: 380, wood: 6, concrete: 0, metal: 0 };
 const METAL_PAD_COST_V118 = { money: 520, wood: 8, concrete: 0, metal: 0 };
+// v161 production level 2: base costs (v124 multiplies them x1.25 money / x1.08 ceil resources at
+// boot through the INDUSTRIAL_BUILD_STEPS_V118 loop). Same family as the L1 costs above:
+// sawmill L2 sits between the Shop (320) and Warehouse (700) stage costs, concrete/metal L2 are a
+// third to a half of the Factory (3800) / Office (8500) stage costs and eat a little of the
+// resource they speed up. Pad positions: 4.4 south of the sawmill, 3.1 west of the concrete plant,
+// 3.4 east of the metal yard -- clear of the service-road graph, loading bays and colliders.
+const SAWMILL_L2_COST_V161 = { money: 300, wood: 4, concrete: 0, metal: 0 };
+const CONCRETE_L2_COST_V161 = { money: 1200, wood: 8, concrete: 2, metal: 0 };
+const METAL_L2_COST_V161 = { money: 2800, wood: 10, concrete: 4, metal: 1 };
+const SAWMILL_UPGRADE_PAD_POS_V161 = new THREE.Vector3(SAWMILL_POS.x, 0, SAWMILL_POS.z + 4.4);
+const CONCRETE_UPGRADE_PAD_POS_V161 = new THREE.Vector3(CONCRETE_PLANT_POS.x - 3.1, 0, CONCRETE_PLANT_POS.z - 0.3);
+const METAL_UPGRADE_PAD_POS_V161 = new THREE.Vector3(METAL_YARD_POS.x + 3.4, 0, METAL_YARD_POS.z + 0.2);
 // The ordered chain itself: `built`/`prereq` are functions (not booleans) so the array can be
 // declared once here yet always read the CURRENT value of each `let` flag above, however it
 // changes later. `id`/`ru`/`en`/`pos`/`cost` are read by nearestManualTargetV53(),
@@ -3071,8 +3088,32 @@ const INDUSTRIAL_BUILD_STEPS_V118 = [
     built: () => concretePlantBuiltV118, prereq: () => sawmillBuiltV118 },
   { id: 'metal', ru: 'Металлобаза', en: 'Metal Yard', pos: METAL_PAD_POS_V118, cost: METAL_PAD_COST_V118,
     built: () => metalYardBuiltV118, prereq: () => sawmillBuiltV118 },
+  // v161 production level 2 (one extra pad per building; `upgradeOf` marks them, everything else
+  // -- marker, nearestManualTargetV53 candidate, #actionBtn press, compass target, x1.25 cost
+  // scaling -- is the shared code above). Appears only when the building exists AND the stage
+  // threshold is reached; benefit = INDUSTRIAL_LEVEL_SPEED_V161 below.
+  { id: 'sawmill2', upgradeOf: 'sawmill', level: 2, ru: 'Лесопилка · ур. 2', en: 'Sawmill · Lv 2', pos: SAWMILL_UPGRADE_PAD_POS_V161, cost: SAWMILL_L2_COST_V161,
+    built: () => industrialLevelV161('sawmill') >= 2, prereq: () => sawmillBuiltV118 && stageIndex >= 3 },
+  { id: 'concrete2', upgradeOf: 'concrete', level: 2, ru: 'Бетонный завод · ур. 2', en: 'Concrete Plant · Lv 2', pos: CONCRETE_UPGRADE_PAD_POS_V161, cost: CONCRETE_L2_COST_V161,
+    built: () => industrialLevelV161('concrete') >= 2, prereq: () => concretePlantBuiltV118 && stageIndex >= CONCRETE_UNLOCK_STAGE + 1 },
+  { id: 'metal2', upgradeOf: 'metal', level: 2, ru: 'Металлобаза · ур. 2', en: 'Metal Yard · Lv 2', pos: METAL_UPGRADE_PAD_POS_V161, cost: METAL_L2_COST_V161,
+    built: () => industrialLevelV161('metal') >= 2, prereq: () => metalYardBuiltV118 && stageIndex >= METAL_UNLOCK_STAGE + 1 },
 ];
 function industrialStepV118(id) { return INDUSTRIAL_BUILD_STEPS_V118.find((s) => s.id === id) || null; }
+// v161: current level (1 = just built, 2 = upgraded) and its production speed factor. The three
+// production timers (sawmillAutoInterval, updateConcretePlant, updateMetalPlant) divide their
+// interval by industrialSpeedV161(kind); [level 1, level 2] -> x1.0, x1.5 / x1.4 / x1.4.
+const INDUSTRIAL_LEVEL_SPEED_V161 = { sawmill: [1, 1.5], concrete: [1, 1.4], metal: [1, 1.4] };
+function industrialLevelV161(kind) { return Math.max(1, Math.floor(Number(industrialLevelsV161?.[kind]) || 1)); }
+function industrialSpeedV161(kind) {
+  const t = INDUSTRIAL_LEVEL_SPEED_V161[kind] || [1];
+  return t[Math.min(industrialLevelV161(kind), t.length) - 1] || 1;
+}
+function sanitizeIndustrialLevelsV161(raw) {
+  const out = { sawmill: 1, concrete: 1, metal: 1 };
+  if (raw && typeof raw === 'object') for (const k of Object.keys(out)) out[k] = Math.max(1, Math.min(2, Math.floor(Number(raw[k]) || 1)));
+  return out;
+}
 
 /* v116 (de-elevation): this belt used to cross the depot service road segment
    `sawmillBypass`->`depotWest` (measured live with a real OBB-vs-OBB test: 2 overlaps, depth
@@ -3123,7 +3164,7 @@ function planksPerDeliveredLog() {
   return BASE_PLANKS_PER_LOG + (fieldUpgrades.yield || 0);
 }
 function sawmillAutoInterval() {
-  return Math.max(3.2, (BASE_SAWMILL_AUTO_INTERVAL - (fieldUpgrades.sawmill || 0) * 2) / productionSpeedMultiplier());
+  return Math.max(3.2, (BASE_SAWMILL_AUTO_INTERVAL - (fieldUpgrades.sawmill || 0) * 2) / productionSpeedMultiplier()) / industrialSpeedV161('sawmill'); // v161: level 2 = x1.5
 }
 
 
@@ -3623,7 +3664,7 @@ function updateConcretePlant(dt) {
   if (concretePlant?.drumPivot) concretePlant.drumPivot.rotation.x += dt * (stageIndex >= CONCRETE_UNLOCK_STAGE ? 2.2 : 0.3);
   if (!concretePlant || stageIndex < CONCRETE_UNLOCK_STAGE) return;
   concretePlantTimer += dt;
-  const concreteInterval = CONCRETE_AUTO_INTERVAL / productionSpeedMultiplier();
+  const concreteInterval = CONCRETE_AUTO_INTERVAL / productionSpeedMultiplier() / industrialSpeedV161('concrete'); // v161: level 2 = x1.4
   if (concretePlantTimer >= concreteInterval) {
     concretePlantTimer -= concreteInterval;
     const produced = Math.min(1 + Math.floor(stats.prestige / 3), Math.max(0, concreteCapacity() - concrete));
@@ -3740,7 +3781,7 @@ function updateMetalPlant(dt) {
   }
   if (stageIndex < METAL_UNLOCK_STAGE) return;
   metalPlantTimer += dt;
-  const metalInterval = METAL_AUTO_INTERVAL / productionSpeedMultiplier();
+  const metalInterval = METAL_AUTO_INTERVAL / productionSpeedMultiplier() / industrialSpeedV161('metal'); // v161: level 2 = x1.4
   if (metalPlantTimer >= metalInterval) {
     metalPlantTimer -= metalInterval;
     const produced = Math.min(1 + Math.floor(stats.prestige / 4), Math.max(0, metalCapacity() - metal));
@@ -8400,6 +8441,42 @@ function refreshIndustrialPadMarkersV118() {
     if (step.built()) { removeIndustrialPadMarkerV118(step.id); continue; }
     if (step.prereq()) spawnIndustrialPadMarkerV118(step); else removeIndustrialPadMarkerV118(step.id);
   }
+  refreshIndustrialBadgesV161();
+}
+// v161: visible result of a production level-2 upgrade -- at the spot of the (now gone) upgrade pad
+// a gold disc + pole with an orb and a "LV II" sprite, built from the same primitives as the pad
+// marker above. One group per upgraded kind, rebuilt idempotently from industrialLevelsV161 (so it
+// also appears after load()). Pure scene dressing: no collider, no road, no save field of its own.
+const industrialBadgesV161 = new Map(); // kind -> THREE.Group
+function refreshIndustrialBadgesV161() {
+  for (const step of INDUSTRIAL_BUILD_STEPS_V118) {
+    if (!step.upgradeOf) continue;
+    const kind = step.upgradeOf;
+    const want = step.built() && (kind === 'sawmill' ? sawmillBuiltV118 : kind === 'concrete' ? concretePlantBuiltV118 : metalYardBuiltV118);
+    const have = industrialBadgesV161.get(kind);
+    if (!want) { if (have) { scene.remove(have); disposeObject3D(have); industrialBadgesV161.delete(kind); } continue; }
+    if (have) continue;
+    const gold = new THREE.MeshStandardMaterial({ color: 0xffc94d, emissive: 0x8a5a00, emissiveIntensity: 0.55, roughness: 0.35, metalness: 0.6 });
+    const group = new THREE.Group();
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.06, 24), gold);
+    disc.position.y = 0.04;
+    group.add(disc);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 1.2, 8), gold);
+    pole.position.y = 0.66;
+    pole.castShadow = true;
+    group.add(pole);
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 10), gold);
+    orb.position.y = 1.33;
+    group.add(orb);
+    const sprite = makeLabelSprite(['⭐ II']);
+    sprite.position.y = 1.85;
+    sprite.scale.set(0.8, 0.33, 1);
+    group.add(sprite);
+    group.position.set(step.pos.x, 0, step.pos.z);
+    group.name = 'v161LevelBadge_' + kind;
+    scene.add(group);
+    industrialBadgesV161.set(kind, group);
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -8420,6 +8497,22 @@ function buildIndustrialStepV118(step) {
     return false;
   }
   removeIndustrialPadMarkerV118(step.id);
+  if (step.upgradeOf) {
+    // v161 production level 2: no new building, no road/collider/fleet rebuild -- only the level,
+    // its gold badge, the next pad's visibility and the usual feedback.
+    industrialLevelsV161[step.upgradeOf] = step.level;
+    const pct = Math.round((industrialSpeedV161(step.upgradeOf) - 1) * 100);
+    const upLabel = lang === 'ru' ? `⬆️ ${step.ru}: производство +${pct}%` : `⬆️ ${step.en}: production +${pct}%`;
+    refreshIndustrialPadMarkersV118();
+    spawnBurst(step.pos, 0xffd479);
+    triggerShake(0.12, 0.2);
+    sfx.build();
+    toast(upLabel);
+    spawnFloatingTextV117(step.pos, upLabel);
+    updateHUD();
+    save();
+    return true;
+  }
   let builtLabel = '';
   if (step.id === 'depot') {
     fleetDepotBuiltV118 = true;
@@ -10264,6 +10357,8 @@ function marketStallBuy(stallId){
 // purchase should need to know about the market). Same lightweight 700ms cadence/idempotent-swap
 // pattern refreshSpecialProjectWorld() already uses for its own vacant-site markers.
 setInterval(()=>{try{refreshMarketStallsV118();}catch(e){console.warn('v118 market stall marker sync',e);}},700);
+// v161: same cadence for the stage-gated production level-2 pads (refresh is idempotent).
+setInterval(()=>{try{refreshIndustrialPadMarkersV118();}catch(e){console.warn('v161 industrial level pad sync',e);}},700);
 // Signs refresh on the same lightweight cadence the field-upgrade/district-hub signs already use
 // elsewhere in this file (a plain setInterval calling a cheap idempotent regenerateSprite swap).
 setInterval(()=>{
@@ -13116,6 +13211,7 @@ function save() {
       fleetDepotBuiltV118: !!fleetDepotBuiltV118,
       concretePlantBuiltV118: !!concretePlantBuiltV118,
       metalYardBuiltV118: !!metalYardBuiltV118,
+      industrialLevelsV161: { ...industrialLevelsV161 }, // v161: absent in older saves -> all levels 1
       marketStallsBuiltV118: [...marketStallsBuiltV118],
     });
     const previous = localStorage.getItem(SAVE_KEY);
@@ -13480,6 +13576,7 @@ function load() {
     if (typeof data.concretePlantBuiltV118 === 'boolean') concretePlantBuiltV118 = data.concretePlantBuiltV118;
     if (typeof data.metalYardBuiltV118 === 'boolean') metalYardBuiltV118 = data.metalYardBuiltV118;
     industrialZoneBuiltV116 = sawmillBuiltV118;
+    industrialLevelsV161 = sanitizeIndustrialLevelsV161(data.industrialLevelsV161); // v161: absent -> level 1 everywhere
     if (Array.isArray(data.marketStallsBuiltV118)) marketStallsBuiltV118 = new Set(data.marketStallsBuiltV118.filter((id) => typeof id === 'string'));
     if (typeof data.manualRoadModeV116 === 'boolean') manualRoadModeV116 = data.manualRoadModeV116;
     if (Array.isArray(data.manualRoadStagesV116)) manualRoadStagesV116 = new Set(data.manualRoadStagesV116.filter(Number.isInteger));
@@ -27556,8 +27653,8 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
             // v118: one of the four staged industrial-zone build pads (was: one pad for the
             // whole cluster).
             const step=ctx.step,ready=canPayResources(step.cost),name=lang==='ru'?step.ru:step.en;
-            prompt.textContent=ready?(lang==='ru'?`🏭 Построить: ${name}`:`🏭 Build: ${name}`):(lang==='ru'?`📦 Нужно: ${opsCostText(step.cost)}`:`📦 Need: ${opsCostText(step.cost)}`);
-            btn.hidden=false;btn.textContent=ready?(lang==='ru'?'Построить':'Build'):(lang==='ru'?'Не хватает ресурсов':'Resources needed');prompt.classList.add('show');
+            prompt.textContent=ready?(step.upgradeOf?(lang==='ru'?`⬆️ Улучшить: ${name}`:`⬆️ Upgrade: ${name}`):(lang==='ru'?`🏭 Построить: ${name}`:`🏭 Build: ${name}`)):(lang==='ru'?`📦 Нужно: ${opsCostText(step.cost)}`:`📦 Need: ${opsCostText(step.cost)}`);
+            btn.hidden=false;btn.textContent=ready?(step.upgradeOf?(lang==='ru'?'Улучшить':'Upgrade'):(lang==='ru'?'Построить':'Build')):(lang==='ru'?'Не хватает ресурсов':'Resources needed');prompt.classList.add('show');
           }else if(ctx.type==='stallBuild'){
             // v118: an unlocked-but-not-yet-built market stall's vacant marker.
             const cfg=ctx.stall,ready=canPayResources(cfg.cost),name=lang==='ru'?cfg.ru:cfg.en;

@@ -39,7 +39,11 @@ check(s0.stageIndex === 0 && s0.vacant === 0, 'fresh save: no market stall unloc
 check(s0.markers.depot && !s0.markers.sawmill && !s0.markers.concrete && !s0.markers.metal, `fresh save: only the depot pad marker exists ${JSON.stringify(s0.markers)}`);
 
 // ---- 2. order and costs (documented v116 base values x1.25 money, x1.08 rounded-up planks since v124)
-const steps = await ev(() => INDUSTRIAL_BUILD_STEPS_V118.map((s) => ({ id: s.id, money: s.cost.money, wood: s.cost.wood || 0, prereq: s.prereq() })));
+const steps = await ev(() => INDUSTRIAL_BUILD_STEPS_V118.map((s) => ({ id: s.id, money: s.cost.money, wood: s.cost.wood || 0, prereq: s.prereq(), upgrade: !!s.upgradeOf })));
+// v161: three production level-2 steps (sawmill2/concrete2/metal2) follow the four build steps; the build chain below is the original four
+const upSteps = steps.filter((s) => s.upgrade);
+steps.splice(0, steps.length, ...steps.filter((s) => !s.upgrade));
+check(JSON.stringify(upSteps.map((s) => s.id)) === JSON.stringify(['sawmill2', 'concrete2', 'metal2']) && upSteps.every((s) => !s.prereq), `v161: level-2 steps exist and are locked on a fresh save (${upSteps.map((s) => s.id)})`);
 check(JSON.stringify(steps.map((s) => s.id)) === JSON.stringify(['depot', 'sawmill', 'concrete', 'metal']), `build order depot -> sawmill -> concrete -> metal (${steps.map((s) => s.id)})`);
 const BASE = { depot: [60, 0], sawmill: [100, 0], concrete: [380, 6], metal: [520, 8] };
 for (const s of steps) check(s.money === Math.round(BASE[s.id][0] * 1.25) && s.wood === Math.ceil(BASE[s.id][1] * 1.08),
@@ -79,7 +83,7 @@ for (const id of ['concrete', 'metal']) {
   a = await snap();
   check(a.flags[i] && Math.abs((b.money - a.money) - steps[i].money) <= 3 && b.planks - a.planks === steps[i].wood, `${id} built, charged ~${steps[i].money} money + ${steps[i].wood} planks (${Math.round(b.money - a.money)} / ${b.planks - a.planks})`);
 }
-check(a.flags.every(Boolean) && Object.values(a.markers).every((m) => !m), 'all four built, no pad marker left in the scene');
+check(a.flags.every(Boolean) && Object.values(a.markers).every((m) => !m), 'all four built, no pad marker left in the scene (the v161 level-2 pads stay locked at stage 0)');
 
 // ---- 4. market stalls: unlock thresholds, vacant markers appear / disappear (stage jumps in one synchronous evaluate)
 const unlock = await ev(() => Object.fromEntries(MARKET_STALLS_V116.map((c) => [c.id, c.unlock])));

@@ -13,6 +13,8 @@ const snapshot = () => page.evaluate(() => ({
   stageIndex, buildings: buildings.length, money: Math.floor(money), planks, concrete, metal,
   industrialZone: industrialZoneBuiltV116, manualRoad: manualRoadModeV116,
   flags: [sawmillBuiltV118, fleetDepotBuiltV118, concretePlantBuiltV118, metalYardBuiltV118],
+  levels: [industrialLevelV161('sawmill'), industrialLevelV161('concrete'), industrialLevelV161('metal')],
+  levelBadges: industrialBadgesV161.size, speeds: [industrialSpeedV161('sawmill'), industrialSpeedV161('concrete'), industrialSpeedV161('metal')],
   stallsBuilt: marketStallsBuiltV118.size, stallsInScene: marketRuntimeV116.stalls.size,
   bootError: !!document.getElementById('bootError'), sceneChildren: scene.children.length,
 }));
@@ -22,6 +24,7 @@ check(g.errors.length === 0, `0 console errors loading the old save ${JSON.strin
 check(s1.stageIndex === 1 && s1.buildings === 1, `fixture state carried over (stage ${s1.stageIndex}, ${s1.buildings} building)`);
 check(s1.money >= 500 && s1.planks >= 10, `money/planks not lower than the fixture (${s1.money}/${s1.planks})`);
 check(s1.industrialZone && s1.flags.every(Boolean), 'old save: all 4 industrial flags default to built');
+check(s1.levels.every((l) => l === 1) && s1.levelBadges === 0 && s1.speeds.every((v) => v === 1), `old save (no industrialLevelsV161 field): production levels default to 1, no badge, speed x1 (${s1.levels})`);
 check(s1.manualRoad === false, 'old save: manual road mode off (roads stay automatic)');
 check(s1.stallsBuilt === 7 && s1.stallsInScene === 7, `old save: 7 market stalls built and present in the scene (${s1.stallsInScene})`);
 check(!s1.bootError && s1.sceneChildren > 100, `no boot error, scene populated (${s1.sceneChildren})`);

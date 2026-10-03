@@ -146,5 +146,34 @@ check(s6.afterNull, 'once concrete/metal are unaffordable nextActionableTargetV1
 check(s6.fallback, 'currentGuidanceTarget() still returns a real target (tree / sawmill fetch chain)');
 check(s6.arrowHidden, 'ground arrow hidden when there is no actionable target');
 
+// ---- 7. v161: the chain no longer ends at null once production level 2 is unlocked. Build concrete + metal, jump to
+// stage 3 (sawmill level 2 unlocks; stage 3's own house is unaffordable) -> the sawmill upgrade pad is the next target
+// and is highlighted; with concrete/metal level 2 locked (stage < 5/6) nothing else is offered. The upgrade is then
+// bought and the chain falls through to null again.
+const s7 = await ev(() => {
+  money = 1e6; planks = 500; concrete = 50; metal = 50;
+  buildIndustrialStepV118(industrialStepV118('concrete')); buildIndustrialStepV118(industrialStepV118('metal'));
+  const keepStage = stageIndex;
+  stageIndex = 3; refreshIndustrialPadMarkersV118();
+  const up = industrialStepV118('sawmill2');
+  money = up.cost.money + 5; planks = up.cost.wood + 5;
+  const t = nextActionableTargetV117();
+  updateActionableHighlightV117();
+  const col = industrialPadMarkersV118.get('sawmill2')?.userData.disc.material.color.getHex();
+  const r = { type: t?.type, step: t?.stepId, posOk: !!t && Math.hypot(t.pos.x - up.pos.x, t.pos.z - up.pos.z) < 1e-3, label: t?.label, col };
+  money = up.cost.money - 1; // not affordable -> not offered
+  r.unaffordableNull = nextActionableTargetV117() === null;
+  money = up.cost.money + 5;
+  r.ok = buildIndustrialStepV118(up);
+  r.level = industrialLevelV161('sawmill');
+  money = 100; // nothing else affordable (house 875, level-2 pads locked or dearer)
+  r.afterNull = nextActionableTargetV117() === null; // concrete2 needs stage 5, metal2 stage 6
+  stageIndex = keepStage; refreshIndustrialPadMarkersV118();
+  return r;
+});
+check(s7.type === 'industrial' && s7.step === 'sawmill2' && s7.posOk && s7.col === 0xE9AD3D, `stage 3: the sawmill level-2 pad is the next target and highlighted (${s7.type}/${s7.step}, ${s7.label}, 0x${s7.col?.toString(16)})`);
+check(s7.unaffordableNull, 'an unaffordable level-2 pad is not offered as the next target');
+check(s7.ok && s7.level === 2 && s7.afterNull, `after the upgrade the chain ends at null again (level ${s7.level}, null ${s7.afterNull})`);
+
 check(g.errors.length === 0, `no console errors ${JSON.stringify(g.errors.slice(0, 3))}`);
 await g.close();
