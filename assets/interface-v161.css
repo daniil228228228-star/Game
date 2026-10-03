@@ -1,0 +1,45 @@
+:root{--v161-panel:#17242b;--v161-card:#22323a;--v161-edge:#46565d;--v161-gold:#efc875;--v161-ink:#f3f5ed}
+.v30Panel [hidden]{display:none!important}
+.v30Panel{background:linear-gradient(155deg,#26383d,#152129 75%)!important;border:1px solid #586266!important;box-shadow:0 24px 90px #0009!important;padding:0 20px 20px!important;border-radius:24px!important;color:var(--v161-ink)!important;scroll-padding-top:80px;overscroll-behavior:contain}
+.v30Panel>.v30Head{position:sticky;top:0;z-index:3;margin:0 -20px 16px;padding:16px 20px;background:#1c2b32;border-bottom:1px solid #48585d;gap:12px}
+.v30Head>strong{font-size:21px!important;line-height:1.25;letter-spacing:-.3px}
+.v30Close,#achClose{display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;min-width:44px;min-height:44px;box-sizing:border-box;border:1px solid #55656b!important;border-radius:13px;background:#304047!important;color:#f5f5ec!important;opacity:1!important;cursor:pointer;font-size:22px!important;padding:4px!important}
+.v30Section{background:#213139!important;border:1px solid #40535b!important;padding:16px!important;border-radius:16px!important;margin-top:14px!important}
+.v30SectionTitle{font-size:13px!important;font-weight:750!important;letter-spacing:.7px;text-transform:uppercase;color:#d4bf8d!important;margin-bottom:12px!important}
+.v30Panel .v30Row{padding:13px 0!important;gap:14px!important;border-bottom:1px solid #40535b}
+.v30Panel .v30Row:last-child{border-bottom:0;padding-bottom:0!important}
+.v30Panel .v30Row .name{font-size:16px!important;line-height:1.35!important}
+.v30Panel .sub,.v30Panel .desc,.v30Panel .v30Small,.v30Panel .v30Hint{color:#becbd0!important;line-height:1.5!important}
+.v30Panel button,.v161-tabs button{font-family:inherit;min-height:48px!important;border-radius:12px!important;touch-action:manipulation;transition:background .12s,border-color .12s,transform .12s}
+.v30Panel .v30Btn{font-size:15px!important;padding:12px 16px!important;background:#344951!important;border:1px solid #6a7e84!important;color:#f6f5e9!important;font-weight:700!important}
+.v30Panel .v30Btn.primary{background:linear-gradient(#f3d18b,#d7ac58)!important;border-color:#ffdfa0!important;color:#2d2617!important;box-shadow:0 3px 0 #8c6c35!important}
+.v30Panel button:not(:disabled):active{transform:translateY(1px)}
+.v30Panel button:disabled{opacity:.65!important;cursor:default;box-shadow:none!important}
+.v30Panel button:focus-visible,.v30Close:focus-visible,#systemsBtn:focus-visible,#jumpBtn:focus-visible{outline:3px solid #f4d590!important;outline-offset:3px!important}
+#workdayPanelV158{width:min(820px,96vw)!important}
+.v161-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:5px;border:1px solid #4a5e66;border-radius:16px;background:#101e26;margin-bottom:12px}
+.v161-tabs button{font-size:15px;font-weight:750;border:1px solid transparent;background:transparent;color:#bac9d0;padding:10px 6px;min-width:0}
+.v161-tabs button[aria-selected=true]{background:#e5bd70;color:#292417;border-color:#f3d497;box-shadow:0 2px 8px #0003}
+.v161-view{font-size:15px;line-height:1.5;color:#c2d0d5;padding:4px 3px 16px}
+#workdayV158{margin:0!important;padding:16px!important;background:#203238!important;border-color:#52676d!important}
+#workdayV158 .v158-head{margin-bottom:12px;gap:10px;flex-wrap:wrap}
+#workdayV158 .v158-head h3{font-size:19px!important}
+#workdayV158 .v158-current{background:#16262e;border-left:3px solid #e5bd70;padding:12px 14px;border-radius:4px 12px 12px 4px;margin:14px 0}
+#workdayV158 .v158-current p{margin:6px 0 12px}
+#workdayV158 button{background:#30464e!important;border-color:#647d83!important;font-size:15px!important;padding:14px!important}
+#workdayV158 button[aria-pressed=true]{background:#51462f!important;border:2px solid #eac778!important}
+#workdayV158 button b{font-size:16px!important;margin-bottom:5px}
+#workdayV158 button span{color:#d0d9db!important;line-height:1.5}
+#developmentV160,#expansionV159{margin:0 0 16px!important;padding:16px!important;background:#203238!important;border-color:#52676d!important}
+#developmentV160 summary,#expansionV159 summary{min-height:48px;display:list-item;align-content:center;font-size:19px!important;cursor:pointer}
+.v160-programmes article,.v159-project{border-color:#51656c!important;background:#192a32!important;border-radius:14px!important}
+.v159-project.next{border-color:#e5bd70!important}
+.v161-return{display:block;width:100%;margin:0 0 16px;padding:12px 16px;background:#314850;border:1px solid #6a7e84;color:#f1ead9;font-size:15px;font-weight:700}
+#actionBtn{background:linear-gradient(#f0cb80,#d8aa53)!important;border:1px solid #ffdfa0!important;border-radius:18px!important;color:#282217!important;font-weight:800!important;box-shadow:0 5px 0 #806536,0 9px 25px #0004!important;padding:14px 20px!important;min-height:60px!important}
+#actionBtn:disabled{background:#3c4e53!important;color:#c7d0d2!important;border-color:#78878b!important;box-shadow:none!important;opacity:.85!important}
+#actionPrompt{background:#18272eef!important;border:1px solid #70817c!important;border-radius:14px!important;padding:12px 16px!important;color:#f2e4bb!important}
+#systemsBtn{min-width:48px!important;min-height:48px!important;border-radius:15px!important;border:1px solid #708088!important;background:#21343cef!important;color:#f2e8cb!important;cursor:pointer}
+#jumpBtn{border:1px solid #b6a06b!important;background:#263b43ef!important;box-shadow:0 4px 15px #0003!important}
+@media(max-width:600px){.v30Panel{width:100%!important;max-height:calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom))!important;padding:0 14px 18px!important;border-radius:20px!important}.v30Panel>.v30Head{margin:0 -14px 14px;padding:12px 14px}.v30Head>strong{font-size:19px!important}.v30Panel .v30Row{flex-wrap:wrap!important}.v30Panel .v30Row>.v30Btn{width:100%;text-align:center}.v30Panel .v30Section{padding:14px!important}.v161-tabs button{font-size:14px}#workdayV158 .v158-grid,.v160-grid,.v159-grid{grid-template-columns:1fr!important}#actionBtn{max-width:44vw!important;padding:13px 15px!important}}
+@media(max-width:600px){.v160-programmes,.v159-projects{grid-template-columns:1fr!important}}
+@media(prefers-reduced-motion:reduce){.v30Panel button,.v161-tabs button{transition:none!important}}

@@ -1,0 +1,11 @@
+#developmentV160{margin-bottom:18px;padding:16px;border:1px solid #a38344;border-radius:16px;background:#17232e;color:#eef3f7;font-size:14px;line-height:1.5}
+#developmentV160 summary{display:list-item;cursor:pointer;min-height:44px;font-size:18px;font-weight:750;padding:5px 0}
+#developmentV160 summary span{color:#e9c879;margin-left:8px;font-size:14px}
+#developmentV160 p{margin:8px 0;color:#ccd7df;overflow-wrap:anywhere}
+.v160-programmes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0}
+.v160-programmes article{padding:14px;border:1px solid #41515f;border-radius:12px;min-width:0;background:#23313e}
+.v160-programmes b{font-size:16px;color:#fff}.v160-programmes button{display:block;min-height:44px;width:100%;padding:10px;border-radius:10px;border:1px solid #bc9348;background:#d4ac58;color:#15212b;font-size:14px;font-weight:750;white-space:normal;cursor:pointer}
+.v160-programmes button:disabled{background:#344450;border-color:#50606c;color:#ccd4db;cursor:default}
+.v160-programmes button:focus-visible{outline:3px solid #e9c879;outline-offset:3px}
+.v160-programmes progress{display:block;width:100%;height:10px;margin:10px 0;accent-color:#e9c879}
+@media(max-width:720px){.v160-programmes{grid-template-columns:1fr}#developmentV160{padding:12px}}
