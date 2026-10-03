@@ -36394,7 +36394,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
     $('marketExchangeCloseV119').addEventListener('click',()=>{host.classList.remove('show','v119-exchange-mode');safe(()=>window.requestLayoutV46?.());});
     $('marketExchangeCloseV119').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.currentTarget.click();}});
     host.addEventListener('click',e=>{if(e.target===host)host.classList.remove('v119-exchange-mode');});
-    new MutationObserver(()=>{if(!host.classList.contains('show'))host.classList.remove('v119-exchange-mode');}).observe(host,{attributes:true,attributeFilter:['class']});
+    new MutationObserver(()=>{if(!host.classList.contains('show')&&host.classList.contains('v119-exchange-mode'))host.classList.remove('v119-exchange-mode');}).observe(host,{attributes:true,attributeFilter:['class']});
   }
   function resourceAvailable(k){return k==='planks'||(k==='concrete'&&(stageIndex>=CONCRETE_UNLOCK_STAGE||concrete>0))||(k==='metal'&&(stageIndex>=METAL_UNLOCK_STAGE||metal>0));}
   function resourceAmount(k){return k==='planks'?planks:k==='concrete'?concrete:k==='metal'?metal:money;}
