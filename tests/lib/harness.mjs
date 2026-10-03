@@ -43,6 +43,7 @@ export function startServer(root = REPO_ROOT) {
 }
 
 // `save`: undefined (untouched) | 'clear' (empty localStorage = fresh game) | object (written under SAVE_KEY).
+// Seeding happens on the first load of the tab only; use reloadGame() to test persistence.
 export async function openGame({ save, url, waitMs = 4000 } = {}) {
   const server = url ? null : await startServer();
   const gameUrl = url || `${server.url}/${ENTRY}`;
@@ -62,12 +63,17 @@ export async function openGame({ save, url, waitMs = 4000 } = {}) {
     errors.push('console.error: ' + text);
   });
   page.on('response', (r) => { if (r.status() >= 400) badResponses.push(`${r.status()} ${r.url()}`); });
-  if (save === 'clear') {
-    await page.addInitScript(() => { try { localStorage.clear(); } catch (_) {} });
-  } else if (save && typeof save === 'object') {
+  // The seed is applied ONCE per tab (sessionStorage guard), not on every navigation: otherwise
+  // page.reload() would overwrite the game's own autosave with the fixture again and a
+  // "survives a reload" test would be testing nothing.
+  if (save === 'clear' || (save && typeof save === 'object')) {
     await page.addInitScript(({ key, value }) => {
-      try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
-    }, { key: SAVE_KEY, value: save });
+      try {
+        if (sessionStorage.getItem('__tycoonTestSeeded')) return;
+        sessionStorage.setItem('__tycoonTestSeeded', '1');
+        if (value === null) localStorage.clear(); else localStorage.setItem(key, JSON.stringify(value));
+      } catch (_) {}
+    }, { key: SAVE_KEY, value: save === 'clear' ? null : save });
   }
   await page.goto(gameUrl, { waitUntil: 'load' });
   if (waitMs) await page.waitForTimeout(waitMs);
@@ -78,7 +84,19 @@ export async function openGame({ save, url, waitMs = 4000 } = {}) {
   return { browser, context, page, errors, badResponses, close, url: gameUrl };
 }
 
+// Reload the current page (the seed is NOT re-applied, see openGame) and wait for the game to settle.
+// Returns the console errors that appeared during this load only.
+export async function reloadGame(g, waitMs = 4000) {
+  const before = g.errors.length;
+  await g.page.reload({ waitUntil: 'load' });
+  if (waitMs) await g.page.waitForTimeout(waitMs);
+  return g.errors.slice(before);
+}
+
 export function check(cond, msg) {
   if (!cond) { console.error('FAIL: ' + msg); process.exitCode = 1; }
   else console.log('ok: ' + msg);
 }
+
+// The old-format save fixture used by the v116/v161 regression tests (predates every staged-unlock field).
+export const OLD_SAVE = { saveVersion: 20, stageIndex: 1, money: 500, planks: 10, concrete: 0, metal: 0, buildings: [{ index: 0 }] };
