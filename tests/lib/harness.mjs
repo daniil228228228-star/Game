@@ -100,3 +100,36 @@ export function check(cond, msg) {
 
 // The old-format save fixture used by the v116/v161 regression tests (predates every staged-unlock field).
 export const OLD_SAVE = { saveVersion: 20, stageIndex: 1, money: 500, planks: 10, concrete: 0, metal: 0, buildings: [{ index: 0 }] };
+
+// ---- v161 stabilisation helpers (ROADMAP_V161 task 1) ----------------------------------------
+
+// Costs as the game shows them: documented base values scaled at boot by v124 (money x1.25 rounded,
+// every resource x1.08 rounded up). `base` = { money, wood, concrete, metal } (missing keys = 0).
+export function scaledCost(base) {
+  const out = { money: Math.round((base.money || 0) * 1.25) };
+  for (const k of ['wood', 'concrete', 'metal']) out[k] = Math.ceil((base[k] || 0) * 1.08);
+  return out;
+}
+
+// Wait on real game state instead of a fixed sleep: polls `fn(arg)` in the page every animation frame
+// (bounded by `timeout`, default 20 s). Resolves to the truthy value, or `fallback` (default false) on
+// timeout, so callers can report a KNOWN ISSUE instead of throwing.
+export async function waitForState(page, fn, arg, { timeout = 20000, fallback = false } = {}) {
+  try { return await (await page.waitForFunction(fn, arg, { timeout, polling: 'raf' })).jsonValue(); }
+  catch (_) { return fallback; }
+}
+
+// Jump `stageIndex` in one synchronous evaluate. Moving the stage claims the one-time company-tier
+// money rewards (COMPANY_TIERS in tycoon-v161.html: +180 at stage 2, +420 at 4, +900 at 6, ... each once
+// per lifetime via metaState.tierClaims). They are credited by checkCompanyTierRewards(), which
+// updateHUD() runs, so they otherwise land inside whichever later call first renders the HUD (this was
+// the unexplained "+1320" = 420 + 900 on a 3 -> 6 jump). The jump claims them HERE, so later measured
+// before/after money deltas are clean. Returns { stage, tierMoney } (money credited by the claim).
+export function jumpStage(page, stage) {
+  return page.evaluate((stage) => {
+    stageIndex = stage;
+    const m = money;
+    checkCompanyTierRewards();
+    return { stage: stageIndex, tierMoney: money - m };
+  }, stage);
+}

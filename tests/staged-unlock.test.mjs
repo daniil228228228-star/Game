@@ -5,7 +5,7 @@
 // the same chain through buildIndustrialStepV118() directly: here the pads are pressed through the real
 // #actionBtn, costs are compared with the documented v116 base values x1.25 (v124 pacing), and the market
 // stall thresholds / vacant markers are covered. One browser launch, fresh save.
-import { openGame, check } from './lib/harness.mjs';
+import { openGame, check, scaledCost } from './lib/harness.mjs';
 
 const g = await openGame({ save: 'clear', waitMs: 5000 });
 const { page } = g;
@@ -46,7 +46,7 @@ steps.splice(0, steps.length, ...steps.filter((s) => !s.upgrade));
 check(JSON.stringify(upSteps.map((s) => s.id)) === JSON.stringify(['sawmill2', 'concrete2', 'metal2']) && upSteps.every((s) => !s.prereq), `v161: level-2 steps exist and are locked on a fresh save (${upSteps.map((s) => s.id)})`);
 check(JSON.stringify(steps.map((s) => s.id)) === JSON.stringify(['depot', 'sawmill', 'concrete', 'metal']), `build order depot -> sawmill -> concrete -> metal (${steps.map((s) => s.id)})`);
 const BASE = { depot: [60, 0], sawmill: [100, 0], concrete: [380, 6], metal: [520, 8] };
-for (const s of steps) check(s.money === Math.round(BASE[s.id][0] * 1.25) && s.wood === Math.ceil(BASE[s.id][1] * 1.08),
+for (const s of steps) check(s.money === scaledCost({ money: BASE[s.id][0] }).money && s.wood === scaledCost({ wood: BASE[s.id][1] }).wood,
   `'${s.id}' costs ${s.money} money + ${s.wood} planks (documented ${BASE[s.id][0]}/${BASE[s.id][1]} scaled by v124)`);
 check(steps[0].money < steps[1].money && steps[1].money < steps[2].money && steps[2].money < steps[3].money, 'costs strictly increase along the chain');
 check(steps[0].prereq && !steps[1].prereq && !steps[2].prereq && !steps[3].prereq, 'only the depot has its prerequisite met at the start');

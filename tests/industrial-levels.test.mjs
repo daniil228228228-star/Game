@@ -6,7 +6,7 @@
 // sawmill, exact charge + level + production speed for all three, gold badge in the scene, save field,
 // persistence across a reload, 0 console errors. Fresh save, two page loads in ONE browser launch.
 // Set SHOT=/path.png to also write a screenshot next to the sawmill upgrade pad (manual inspection).
-import { openGame, reloadGame, check } from './lib/harness.mjs';
+import { openGame, reloadGame, check, scaledCost, waitForState, jumpStage } from './lib/harness.mjs';
 
 const g = await openGame({ save: 'clear', waitMs: 5000 });
 const { page } = g;
@@ -24,8 +24,8 @@ check(JSON.stringify(t0.ids.slice(4)) === JSON.stringify(['sawmill2', 'concrete2
 check(t0.markers.every((m) => !m), 'fresh game: no level-2 pad marker');
 const BASE = { sawmill2: [300, 4, 0, 0], concrete2: [1200, 8, 2, 0], metal2: [2800, 10, 4, 1] };
 for (const u of t0.up) {
-  const [m, w, c, mt] = BASE[u.id];
-  check(u.cost.money === Math.round(m * 1.25) && u.cost.wood === Math.ceil(w * 1.08) && u.cost.concrete === Math.ceil(c * 1.08) && u.cost.metal === Math.ceil(mt * 1.08),
+  const [money, wood, concrete, metal] = BASE[u.id], want = scaledCost({ money, wood, concrete, metal });
+  check(u.cost.money === want.money && u.cost.wood === want.wood && u.cost.concrete === want.concrete && u.cost.metal === want.metal,
     `'${u.id}' costs ${JSON.stringify(u.cost)} (documented ${BASE[u.id]} scaled by v124)`);
 }
 check(t0.up[0].cost.money < t0.up[1].cost.money && t0.up[1].cost.money < t0.up[2].cost.money, 'level-2 costs increase sawmill < concrete < metal');
@@ -71,8 +71,12 @@ const early = await ev(() => { stageIndex = 2; const st = industrialStepV118('sa
 check(!early.ok && early.spent === 0 && early.level === 1, `sawmill2 refuses to build below its stage and charges nothing (${J(early)})`);
 
 // ---- 4. production speed at level 1 (concrete/metal timers driven directly with a synthetic dt)
+// Stage jump with the one-time company-tier rewards (COMPANY_TIERS) claimed explicitly: credited exactly once, never twice.
+const tierSum = await ev(() => COMPANY_TIERS.filter((t) => t.stage > 0 && t.stage <= 6).reduce((n, t) => n + t.reward, 0));
+const jump1 = await jumpStage(page, 6), jump2 = await jumpStage(page, 6);
+check(jump1.tierMoney <= tierSum, `stage 0 -> 6 credits the tier rewards at most once (${jump1.tierMoney} of ${tierSum})`);
+check(jump2.tierMoney === 0, `jumping to stage 6 again credits nothing (${jump2.tierMoney}): tier rewards are once per lifetime`);
 const speedL1 = await ev(() => {
-  stageIndex = 6;
   const out = { sawmillInterval: sawmillAutoInterval() };
   const cI = CONCRETE_AUTO_INTERVAL / productionSpeedMultiplier(), mI = METAL_AUTO_INTERVAL / productionSpeedMultiplier();
   concrete = 0; concretePlantTimer = 0; updateConcretePlant(cI / 1.4 + 0.05); out.concrete = concrete;
@@ -85,15 +89,15 @@ check(speedL1.concrete === 0 && speedL1.metal === 0, `level 1: a tick of interva
 // ---- 5. real #actionBtn press on the sawmill pad (stage 3)
 const sawPad = await ev(() => { stageIndex = 3; refreshIndustrialPadMarkersV118(); money = 1e6; planks = 500; const p = industrialStepV118('sawmill2').pos; player.position.set(p.x, 0, p.z); const t = nearestManualTargetV53(); return { x: p.x, z: p.z, cand: t && { type: t.type, step: t.step?.id } }; });
 check(sawPad.cand?.type === 'industrial' && sawPad.cand.step === 'sawmill2', `standing on the pad offers the sawmill upgrade (${J(sawPad.cand)})`);
-const prompt = await page.waitForFunction(() => { const el = document.getElementById('actionPrompt'); return el?.classList.contains('show') ? el.textContent : false; }, null, { timeout: 20000, polling: 'raf' }).then((h) => h.jsonValue(), () => '');
+const prompt = await waitForState(page, () => { const el = document.getElementById('actionPrompt'); return el?.classList.contains('show') ? el.textContent : false; }, null, { fallback: '' });
 check(/Улучшить|Upgrade/.test(prompt), `#actionPrompt offers an upgrade (${prompt})`);
 const sb = await ev(() => ({ money, planks, interval: sawmillAutoInterval() }));
-const pressed = await page.waitForFunction(() => {
+const pressed = await waitForState(page, () => {
   if (industrialLevelV161('sawmill') >= 2) return true;
   const btn = document.getElementById('actionBtn');
   if (btn && !btn.hidden && !btn.disabled) btn.click();
   return false;
-}, null, { timeout: 25000, polling: 'raf' }).then(() => true, () => false);
+}, null, { timeout: 25000 });
 if (!pressed) { console.log('KNOWN ISSUE: pressing #actionBtn on the sawmill2 pad did not upgrade within 25 s; upgraded through the owning function instead'); await ev(() => buildIndustrialStepV118(industrialStepV118('sawmill2'))); }
 const sa = await ev(() => ({ money, planks, interval: sawmillAutoInterval(), level: industrialLevelV161('sawmill'), cost: { ...industrialStepV118('sawmill2').cost }, marker: industrialPadMarkersV118.has('sawmill2'), badge: !!scene.getObjectByName('v161LevelBadge_sawmill')?.parent }));
 check(sa.level === 2 && Math.abs((sb.money - sa.money) - sa.cost.money) <= 3 && sb.planks - sa.planks >= sa.cost.wood - 1 && sb.planks - sa.planks <= sa.cost.wood, `sawmill level 2, charged ~${sa.cost.money} money + ${sa.cost.wood} planks (${Math.round(sb.money - sa.money)} / ${sb.planks - sa.planks})`);
@@ -104,11 +108,14 @@ if (process.env.SHOT) { await page.waitForTimeout(1500); await page.screenshot({
 // ---- 6. concrete2 and metal2 through the owning function: exact charge, level, speed
 for (const id of ['concrete2', 'metal2']) {
   const r = await ev((id) => {
-    stageIndex = 6; try { checkAchievements(); } catch (_) {} // stage-based achievement rewards would otherwise add money inside the measured call
+    // The "+1320" seen here before: COMPANY_TIERS rewards (+420 at stage 4, +900 at stage 6; the +180 of
+    // stage 2 was already claimed at stage 3), once per lifetime, credited by checkCompanyTierRewards()
+    // inside updateHUD() -- intended, NOT a double credit (see CHANGELOG_V161.md). Claim them before measuring.
+    stageIndex = 6; checkCompanyTierRewards();
     money = 1e6; planks = 500; concrete = 100; metal = 100; refreshIndustrialPadMarkersV118();
     const st = industrialStepV118(id), b = { money, planks, concrete, metal };
-    // Measure the money charged inside tryPayResources itself: something unrelated (rewards after a stage jump)
-    // can add money elsewhere in the same call, which a before/after delta would mix in (seen as -1320 on concrete2).
+    // Measure the money charged inside tryPayResources itself (a before/after delta would also mix in any
+    // reward credited elsewhere in the same call, e.g. the tier rewards above).
     const orig = tryPayResources; let charged = null;
     tryPayResources = function (c) { const m0 = money, r0 = orig.apply(this, arguments); charged = m0 - money; return r0; };
     let ok; try { ok = buildIndustrialStepV118(st); } finally { tryPayResources = orig; }
