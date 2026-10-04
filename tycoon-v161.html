@@ -3144,7 +3144,7 @@ function sanitizeIndustrialLevelsV161(raw) {
    profile, no bracing. */
 function addConveyorFlatBox(width, thickness, baseY, material, beltAngle, beltLen) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, thickness, beltLen), material);
-  mesh.position.set((GENERATOR_POS.x + SAWMILL_POS.x) / 2, baseY, (GENERATOR_POS.z + SAWMILL_POS.z) / 2);
+  mesh.position.set((GENERATOR_POS.x + SAWMILL_BELT_END_V161.x) / 2, baseY, (GENERATOR_POS.z + SAWMILL_BELT_END_V161.z) / 2); // v161: belt ends at the mill dock
   mesh.rotation.y = beltAngle;
   mesh.receiveShadow = true;
   mesh.userData.v116Conveyor = true;
@@ -3157,6 +3157,9 @@ let carriedLogs = 0;
 const BASE_MAX_CARRIED_LOGS = 3;
 let sawmillDropoff = null;
 const SAWMILL_DROPOFF_POS = SAWMILL_POS.clone().add(new THREE.Vector3(2.75, 0, 1.7));
+// v161 sawmill v2 (assets/sawmill-v161.js): the log belt used to run to the middle of the mill; now it ends 2.0 m before SAWMILL_POS on the belt axis,
+// i.e. at the dock inside the east loading bay, under the roof of the single mill building.
+const SAWMILL_BELT_END_V161 = SAWMILL_POS.clone().addScaledVector(new THREE.Vector3().subVectors(GENERATOR_POS, SAWMILL_POS).setY(0).normalize(), 2.0);
 let nearSawmillDropoff = false;
 const conveyorSlats = [];
 let sawmillBlade = null;
@@ -3282,7 +3285,7 @@ function buildSawmillScenery() {
   // lumber stacks, log yard, sawdust) replaces the old siding box + gable roof that read as a house. Same position/collider/belt.
   installSawmillMillV161(industrialLevelV161('sawmill'));
 
-  const beltDir = new THREE.Vector3().subVectors(SAWMILL_POS, GENERATOR_POS);
+  const beltDir = new THREE.Vector3().subVectors(SAWMILL_BELT_END_V161, GENERATOR_POS); // v161: ends at the dock under the roof
   const beltLen = beltDir.length();
   const beltAngle = Math.atan2(beltDir.x, beltDir.z);
   const beltDirNorm = beltDir.clone().normalize();
@@ -3297,7 +3300,7 @@ function buildSawmillScenery() {
   // whole belt -- no more bridge, so no dense run of tall braced posts concentrated over it.
   function addConveyorSupport(worldT) {
     const support = new THREE.Group();
-    const pos = GENERATOR_POS.clone().lerp(SAWMILL_POS, worldT / beltLen);
+    const pos = GENERATOR_POS.clone().lerp(SAWMILL_BELT_END_V161, worldT / beltLen);
     const postH = 0.44;
     const postMat = createMetalMaterial(0x746955, { roughness: 0.84, metalness: 0.12 });
     const postL = new THREE.Mesh(new THREE.BoxGeometry(0.12, postH, 0.12), postMat);
@@ -3325,7 +3328,7 @@ function buildSawmillScenery() {
   const rollerMat = createMetalMaterial(0x9099a6, { roughness: 0.46, metalness: 0.5 });
   for (let i = 0; i < 10; i++) {
     const t = (i + 0.5) / 10;
-    const pos = new THREE.Vector3().lerpVectors(GENERATOR_POS, SAWMILL_POS, t);
+    const pos = new THREE.Vector3().lerpVectors(GENERATOR_POS, SAWMILL_BELT_END_V161, t);
     const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.02, 14), rollerMat);
     roller.rotation.z = Math.PI / 2;
     roller.rotation.y = beltAngle;
@@ -3334,16 +3337,16 @@ function buildSawmillScenery() {
     scene.add(roller);
   }
   const motor = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.5, 0.72), createMetalMaterial(0x3d6b85, { roughness: 0.5, metalness: 0.24 }));
-  const motorPos = new THREE.Vector3().lerpVectors(GENERATOR_POS, SAWMILL_POS, 0.82);
+  const motorPos = new THREE.Vector3().lerpVectors(GENERATOR_POS, SAWMILL_BELT_END_V161, 0.82);
   motor.position.set(motorPos.x + Math.cos(beltAngle) * 0.94, 0.3, motorPos.z - Math.sin(beltAngle) * 0.94);
   motor.rotation.y = beltAngle;
   motor.userData.v116Conveyor = true;
   scene.add(motor);
 
   conveyorData = {
-    start: GENERATOR_POS.clone().lerp(SAWMILL_POS, 0.17).setY(0.34),
-    end: SAWMILL_POS.clone().lerp(GENERATOR_POS, -0.02).setY(0.34),
-    flatStart: GENERATOR_POS.clone().lerp(SAWMILL_POS, 0.02),
+    start: GENERATOR_POS.clone().lerp(SAWMILL_BELT_END_V161, 0.17).setY(0.34),
+    end: SAWMILL_BELT_END_V161.clone().lerp(GENERATOR_POS, -0.02).setY(0.34),
+    flatStart: GENERATOR_POS.clone().lerp(SAWMILL_BELT_END_V161, 0.02),
     dir: beltDirNorm,
     length: beltLen,
     angle: beltAngle,
@@ -3740,6 +3743,7 @@ function updateMetalPlant(dt) {
     if (distToNearestRoadSegment(x, z) < (roadClear || 2.8)) return false;
     if (Math.hypot(x - GENERATOR_POS.x, z - GENERATOR_POS.z) < 7.0) return false;
     if (Math.hypot(x - SAWMILL_POS.x, z - SAWMILL_POS.z) < 6.0) return false;
+    if (typeof sawmillKeepOutV161 === 'function' && sawmillKeepOutV161(x, z)) return false; // v161: footprint of the sawmill building + 4 m
     return true;
   }
 
@@ -3902,6 +3906,7 @@ function updateMetalPlant(dt) {
     if (distToNearestRoadSegment(x, z) < roadClear) return false;
     if (Math.hypot(x - GENERATOR_POS.x, z - GENERATOR_POS.z) < genClear) return false;
     if (Math.hypot(x - SAWMILL_POS.x, z - SAWMILL_POS.z) < sawClear) return false;
+    if (typeof sawmillKeepOutV161 === 'function' && sawmillKeepOutV161(x, z)) return false; // v161: footprint of the sawmill building + 4 m
     for (let i = 0; i < STAGES.length; i++) {
       const p = stagePosition(i);
       if (Math.hypot(x - p.x, z - p.z) < stageClear) return false;
@@ -6228,7 +6233,10 @@ function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
 
   group.position.copy(pos);
   scene.add(group);
-  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 5.4 * envH, 8, 1, true), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.16, side: THREE.DoubleSide }));
+  // v161: the beam stands on the same axis as the phase plate. A transparent material writes depth by default and renders before the label (renderOrder 10),
+  // so the label failed the depth test behind the beam's near wall: a vertical stripe cut through the text. Beam: no depth write, drawn first (renderOrder 2).
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 5.4 * envH, 8, 1, true), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }));
+  beacon.renderOrder = 2;
   beacon.position.y = 2.8 * envH;
   group.add(beacon);
   const site = {
@@ -8194,8 +8202,9 @@ function spawnPad(index) {
 
   const beacon = new THREE.Mesh(
     new THREE.CylinderGeometry(0.025, 0.025, 0.72, 8, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xffc756, transparent: true, opacity: 0.09, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ color: 0xffc756, transparent: true, opacity: 0.09, side: THREE.DoubleSide, depthWrite: false }) // v161: no depth write, see the construction-site beacon
   );
+  beacon.renderOrder = 2;
   beacon.position.y = 0.38;
   group.add(beacon);
 
@@ -15159,8 +15168,9 @@ function ensureGuideWorldMarker(){
   g.add(ring);
   const column = new THREE.Mesh(
     new THREE.CylinderGeometry(0.16, 0.28, 2.9, 18, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xffe19c, transparent: true, opacity: 0.16, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ color: 0xffe19c, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }) // v161: no depth write (it cut the "ЦЕЛЬ / иди сюда" plate), drawn before labels
   );
+  column.renderOrder = 2;
   column.position.y = 1.48;
   g.add(column);
   const label = makeLabelSprite([lang==='ru' ? 'ЦЕЛЬ' : 'TARGET']);
@@ -32526,6 +32536,9 @@ window.__TYCOON_V74_BUILD__={
       const c=STATIC_COLLIDERS[i];if(!c?.pos)continue;
       registerCircle(c.pos,Number(c.radius)||.4,'industrial',`static:${i}`);
     }
+    // v161 sawmill v2: the real hall and the plank stack as oriented boxes (assets/sawmill-v161.js). Players and agents are blocked, placement
+    // is off on purpose: road/decor planners keep using the old circle + v114 lots, so a production level change never re-lays roads.
+    for(const o of (typeof sawmillObstaclesV161==='function'?sawmillObstaclesV161():[]))register({category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
 
     // Real company-base modules and special-project landmarks use their actual visible bounds.
     for(const [key,g] of (baseRuntime?.groups||new Map()))registerRoot(g,'base',`base:${key}`,{shrink:.93});
@@ -38351,11 +38364,11 @@ body.v142-nav-near #actionBtn[data-v119-manual-action]{min-height:52px}
   function makeMaterial(color,opacity,depthTest=true){return new THREE.MeshBasicMaterial({color,transparent:true,opacity,depthWrite:false,depthTest,toneMapped:false});}
   function ensure(){
     if(root)return root;
-    root=new THREE.Group();root.name='manualDestinationV142';root.visible=false;root.renderOrder=20;
-    ring=new THREE.Mesh(new THREE.TorusGeometry(.82,.055,8,40),makeMaterial(colors.pickup,.9,false));ring.rotation.x=Math.PI/2;ring.position.y=.07;ring.renderOrder=20;root.add(ring);
-    halo=new THREE.Mesh(new THREE.RingGeometry(.62,.98,40),makeMaterial(colors.pickup,.16,false));halo.rotation.x=-Math.PI/2;halo.position.y=.035;halo.renderOrder=19;root.add(halo);
-    beam=new THREE.Mesh(new THREE.CylinderGeometry(.055,.16,2.3,12,1,true),makeMaterial(colors.pickup,.12,true));beam.position.y=1.17;beam.renderOrder=10;root.add(beam);
-    arrow=new THREE.Mesh(new THREE.ConeGeometry(.24,.42,5),makeMaterial(colors.pickup,.92,false));arrow.position.y=1.55;arrow.rotation.x=Math.PI;arrow.renderOrder=21;root.add(arrow);
+    root=new THREE.Group();root.name='manualDestinationV142';root.visible=false;root.renderOrder=0; // v161: was 20 -- r128 sorts by the parent Group's renderOrder first, so the whole beacon (opaque-ish arrow, ring) was drawn AFTER every plate and over its text
+    ring=new THREE.Mesh(new THREE.TorusGeometry(.82,.055,8,40),makeMaterial(colors.pickup,.9,false));ring.rotation.x=Math.PI/2;ring.position.y=.07;ring.renderOrder=6;root.add(ring);
+    halo=new THREE.Mesh(new THREE.RingGeometry(.62,.98,40),makeMaterial(colors.pickup,.16,false));halo.rotation.x=-Math.PI/2;halo.position.y=.035;halo.renderOrder=5;root.add(halo);
+    beam=new THREE.Mesh(new THREE.CylinderGeometry(.055,.16,2.3,12,1,true),makeMaterial(colors.pickup,.12,true));beam.position.y=1.17;beam.renderOrder=3;root.add(beam);
+    arrow=new THREE.Mesh(new THREE.ConeGeometry(.24,.42,5),makeMaterial(colors.pickup,.92,false));arrow.position.y=1.55;arrow.rotation.x=Math.PI;arrow.renderOrder=7;root.add(arrow); // v161: all below the plates' renderOrder 10
     scene.add(root);return root;
   }
   function recolor(mode){const color=colors[mode]||colors.pickup;for(const mesh of [ring,halo,beam,arrow])mesh.material.color.setHex(color);}

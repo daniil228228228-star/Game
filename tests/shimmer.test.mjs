@@ -332,7 +332,7 @@ for (const lv of [1, 2, 3]) {
   sawInfo[lv] = info;
 }
 check(sawInfo[1]?.found && sawInfo[2]?.level === 2 && sawInfo[3]?.level === 3, 'the redesigned sawmill rebuilds for level 2 and 3 (v161SawmillMill)');
-check(sawInfo[3].meshes <= 20, `mill mesh count stays modest for mobile (L1 ${sawInfo[1]?.meshes}, L2 ${sawInfo[2]?.meshes}, L3 ${sawInfo[3]?.meshes} meshes)`);
+check(sawInfo[3].meshes <= 26, `mill mesh count stays modest for mobile (sawmill v2 has animated parts: 22/23/24 meshes, v1 was 11/12/13) (L1 ${sawInfo[1]?.meshes}, L2 ${sawInfo[2]?.meshes}, L3 ${sawInfo[3]?.meshes} meshes)`);
 
 // ---------------------------------------------------------------- hard checks
 const hard = (cond, msg) => { if (REPORT_ONLY) console.log((cond ? 'ok(report): ' : 'WOULD FAIL(report): ') + msg); else check(cond, msg); };

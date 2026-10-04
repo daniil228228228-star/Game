@@ -55,7 +55,7 @@
   // service roads/other pads/loading zones/mine nodes, outside every tree ring, clear of tall meshes and colliders.
   const V = (base, dx, dz) => new THREE.Vector3(base.x + dx, 0, base.z + dz);
   const POS = {
-    sawmill3: V(SAWMILL_POS, -1.5, -3.8),
+    sawmill3: V(SAWMILL_POS, -0.4, -6.4), // v161 sawmill v2: was (-1.5, -3.8), which is inside the level-2 north annex of the single mill building
     concrete3: V(CONCRETE_PLANT_POS, -3.4, -3.7),
     metal3: V(METAL_YARD_POS, 3.3, -3.4),
     workshop: V(METAL_YARD_POS, -2.5, -6.6),
