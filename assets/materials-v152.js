@@ -23,7 +23,7 @@ function surfaceTextureV152(family, kind='albedo') {
   });
   texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
   texture.encoding=kind==='albedo'?THREE.sRGBEncoding:THREE.LinearEncoding;
-  texture.anisotropy=4;
+  texture.anisotropy=8; // v161: 4 -> 8 (applySceneLightingV152 re-applies the quality tier below)
   texture.userData={v152Family:family,v152Kind:kind};
   surfaceCacheV152.set(key,texture);
   return texture;
@@ -100,7 +100,7 @@ function applySceneLightingV152() {
     surfaceRuntimeV152.quality=q;
     const size=q==='low'?512:(VISUAL_MOBILE||q==='mid'?1024:2048);
     if(sun.shadow.mapSize.x!==size){sun.shadow.map?.dispose();sun.shadow.map=null;sun.shadow.mapSize.set(size,size);sun.shadow.needsUpdate=true;}
-    const aniso=Math.min(q==='low'?2:VISUAL_MOBILE?4:8,renderer.capabilities.getMaxAnisotropy());
+    const aniso=Math.min(q==='low'?2:q==='mid'?4:8,renderer.capabilities.getMaxAnisotropy()); // v161: high tier 8 on phones too (was 4): oblique grass/road no longer aliases
     for(const texture of surfaceCacheV152.values()){texture.anisotropy=aniso;texture.needsUpdate=true;}
   }
   surfaceRuntimeV152.lightingFrames++;

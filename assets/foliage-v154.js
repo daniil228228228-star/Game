@@ -44,15 +44,21 @@ function applyTerrainMaterialV154(material){
       uniform sampler2D v154SoilMap;
       float v154Hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
       float v154Noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(v154Hash(i),v154Hash(i+vec2(1.0,0.0)),f.x),mix(v154Hash(i+vec2(0.0,1.0)),v154Hash(i+vec2(1.0,1.0)),f.x),f.y);}
-    `).replace('#include <map_fragment>',`#include <map_fragment>
+    `).replace('#include <map_fragment>',`
+      /* v161 anti-shimmer: grass.jpg/dirt.jpg carry a 3-4 px diagonal weave (hf energy ~1 level/px); on a ground plane seen at a
+         grazing angle it lands near Nyquist and shows as the "water ripple" that crawls while walking. A +2 mip bias drops the weave
+         (the image itself stays untouched) and keeps the broad blotches that give the lawn its colour variation. */
+      vec4 texelColor = texture2D( map, vUv, 2.0 );
+      texelColor = mapTexelToLinear( texelColor );
+      diffuseColor *= texelColor;
       float broad=v154Noise(v154TerrainXZ*.065);
       float wearField=v154Noise(v154TerrainXZ*.27+vec2(13.0,7.0));
-      vec3 soil=mapTexelToLinear(texture2D(v154SoilMap,v154TerrainXZ/4.0)).rgb;
+      vec3 soil=mapTexelToLinear(texture2D(v154SoilMap,v154TerrainXZ/4.0,2.0)).rgb;
       float wear=smoothstep(.60,.91,wearField)*.19;
       diffuseColor.rgb=mix(diffuseColor.rgb,soil*diffuse,wear)*(0.94+0.12*broad);
     `);
   };
-  material.customProgramCacheKey=()=> 'terrain-v154';material.needsUpdate=true;
+  material.customProgramCacheKey=()=> 'terrain-v161';material.needsUpdate=true;
 }
 function animateFoliageV154(now){
   if(document.hidden)return;

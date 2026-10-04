@@ -27,7 +27,7 @@
       o.geometry=g;
       retired.add(original);
       m.bumpMap=family==='grass'?null:surfaceTextureV152(family,'height');
-      m.roughnessMap=surfaceTextureV152(family,'roughness');
+      m.roughnessMap=family==='grass'?null:surfaceTextureV152(family,'roughness'); // v161: grass roughness is flat 0.97 (std 2/255); one sampler less, no extra aliasing channel
       m.bumpScale=SURFACES_V152[family].bump;
       m.roughness=1;m.needsUpdate=true;
       if(typeof applyTerrainMaterialV154==='function')applyTerrainMaterialV154(m);

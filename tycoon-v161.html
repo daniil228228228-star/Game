@@ -921,6 +921,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="vendor/three_r128/OrbitControls.js"></script>
 <!-- standaloneAssetsV161: textures/height/roughness maps live in assets/ (inlined by tools/standalone.mjs build) -->
 <script src="assets/materials-v152.js"></script>
+<script src="assets/sawmill-v161.js"></script>
 <script src="assets/foliage-v154.js"></script>
 <script src="assets/work-session-v158.js"></script>
 <script src="assets/development-core-v160.js"></script>
@@ -1826,7 +1827,9 @@ const sfx = {
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xcfe9ff, 40, 175);
 
-const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 500);
+// v161 anti-shimmer: near 0.1 -> 0.35 gives 3.5x the depth precision at distance (roads/curbs/decals sit 1-10 mm apart);
+// the orbit camera never gets closer than CAM_MIN_DIST = 3.5 to the player, so nothing relevant is clipped.
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.35, 500);
 
 // Gradient sky dome (cheap vertex-height gradient) instead of a flat background color.
 const sky = new THREE.Mesh(
@@ -1949,7 +1952,7 @@ renderer.domElement.addEventListener('touchstart', markCameraUserInput, { passiv
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.18;
-const TEXTURE_ANISOTROPY = Math.min(VISUAL_MOBILE ? 4 : 12, renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 8);
+const TEXTURE_ANISOTROPY = Math.min(VISUAL_MOBILE ? 8 : 12, renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 8);
 
 const hemi = new THREE.HemisphereLight(0xe2eff7, 0x5a6347, 1.14);
 scene.add(hemi);
@@ -1959,7 +1962,9 @@ sun.position.set(60, 90, 30);
 sun.castShadow = true;
 sun.shadow.mapSize.set(VISUAL_MOBILE ? 1024 : 2048, VISUAL_MOBILE ? 1024 : 2048);
 sun.shadow.bias = -0.00022;
-sun.shadow.normalBias = 0.035;
+// v161 anti-shimmer: the 1024 map covers +-72 m (0.14 m per texel); 0.035 was a quarter of a texel, so grazing-sun
+// surfaces (grass/roads at morning and evening, the day cycle moves the sun) showed acne that crawls with the camera.
+sun.shadow.normalBias = 0.09;
 sun.shadow.camera.left = -GROUND_HALF;
 sun.shadow.camera.right = GROUND_HALF;
 sun.shadow.camera.top = GROUND_HALF;
@@ -3273,101 +3278,9 @@ function buildSawmillScenery() {
   }
   addLogPile(new THREE.Vector3(GENERATOR_POS.x + 1.7, 0, GENERATOR_POS.z - 1.2), 6);
 
-  const mill = new THREE.Group();
-  mill.add(createFoundation(4.8, 3.8, 0.18, 0xcdbfa8));
-  const floorPad = new THREE.Mesh(new THREE.BoxGeometry(5.8, 0.04, 4.4), yardMat);
-  floorPad.position.set(0, 0.2, 0.1);
-  mill.add(floorPad);
-  const millBody = new THREE.Mesh(new THREE.BoxGeometry(3.85, 2.62, 2.9), createSidingMaterial(0xb08a5a, { roughness: 0.86 }));
-  millBody.position.y = 1.4;
-  millBody.castShadow = true;
-  millBody.receiveShadow = true;
-  mill.add(millBody);
-  const millRoof = createGableRoof(4.2, 3.3, 1.04, createRoofMaterial(0x6b3f22, { roughness: 0.92 }));
-  millRoof.position.y = 2.7;
-  mill.add(millRoof);
-  // v116 art pass: corner trim (matches buildHouse()'s treatment), a roof vent, a service
-  // ladder up the gable end, and a wall-mounted pipe -- the mill body used to be a single flat
-  // siding box with only windows/a vent break it up.
-  addCornerPillars(mill, 3.85, 2.9, 2.62 + 0.16, 0xf1eadf);
-  addRoofVent(mill, 1.1, 3.34, -0.6, 0.26, 0.16, 0.2);
-  const millLadderMat = createMetalMaterial(0x7d8691, { roughness: 0.72 });
-  for (const lx of [-1.78, -1.64]) {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.03, 1.7, 0.03), millLadderMat);
-    rail.position.set(lx, 1.9, -1.44);
-    mill.add(rail);
-  }
-  for (let i = 0; i < 9; i++) {
-    const rung = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.02, 0.02), millLadderMat);
-    rung.position.set(-1.71, 1.1 + i * 0.19, -1.44);
-    mill.add(rung);
-  }
-  const millPipeMat = createMetalMaterial(0x69717e, { roughness: 0.7, metalness: 0.42 });
-  const millPipe = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.6, 10), millPipeMat);
-  millPipe.rotation.z = Math.PI / 2;
-  millPipe.position.set(0, 2.2, -1.5);
-  mill.add(millPipe);
-  const loadingCanopy = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.08, 0.84), woodDark);
-  loadingCanopy.position.set(1.32, 1.94, 1.74);
-  mill.add(loadingCanopy);
-  for (const sx of [0.74, 1.92]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.48, 0.1), woodDark);
-    post.position.set(sx - 0.6, 0.84, 1.74);
-    post.castShadow = true;
-    mill.add(post);
-  }
-  for (let i = -1; i <= 1; i++) {
-    const w = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.5, 0.05), createGlassMaterial({ opacity: 0.68, emissive: 0x31536b, emissiveIntensity: 0.12 }));
-    w.position.set(i * 0.8, 1.46, 1.48);
-    mill.add(w);
-  }
-  const ventBox = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.5, 0.24), createCorrugatedMaterial(0x7e8794, { roughness: 0.7 }));
-  ventBox.position.set(-1.74, 1.18, -0.48);
-  mill.add(ventBox);
-
-  const sawDeck = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.18, 0.78), createMetalMaterial(0x5c6572, { roughness: 0.62, metalness: 0.26 }));
-  sawDeck.position.set(1.92, 1.0, 0);
-  mill.add(sawDeck);
-  const bladeGuard = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.4, 0.18), createMetalMaterial(0x9099a6, { roughness: 0.56, metalness: 0.28 }));
-  bladeGuard.position.set(1.92, 1.34, -0.16);
-  mill.add(bladeGuard);
-  // Hazard stripe on the blade guard -- a spinning saw blade right behind it had no warning
-  // marking at all.
-  addHazardChevrons(mill, 3, new THREE.Vector3(1.92, 1.34, -0.245), 0, 0.26, [0.14, 0.3, 0.02]);
-  const bladeAssembly = new THREE.Group();
-  bladeAssembly.position.set(1.92, 1.28, 0.12);
-  const blade = new THREE.Mesh(new THREE.CylinderGeometry(0.56, 0.56, 0.08, 24), createMetalMaterial(0xd8d8e0, { metalness: 0.72, roughness: 0.24, emissive: 0x222233, emissiveIntensity: 0.22 }));
-  blade.rotation.x = Math.PI / 2;
-  bladeAssembly.add(blade);
-  for (let i = 0; i < 12; i++) {
-    const angle = i * Math.PI / 6;
-    const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, 0.05), createMetalMaterial(0xe6e7ee, { metalness: 0.78, roughness: 0.2 }));
-    tooth.position.set(Math.cos(angle) * 0.61, Math.sin(angle) * 0.61, 0);
-    tooth.rotation.z = angle;
-    bladeAssembly.add(tooth);
-  }
-  mill.add(bladeAssembly);
-
-  const lumberRack = new THREE.Group();
-  lumberRack.position.set(0, 0, -1.78);
-  const rackMetal = createMetalMaterial(0x56606d, { roughness: 0.72, metalness: 0.25 });
-  for (const sx of [-0.84, 0.84]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.1, 0.08), rackMetal);
-    post.position.set(sx, 0.56, 0);
-    lumberRack.add(post);
-  }
-  for (let i = 0; i < 4; i++) {
-    const board = new THREE.Mesh(new THREE.BoxGeometry(1.76, 0.12, 0.34), woodLight);
-    board.position.set(0, 0.14 + i * 0.16, 0);
-    board.castShadow = true;
-    lumberRack.add(board);
-  }
-  mill.add(lumberRack);
-
-  mill.position.copy(SAWMILL_POS);
-  scene.add(mill);
-  sawmillBlade = bladeAssembly;
-  addLogPile(new THREE.Vector3(SAWMILL_POS.x - 1.45, 0, SAWMILL_POS.z + 1.04), 8);
+  // v161 redesign (assets/sawmill-v161.js): open timber-frame sawmill (saw carriage on the belt axis, circular saw, plank conveyor,
+  // lumber stacks, log yard, sawdust) replaces the old siding box + gable roof that read as a house. Same position/collider/belt.
+  installSawmillMillV161(industrialLevelV161('sawmill'));
 
   const beltDir = new THREE.Vector3().subVectors(SAWMILL_POS, GENERATOR_POS);
   const beltLen = beltDir.length();
@@ -4510,7 +4423,8 @@ function updateTreeInteraction() {
 }
 
 function updateSawmill(dt) {
-  if (sawmillBlade) sawmillBlade.rotation.z += dt * 12;
+  if (typeof updateSawmillMillV161 === 'function' && sawmillMillV161) updateSawmillMillV161(dt); // v161: spins every blade of the redesigned mill
+  else if (sawmillBlade) sawmillBlade.rotation.z += dt * 12;
 
   // Once the company has its first building, the sawmill begins a slow automatic cycle.
   // Manual chopping still gives extra planks and remains the fastest way to gather wood.
@@ -5225,6 +5139,7 @@ function buildHouse(stage, height, baseSize) {
   group.add(steps);
   const door = new THREE.Mesh(new THREE.BoxGeometry(baseSize * 0.2, height * 0.44, 0.06), createWoodMaterial(0x4a2f1a));
   door.position.set(0, height * 0.22 + 0.22, baseSize * 0.44);
+  door.userData.v161Door = true; // tests/house-door.test.mjs measures door-to-driveway from this mesh
   group.add(door);
   for (const sx of [-1, 1]) {
     const porchPost = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.52, 0.06), trimMat);
@@ -6584,6 +6499,18 @@ function createBuildingMesh(stage, level = 1) {
   enhanceBuildingGeometry(group, stage, height, baseSize, level);
   addBuildingVisualPolish(group, stage, height, baseSize, level);
   addUnifiedBuildingLanguage(group, stage, height, baseSize, level);
+  // v161 (user, iPhone test: "вход в дом с другой стороны от въезда"): every builder puts the door/porch/apron on local +Z,
+  // while the driveway of a main-line building always arrives from the hub side (stageAccessAxisV92 -> stageRoadEndpointV367).
+  // Turn the whole building (a pure yaw about its own origin, so position/collider/road geometry are untouched) so that
+  // +Z points at the driveway. Only main-line STAGES entries; district/plot/civic buildings pass ad-hoc stage objects.
+  const stageIdxV161 = STAGES.indexOf(stage);
+  if (stageIdxV161 >= 0) {
+    const axis = typeof stageAccessAxisV92 === 'function' ? stageAccessAxisV92(stageIdxV161) : null;
+    if (axis) {
+      group.rotation.y = Math.atan2(-axis.x, -axis.z);
+      group.userData.frontV161 = { x: -axis.x, z: -axis.z };
+    }
+  }
   return group;
 }
 
@@ -6592,7 +6519,9 @@ function createBuildingMesh(stage, level = 1) {
 function smokeTopsFor(mesh, pos) {
   const tops = mesh.userData.stackTops;
   if (!tops || !tops.length) return null;
-  return tops.map(local => new THREE.Vector3(pos.x + local.x, local.y, pos.z + local.z));
+  // v161: the building mesh is yawed to face its driveway (createBuildingMesh), so rotate the local chimney offsets too.
+  const yaw = mesh.rotation ? mesh.rotation.y : 0, cy = Math.cos(yaw), sy = Math.sin(yaw);
+  return tops.map(local => new THREE.Vector3(pos.x + local.x * cy + local.z * sy, local.y, pos.z - local.x * sy + local.z * cy));
 }
 
 function spawnBuilding(index, level, { grow = true } = {}) {
@@ -8456,6 +8385,7 @@ function refreshIndustrialPadMarkersV118() {
 // also appears after load()). Pure scene dressing: no collider, no road, no save field of its own.
 const industrialBadgesV161 = new Map(); // kind -> THREE.Group
 function refreshIndustrialBadgesV161() {
+  if (typeof refreshSawmillVisualsV161 === 'function') refreshSawmillVisualsV161(); // v161: rebuild the mill when the production level changed (also after load())
   for (const kind of ['sawmill', 'concrete', 'metal']) {
     // one badge per kind showing the HIGHEST bought level (level 3 comes from assets/production-chain-v161.js): the
     // level-2 badge is replaced by a "III" one at the level-3 pad's spot
@@ -15795,13 +15725,17 @@ setInterval(()=>{if(document.hidden)return;const sig=v352AccessSignatureNow();if
 /*  Fixes the biggest visual issue from v34-v35: duplicated access lanes,  */
 /*  overlapping driveway stripes, and low-quality road joins.             */
 /* ---------------------------------------------------------------------- */
+// v161 anti-shimmer: ONE asphalt colour. A raw 0x262a2f in r128 is a LINEAR value (renders mid-grey), the canonical road colour is sRGB 0x262a2f
+// converted to linear (v98 sharedAsphalt98, canonicalBlackMaterial). Every asphalt material below used the raw one, so any road piece that had not
+// yet been swapped to sharedAsphalt98 by normalizeAsphalt showed as a grey patch beside the dark road (the dark/grey fan on corners).
+const ASPHALT_COLOR_V161 = new THREE.Color(0x262a2f).convertSRGBToLinear();
 const ROAD_STYLE_V353={
   // V105: clean matte road family. Legacy apron/parking helpers still reference these
   // materials, so the base library itself must be clean rather than relying on a later
   // normalizer to catch every mesh.
-  asphalt:new THREE.MeshStandardMaterial({color:0x262a2f,roughness:0.97,metalness:0.0}),
+  asphalt:new THREE.MeshStandardMaterial({color:ASPHALT_COLOR_V161,roughness:0.97,metalness:0.0}),
   // Bays, aprons and junctions must not look like black patches laid over the road.
-  asphaltDark:new THREE.MeshStandardMaterial({color:0x262a2f,roughness:0.97,metalness:0.0}),
+  asphaltDark:new THREE.MeshStandardMaterial({color:ASPHALT_COLOR_V161,roughness:0.97,metalness:0.0}),
   curb:new THREE.MeshStandardMaterial({color:0xbfc0bc,roughness:0.97,metalness:0.0}),
   walk:new THREE.MeshStandardMaterial({color:0xd1d0cb,roughness:0.985,metalness:0.0}),
   lane:new THREE.MeshStandardMaterial({color:0xf0efe8,roughness:0.9,metalness:0.0}),
@@ -17772,9 +17706,9 @@ const ROAD_V38={
   // different glossy material. All three tiers remain one believable matte road family.
   // Road levels are communicated by width, curbs, walks and paint. One asphalt tone keeps
   // mixed-level intersections from exposing a different-colour patch at their centre.
-  deck1:new THREE.MeshStandardMaterial({color:0x262a2f,roughness:.97,metalness:0}),
-  deck2:new THREE.MeshStandardMaterial({color:0x262a2f,roughness:.97,metalness:0}),
-  deck3:new THREE.MeshStandardMaterial({color:0x262a2f,roughness:.97,metalness:0}),
+  deck1:new THREE.MeshStandardMaterial({color:ASPHALT_COLOR_V161,roughness:.97,metalness:0}),
+  deck2:new THREE.MeshStandardMaterial({color:ASPHALT_COLOR_V161,roughness:.97,metalness:0}),
+  deck3:new THREE.MeshStandardMaterial({color:ASPHALT_COLOR_V161,roughness:.97,metalness:0}),
   walk:new THREE.MeshStandardMaterial({color:0xc8c7c2,roughness:.985,metalness:0}),
   curb:new THREE.MeshStandardMaterial({color:0xa8aba8,roughness:.98,metalness:0}),
   line:ROAD_STYLE_V353.edge,
@@ -19719,28 +19653,14 @@ body{color:var(--v43-text);-webkit-font-smoothing:antialiased;text-rendering:opt
   }
   function tuneRoadAndGroundV43(){
     try{
-      const asphaltTex=makeCanvasTextureV43(512,(ctx,s)=>{
-        const grad=ctx.createLinearGradient(0,0,0,s); grad.addColorStop(0,'#5e6670'); grad.addColorStop(1,'#394149');
-        ctx.fillStyle=grad; ctx.fillRect(0,0,s,s);
-        for(let i=0;i<5200;i++){
-          const x=Math.random()*s,y=Math.random()*s,a=.02+Math.random()*.05;
-          ctx.fillStyle=`rgba(255,255,255,${a})`; ctx.fillRect(x,y,1,1);
-          ctx.fillStyle=`rgba(0,0,0,${a*.9})`; ctx.fillRect(x+1,y+1,1,1);
-        }
-        ctx.strokeStyle='rgba(255,255,255,.03)'; ctx.lineWidth=1;
-        for(let y=0;y<=s;y+=26){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(s,y);ctx.stroke();}
-      });
-      asphaltTex.repeat.set(4.6,4.6);
-      [ROAD_STYLE_V353.asphalt, ROAD_STYLE_V353.asphaltDark].forEach((m,i)=>{
-        m.map=asphaltTex; m.bumpMap=typeof getDetailBump==='function'?getDetailBump('asphalt'):m.bumpMap; m.bumpScale=i?0.026:0.022; m.roughness=.9; m.metalness=.02; m.needsUpdate=true;
-      });
-      ROAD_STYLE_V353.asphalt.color.setHex(0x505862);
-      ROAD_STYLE_V353.asphaltDark.color.setHex(0x434b54);
+      /* v161: the noisy canvas asphalt (5200 one-pixel dots, repeat 4.6 on ribbon UVs of 1/8 per metre but on ShapeGeometry UVs in raw
+         metres = 8x denser) and the grey recolour 0x505862/0x434b54 are gone: roads are one matte dark asphalt (ASPHALT_COLOR_V161, v98/v105). */
+      [ROAD_STYLE_V353.asphalt, ROAD_STYLE_V353.asphaltDark].forEach(m=>{ m.roughness=.97; m.needsUpdate=true; });
       ROAD_STYLE_V353.curb.color.setHex(0x7e8791); ROAD_STYLE_V353.curb.roughness=.88; ROAD_STYLE_V353.curb.needsUpdate=true;
       ROAD_STYLE_V353.walk.color.setHex(0xd9dddf); ROAD_STYLE_V353.walk.roughness=.92; ROAD_STYLE_V353.walk.needsUpdate=true;
       ROAD_STYLE_V353.lane.color.setHex(0xf7e0a3); ROAD_STYLE_V353.lane.emissive && ROAD_STYLE_V353.lane.emissive.setHex(0x4b3a11); ROAD_STYLE_V353.lane.emissiveIntensity=.06; ROAD_STYLE_V353.lane.needsUpdate=true;
       ROAD_STYLE_V353.edge.color.setHex(0xf4f4ef); ROAD_STYLE_V353.edge.needsUpdate=true;
-      if(typeof ground!=='undefined' && ground.material){ ground.material.color.setHex(0xeaf5ea); ground.material.roughness=.98; if(ground.material.map) ground.material.map.repeat.set(9,9); ground.material.needsUpdate=true; }
+      if(typeof ground!=='undefined' && ground.material){ ground.material.color.setHex(0xeaf5ea); ground.material.roughness=.98; /* v161: the old ground.material.map.repeat.set(9,9) (pre-v152 0..1 UVs) multiplied the v152 physical UVs (1 tile per 4 m) by 9 -> 0.44 m tiles, the dense grass ripple */ ground.material.needsUpdate=true; }
       if(typeof groundShadow!=='undefined' && groundShadow.material){ groundShadow.material.opacity=.13; }
       if(typeof innerPlaza!=='undefined' && innerPlaza.material){ innerPlaza.material.color.setHex(0xd9c69d); innerPlaza.material.roughness=.9; innerPlaza.material.needsUpdate=true; }
       if(typeof renderer!=='undefined'){ renderer.toneMappingExposure=1.06; }
@@ -29526,7 +29446,10 @@ function roadShapeGeometryXZ(shape,segments=12){
   if(index){
     const positions=geometry.attributes.position,valid=[];
     for(let i=0;i<index.count;i+=3){const a=new THREE.Vector3().fromBufferAttribute(positions,index.getX(i)),b=new THREE.Vector3().fromBufferAttribute(positions,index.getX(i+1)),c=new THREE.Vector3().fromBufferAttribute(positions,index.getX(i+2));const normal=b.sub(a).cross(c.sub(a));if(normal.lengthSq()>1e-14)valid.push(index.getX(i),index.getX(i+(normal.z>=0?1:2)),index.getX(i+(normal.z>=0?2:1)));}
-    geometry.setIndex(valid);const flat=geometry.toNonIndexed();geometry.dispose();flat.computeVertexNormals();flat.userData.roadOutlineXZ=shape.getPoints(segments).map(p=>[p.x,p.y]);return flat;
+    geometry.setIndex(valid);const flat=geometry.toNonIndexed();geometry.dispose();flat.computeVertexNormals();
+  /* v161: ShapeGeometry UVs are raw shape metres, the road ribbons (v86 ribbon()/ribbon59) use 1 uv unit = 8 m; one convention so a textured junction/corner fill tiles like the straight deck next to it (was 8x denser = radial noisy fan) */
+  {const P=flat.attributes.position,U=new Float32Array(P.count*2);for(let i=0;i<P.count;i++){U[i*2]=P.getX(i)/8;U[i*2+1]=P.getY(i)/8;}flat.setAttribute('uv',new THREE.BufferAttribute(U,2));}
+  flat.userData.roadOutlineXZ=shape.getPoints(segments).map(p=>[p.x,p.y]);return flat;
   }
   geometry.computeVertexNormals();return geometry;
 }
@@ -30596,7 +30519,7 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
     // The visible service road stops at the gate. Vehicle graph nodes may continue
     // through the lot invisibly for manoeuvring, but no road deck is drawn across the bays.
     const lotMat=new THREE.MeshStandardMaterial({color:0x30353b,roughness:.99,metalness:0});
-    const roadMat=new THREE.MeshStandardMaterial({color:0x262a2f,roughness:1,metalness:0});
+    const roadMat=new THREE.MeshStandardMaterial({color:ASPHALT_COLOR_V161,roughness:1,metalness:0});
     const lineMat=new THREE.MeshBasicMaterial({color:0xf2efe7,transparent:true,opacity:.78,depthWrite:false});
     const stopMat=new THREE.MeshBasicMaterial({color:0xd8c58a,transparent:true,opacity:.72,depthWrite:false});
     const curbMat=(typeof createConcreteMaterial==='function')
@@ -30615,7 +30538,7 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
 
     // Short entrance throat only: the external road ends here.
     const throat=new THREE.Mesh(new THREE.BoxGeometry(2.18,.034,.78),roadMat);
-    throat.position.set(-8.70+OX,.054,4.62);throat.receiveShadow=true;throat.userData.v116FleetEntrance=true;g.add(throat);
+    throat.position.set(-8.70+OX,.057,4.62); /* v161: was .054 = 2 mm under the lot top (.069) and a different grey -> z-fighting patch at the gate; top is now .074 */throat.receiveShadow=true;throat.userData.v116FleetEntrance=true;g.add(throat);
 
     // Gate posts and rear/side fence define the lot without crossing driving space.
     const fenceRail=(x,z,w,d)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,.055,d),fenceMat);m.position.set(x,.62,z);m.userData.v116FleetFence=true;g.add(m);return m;};
@@ -30740,7 +30663,7 @@ function ensureMaterialsV66(){
     // V96: service roads use the same restrained material family as the city/stage network.
     // The old cloned texture had its own repeat scale and made the yard look like a separate asset pack.
     asphaltTexV66=null;
-    asphaltMatV66=new THREE.MeshStandardMaterial({color:0x262a2f,roughness:.97,metalness:0});
+    asphaltMatV66=new THREE.MeshStandardMaterial({color:ASPHALT_COLOR_V161,roughness:.97,metalness:0});
     curbMatV66=new THREE.MeshStandardMaterial({color:0xa8aba8,roughness:.98,metalness:0});
     edgeMatV66=new THREE.MeshBasicMaterial({color:0xf7f4e8,depthWrite:false});
   }
@@ -34059,12 +33982,12 @@ function makeGroup(){ensureSig();const g=new THREE.Group();g.name='v86CanonicalS
 
 // Per-fragment lighting keeps large decks and finely triangulated junctions consistent
 // under the same point lights. Lambert interpolates illumination from their different vertices.
-const sharedAsphalt98=new THREE.MeshStandardMaterial({color:new THREE.Color(0x262a2f).convertSRGBToLinear(),roughness:1,metalness:0});
+const sharedAsphalt98=new THREE.MeshStandardMaterial({color:ASPHALT_COLOR_V161,roughness:1,metalness:0});
 sharedAsphalt98.userData.sharedRoadSurface=true;
 const cityAsphalt104={
-  1:new THREE.MeshStandardMaterial({color:0x262a2f,roughness:.97,metalness:0}),
-  2:new THREE.MeshStandardMaterial({color:0x262a2f,roughness:.97,metalness:0}),
-  3:new THREE.MeshStandardMaterial({color:0x262a2f,roughness:.97,metalness:0})
+  1:new THREE.MeshStandardMaterial({color:ASPHALT_COLOR_V161,roughness:.97,metalness:0}),
+  2:new THREE.MeshStandardMaterial({color:ASPHALT_COLOR_V161,roughness:.97,metalness:0}),
+  3:new THREE.MeshStandardMaterial({color:ASPHALT_COLOR_V161,roughness:.97,metalness:0})
 };
 const ALLOW=new Set(['stage-main','stage-trunk','perimeter','collector','arterial-master','arterial-connector']);
 let markingApplyTimer=0;
@@ -38795,7 +38718,7 @@ body.v51-perf-low :is(#hud .stat,#topRightBtns .iconBtn,#nextCard,#actionPrompt,
   function installVignette(){if(document.getElementById('premiumVignetteV147'))return;const el=document.createElement('div');el.id='premiumVignetteV147';el.setAttribute('aria-hidden','true');document.body.appendChild(el);}
   function refineTextures(){
     runtime.texturesRefined=0;runtime.materialCount=0;
-    const seen=new Set(),max=Math.min(VISUAL_MOBILE?4:12,renderer.capabilities.getMaxAnisotropy?.()||8);
+    const seen=new Set(),max=Math.min(VISUAL_MOBILE?8:12,renderer.capabilities.getMaxAnisotropy?.()||8);
     scene.traverse(obj=>{if(!obj?.isMesh)return;const mats=Array.isArray(obj.material)?obj.material:[obj.material];for(const mat of mats){if(!mat)continue;runtime.materialCount++;for(const key of ['map','normalMap','bumpMap','roughnessMap','metalnessMap','emissiveMap']){const tex=mat[key];if(tex?.isTexture&&!seen.has(tex)){seen.add(tex);if((tex.anisotropy||1)<max){tex.anisotropy=max;tex.needsUpdate=true;}runtime.texturesRefined++;}}}});
   }
   function makeMotes(){
