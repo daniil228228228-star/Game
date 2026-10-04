@@ -1340,7 +1340,7 @@ const PLAYER_RADIUS = 0.4;
 const BUILDING_RADIUS = 1.5;      // collision footprint of a constructed building
 const BUILDING_OFFSET = 2.7;      // building sits this far past its pad, so it never overlaps the player standing on the pad
 const UPGRADE_PAD_OFFSET = 2.15;  // an upgrade pad sits this far to the side of its building
-const MAX_BUILDING_LEVEL = 5;     // 1 = just built; four upgrade levels on top of that
+const MAX_BUILDING_LEVEL = 10;    // 1 = just built; nine upgrade levels on top of that (v161 late game: levels 6-10 = 'gold tiers', assets/late-game-v161.js; was 5)
 
 // Spiral layout: each stage sits further from spawn, so the base visibly grows outward.
 const SPIRAL_BASE_RADIUS = 7;
@@ -13673,7 +13673,9 @@ function buildingCollisionRadius(b) {
   const stage = STAGES[b.index];
   if (!stage) return BUILDING_RADIUS;
   // Derive collision from the actual archetype footprint instead of one global radius.
-  return Math.max(BUILDING_RADIUS, stage.baseSize * 0.64 + Math.max(0, (b.level || 1) - 1) * 0.035);
+  // v161 late game: levels 6..10 are gold tiers with the silhouette of level 5, so the footprint (a road-planner input: sigNow() in the v86 layer includes
+  // it) stops growing at level 5 -- otherwise every gold-tier upgrade re-lays the stage roads (measured: 32 of 46 road meshes after a level-5 -> 6 press).
+  return Math.max(BUILDING_RADIUS, stage.baseSize * 0.64 + Math.max(0, Math.min(b.level || 1, 5) - 1) * 0.035);
 }
 
 function gatherPhysicsCircles() {
@@ -38821,6 +38823,8 @@ body.v51-perf-low #jumpBtn{-webkit-backdrop-filter:none!important;backdrop-filte
 <script src="assets/district-infra-v161.js"></script>
 <script src="assets/district-unlock-v161.js"></script>
 <script src="assets/production-chain-v161.js"></script>
+<script src="assets/late-game-v161.js"></script>
+<script src="assets/traffic-v161.js"></script>
 </body>
 
 </html>

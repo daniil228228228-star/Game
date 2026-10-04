@@ -20,7 +20,7 @@ const J = JSON.stringify;
 // ---- 0. balance script (no browser): the chain's own steps never wait more than 2 minutes
 const bal = spawnSync('node', [path.join(REPO_ROOT, 'tools/balance-v161.mjs'), '--check'], { encoding: 'utf8' });
 const chainGaps = (bal.stdout.match(/^Chain steps: .*$/m) || [''])[0];
-check(bal.status === 0 && /Chain steps: frame at/.test(chainGaps), `balance-v161.mjs --check: no chain step over 120 s (${chainGaps.slice(0, 200)})`);
+check(bal.status === 0 && /Chain steps: frame at/.test(chainGaps), `balance-v161.mjs --check: curve contract holds, chain steps listed (${chainGaps.slice(0, 200)})`);
 
 // PC_ONLY=fresh|old runs one of the two browser launches while debugging (default: both)
 const only = process.env.PC_ONLY || '';
