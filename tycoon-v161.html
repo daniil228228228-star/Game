@@ -8490,6 +8490,9 @@ function refreshIndustrialBadgesV161() {
 /* ---------------------------------------------------------------------- */
 function buildIndustrialStepV118(step) {
   if (step.built() || !step.prereq()) return false;
+  // v161 district infra (assets/district-infra-v161.js): steps with `infraOf` delegate to the
+  // district's own build function (it charges, starts the pending timer and toasts itself).
+  if (step.infraOf && typeof step.run === 'function') return step.run(step);
   if (!tryPayResources(step.cost)) {
     sfx.error();
     toast(lang === 'ru' ? `Не хватает: ${opsCostText(step.cost)}` : `Missing: ${opsCostText(step.cost)}`);
@@ -8718,6 +8721,7 @@ function nextActionableTargetV117() {
     for (const step of INDUSTRIAL_BUILD_STEPS_V118) {
       if (step.built() || !step.prereq()) continue;
       if (canPayResources(step.cost)) return { pos: step.pos.clone(), label: lang === 'ru' ? step.ru : step.en, type: 'industrial', stepId: step.id };
+      if (step.infraOf) continue; // v161 district infra pads are independent of each other
       break; // next unbuilt step isn't affordable yet -- don't skip ahead to a later one
     }
   }
@@ -19062,6 +19066,7 @@ ACHIEVEMENTS.push(
 );
 window.__TYCOON_V41__={
   state:v41State,power:powerLevelV41,water:waterLevelV41,density:densityRankV41,coverage:utilityCoverageV41,
+  powerCost:powerUpgradeCostV41,waterCost:waterUpgradeCostV41, // v161 district infra pads read the panel's own costs
   buildPower:id=>startUtilityUpgradeV41(id,'power'),buildWater:id=>startUtilityUpgradeV41(id,'water'),canPower:id=>utilityBuildAllowedV41(id,'power'),canWater:id=>utilityBuildAllowedV41(id,'water'),upgradeDensity:upgradeDensityV41,
   spawnIncident:(type,id)=>spawnIncidentV41(type,id),resolveIncident:resolveIncidentV41,tick(){completeUtilityUpgradesV41();updateIncidentV41();},
   refresh(){refreshV41World(true);renderCityPanel();},
@@ -19460,7 +19465,8 @@ ACHIEVEMENTS.push(
 window.__TYCOON_V42__={
   state:v42State,
   capacity:type=>utilityCapacityV42(type),demand:type=>utilityDemandV42(type),supply:type=>utilitySupplyRatioV42(type),
-  plant:(type)=>startPlantUpgradeV42(type),mode:setPlantModeV42,equipment:upgradeEquipmentV42,
+  plant:(type)=>startPlantUpgradeV42(type),plantCost:plantCostV42,canPlant:canUpgradePlantV42, // v161 district infra pads
+  mode:setPlantModeV42,equipment:upgradeEquipmentV42,
   borrow:borrowV42,repay:repayDebtV42,accept:acceptContractV42,
   refresh(){refreshV42World(true);renderCityPanel();},
   diagnostics(){return{power:{level:v42State.powerPlantLevel,mode:v42State.powerMode,demand:+utilityDemandV42('power').toFixed(2),capacity:+utilityCapacityV42('power').toFixed(2),supply:+utilitySupplyRatioV42('power').toFixed(2)},water:{level:v42State.waterPlantLevel,mode:v42State.waterMode,demand:+utilityDemandV42('water').toFixed(2),capacity:+utilityCapacityV42('water').toFixed(2),supply:+utilitySupplyRatioV42('water').toFixed(2)},equipment:v42State.equipmentLevel,finance:{debt:Math.round(v42State.debt),limit:creditLimitV42(),rating:creditRatingV42(),rep:Math.round(v42State.contractRep)},contract:v42State.activeContract?{id:v42State.activeContract.id,left:Math.max(0,Math.ceil((v42State.activeContract.expiresAt-Date.now())/1000)),progress:contractProgressV42(v42State.activeContract)}:null};}
@@ -27653,8 +27659,9 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
             // v118: one of the four staged industrial-zone build pads (was: one pad for the
             // whole cluster).
             const step=ctx.step,ready=canPayResources(step.cost),name=lang==='ru'?step.ru:step.en;
-            prompt.textContent=ready?(step.upgradeOf?(lang==='ru'?`⬆️ Улучшить: ${name}`:`⬆️ Upgrade: ${name}`):(lang==='ru'?`🏭 Построить: ${name}`:`🏭 Build: ${name}`)):(lang==='ru'?`📦 Нужно: ${opsCostText(step.cost)}`:`📦 Need: ${opsCostText(step.cost)}`);
-            btn.hidden=false;btn.textContent=ready?(step.upgradeOf?(lang==='ru'?'Улучшить':'Upgrade'):(lang==='ru'?'Построить':'Build')):(lang==='ru'?'Не хватает ресурсов':'Resources needed');prompt.classList.add('show');
+            const upV161=step.upgradeOf||(step.infraOf&&step.level>1),icoV161=step.icon||'🏭';
+            prompt.textContent=ready?(upV161?(lang==='ru'?`⬆️ Улучшить: ${name}`:`⬆️ Upgrade: ${name}`):(lang==='ru'?`${icoV161} Построить: ${name}`:`${icoV161} Build: ${name}`)):(lang==='ru'?`📦 Нужно: ${opsCostText(step.cost)}`:`📦 Need: ${opsCostText(step.cost)}`);
+            btn.hidden=false;btn.textContent=ready?(upV161?(lang==='ru'?'Улучшить':'Upgrade'):(lang==='ru'?'Построить':'Build')):(lang==='ru'?'Не хватает ресурсов':'Resources needed');prompt.classList.add('show');
           }else if(ctx.type==='stallBuild'){
             // v118: an unlocked-but-not-yet-built market stall's vacant marker.
             const cfg=ctx.stall,ready=canPayResources(cfg.cost),name=lang==='ru'?cfg.ru:cfg.en;
@@ -38867,6 +38874,7 @@ body.v51-perf-low #jumpBtn{-webkit-backdrop-filter:none!important;backdrop-filte
 <script src="assets/development-v160.js"></script>
 <link rel="stylesheet" href="assets/interface-v161.css">
 <script src="assets/interface-v161.js"></script>
+<script src="assets/district-infra-v161.js"></script>
 </body>
 
 </html>

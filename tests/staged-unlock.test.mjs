@@ -39,7 +39,7 @@ check(s0.stageIndex === 0 && s0.vacant === 0, 'fresh save: no market stall unloc
 check(s0.markers.depot && !s0.markers.sawmill && !s0.markers.concrete && !s0.markers.metal, `fresh save: only the depot pad marker exists ${JSON.stringify(s0.markers)}`);
 
 // ---- 2. order and costs (documented v116 base values x1.25 money, x1.08 rounded-up planks since v124)
-const steps = await ev(() => INDUSTRIAL_BUILD_STEPS_V118.map((s) => ({ id: s.id, money: s.cost.money, wood: s.cost.wood || 0, prereq: s.prereq(), upgrade: !!s.upgradeOf })));
+const steps = await ev(() => INDUSTRIAL_BUILD_STEPS_V118.filter((s) => !s.infraOf /* v161 district-infra pads, see district-infra.test.mjs */).map((s) => ({ id: s.id, money: s.cost.money, wood: s.cost.wood || 0, prereq: s.prereq(), upgrade: !!s.upgradeOf })));
 // v161: three production level-2 steps (sawmill2/concrete2/metal2) follow the four build steps; the build chain below is the original four
 const upSteps = steps.filter((s) => s.upgrade);
 steps.splice(0, steps.length, ...steps.filter((s) => !s.upgrade));
