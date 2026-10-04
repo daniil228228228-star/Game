@@ -8725,6 +8725,9 @@ function nextActionableTargetV117() {
       break; // next unbuilt step isn't affordable yet -- don't skip ahead to a later one
     }
   }
+  // 4. v161 (assets/district-unlock-v161.js): an unlocked, affordable, really-upgradable district hub pad
+  // (open / develop L1-3). Before this the compass, ground arrow and world marker never pointed at it.
+  if (typeof districtGuideTargetV161 === 'function') { const dt = districtGuideTargetV161(); if (dt) return dt; }
   return null;
 }
 function currentGuidanceTarget() {
@@ -15162,7 +15165,8 @@ const _currentGuidanceTargetV35 = currentGuidanceTarget;
 currentGuidanceTarget = function(){
   const q = currentGuideQuest();
   if (q) {
-    if (q.uiOnly) return null;
+    // v161: a menu-only quest used to blank the compass/world marker even while a ground pad (e.g. an unlocked district hub) was buyable
+    if (q.uiOnly) return (typeof nextActionableTargetV117 === 'function' && nextActionableTargetV117()) || null;
     if (q.worldPos) return { pos: q.worldPos.clone(), label: q.label || (lang==='ru' ? 'Цель' : 'Goal') };
   }
   return _currentGuidanceTargetV35();
@@ -18012,7 +18016,7 @@ window.__TYCOON_V39_CITY__={maturity:districtMaturityV39,assets:districtBuiltAss
    an unlocked but undeveloped district is only a surveyed dirt lot, not a finished plaza. */
 createDistrictHub=function(cfg){
   const g=new THREE.Group(),dl=districtLevel(cfg.id),unlocked=districtUnlocked(cfg),r=districtRoadLevelV37(cfg.id),l=districtStreetlightLevelV37(cfg.id),m=districtMaturityV39(cfg.id),assets=districtBuiltAssetCountV39(cfg.id),ready=dl>0&&r>=dl&&l>=dl;
-  g.position.copy(cfg.pos);
+  g.position.copy(cfg.pos);scene.add(g); // v161: this later (v39.1) definition returned the group without ever adding it to the scene, so no district hub / pad disc was visible; refreshCityExpansionWorld()/v39 refresh already scene.remove() the old one
   if(!unlocked)return g;
   const dirt=r<=0;
   if(dl<=0){
@@ -27643,8 +27647,10 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
             // v116: direct ground-pad interaction for the city district hub this player is
             // standing next to -- replaces the removed world-nav-hub's "Город" menu pad.
             const cfg=ctx.cfg,cost=districtUpgradeCost(cfg),ready=canPayResources(cost),name=lang==='ru'?cfg.ru:cfg.en;
+            const infraNeedV161=typeof districtInfraNeedV161==='function'?districtInfraNeedV161(cfg):0; // v161: L>=1 district expands only once its current tier is serviced
+            if(infraNeedV161){prompt.textContent=lang==='ru'?`🔧 ${name}: сначала дорога, свет, электричество и вода L${infraNeedV161}`:`🔧 ${name}: roads, lights, power and water L${infraNeedV161} first`;btn.hidden=false;btn.textContent=lang==='ru'?'Нужна инфраструктура':'Infrastructure needed';prompt.classList.add('show');}else{
             prompt.textContent=ready?(lang==='ru'?`🌆 Развить: ${name}`:`🌆 Develop: ${name}`):(lang==='ru'?`📦 Нужно: ${districtCostText(cost)}`:`📦 Need: ${districtCostText(cost)}`);
-            btn.hidden=false;btn.textContent=ready?(lang==='ru'?'Развить':'Develop'):(lang==='ru'?'Не хватает ресурсов':'Resources needed');prompt.classList.add('show');
+            btn.hidden=false;btn.textContent=ready?(lang==='ru'?'Развить':'Develop'):(lang==='ru'?'Не хватает ресурсов':'Resources needed');prompt.classList.add('show');}
           }else if(ctx.type==='project'){
             // v116: direct ground-pad interaction for a special project's vacant-site marker --
             // replaces the removed world-nav-hub's "Проекты" menu pad.
@@ -38875,6 +38881,7 @@ body.v51-perf-low #jumpBtn{-webkit-backdrop-filter:none!important;backdrop-filte
 <link rel="stylesheet" href="assets/interface-v161.css">
 <script src="assets/interface-v161.js"></script>
 <script src="assets/district-infra-v161.js"></script>
+<script src="assets/district-unlock-v161.js"></script>
 </body>
 
 </html>
