@@ -1544,8 +1544,21 @@ function registerCameraFoliage(root) {
   root.userData.cameraFoliageRoot = true;
   cameraFoliageRoots.push(root);
 }
+// v161 (invisible choppable trees): scenery that a layout layer took out of the world on purpose (road conflict v84/v93, sawmill clearance
+// v161, neighbourhood retire v156) carries one of these flags and is never restored by the camera code or by the tutorial syncs.
+function sceneryRetiredV161(root) {
+  const u = root && root.userData;
+  return !!(u && (u.v84HiddenRoadConflict || u.v93RoadClearance || u.v161SawmillClearance));
+}
+// v161: a tree is a chop target only if it is standing AND rendered. A tree hidden for the camera ray this frame (hiddenCameraFoliage)
+// still counts - it is un-hidden the moment it becomes the target (updateTreeInteraction) and never hidden while it is the target.
+function treeChoppableV161(tree) {
+  if (!tree || tree.state !== 'grown' || !tree.mesh) return false;
+  if (sceneryRetiredV161(tree.mesh)) return false;
+  return tree.mesh.visible !== false || hiddenCameraFoliage.includes(tree.mesh);
+}
 function updateCameraFoliageOcclusion() {
-  for (const root of hiddenCameraFoliage) if (root && !root.userData?.v84HiddenRoadConflict && !root.userData?.v93RoadClearance) root.visible = true;
+  for (const root of hiddenCameraFoliage) if (root && !sceneryRetiredV161(root)) root.visible = true;
   hiddenCameraFoliage.length = 0;
   if (!cameraFoliageRoots.length) return;
   camToCam.subVectors(camera.position, camEyeTarget);
@@ -1562,6 +1575,8 @@ function updateCameraFoliageOcclusion() {
     while (root && root.parent && !root.userData.cameraFoliageRoot) root = root.parent;
     if (!root || !root.userData.cameraFoliageRoot || seen.has(root)) continue;
     seen.add(root);
+    if (nearbyHarvestTree && nearbyHarvestTree.mesh === root) continue; // v161: the tree the chop prompt is offered for must stay visible (it was hidden in 174 of 912 poses)
+    if (sceneryRetiredV161(root) || root.visible === false) continue;
     root.visible = false;
     hiddenCameraFoliage.push(root);
     if (hiddenCameraFoliage.length >= 8) break;
@@ -4225,6 +4240,21 @@ function createFieldUpgradePads() {
 }
 createFieldUpgradePads();
 
+// v161 (iPhone test: "много кружков, которые вообще не задействованы пока тк нет зданий"): a ground pad exists in the world only while it can be used.
+// Field-upgrade pads: first-run range (stage < 2), carry/sawmill/yield only, and only once the sawmill stands (they are paid in planks and two of them
+// upgrade the sawmill itself). The log drop-off pad: only once the sawmill stands. Old saves have sawmillBuiltV118 = true, so nothing changes for them.
+// One owner for the three duplicated v60/v61/v62 syncs below and for refreshIndustrialPadMarkersV118() (runs every 700 ms and after every build).
+function fieldPadAvailableV161(cfg) { return stageIndex < 2 && sawmillBuiltV118 && ['carry', 'sawmill', 'yield'].includes(cfg?.key); }
+function syncStagedPadVisibilityV161() {
+  for (const p of fieldUpgradePads) if (p?.group) p.group.visible = fieldPadAvailableV161(p.cfg);
+  const d = sawmillDropoff;
+  if (d && d.group) {
+    if (!sawmillBuiltV118) { d.group.visible = false; d.hiddenV161 = true; }
+    else if (d.hiddenV161) { d.group.visible = true; d.hiddenV161 = false; }
+  }
+}
+syncStagedPadVisibilityV161();
+
 function tryPurchaseFieldUpgrade(pad) {
   const cfg = pad.cfg;
   const level = fieldUpgrades[cfg.key] || 0;
@@ -4364,7 +4394,7 @@ function updateTreeInteraction() {
   let best = null;
   let bestDist = TREE_INTERACT_RADIUS;
   for (const tree of sourceTrees) {
-    if (tree.state !== 'grown') continue;
+    if (!treeChoppableV161(tree)) continue; // v161: standing AND rendered (a tree retired by a road/sawmill layer used to stay choppable while invisible)
     const dist = Math.hypot(player.position.x - tree.mesh.position.x, player.position.z - tree.mesh.position.z);
     if (dist < bestDist) {
       best = tree;
@@ -4372,7 +4402,8 @@ function updateTreeInteraction() {
     }
   }
   nearbyHarvestTree = best;
-  nearSawmillDropoff = Math.hypot(player.position.x - SAWMILL_DROPOFF_POS.x, player.position.z - SAWMILL_DROPOFF_POS.z) < PAD_TRIGGER_RADIUS;
+  if (best && best.mesh.visible === false) best.mesh.visible = true; // hidden for the camera ray a moment ago: the target is always drawn
+  nearSawmillDropoff = sawmillBuiltV118 && Math.hypot(player.position.x - SAWMILL_DROPOFF_POS.x, player.position.z - SAWMILL_DROPOFF_POS.z) < PAD_TRIGGER_RADIUS; // v161: no drop-off pad (and no prompt) before the sawmill exists
 
   const actionPrompt = document.getElementById('actionPrompt');
   const actionBtn = document.getElementById('actionBtn');
@@ -8387,6 +8418,7 @@ function refreshIndustrialPadMarkersV118() {
     if (step.prereq()) spawnIndustrialPadMarkerV118(step); else removeIndustrialPadMarkerV118(step.id);
   }
   refreshIndustrialBadgesV161();
+  syncStagedPadVisibilityV161();
 }
 // v161: visible result of a production level-2 upgrade -- at the spot of the (now gone) upgrade pad
 // a gold disc + pole with an orb and a "LV II" sprite, built from the same primitives as the pad
@@ -8694,10 +8726,10 @@ function currentGuidanceTarget() {
     const cost = stageResourceCost(stageIndex);
     if (cost) {
       if (cost.wood > planks) {
-        if (carriedLogs > 0) return { pos: SAWMILL_DROPOFF_POS.clone(), label: lang === 'ru' ? 'Лесопилка' : 'Sawmill' };
+        if (carriedLogs > 0 && sawmillBuiltV118) return { pos: SAWMILL_DROPOFF_POS.clone(), label: lang === 'ru' ? 'Лесопилка' : 'Sawmill' };
         let bestTree = null, bestDist = Infinity;
         for (const tree of sourceTrees) {
-          if (tree.state !== 'grown') continue;
+          if (!sawmillBuiltV118 || !treeChoppableV161(tree)) continue; // v161: no log sink before the sawmill (same rule as workday-v158 loggingTarget)
           const d = player.position.distanceToSquared(tree.mesh.position);
           if (d < bestDist) { bestDist = d; bestTree = tree; }
         }
@@ -14140,8 +14172,8 @@ function updatePlayer(dt) {
   // interactions retain priority because their prompt also has priority in updateTreeInteraction().
   const nearestManual = nearestManualTargetV53();
 
-  const liveDropoffPriority = carriedLogs > 0 && Math.hypot(player.position.x - SAWMILL_DROPOFF_POS.x, player.position.z - SAWMILL_DROPOFF_POS.z) < PAD_TRIGGER_RADIUS;
-  const liveTreePriority = carriedLogs < maxCarriedLogs() && sourceTrees.some(tree => tree.state === 'grown' && Math.hypot(player.position.x - tree.mesh.position.x, player.position.z - tree.mesh.position.z) < TREE_INTERACT_RADIUS);
+  const liveDropoffPriority = carriedLogs > 0 && sawmillBuiltV118 && Math.hypot(player.position.x - SAWMILL_DROPOFF_POS.x, player.position.z - SAWMILL_DROPOFF_POS.z) < PAD_TRIGGER_RADIUS;
+  const liveTreePriority = carriedLogs < maxCarriedLogs() && sourceTrees.some(tree => treeChoppableV161(tree) && Math.hypot(player.position.x - tree.mesh.position.x, player.position.z - tree.mesh.position.z) < TREE_INTERACT_RADIUS);
   const harvestPriority = liveDropoffPriority || liveTreePriority;
   if (interactRequested && !harvestPriority) {
     let consumed = false;
@@ -29864,7 +29896,7 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
 
   function syncOnboardingObjects(){
     const early=stageIndex<2;
-    for(const p of fieldUpgradePads||[])if(p?.group)p.group.visible=early&&['carry','sawmill','yield'].includes(p.cfg?.key);
+    syncStagedPadVisibilityV161(); // v161: one owner (was early&&[carry,sawmill,yield])
   }
 
   function productionSection(){
@@ -30022,19 +30054,19 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
   function manualPhase61(){return stageIndex<2||Number(carriedLogs||0)>0;}
   function syncTutorialWorld61(){
     const manual=manualPhase61();
-    for(const p of fieldUpgradePads||[])if(p?.group)p.group.visible=stageIndex<2&&['carry','sawmill','yield'].includes(p.cfg?.key);
+    syncStagedPadVisibilityV161(); // v161: one owner (was stageIndex<2&&[carry,sawmill,yield])
     for(const t of sourceTrees||[]){
       if(!t?.mesh)continue;
       if(!t._v61SavedState)t._v61SavedState=(t.state==='retired'?'grown':t.state);
       if(manual){
         if(t.state==='retired'||t.state==='v61hidden')t.state=t._v61SavedState||'grown';
-        t.mesh.visible=!t.mesh.userData?.v84HiddenRoadConflict;
+        t.mesh.visible=!sceneryRetiredV161(t.mesh);
       }else{
         if(t.state!=='v61hidden'){t._v61SavedState=t.state==='retired'?'grown':t.state;t.state='v61hidden';}
         t.mesh.visible=false;
       }
     }
-    if(typeof sawmillDropoff!=='undefined'&&sawmillDropoff?.group)sawmillDropoff.group.visible=manual;
+    if(typeof sawmillDropoff!=='undefined'&&sawmillDropoff?.group)sawmillDropoff.group.visible=manual&&sawmillBuiltV118;
     const carry=document.getElementById('carriedLogs')?.closest('.stat');if(carry)carry.style.display=manual?'':'none';
   }
 
@@ -30190,14 +30222,14 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
     const manual=true;
     const population=document.getElementById('populationStat');if(population)population.style.display=(stageIndex>=4?'':'none');
     const carry=document.getElementById('carriedLogs')?.closest('.stat');if(carry)carry.style.display=manual?'':'none';
-    for(const p of fieldUpgradePads||[])if(p?.group)p.group.visible=stageIndex<2&&['carry','sawmill','yield'].includes(p.cfg?.key);
-    if(typeof sawmillDropoff!=='undefined'&&sawmillDropoff?.group)sawmillDropoff.group.visible=manual;
+    syncStagedPadVisibilityV161(); // v161: one owner (was stageIndex<2&&[carry,sawmill,yield])
+    if(typeof sawmillDropoff!=='undefined'&&sawmillDropoff?.group)sawmillDropoff.group.visible=manual&&sawmillBuiltV118;
     for(const t of sourceTrees||[]){
       if(!t?.mesh)continue;
       if(!t._v62SavedState)t._v62SavedState=(t.state==='retired'||t.state==='v61hidden'?'grown':t.state);
       if(manual){
         if(t.state==='retired'||t.state==='v61hidden'||t.state==='v62hidden')t.state=t._v62SavedState||'grown';
-        t.mesh.visible=!t.mesh.userData?.v84HiddenRoadConflict;
+        t.mesh.visible=!sceneryRetiredV161(t.mesh);
       }else{
         if(t.state!=='v62hidden'){t._v62SavedState=(t.state==='retired'||t.state==='v61hidden')?'grown':t.state;t.state='v62hidden';}
         t.mesh.visible=false;
@@ -32592,7 +32624,7 @@ window.__TYCOON_V74_BUILD__={
     for(const t of sourceTrees||[]){
       if(!t?.mesh)continue;
       const entry=registerCircle(t.mesh.position,treeTrunkRadiusV154(t.mesh),'tree','sourceTree',t.mesh,{camera:false});
-      if(entry)entry.active=()=>t.state==='grown'&&!t.mesh.userData?.v84HiddenRoadConflict&&!t.mesh.userData?.v93RoadClearance;
+      if(entry)entry.active=()=>t.state==='grown'&&!sceneryRetiredV161(t.mesh);
       registeredTrees.add(t.mesh);
     }
     for(const root of cameraFoliageRoots||[]){

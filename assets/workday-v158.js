@@ -27,7 +27,7 @@
    if(!sawmillBuiltV118)return null;
    if(carriedLogs>0)return {pos:SAWMILL_DROPOFF_POS.clone(),label:lang==='ru'?'Отнести брёвна на лесопилку':'Deliver logs to the sawmill',type:'logging'};
    let tree=null,best=Infinity;
-   for(const t of sourceTrees){if(t.state!=='grown'||t.mesh.visible===false)continue;const d=player.position.distanceToSquared(t.mesh.position);if(d<best){tree=t;best=d;}}
+   for(const t of sourceTrees){if(!treeChoppableV161(t))continue;const d=player.position.distanceToSquared(t.mesh.position);if(d<best){tree=t;best=d;}}
    return tree?{pos:tree.mesh.position.clone(),label:lang==='ru'?'Заготовить древесину':'Gather timber',type:'logging'}:null;
  }
  function target(){

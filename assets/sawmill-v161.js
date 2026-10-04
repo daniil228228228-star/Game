@@ -680,6 +680,7 @@ function relocateSawmillTreesV161() {
     const spot = sawmillFindTreeSpotV161(p.x, p.z, trees);
     if (!spot) { o.visible = false; o.userData.v161SawmillClearance = true; o.userData.v93RoadClearance = true; moved++; continue; }
     p.set(spot[0], p.y, spot[1]);
+    if (o.userData.v161SawmillClearance) { o.visible = true; delete o.userData.v161SawmillClearance; delete o.userData.v93RoadClearance; } // hidden earlier for lack of a spot: it has one now
     o.userData.v161MovedByMill = true;
     moved++;
   }

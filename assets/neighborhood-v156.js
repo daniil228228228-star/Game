@@ -32,7 +32,7 @@
    const o=scenery[i],a=anchors[i%anchors.length],r=o.userData.v64SceneryKind==='tree'?1.25:.7;let found=false;
    for(let k=0;k<96;k++){
      const n=Math.floor(i/anchors.length)+k,angle=n*2.39996323+(i%anchors.length)*.37,ring=2+Math.sqrt(n+1)*2.65,x=a[0]+Math.cos(angle)*ring,z=a[1]+Math.sin(angle)*ring;
-     if(!clear(x,z,r))continue;o.position.set(x,0,z);o.visible=true;delete o.userData.v84HiddenRoadConflict;delete o.userData.v93RoadClearance;remember(x,z,r);runtime.relocated++;found=true;break;
+     if(!clear(x,z,r))continue;o.position.set(x,0,z);o.visible=true;delete o.userData.v84HiddenRoadConflict;delete o.userData.v93RoadClearance;delete o.userData.v161SawmillClearance;remember(x,z,r);runtime.relocated++;found=true;break;
    }
    if(!found){o.visible=false;o.userData.v84HiddenRoadConflict=true;runtime.retired++;}
  }
