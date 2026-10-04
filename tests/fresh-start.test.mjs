@@ -64,9 +64,9 @@ check(house.spent === house.cost, `house cost deducted exactly (${house.spent} o
 check(house.nextStep === 'road', `after the house the next step is the road (step ${house.nextStep})`);
 
 // ---- staged industrial unlock: order, prerequisites, costs, real scene objects ----
-const order = await ev(() => INDUSTRIAL_BUILD_STEPS_V118.filter((s) => !s.upgradeOf && !String(s.id).startsWith('infra-')).map((s) => s.id)); // v161 appends level-2 steps (industrial-levels.test.mjs) and 18 infra-* pads (district-infra.test.mjs)
+const order = await ev(() => INDUSTRIAL_BUILD_STEPS_V118.filter((s) => !s.upgradeOf && !s.chainV161 && !String(s.id).startsWith('infra-')).map((s) => s.id)); // v161 appends level-2 steps (industrial-levels.test.mjs) and 18 infra-* pads (district-infra.test.mjs)
 check(JSON.stringify(order) === JSON.stringify(['depot', 'sawmill', 'concrete', 'metal']), `industrial order depot -> sawmill -> concrete -> metal (${order})`);
-const costs = await ev(() => Object.fromEntries(INDUSTRIAL_BUILD_STEPS_V118.filter((s) => !s.upgradeOf && !String(s.id).startsWith('infra-')).map((s) => [s.id, s.cost.money])));
+const costs = await ev(() => Object.fromEntries(INDUSTRIAL_BUILD_STEPS_V118.filter((s) => !s.upgradeOf && !s.chainV161 && !String(s.id).startsWith('infra-')).map((s) => [s.id, s.cost.money])));
 check(costs.depot < costs.sawmill && costs.sawmill < costs.concrete && costs.concrete < costs.metal, `step costs strictly increase ${JSON.stringify(costs)}`);
 
 async function build(id) {

@@ -21,7 +21,7 @@ const t0 = await ev(() => ({
   visible: INDUSTRIAL_BUILD_STEPS_V118.filter((s) => s.infraOf && s.prereq()).length,
   markers: INDUSTRIAL_BUILD_STEPS_V118.filter((s) => s.infraOf && industrialPadMarkersV118.has(s.id)).length,
   district: districtLevel('suburb'),
-  nonInfra: INDUSTRIAL_BUILD_STEPS_V118.filter((s) => !s.infraOf).map((s) => s.id),
+  nonInfra: INDUSTRIAL_BUILD_STEPS_V118.filter((s) => !s.infraOf && !s.chainV161 /* workshop + level 3: production-chain.test.mjs */).map((s) => s.id),
 }));
 check(t0.ids.length === 18 && t0.ids.includes('infra-suburb-road') && t0.ids.includes('infra-waterfront-water') && t0.ids.includes('infra-plant-power') && t0.ids.includes('infra-plant-water'), `18 infra steps registered (${t0.ids.length})`);
 check(t0.visible === 0 && t0.markers === 0 && t0.district === 0, 'fresh game: district level 0, no infra pad or marker');

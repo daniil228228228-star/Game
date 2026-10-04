@@ -1000,6 +1000,10 @@ let metalYardBuiltV118 = true;
 // INDUSTRIAL_BUILD_STEPS_V118 entries with `upgradeOf`). Defaults to 1 for every save that has no
 // `industrialLevelsV161` field (all saves written before this change), so nothing changes there.
 let industrialLevelsV161 = { sawmill: 1, concrete: 1, metal: 1 };
+// v161 production chain (assets/production-chain-v161.js): the intermediate product "frame" (planks + metal) and whether
+// the Frame Workshop pad was bought. Absent in older saves -> 0 frames, no workshop (its pad simply appears later as the next step).
+let framesV161 = 0;
+let frameWorkshopBuiltV161 = false;
 // v116 manual roads (same user request): a fresh save also stops auto-paving a house's road
 // the instant the house is bought. Instead each built-but-unrouted house gets its own "build
 // road" ground pad (see nearestManualTargetV53()'s 'road' candidates); stepping on it is the
@@ -1606,7 +1610,7 @@ function resourceSnapshot() {
 function canPayResources(cost) {
   if (!cost) return false;
   // Malformed prices must never become a free purchase after NaN/negative coercion.
-  for (const key of ['money', 'wood', 'concrete', 'metal']) {
+  for (const key of ['money', 'wood', 'concrete', 'metal', 'frame']) { // 'frame': v161 production chain (assets/production-chain-v161.js)
     if (cost[key] == null) continue;
     const value = Number(cost[key]);
     if (!Number.isFinite(value) || value < 0) return false;
@@ -1615,7 +1619,8 @@ function canPayResources(cost) {
   const wood = finiteNonNegative(cost.wood);
   const conc = finiteNonNegative(cost.concrete);
   const met = finiteNonNegative(cost.metal);
-  return money >= cash && planks >= wood && concrete >= conc && metal >= met;
+  const frm = finiteNonNegative(cost.frame);
+  return money >= cash && planks >= wood && concrete >= conc && metal >= met && framesV161 >= frm;
 }
 
 function tryPayResources(cost) {
@@ -1624,6 +1629,7 @@ function tryPayResources(cost) {
   planks = Math.max(0, planks - finiteNonNegative(cost.wood));
   concrete = Math.max(0, concrete - finiteNonNegative(cost.concrete));
   metal = Math.max(0, metal - finiteNonNegative(cost.metal));
+  framesV161 = Math.max(0, framesV161 - finiteNonNegative(cost.frame));
   return true;
 }
 
@@ -1724,6 +1730,7 @@ function builtWarehouseLevels() {
 }
 function concreteCapacity() { return BASE_CONCRETE_CAPACITY + builtWarehouseLevels() * 16; }
 function metalCapacity() { return BASE_METAL_CAPACITY + builtWarehouseLevels() * 12; }
+function frameCapacityV161() { return 6 + builtWarehouseLevels() * 4; } // v161 frames: same storage concept (warehouse levels) as concrete/metal
 
 function stageCostLines(stageIdx, upgradeLevel = null) {
   const s = STAGES[stageIdx];
@@ -3111,7 +3118,7 @@ function industrialSpeedV161(kind) {
 }
 function sanitizeIndustrialLevelsV161(raw) {
   const out = { sawmill: 1, concrete: 1, metal: 1 };
-  if (raw && typeof raw === 'object') for (const k of Object.keys(out)) out[k] = Math.max(1, Math.min(2, Math.floor(Number(raw[k]) || 1)));
+  if (raw && typeof raw === 'object') for (const k of Object.keys(out)) out[k] = Math.max(1, Math.min(3, Math.floor(Number(raw[k]) || 1))); // 3: production chain level 3 (assets/production-chain-v161.js)
   return out;
 }
 
@@ -8449,13 +8456,14 @@ function refreshIndustrialPadMarkersV118() {
 // also appears after load()). Pure scene dressing: no collider, no road, no save field of its own.
 const industrialBadgesV161 = new Map(); // kind -> THREE.Group
 function refreshIndustrialBadgesV161() {
-  for (const step of INDUSTRIAL_BUILD_STEPS_V118) {
-    if (!step.upgradeOf) continue;
-    const kind = step.upgradeOf;
-    const want = step.built() && (kind === 'sawmill' ? sawmillBuiltV118 : kind === 'concrete' ? concretePlantBuiltV118 : metalYardBuiltV118);
+  for (const kind of ['sawmill', 'concrete', 'metal']) {
+    // one badge per kind showing the HIGHEST bought level (level 3 comes from assets/production-chain-v161.js): the
+    // level-2 badge is replaced by a "III" one at the level-3 pad's spot
+    const step = INDUSTRIAL_BUILD_STEPS_V118.filter((s) => s.upgradeOf === kind && s.built()).pop();
+    const want = !!step && (kind === 'sawmill' ? sawmillBuiltV118 : kind === 'concrete' ? concretePlantBuiltV118 : metalYardBuiltV118);
     const have = industrialBadgesV161.get(kind);
-    if (!want) { if (have) { scene.remove(have); disposeObject3D(have); industrialBadgesV161.delete(kind); } continue; }
-    if (have) continue;
+    if (have && (!want || have.userData.levelV161 !== step.level)) { scene.remove(have); disposeObject3D(have); industrialBadgesV161.delete(kind); }
+    if (!want || industrialBadgesV161.has(kind)) continue;
     const gold = new THREE.MeshStandardMaterial({ color: 0xffc94d, emissive: 0x8a5a00, emissiveIntensity: 0.55, roughness: 0.35, metalness: 0.6 });
     const group = new THREE.Group();
     const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.06, 24), gold);
@@ -8468,12 +8476,13 @@ function refreshIndustrialBadgesV161() {
     const orb = new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 10), gold);
     orb.position.y = 1.33;
     group.add(orb);
-    const sprite = makeLabelSprite(['⭐ II']);
+    const sprite = makeLabelSprite([step.level >= 3 ? '⭐ III' : '⭐ II']);
     sprite.position.y = 1.85;
     sprite.scale.set(0.8, 0.33, 1);
     group.add(sprite);
     group.position.set(step.pos.x, 0, step.pos.z);
     group.name = 'v161LevelBadge_' + kind;
+    group.userData.levelV161 = step.level;
     scene.add(group);
     industrialBadgesV161.set(kind, group);
   }
@@ -8492,7 +8501,7 @@ function buildIndustrialStepV118(step) {
   if (step.built() || !step.prereq()) return false;
   // v161 district infra (assets/district-infra-v161.js): steps with `infraOf` delegate to the
   // district's own build function (it charges, starts the pending timer and toasts itself).
-  if (step.infraOf && typeof step.run === 'function') return step.run(step);
+  if ((step.infraOf || step.chainV161) && typeof step.run === 'function') return step.run(step); // chainV161: Frame Workshop (assets/production-chain-v161.js)
   if (!tryPayResources(step.cost)) {
     sfx.error();
     toast(lang === 'ru' ? `Не хватает: ${opsCostText(step.cost)}` : `Missing: ${opsCostText(step.cost)}`);
@@ -8606,6 +8615,7 @@ function doPrestige() {
   planks = 0;
   concrete = 0;
   metal = 0;
+  framesV161 = 0; // v161 frames are a run resource like planks/concrete/metal
   carriedLogs = 0;
   restoreSawmillTransitV153([]);
   refreshCarriedLogVisuals();
@@ -8721,7 +8731,7 @@ function nextActionableTargetV117() {
     for (const step of INDUSTRIAL_BUILD_STEPS_V118) {
       if (step.built() || !step.prereq()) continue;
       if (canPayResources(step.cost)) return { pos: step.pos.clone(), label: lang === 'ru' ? step.ru : step.en, type: 'industrial', stepId: step.id };
-      if (step.infraOf) continue; // v161 district infra pads are independent of each other
+      if (step.infraOf || step.chainV161) continue; // v161 district infra pads and production-chain pads are independent of each other
       break; // next unbuilt step isn't affordable yet -- don't skip ahead to a later one
     }
   }
@@ -9696,7 +9706,7 @@ function opsCost(base, level, type){
   }
   return { money, wood:n*2, concrete:n>=2?Math.max(1,n-1):0, metal:n>=3?1:0 };
 }
-function opsCostText(cost){ return [`${fmt(cost.money||0)} 💰`,cost.wood?`${cost.wood} 🪵`:'',cost.concrete?`${cost.concrete} 🧱`:'',cost.metal?`${cost.metal} 🔩`:''].filter(Boolean).join('  '); }
+function opsCostText(cost){ return [`${fmt(cost.money||0)} 💰`,cost.wood?`${cost.wood} 🪵`:'',cost.concrete?`${cost.concrete} 🧱`:'',cost.metal?`${cost.metal} 🔩`:'',cost.frame?`${cost.frame} 📐`:''].filter(Boolean).join('  '); }
 function fleetUpgradeCost(key){ const cfg=fleetConfig(key); return cfg?opsCost(cfg.baseCost,fleetLevel(key),'fleet'):{money:Infinity}; }
 function baseUpgradeCost(key){ const cfg=baseConfig(key); return cfg?opsCost(cfg.baseCost,baseLevel(key),'base'):{money:Infinity}; }
 function buyFleetUpgrade(key){
@@ -13219,6 +13229,7 @@ function save() {
       concretePlantBuiltV118: !!concretePlantBuiltV118,
       metalYardBuiltV118: !!metalYardBuiltV118,
       industrialLevelsV161: { ...industrialLevelsV161 }, // v161: absent in older saves -> all levels 1
+      productionChainV161: { workshop: !!frameWorkshopBuiltV161, frames: framesV161 }, // v161: absent in older saves -> no workshop, 0 frames
       marketStallsBuiltV118: [...marketStallsBuiltV118],
     });
     const previous = localStorage.getItem(SAVE_KEY);
@@ -13584,6 +13595,8 @@ function load() {
     if (typeof data.metalYardBuiltV118 === 'boolean') metalYardBuiltV118 = data.metalYardBuiltV118;
     industrialZoneBuiltV116 = sawmillBuiltV118;
     industrialLevelsV161 = sanitizeIndustrialLevelsV161(data.industrialLevelsV161); // v161: absent -> level 1 everywhere
+    frameWorkshopBuiltV161 = data.productionChainV161?.workshop === true; // v161: absent -> not built
+    framesV161 = integerNonNegative(data.productionChainV161?.frames);
     if (Array.isArray(data.marketStallsBuiltV118)) marketStallsBuiltV118 = new Set(data.marketStallsBuiltV118.filter((id) => typeof id === 'string'));
     if (typeof data.manualRoadModeV116 === 'boolean') manualRoadModeV116 = data.manualRoadModeV116;
     if (Array.isArray(data.manualRoadStagesV116)) manualRoadStagesV116 = new Set(data.manualRoadStagesV116.filter(Number.isInteger));
@@ -13602,6 +13615,7 @@ function load() {
     refreshCameraSolidMeshes();
     concrete = THREE.MathUtils.clamp(concrete, 0, concreteCapacity());
     metal = THREE.MathUtils.clamp(metal, 0, metalCapacity());
+    framesV161 = THREE.MathUtils.clamp(framesV161, 0, frameCapacityV161());
     if (data.player) {
       // v63 hotfix 0.3(a): a save written before this fix (or by this exact bug) can have the
       // player parked right on the road hub at/near (0,0) -- restoring that literally would
@@ -14506,6 +14520,7 @@ function animate() {
   safeFrameCallV54('updateSawmill',()=>updateSawmill(dt));
   safeFrameCallV54('updateConcretePlant',()=>updateConcretePlant(dt));
   safeFrameCallV54('updateMetalPlant',()=>updateMetalPlant(dt));
+  safeFrameCallV54('updateFrameWorkshopV161',()=>{ if (typeof updateFrameWorkshopV161 === 'function') updateFrameWorkshopV161(dt); }); // v161 frame recipe (assets/production-chain-v161.js)
   safeFrameCallV54('updateSmoke',()=>updateSmoke(dt));
   safeFrameCallV54('updateAmbientLife',()=>updateAmbientLife(dt));
   safeFrameCallV54('updateLivingCity',()=>updateLivingCity(dt));
@@ -38882,6 +38897,7 @@ body.v51-perf-low #jumpBtn{-webkit-backdrop-filter:none!important;backdrop-filte
 <script src="assets/interface-v161.js"></script>
 <script src="assets/district-infra-v161.js"></script>
 <script src="assets/district-unlock-v161.js"></script>
+<script src="assets/production-chain-v161.js"></script>
 </body>
 
 </html>
