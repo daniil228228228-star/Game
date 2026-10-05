@@ -923,6 +923,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="assets/materials-v152.js"></script>
 <script src="assets/sawmill-v161.js"></script>
 <script src="assets/buildings-v161.js"></script>
+<script src="assets/plants-v161.js"></script>
 <script src="assets/foliage-v154.js"></script>
 <script src="assets/work-session-v158.js"></script>
 <script src="assets/development-core-v160.js"></script>
@@ -3164,7 +3165,7 @@ const SAWMILL_L2_COST_V161 = { money: 300, wood: 4, concrete: 0, metal: 0 };
 const CONCRETE_L2_COST_V161 = { money: 1200, wood: 8, concrete: 2, metal: 0 };
 const METAL_L2_COST_V161 = { money: 2800, wood: 10, concrete: 4, metal: 1 };
 const SAWMILL_UPGRADE_PAD_POS_V161 = new THREE.Vector3(SAWMILL_POS.x, 0, SAWMILL_POS.z + 4.4);
-const CONCRETE_UPGRADE_PAD_POS_V161 = new THREE.Vector3(CONCRETE_PLANT_POS.x - 3.1, 0, CONCRETE_PLANT_POS.z - 0.3);
+const CONCRETE_UPGRADE_PAD_POS_V161 = new THREE.Vector3(CONCRETE_PLANT_POS.x - 3.1, 0, CONCRETE_PLANT_POS.z - 0.9); // v161 plants: was z - 0.3 = 0.55 m from the concrete mine pad and, since the level-2 annex of the sawmill has real walls, 0.38 m from its back wall
 const METAL_UPGRADE_PAD_POS_V161 = new THREE.Vector3(METAL_YARD_POS.x + 3.4, 0, METAL_YARD_POS.z + 0.2);
 // The ordered chain itself: `built`/`prereq` are functions (not booleans) so the array can be
 // declared once here yet always read the CURRENT value of each `let` flag above, however it
@@ -3306,6 +3307,9 @@ let concretePlantTimer = 0;
 let concretePlant = null;
 
 function buildConcretePlant() {
+  // v161 plants (assets/plants-v161.js, CHANGELOG 2026-10-05 (6)): batching plant with silos, skip hoist, drum mixer, cabin, output table; levels 1-3 grow the same plant.
+  // PlantsV161.enabled = false brings back the old 74-mesh plant below (showcase before/after).
+  if (window.PlantsV161?.enabled) { const plant = PlantsV161.buildConcrete(industrialLevelV161('concrete')); plant.group.position.copy(CONCRETE_PLANT_POS); scene.add(plant.group); return plant; }
   const group = new THREE.Group();
   group.add(createFoundation(4.2, 3.6, 0.18, 0xb9b3a6));
 
@@ -3509,7 +3513,11 @@ function buildConcretePlant() {
 if (concretePlantBuiltV118) concretePlant = buildConcretePlant(); // v118 staged industrial-zone unlock
 
 function updateConcretePlant(dt) {
-  if (concretePlant?.drumPivot) concretePlant.drumPivot.rotation.x += dt * (stageIndex >= CONCRETE_UNLOCK_STAGE ? 2.2 : 0.3);
+  updateConcretePlantProduction(dt);
+  if (concretePlant?.v161) PlantsV161.updateConcrete(dt); // v161 plants: drum, skip, blocks and the pile on the plate follow the timer/stock AFTER this frame's credit
+}
+function updateConcretePlantProduction(dt) {
+  if (concretePlant?.drumPivot && !concretePlant.v161) concretePlant.drumPivot.rotation.x += dt * (stageIndex >= CONCRETE_UNLOCK_STAGE ? 2.2 : 0.3);
   if (!concretePlant || stageIndex < CONCRETE_UNLOCK_STAGE) return;
   concretePlantTimer += dt;
   const concreteInterval = CONCRETE_AUTO_INTERVAL / productionSpeedMultiplier() / industrialSpeedV161('concrete'); // v161: level 2 = x1.4
@@ -3535,6 +3543,8 @@ let metalPlantTimer = 0;
 let metalPlant = null;
 
 function buildMetalYard() {
+  // v161 plants (assets/plants-v161.js): shed + furnace + cut-off + jib crane + beam pile; PlantsV161.enabled = false brings back the old 14-mesh yard below
+  if (window.PlantsV161?.enabled) { const plant = PlantsV161.buildMetal(industrialLevelV161('metal')); plant.group.position.copy(METAL_YARD_POS); scene.add(plant.group); return plant; }
   const group = new THREE.Group();
   group.add(createFoundation(4.0, 3.4, 0.18, 0xb9b6b0));
   const shed = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.3, 1.75), createCorrugatedMaterial(0x66717d, { roughness: 0.72, metalness: 0.2 }));
@@ -3629,6 +3639,10 @@ createLoadingZone('concrete', CONCRETE_PLANT_POS.clone().add(new THREE.Vector3(0
 createLoadingZone('metal', METAL_YARD_POS.clone().add(new THREE.Vector3(0.00, 0, 3.40)), '🔩', 'МЕТАЛЛ', 'STEEL', 0x91a0af, -0.12); // v112: loading zone integrated into clear north service corridor
 
 function updateMetalPlant(dt) {
+  updateMetalPlantProduction(dt);
+  if (metalPlant?.v161) PlantsV161.updateMetal(dt); // v161 plants: crane, beams, sparks and the pile on the plate follow the timer/stock AFTER this frame's credit
+}
+function updateMetalPlantProduction(dt) {
   if (metalPlant?.cutterWheel) metalPlant.cutterWheel.rotation.z += dt * (stageIndex >= METAL_UNLOCK_STAGE ? 5.5 : 0.5);
   if (metalPlant?.loadRing) {
     const k = 1 + Math.sin(performance.now() / 260) * 0.045;
@@ -8360,6 +8374,7 @@ function refreshIndustrialPadMarkersV118() {
 const industrialBadgesV161 = new Map(); // kind -> THREE.Group
 function refreshIndustrialBadgesV161() {
   if (typeof refreshSawmillVisualsV161 === 'function') refreshSawmillVisualsV161(); // v161: rebuild the mill when the production level changed (also after load())
+  if (window.PlantsV161) { try { PlantsV161.refresh(); } catch (err) { console.warn('[v161 plants] refresh', err); } } // v161: concrete plant / metal yard grow with the production level
   for (const kind of ['sawmill', 'concrete', 'metal']) {
     // one badge per kind showing the HIGHEST bought level (level 3 comes from assets/production-chain-v161.js): the
     // level-2 badge is replaced by a "III" one at the level-3 pad's spot
@@ -32560,11 +32575,15 @@ window.__TYCOON_V74_BUILD__={
     // deleting the old protection before those factories are migrated.
     for(let i=0;i<(STATIC_COLLIDERS||[]).length;i++){
       const c=STATIC_COLLIDERS[i];if(!c?.pos)continue;
-      registerCircle(c.pos,Number(c.radius)||.4,'industrial',`static:${i}`);
+      // v161 plants (assets/plants-v161.js): where the real wall/machine boxes below exist, the old circle stays for road/placement planning only (no invisible wall for players/agents)
+      const ownBoxes=!!(window.PlantsV161&&window.PlantsV161.ownsCollider(c.pos));
+      registerCircle(c.pos,Number(c.radius)||.4,'industrial',`static:${i}`,null,ownBoxes?{player:false,agent:false}:{});
     }
     // v161 sawmill v2: the real hall and the plank stack as oriented boxes (assets/sawmill-v161.js). Players and agents are blocked, placement
     // is off on purpose: road/decor planners keep using the old circle + v114 lots, so a production level change never re-lays roads.
-    for(const o of (typeof sawmillObstaclesV161==='function'?sawmillObstaclesV161():[]))register({category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
+    for(const o of (typeof sawmillObstaclesV161==='function'?sawmillObstaclesV161():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
+    // v161 plants: the concrete plant, metal yard and frame workshop as oriented boxes of their real machines/walls (userData.v161Footprint), same flags as the sawmill's
+    for(const o of (window.PlantsV161?window.PlantsV161.obstacles():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
 
     // Real company-base modules and special-project landmarks use their actual visible bounds.
     for(const [key,g] of (baseRuntime?.groups||new Map()))registerRoot(g,'base',`base:${key}`,{shrink:.93});
@@ -36716,7 +36735,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
   /* ---------------- manual mining, carrying and construction unloading ---------------- */
   const mineDefs={
     concrete:{pos:CONCRETE_PLANT_POS.clone().add(new THREE.Vector3(-2.7,0,.15)),cooldown:3000,visible:()=>concretePlantBuiltV118&&stageIndex>=CONCRETE_UNLOCK_STAGE},
-    metal:{pos:METAL_YARD_POS.clone().add(new THREE.Vector3(-2.7,0,.2)),cooldown:4200,visible:()=>metalYardBuiltV118&&stageIndex>=METAL_UNLOCK_STAGE}
+    metal:{pos:METAL_YARD_POS.clone().add(new THREE.Vector3(0,0,-3.2)),cooldown:4200,visible:()=>metalYardBuiltV118&&stageIndex>=METAL_UNLOCK_STAGE}
   };
   const mineRuntime=new Map(),mineCooldown={concrete:0,metal:0};
   function buildMineNodeV119(key,def){
@@ -36724,7 +36743,9 @@ Do not treat this geometry block as completion of the entire road/transport audi
     const pad=new THREE.Mesh(new THREE.CylinderGeometry(.78,.82,.08,24),new THREE.MeshStandardMaterial({color:meta.color,emissive:meta.color,emissiveIntensity:.18,roughness:.9}));pad.position.y=.04;g.add(pad);
     for(let i=0;i<6;i++){
       const mesh=key==='concrete'?new THREE.Mesh(new THREE.DodecahedronGeometry(.18+Math.random()*.08,0),createConcreteMaterial(0xaaa69e,{roughness:.98})):new THREE.Mesh(new THREE.BoxGeometry(.22+Math.random()*.18,.12+Math.random()*.12,.16+Math.random()*.2),createMetalMaterial(i%2?0x7e8994:0x9b765a,{roughness:.72,metalness:.38}));
-      mesh.position.set((Math.random()-.5)*.8,.16+Math.random()*.16,(Math.random()-.5)*.65);mesh.rotation.set(Math.random(),Math.random(),Math.random());g.add(mesh);
+      mesh.position.set((Math.random()-.5)*.8,.16+Math.random()*.16,(Math.random()-.5)*.65);mesh.rotation.set(Math.random(),Math.random(),Math.random());
+      // v161 plants: the rocks/scrap used to sink up to 0.2 m into the pad (rotated corners / radius below the 0.08 pad top): stand each one ON the pad, lowest vertex at the pad top
+      mesh.updateMatrix();{const pa=mesh.geometry.attributes.position,pv=new THREE.Vector3();let lowY=1e9;for(let k=0;k<pa.count;k++){pv.fromBufferAttribute(pa,k).applyMatrix4(mesh.matrix);if(pv.y<lowY)lowY=pv.y;}mesh.position.y+=.078-lowY;}g.add(mesh);
     }
     const label=makeLabelSprite([`${meta.emoji} ${lang==='ru'?(key==='concrete'?'ДОБЫЧА ЩЕБНЯ':'СБОР ЛОМА'):(key==='concrete'?'GRAVEL':'SCRAP')}`,lang==='ru'?'РУЧНАЯ ДОБЫЧА':'MANUAL GATHERING']);label.position.set(0,1.25,0);label.scale.set(1.35,.48,1);g.add(label);
     g.position.copy(def.pos);scene.add(g);return g;

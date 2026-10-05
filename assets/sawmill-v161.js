@@ -321,7 +321,7 @@ function buildSawmillMillV161(level) {
     const b = sawmillBladeV161(0.36, bladeMat);
     holder.add(b); root.add(holder);
     blades.push({ node: b, mult, baseY: null });
-    trimmers.push({ x, z });
+    trimmers.push({ x, z, post });
   }
   if (level >= 2) trimmer(BX - 0.7, 1.55, -1.15, BX - 0.95);
   if (level >= 3) trimmer(BX + 0.7, 1.55, 1.3, BX + 0.95);
@@ -423,7 +423,7 @@ function buildSawmillMillV161(level) {
   root.userData.layout = {
     level, zb: ZB, zf: ZF, x0: X0, x1: X1, zc: ZC, dep: DEP, leanZ1: LEAN_Z1, leanX0: LEAN_X0, leanX1: LEAN_X1,
     roof: { x0: RX0, x1: RX1, z0: ZC - HS, z1: ZC + HS }, trimmers,
-    stackObb: { x: L.PICK_X, z: L.PICK_Z, hx: 0.8, hz: 0.45 },   // the pickup stack (the pad itself is walkable)
+    stackObb: { x: L.PICK_X, z: L.PICK_Z, hx: 0.8, hz: 0.45 },   // where the pickup pile stands (no collider since 2026-10-05 (6): the pad is ON the pile)
   };
   root.userData.spinners = blades.map((b) => ({ node: b.node, speed: SAWMILL_SPIN_V161 * b.mult }));
   root.userData.blades = blades;
@@ -632,14 +632,40 @@ function sawmillStateV161() {
   };
 }
 
-// oriented boxes of the real hall for the global collision registry (placement flag off: roads and planners are not affected)
+// Oriented boxes of the real hall for the global collision registry (placement flag off: roads and planners are not affected; the old STATIC_COLLIDERS circle r 2.15 stays for
+// road/placement planning but is no player/agent collider any more, see PlantsV161.ownsCollider). They follow the REAL walls and machines (mill frame, yawed with the mill):
+// back wall, west wall, the front wall west of the plank outlet and the knee wall east of it, the plank belt table (it closes the outlet, ends 0.45 m before the pickup pad),
+// and the machinery block north of the carriage line (saw arbor, log pile, motor, cabinet, annex pile at level 2+). The east gable is OPEN: the log bay in front of the
+// carriage line stays walkable (that is where the logs come in), everything else is solid. The pickup pile on the plank plate has no collider: the pad is ON it (the old stack box
+// pushed a player standing on the pad out by 0.85 m).
 function sawmillObstaclesV161() {
   const mill = sawmillMillV161; if (!mill || !mill.visible) return [];
-  const lay = mill.userData.layout, yaw = mill.userData.yawV161, c = Math.cos(yaw), s = Math.sin(yaw);
+  const lay = mill.userData.layout, L = SAWMILL_L_V161, yaw = mill.userData.yawV161, c = Math.cos(yaw), s = Math.sin(yaw);
   const toWorld = (lx, lz) => new THREE.Vector3(SAWMILL_POS.x + c * lx + s * lz, 0, SAWMILL_POS.z - s * lx + c * lz);
-  const hall = { label: 'sawmill-hall-v161', pos: toWorld((lay.x0 + lay.x1) / 2, lay.zc), hx: (lay.x1 - lay.x0) / 2 + 0.12, hz: lay.dep / 2 + 0.12, yaw };
-  const st = lay.stackObb, stack = { label: 'sawmill-stack-v161', pos: toWorld(st.x, st.z), hx: st.hx, hz: st.hz, yaw };
-  return [hall, stack];
+  const M = 0.12, X0 = lay.x0, X1 = lay.x1, ZB = lay.zb, ZF = lay.zf;   // walls are 0.07 thick, the corner posts 0.17: 12 cm each side of the wall line covers the 0.1 m raster of the probe
+  const box = (label, x0, x1, z0, z1) => ({ owner: mill, label: 'sawmill-v161:' + label, pos: toWorld((x0 + x1) / 2, (z0 + z1) / 2), hx: (x1 - x0) / 2, hz: (z1 - z0) / 2, yaw });
+  const bx0 = L.BELT_X - L.BELT_W / 2, bx1 = L.BELT_X + L.BELT_W / 2;
+  const out = [
+    box('back', X0 - M, X1 + M, ZB - 0.18, ZB + M),
+    box('west', X0 - M, X0 + M, ZB - M, ZF + M),
+    box('front-west', X0 - M, bx0 - 0.05, ZF - M, ZF + M),
+    box('front-east', bx1 + 0.05, X1 + M, ZF - M, ZF + M),
+    box('belt', bx0 - 0.09, bx1 + 0.12, L.BELT_Z0, L.PICK_Z - 0.41),
+    // machinery north of the carriage line, tight boxes (the pockets between them are sealed): motor + cabinet at the west wall, saw arbor, log pile 1, the carriage rail strip
+    box('motor', X0 + M, -1.7, Math.max(ZB + M, -1.95), -0.05),
+    box('arbor', -0.55, 0.4, -1.4, -0.05),
+    box('log-pile', 0.1, X1 - 0.18, Math.max(ZB + M, -1.95), -0.05),
+    box('rail', X0 + M, X1 - 0.18, -0.68, -0.05),
+  ];
+  if (lay.level >= 2) out.push(box('annex-pile', -1.85, -0.15, -3.6, -2.6));   // log pile 2 of the annex (logs x -1.75..-0.25, z -3.5..-2.7 in the mill frame)
+  for (const t of lay.trimmers) if (t.post !== undefined) out.push(box('trimmer-post', t.post - 0.09, t.post + 0.09, t.z - 0.09, t.z + 0.09));
+  return out;
+}
+// the whole hall rectangle (walls + bay) for tests / planners that ask "is this point under the roof of the hall"
+function sawmillHallRectV161() {
+  const mill = sawmillMillV161; if (!mill || !mill.visible) return null;
+  const lay = mill.userData.layout, yaw = mill.userData.yawV161, c = Math.cos(yaw), s = Math.sin(yaw), lx = (lay.x0 + lay.x1) / 2, lz = lay.zc;
+  return { label: 'sawmill-hall-v161', pos: new THREE.Vector3(SAWMILL_POS.x + c * lx + s * lz, 0, SAWMILL_POS.z - s * lx + c * lz), hx: (lay.x1 - lay.x0) / 2 + 0.12, hz: lay.dep / 2 + 0.12, yaw };
 }
 
 // decor bushes/flowers that stand inside the footprint (+ margin) are hidden; real harvestable trees are never touched (reported by the test)

@@ -80,8 +80,22 @@
   function frameLabelLines() {
     return [lang === 'ru' ? 'КАРКАСНЫЙ ЦЕХ' : 'FRAME WORKSHOP', `📐 ${framesV161}/${frameCapacityV161()}`];
   }
+  function placeProp(p, withCollider) {
+    prop = p;
+    if (withCollider) {
+      STATIC_COLLIDERS.push({ pos: PROP_POS, radius: PROP_COLLIDER_RADIUS }); // road/placement planning; with PlantsV161 the player/agent colliders are the real boxes of the workshop (v83 registry)
+      try { window.__TYCOON_V83_COLLISIONS__?.rebuild?.(); } catch (err) { console.warn('[v161 frame workshop] collisions', err); }
+    }
+    return prop;
+  }
   function buildWorkshopProp(withCollider) {
     if (prop) return prop;
+    if (window.PlantsV161?.enabled) { // v161 plants (assets/plants-v161.js): timber workshop, saw table, frame jig, frame rack; PlantsV161.enabled = false brings back the old shed below
+      const nw = window.PlantsV161.buildWorkshop();
+      nw.group.position.copy(PROP_POS);
+      scene.add(nw.group);
+      return placeProp(nw, withCollider);
+    }
     const g = new THREE.Group();
     g.name = 'v161FrameWorkshop';
     g.add(createFoundation(3.0, 2.6, 0.16, 0xb9b6b0));
@@ -109,12 +123,15 @@
     g.add(label);
     g.position.copy(PROP_POS);
     scene.add(g);
-    prop = { group: g, label };
-    if (withCollider) {
-      STATIC_COLLIDERS.push({ pos: PROP_POS, radius: PROP_COLLIDER_RADIUS });
-      try { window.__TYCOON_V83_COLLISIONS__?.rebuild?.(); } catch (err) { console.warn('[v161 frame workshop] collisions', err); }
-    }
-    return prop;
+    return placeProp({ group: g, label }, withCollider);
+  }
+  function rebuildProp() { // showcase tool: swap old/new workshop in place (collider circle already registered)
+    if (!prop) return null;
+    const g = prop.group;
+    scene.remove(g); disposeObject3D(g); prop = null;
+    const r = buildWorkshopProp(false);
+    try { window.__TYCOON_V83_COLLISIONS__?.rebuild?.(); } catch (err) { /* registry not up yet */ }
+    return r;
   }
   function refreshLabel() {
     try { if (prop?.label) updateLabelSprite(prop.label, frameLabelLines()); } catch (_) { /* label is cosmetic */ }
@@ -149,6 +166,12 @@
   }
   let timer = 0, labelTimer = 0;
   function tick(dt) {
+    tickCore(dt);
+    if (prop && prop.v161) { try { window.PlantsV161.updateWorkshop(prop, dt); } catch (err) { console.warn('[v161 frame workshop] animation', err); } } // saw / jig / stack follow the recipe timer and the real frame count, after this frame's craft
+  }
+  // the recipe progress the workshop animation follows: active only while the inputs, the store room and the stage allow a craft (a blocked recipe keeps the bar full, nothing moves)
+  function phase() { return { active: canCraft(), p: Math.min(1, timer / Math.max(0.5, TABLE.recipe.interval / productionSpeedMultiplier())) }; }
+  function tickCore(dt) {
     if (!frameWorkshopBuiltV161) return;
     if (!prop) buildWorkshopProp(true);
     labelTimer += dt;
@@ -231,5 +254,6 @@
   refreshIndustrialPadMarkersV118();
   try { refreshHudStat(); } catch (_) { /* cosmetic */ }
 
-  window.PRODUCTION_CHAIN_V161 = { table: TABLE, craft, canCraft, reserve, tick, resetTimer: () => { timer = 0; }, positions: POS, propPos: PROP_POS, propCollider: PROP_COLLIDER_RADIUS, prop: () => prop };
+  window.PRODUCTION_CHAIN_V161 = { table: TABLE, craft, canCraft, reserve, tick, phase, rebuildProp, resetTimer: () => { timer = 0; }, positions: POS, propPos: PROP_POS, propCollider: PROP_COLLIDER_RADIUS, prop: () => prop };
+  if (prop && prop.v161) { try { window.__TYCOON_V83_COLLISIONS__?.rebuild?.(); } catch (_) { /* registry not up yet: its first rebuild asks PlantsV161.obstacles() */ } } // a workshop built at boot (old save) before this API existed: let the registry see its real boxes
 })();

@@ -281,7 +281,7 @@ check(fade.matsSame && fade.mats > 0 && fade.activeLeft === 0, `materials untouc
 await finishAll();
 const wk = await ev(() => {
   const real = [SAWMILL_POS, CONCRETE_PLANT_POS, METAL_YARD_POS, new THREE.Vector3(0, 0, 0), ...buildings.map((b) => b.pos)];
-  const hall = sawmillObstaclesV161()[0], hc = Math.cos(hall.yaw), hs = Math.sin(hall.yaw);
+  const hall = sawmillHallRectV161(), hc = Math.cos(hall.yaw), hs = Math.sin(hall.yaw);
   const inHall = (p) => { const dx = p.x - hall.pos.x, dz = p.z - hall.pos.z, lx = hc * dx - hs * dz, lz = hs * dx + hc * dz; return Math.abs(lx) < hall.hx && Math.abs(lz) < hall.hz; };
   const dReal = (p) => Math.min(...real.map((r) => Math.hypot(p.x - r.x, p.z - r.z)));
   const rows = [];

@@ -43,7 +43,11 @@ export function installProbe() {
       if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
       const lb = o.geometry.boundingBox;
       if (!lb || !Number.isFinite(lb.min.x)) return;
-      const wb = lb.clone().applyMatrix4(o.matrixWorld);
+      // exact world box from the vertices (the corner-transformed local box over-estimates rotated round meshes: a rock lying on its pad read as 7 cm sunk); huge meshes keep the cheap box
+      const pa = o.geometry.attributes.position;
+      let wb;
+      if (pa && pa.count <= 40000) { wb = new THREE.Box3(); const tv = new THREE.Vector3(); for (let i = 0; i < pa.count; i++) wb.expandByPoint(tv.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld)); }
+      else wb = lb.clone().applyMatrix4(o.matrixWorld);
       const m = Array.isArray(o.material) ? o.material[0] : o.material;
       const transparent = !!(m && m.transparent && (m.opacity ?? 1) < 0.95);
       parts.push({ o, lb, wb, inv: o.matrixWorld.clone().invert(), visible: visibleUp(o, root), transparent, soft: !!o.userData?.v161Soft, sprite: false });
@@ -219,6 +223,14 @@ export function installProbe() {
     out.outsideMax = round(outMax);
     out.colliders = entries.map((e) => ({ label: e.label, shape: e.shape, x: round(e.pos.x), z: round(e.pos.z), r: e.shape === 'obb' ? undefined : round(e.radius), hx: e.hx && round(e.hx), hz: e.hz && round(e.hz), yaw: e.yaw && round(e.yaw, 3), flags: Object.keys(e.flags || {}).filter((k) => e.flags[k]).join('+') }));
     out.center = nF ? [round(cxs / nF), round(czs / nF)] : null;
+    if (opts.ascii) { // debugging aid: '#' footprint only (uncovered), 'o' collider only, 'B' both; north (z min) on top, one char = 0.1 m; the grid origin is printed in the first row
+      const rowsA = [`x0=${round(grid.x0)} z0=${round(grid.z0)} nx=${grid.nx} nz=${grid.nz}`];
+      for (let j = 0; j < grid.nz; j++) { let line = ''; for (let i = 0; i < grid.nx; i++) { const k = j * grid.nx + i; line += F[k] && C[k] ? 'B' : F[k] ? '#' : C[k] ? 'o' : '.'; } rowsA.push(line); }
+      out.ascii = rowsA;
+      // world centres of the uncovered footprint cells and of the collider-only cells farther than 0.9 m from the walls (tuning aid, see tools/showcase-v161.mjs --ascii)
+      const dd = distanceTo(grid, F); out.unc = []; out.far = [];
+      for (let j = 0; j < grid.nz; j++) for (let i = 0; i < grid.nx; i++) { const k = j * grid.nx + i; if (F[k] && !C[k]) out.unc.push([round(grid.cx(i)), round(grid.cz(j))]); else if (C[k] && !F[k] && dd[k] * CELL > 0.9) out.far.push([round(grid.cx(i)), round(grid.cz(j))]); }
+    }
     // swept player test through the centre from 8 directions, only the building's own colliders
     if (nF && opts.sweep !== false) {
       const cx = cxs / nF, cz = czs / nF;
@@ -358,6 +370,7 @@ export function installProbe() {
     const add = (id, p, family) => { if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) pts.push({ id, x: +p.x.toFixed(2), z: +p.z.toFixed(2), family }); };
     for (const k of Object.keys(LOGISTICS_ZONES)) add('pickup:' + k, LOGISTICS_ZONES[k].pos, 'industrial');
     add('sawmill-dropoff', SAWMILL_DROPOFF_POS, 'industrial');
+    for (const k of ['concrete', 'metal']) { const g = scene.getObjectByName('manualMineV119_' + k); if (g) add('mine:' + k, g.position, 'industrial'); } // the manual gathering pads next to the plants
     for (const b of buildings) if (b.upgradePad?.pos) add('upgrade-pad:stage' + b.index, b.upgradePad.pos, STAGES[b.index].archetype === 'house' ? 'house' : 'stage');
     for (const s of (typeof INDUSTRIAL_BUILD_STEPS_V118 !== 'undefined' ? INDUSTRIAL_BUILD_STEPS_V118 : [])) if (s.pos && industrialPadMarkersV118?.has?.(s.id)) add('industrial-pad:' + s.id, s.pos, 'industrial');
     for (const f of (typeof FIELD_UPGRADE_CONFIGS !== 'undefined' ? FIELD_UPGRADE_CONFIGS : [])) add('field-pad:' + (f.key || f.id || ''), f.pos, 'industrial');

@@ -7,8 +7,13 @@
 //   B. the live world: houses carry real wall boxes in the registry (the whole-mesh box keeps placement/camera only), the door and the upgrade pad of a built house
 //      are standing places (not inside any collider), every pickup / drop-off / pad point, and the live industrial / market / district groups.
 //   C. a real upgrade of house 0 (upgradeBuilding) keeps its colliders and re-lays 0 road meshes.
-// IN SCOPE (hard checks): the house family = stage 0/1 at every level, the neighbourhood mini house. Everything else in the catalogue is measured and printed as
-//   `KNOWN ISSUE:` (exit 0) - those lines are the backlog of the next building families. SHOTS_DIR=<dir> writes front + iso pictures of house levels 1/3/5/10.
+//   B2 (2026-10-05 (6), family #2): the INDUSTRIAL PLANTS (sawmill, concrete plant, metal yard, frame workshop) at production levels 1/2/3, built by the game's own refresh path
+//   (industrialLevelsV161 -> refreshIndustrialBadgesV161) and measured with the colliders they own in the real registry: nothing floating or sunk, the colliders cover the walls /
+//   machines (>= 90 %) and stick out <= 1.0 m, the player walked at the centre from 8 directions never gets inside (open bays stay walkable: the footprint is walls + machines),
+//   every pad / pickup / mine / badge of the plant is outside every collider, the mines stand on their pad, draw-call budgets.
+// IN SCOPE (hard checks): the house family = stage 0/1 at every level, the neighbourhood mini house, the four industrial plants. Everything else in the catalogue is measured and
+//   printed as `KNOWN ISSUE:` (exit 0) - those lines are the backlog of the next building families. SHOTS_DIR=<dir> writes front + iso pictures of house levels 1/3/5/10
+//   and of the plants at levels 1/3.
 import fs from 'node:fs';
 import path from 'node:path';
 import { openGame, check } from './lib/harness.mjs';
@@ -147,15 +152,17 @@ for (const h of live.houses) {
 console.log(`work points checked: ${live.points.length} (${live.points.map((p) => p.id).join(', ')})`);
 const houseBad = live.points.filter((p) => p.family === 'house' && p.b.moved > 0.25);
 check(houseBad.length === 0, `house upgrade pads are reachable: not deeper than 25 cm inside a collider (${J(houseBad)})`);
-for (const p of live.points.filter((x) => x.family !== 'house' && x.b.hit)) issue(`${p.id} @${p.x},${p.z} is inside a collider (${p.b.by.join(', ')}; the player circle would be pushed ${p.b.moved} m)`);
+const padsInside = live.points.filter((x) => x.family !== 'house' && x.b.hit);
+for (const p of padsInside) issue(`${p.id} @${p.x},${p.z} is inside a collider (${p.b.by.join(', ')}; the player circle would be pushed ${p.b.moved} m)`);
+// every pickup / drop-off / pad / mine of the industrial family (sawmill, plants, mines, field pads) stands outside every collider (2026-10-05 (6): hard)
+const industrialPads = live.points.filter((x) => x.family === 'industrial');
+check(industrialPads.length >= 8 && industrialPads.every((p) => !p.b.hit), `industrial pads / pickups / mines stand outside every collider: ${industrialPads.length} checked (${industrialPads.map((p) => p.id).join(', ')}); inside: ${J(industrialPads.filter((p) => p.b.hit).map((p) => [p.id, p.b.by, p.b.moved]))}`);
 
 // live groups (named by the owning code; positions from the late-game survey)
 const targets = [
-  { id: 'sawmill', name: 'v161SawmillMill' }, { id: 'fleet-yard', name: 'v116FleetYard' }, { id: 'frame-workshop', name: 'v161FrameWorkshop' },
-  { id: 'concrete-plant', expr: 'concretePlant.group' }, { id: 'metal-yard', expr: 'metalPlant.group' }, { id: 'market-plaza', name: 'marketPlazaV116' },
+  { id: 'fleet-yard', name: 'v116FleetYard' }, { id: 'market-plaza', name: 'marketPlazaV116' },
   ...['team', 'fleet', 'tenders', 'operations', 'meta', 'bonus', 'exchange'].map((k) => ({ id: 'market-stall-' + k, name: 'marketStallV116_' + k })),
-  { id: 'manual-mine-concrete', name: 'manualMineV119_concrete' }, { id: 'manual-mine-metal', name: 'manualMineV119_metal' },
-];
+]; // the plants (sawmill, concrete plant, metal yard, frame workshop, their mines) are HARD checks in section B2 below
 const liveRows = await ev((targets) => {
   const P = __BLD_PROBE__, out = [];
   for (const t of targets) {
@@ -166,13 +173,76 @@ const liveRows = await ev((targets) => {
   return out;
 }, targets);
 console.log('live groups:', liveRows.map((r) => (r.missing ? `${r.id}: missing` : `${r.id}: meshes ${r.meshes}, min y ${r.minY}, footprint ${r.footprintArea} m2, collider ${r.colliderArea} m2, overlap ${r.overlap}, outside max ${r.outsideMax} m, walk-in ${r.sweepReached ?? '-'}/8`)).join('\n  '));
-check(liveRows.filter((r) => !r.missing).length >= 12, `live groups found and measured (${liveRows.filter((r) => !r.missing).length} of ${liveRows.length})`);
+check(liveRows.filter((r) => !r.missing).length >= 8, `live groups found and measured (${liveRows.filter((r) => !r.missing).length} of ${liveRows.length})`);
 for (const r of liveRows.filter((x) => !x.missing)) {
   if (r.minY < -0.05 || r.minY > 0.05) issue(`${r.id}: floating or sunk, min y ${r.minY}`);
   if (r.footprintArea > 1 && r.overlap !== null && r.overlap < 0.9) issue(`${r.id}: collider covers only ${Math.round(r.overlap * 100)} % of the wall footprint (${r.uncovered} m2 uncovered)`);
   if (r.outsideMax > 1.0) issue(`${r.id}: collider extends ${r.outsideMax} m beyond the walls (${r.outside} m2 of invisible wall)`);
   if (r.sweepReached > 0) issue(`${r.id}: the player can walk into it from ${r.sweepReached} of 8 directions`);
 }
+
+// ------------------------------------------------------------------------------------------------ B2. industrial plants (family #2, 2026-10-05 (6)): HARD
+// Each plant is rebuilt by the game's own path at production level 1/2/3 and measured with the colliders it OWNS in the real registry (owner === root): the oriented boxes
+// of its walls / machines. The old STATIC_COLLIDERS circle stays for roads and placement only (no player / agent flag).
+const PLANT_BUDGET = { sawmill: 26, concrete: 16, metal: 20, frame: 12 }; // meshes (= draw calls of the plant) at any level; before: 22-24 / 74 / 14 / 11
+const levels0 = await ev(() => ({ ...industrialLevelsV161 }));
+const plantRows = [];
+for (const kind of ['sawmill', 'concrete', 'metal', 'frame']) {
+  for (const L of kind === 'frame' ? [1] : [1, 2, 3]) {
+    if (kind !== 'frame') await ev(({ kind, L }) => { industrialLevelsV161[kind] = L; refreshIndustrialBadgesV161(); }, { kind, L });
+    const views = SHOTS && [1, 3].includes(L) ? ['front', 'iso'] : [];
+    const r = await ev(({ kind, L, views }) => {
+      const P = __BLD_PROBE__, reg = __TYCOON_V83_COLLISIONS__.registry;
+      const root = { sawmill: () => scene.getObjectByName('v161SawmillMill'), concrete: () => concretePlant.group, metal: () => metalPlant.group, frame: () => PRODUCTION_CHAIN_V161.prop().group }[kind]();
+      root.updateMatrixWorld(true);
+      const own = P.ownEntries(root), meas = P.measure(root, own);
+      const pos = root.position;
+      const circles = [...reg.values()].filter((e) => e.shape === 'circle' && e.category === 'industrial' && Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z) < 0.01);
+      const step = (id) => { try { const st = industrialStepV118(id); return st && st.pos ? st.pos : null; } catch (e) { return null; } };
+      const padsOf = {
+        sawmill: [['pickup:planks', LOGISTICS_ZONES.planks.pos], ['dropoff', SAWMILL_DROPOFF_POS], ['pad:sawmill build', SAWMILL_PAD_POS_V118], ['pad:sawmill2', SAWMILL_UPGRADE_PAD_POS_V161], ['pad:sawmill3', step('sawmill3')]],
+        concrete: [['pickup:concrete', LOGISTICS_ZONES.concrete.pos], ['pad:concrete build', CONCRETE_PAD_POS_V118], ['pad:concrete2', CONCRETE_UPGRADE_PAD_POS_V161], ['pad:concrete3', step('concrete3')]],
+        metal: [['pickup:metal', LOGISTICS_ZONES.metal.pos], ['pad:metal build', METAL_PAD_POS_V118], ['pad:metal2', METAL_UPGRADE_PAD_POS_V161], ['pad:metal3', step('metal3')]],
+        frame: [['pad:frame', step('frame')]],
+      }[kind];
+      const mine = scene.getObjectByName('manualMineV119_' + kind);
+      if (mine) { padsOf.push(['mine:' + kind, mine.position]); }
+      const pads = padsOf.filter((q) => q[1]).map(([id, v]) => ({ id, x: +v.x.toFixed(2), z: +v.z.toFixed(2), b: P.blockedAt(v.x, v.z) }));
+      const out = { meas, pads, own: own.length, circlesSolid: circles.filter((e) => e.flags.player || e.flags.agent).length, circlesPlacement: circles.filter((e) => e.flags.placement).length, circles: circles.length, mineMinY: mine ? P.measureLive(mine).minY : null, level: root.userData.levelV161 || null };
+      if (kind === 'sawmill') { const w = root.localToWorld(new THREE.Vector3(1.0, 0, 0.5)); out.bay = P.blockedAt(w.x, w.z); const m = root.localToWorld(new THREE.Vector3(0.5, 0, -0.9)); out.mach = P.blockedAt(m.x, m.z); }
+      if (views.length) out.shots = P.shoot(root, views).shots;
+      delete meas.colliders;
+      return out;
+    }, { kind, L, views });
+    if (r.shots) for (const [v, url] of Object.entries(r.shots)) fs.writeFileSync(path.join(SHOTS, `plant-${kind}-L${L}-${v}.jpg`), Buffer.from(url.split(',')[1], 'base64'));
+    plantRows.push({ kind, L, ...r });
+  }
+}
+await ev((lv) => { for (const k of Object.keys(lv)) industrialLevelsV161[k] = lv[k]; refreshIndustrialBadgesV161(); }, levels0);
+const pl = (r) => `${r.kind} L${r.L}`;
+const pbad = (pred) => plantRows.filter((r) => !pred(r)).map(pl);
+let pb;
+pb = pbad((r) => r.meas.minY >= -0.05 && r.meas.minY <= 0.05);
+check(pb.length === 0, `plants: nothing floating or sunk, min y within 5 cm for every plant and level (${pb.length} bad ${J(pb)}; min y range ${Math.min(...plantRows.map((r) => r.meas.minY))}..${Math.max(...plantRows.map((r) => r.meas.minY))})`);
+pb = pbad((r) => r.mineMinY === null || Math.abs(r.mineMinY) <= 0.05);
+check(pb.length === 0, `plants: the manual mines stand ON their pad, min y ${J(plantRows.filter((r) => r.mineMinY !== null).map((r) => [r.kind, r.mineMinY]))} (was -0.12 / -0.20: rocks and scrap sunk into the pad)`);
+pb = pbad((r) => r.meas.overlap !== null && r.meas.overlap >= 0.9);
+check(pb.length === 0, `plants: the colliders cover >= 90 % of the walls / machines (${pb.length} bad ${J(pb)}; worst ${Math.min(...plantRows.map((r) => r.meas.overlap))}; concrete circle before: 85 %, 0.94 m2 uncovered)`);
+pb = pbad((r) => r.meas.outsideMax <= 1.0);
+check(pb.length === 0, `plants: no collider extends more than 1.0 m beyond the walls (worst ${Math.max(...plantRows.map((r) => r.meas.outsideMax))} m; the circles were up to 1.1-1.41 m)`);
+pb = pbad((r) => r.meas.sweepReached === 0);
+check(pb.length === 0, `plants: the player walked at the centre from 8 directions never stands inside a wall or machine (${pb.length} bad ${J(pb)})`);
+pb = pbad((r) => r.own >= 3 && r.circlesSolid === 0 && r.circlesPlacement === r.circles && r.circles >= 1);
+check(pb.length === 0, `plants: real boxes are the player/agent colliders (${J(plantRows.map((r) => [pl(r), r.own]))}); the old circle is placement-only (road/decor planning keeps its radius)`);
+pb = pbad((r) => r.pads.every((q) => !q.b.hit));
+check(pb.length === 0, `plants: every pad / pickup / mine / badge spot of a plant stands outside every collider (${plantRows.reduce((a, r) => a + r.pads.length, 0)} checked; inside: ${J(plantRows.flatMap((r) => r.pads.filter((q) => q.b.hit).map((q) => [pl(r), q.id, q.b.by, q.b.moved])))}; the planks pad was pushed 0.85 m out of the stack box)`);
+pb = pbad((r) => r.meas.meshes <= PLANT_BUDGET[r.kind]);
+check(pb.length === 0, `plants: mesh (= draw call) budget ${J(PLANT_BUDGET)} (${J(Object.fromEntries(plantRows.map((r) => [pl(r), r.meas.meshes])))})`);
+const mill = plantRows.filter((r) => r.kind === 'sawmill');
+check(mill.every((r) => r.bay && !r.bay.hit && r.mach && r.mach.hit), `sawmill: the open log bay of the east gable is walkable (not pushed), the machinery block north of the carriage line is solid ${J(mill.map((r) => [r.bay && r.bay.hit, r.mach && r.mach.hit]))}`);
+const lv = (k) => plantRows.filter((r) => r.kind === k);
+check(lv('concrete').every((r, i, a) => i === 0 || r.meas.tris > a[i - 1].meas.tris) && lv('metal').every((r, i, a) => i === 0 || r.meas.tris > a[i - 1].meas.tris), `concrete and metal: every level adds parts to the SAME building (triangles ${J(lv('concrete').map((r) => r.meas.tris))} / ${J(lv('metal').map((r) => r.meas.tris))})`);
+console.log('plant rows:', plantRows.map((r) => `${pl(r)}: meshes ${r.meas.meshes}, tris ${r.meas.tris}, min y ${r.meas.minY}, footprint ${r.meas.footprintArea} m2, collider ${r.meas.colliderArea} m2, overlap ${r.meas.overlap}, outside max ${r.meas.outsideMax} m, walk-in ${r.meas.sweepReached}/8, boxes ${r.own}`).join('\n  '));
 
 // ------------------------------------------------------------------------------------------------ C. a real upgrade keeps colliders, re-lays no road
 // house 0 is level 5 in the late save: the next real upgrade is the first gold tier (6). The road signature uses min(level, 5), so no road may be re-laid.

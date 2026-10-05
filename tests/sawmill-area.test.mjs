@@ -135,20 +135,20 @@ async function runFresh() {
     const others = [['dropoff', SAWMILL_DROPOFF_POS], ['level-2 pad', SAWMILL_UPGRADE_PAD_POS_V161], ['level-3 pad', industrialStepV118('sawmill3')?.pos], ...FIELD_UPGRADE_CONFIGS.map((f) => ['field ' + f.key, f.pos]), ['depot pad', FLEET_DEPOT_PAD_POS_V118], ['sawmill pad', SAWMILL_PAD_POS_V118]]
       .filter((o) => o[1]).map(([n, p]) => [n, +Math.hypot(p.x - z.pos.x, p.z - z.pos.z).toFixed(2)]);
     const trees = sourceTrees.map((t) => Math.hypot(t.mesh.position.x - z.pos.x, t.mesh.position.z - z.pos.z)).sort((a, b) => a - b)[0];
-    const obb = sawmillObstaclesV161().find((o) => o.label === 'sawmill-stack-v161');
+    const padSolve = resolvePlayerCircleCollisions(z.pos.x, z.pos.z), stackBoxes = sawmillObstaclesV161().filter((o) => /stack/.test(o.label)).length; // 2026-10-05 (6): the pickup pad is ON the pile, the pile has no collider any more
     const bay = serviceAccessGraph().find((n) => n.id === 'plankBay').p, src = cargoInfo('planks').source;
     const kids = z.group.children.map((c) => c.name || c.type);
     return {
       pick: pk.map((v) => +v.toFixed(2)), toOutlet: +Math.hypot(z.pos.x - outlet.x, z.pos.z - outlet.z).toFixed(2), y: z.group.position.y, rotMatch: Math.abs(z.group.rotation.y - m.rotation.y) < 1e-9,
       lean: [lay.leanX0, lay.leanX1, lay.zf, lay.leanZ1], visible: z.group.visible, labelY: z.label.position.y,
-      hall: { z0: lay.zb, z1: lay.zf }, solvedFront: solveF.hit, solvedSide: solveS.hit, others, nearestTree: +trees.toFixed(2), obb: obb && { x: +loc(obb.pos.x, obb.pos.z)[0].toFixed(2), z: +loc(obb.pos.x, obb.pos.z)[1].toFixed(2) },
+      hall: { z0: lay.zb, z1: lay.zf }, solvedFront: solveF.hit, solvedSide: solveS.hit, others, nearestTree: +trees.toFixed(2), padPushed: +Math.hypot(padSolve.x - z.pos.x, padSolve.z - z.pos.z).toFixed(3), padHit: padSolve.hit, stackBoxes,
       truck: { toBay: +bay.distanceTo(src).toFixed(3), fromPickup: +Math.hypot(src.x - z.pos.x, src.z - z.pos.z).toFixed(2) }, kids, keepDist: +sawmillFootprintDistV161(z.pos.x, z.pos.z).toFixed(2),
       oldSlab: scene.children.filter((o) => o.type === 'Group' && o !== z.group && o.children.some((c) => c.isSprite) && Math.hypot(o.position.x - PLANK_TRUCK_BAY_POS_V161.x, o.position.z - PLANK_TRUCK_BAY_POS_V161.z) < 1).length,
     };
   });
   check(C.toOutlet <= 1.5 && C.visible, `pickup block is ${C.toOutlet} m from the plank belt exit (limit 1.5), visible after the sawmill is built`);
   check(C.pick[0] >= C.lean[0] && C.pick[0] <= C.lean[1] && C.pick[1] > C.hall.z1 + 0.6 && C.pick[1] <= C.lean[3] + 0.2 && Math.abs(C.y - 0.2) < 1e-9 && C.rotMatch, `pickup stands under the lean-to (mill frame ${J(C.pick)}, lean-to x ${C.lean[0]}..${C.lean[1]}, z ${C.lean[2]}..${C.lean[3]}), on the lean-to floor (y ${C.y}), outside the hall box (z > ${C.hall.z1}), yawed with the mill`);
-  check(!C.solvedFront && !C.solvedSide && C.obb && Math.abs(C.obb.x - C.pick[0]) < 0.05 && Math.abs(C.obb.z - C.pick[1]) < 0.05, `the approach is walkable (front/side points are not pushed), the collision box is the stack itself at the pad ${J(C.obb)}`);
+  check(!C.solvedFront && !C.solvedSide && !C.padHit && C.padPushed === 0 && C.stackBoxes === 0, `the approach is walkable (front/side points are not pushed) and the pickup pad stands outside every collider (pushed ${C.padPushed} m; the old stack box pushed 0.85 m, the pile has no collider now)`);
   check(C.others.every(([, d]) => d >= 2.6), `>= 2.6 m (interact radius 2.55) from every other pad ${J(C.others)}`);
   check(C.nearestTree > 4, `no choppable tree within 4 m of the pickup (${C.nearestTree} m); the pickup is inside the mill footprint, the keep-out distance is ${C.keepDist}`);
   check(C.labelY > 2.2 && C.kids.includes('v161PlankStack'), `name plate above the roof (y ${C.labelY}), the stack is a child of the zone (${J(C.kids.slice(-3))})`);
@@ -259,20 +259,25 @@ async function runOld() {
     return { s0, s1, produced, batches: a1 - a0, planks };
   });
   check(H.planks === 3 + H.produced && H.s1 === H.s0 + H.produced && H.batches === H.produced, `one saw production event adds exactly one board batch (+${H.produced}: ${H.s0} -> ${H.s1} boards, planks ${H.planks})`);
+  await ev(() => { window.__plantVis = () => { const v = []; for (const o of [concretePlant && concretePlant.group, metalPlant && metalPlant.group, (window.PRODUCTION_CHAIN_V161 && PRODUCTION_CHAIN_V161.prop() || {}).group]) if (o) o.traverse((m) => { if (m.isMesh && m.visible) v.push(m.name); }); return v.join(','); }; });
   const leak = await ev(() => {
     planks = 0; syncPlankStackV161(); sawmillAutoTimer = 0;
+    // 2026-10-05 (6): draw everything once without frustum culling, so the GPU upload of a plant that first comes into view during the wait below (renderer.info counts a geometry
+    // when it is first drawn) is not mistaken for a leak (the 8-14 meshes of the new concrete plant / metal yard made this flaky)
+    { const culled = []; scene.traverse((o) => { if ((o.isMesh || o.isPoints) && o.frustumCulled) { culled.push(o); o.frustumCulled = false; } }); try { renderer.render(scene, camera); } finally { for (const o of culled) o.frustumCulled = true; } }
     const c0 = scene.children.length, g0 = renderer.info.memory.geometries, t0 = renderer.info.memory.textures;
     const interval = sawmillAutoInterval(), seen = []; let events = 0;
     for (let i = 0; i < Math.ceil(4 * interval / 0.2) + 2; i++) { const p0 = planks; updateSawmill(0.2); if (planks > p0) events++; syncPlankStackV161(); seen.push(__stackInfo().shown); }
     const info = __stackInfo();
     planks = 500; syncPlankStackV161(); const capped = __stackInfo().shown;
-    window.__leak0 = { c0, g0, t0 };
+    window.__leak0 = { c0, g0, t0, vis: window.__plantVis() };
     return { events, shown: info.shown, planks: info.planks, capped, monotone: seen.every((v, i) => !i || v >= seen[i - 1]) };
   });
   // the burst particles of the 4 production events expire through the REAL animate loop; then everything must be back at the baseline
   await page.waitForFunction(() => scene.children.length <= window.__leak0.c0, null, { timeout: 30000, polling: 250 }).catch(() => {});
-  Object.assign(leak, await ev(() => ({ children: [window.__leak0.c0, scene.children.length], geos: [window.__leak0.g0, renderer.info.memory.geometries], texs: [window.__leak0.t0, renderer.info.memory.textures], stackMeshes: (() => { let n = 0; scene.traverse((o) => { if (o.name === 'v161PlankStack') n++; }); return n; })() })));
+  Object.assign(leak, await ev(() => ({ children: [window.__leak0.c0, scene.children.length], geos: [window.__leak0.g0, renderer.info.memory.geometries], texs: [window.__leak0.t0, renderer.info.memory.textures], plantVis: [window.__leak0.vis, window.__plantVis()], stage: stageIndex, res: [concrete, metal, planks], stackMeshes: (() => { let n = 0; scene.traverse((o) => { if (o.name === 'v161PlankStack') n++; }); return n; })() })));
   check(leak.events >= 3 && leak.shown === Math.min(24, leak.planks) && leak.monotone && leak.capped === 24, `${leak.events} production events in 4 cycles: the stack grows with the stock (${leak.shown} boards, planks ${leak.planks}), never decreases while producing, capped at 24`);
+  console.log('INFO plants during the leak window: ' + J({ vis: leak.plantVis, stage: leak.stage, res: leak.res }));
   check(leak.children[1] <= leak.children[0] && leak.geos[1] <= leak.geos[0] + 2 && leak.texs[0] === leak.texs[1] && leak.stackMeshes === 1, `no leak over the cycles: scene children ${J(leak.children)}, geometries ${J(leak.geos)}, textures ${J(leak.texs)}, ${leak.stackMeshes} stack mesh`);
   check(g.errors.length === 0 && g.badResponses.length === 0, `OLD_SAVE launch: 0 console errors, 0 4xx ${J(g.errors.slice(0, 3))} ${J(g.badResponses.slice(0, 3))}`);
   await g.close();

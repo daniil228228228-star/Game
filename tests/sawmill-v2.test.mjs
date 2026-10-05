@@ -97,8 +97,9 @@ const B = await ev(() => {
   // player pushed out of the hall: a point inside the west part (outside the old circle)
   const inside = m.localToWorld(new THREE.Vector3(-2.3, 0, 1.8));
   const solved = resolvePlayerCircleCollisions(inside.x, inside.z);
-  const insideBay = m.localToWorld(new THREE.Vector3(1.0, 0, 0.3));
+  const insideBay = m.localToWorld(new THREE.Vector3(1.0, 0, 0.8)); // centre of the open log bay (the player circle 0.4 m must clear the carriage rail strip)
   const solved2 = resolvePlayerCircleCollisions(insideBay.x, insideBay.z);
+  const insideMach = m.localToWorld(new THREE.Vector3(0.5, 0, -0.9)), solved3 = resolvePlayerCircleCollisions(insideMach.x, insideMach.z); // the log pile / saw machinery block
   return {
     top: scene.children.filter((o) => /sawmill/i.test(o.name || '') && o.name !== 'v161SawmillMill').map((o) => o.name),
     names, meshes: Object.values(names).reduce((a, b) => a + b, 0),
@@ -108,7 +109,7 @@ const B = await ev(() => {
     collider: sc ? sc.radius : null, dropoff: [SAWMILL_DROPOFF_POS.x - SAWMILL_POS.x, SAWMILL_DROPOFF_POS.z - SAWMILL_POS.z],
     upPad: [up.x - SAWMILL_POS.x, up.z - SAWMILL_POS.z], up3: up3 && toLocal(up3),
     obb: obb.map((o) => ({ l: o.label, hx: o.hx, hz: o.hz })),
-    pushedHall: solved.hit && Math.hypot(solved.x - inside.x, solved.z - inside.z) > 0.2, pushedBay: solved2.hit,
+    pushedHall: solved.hit && Math.hypot(solved.x - inside.x, solved.z - inside.z) > 0.2, pushedBay: solved2.hit, pushedMach: solved3.hit,
     nav: typeof nearestManualTargetV53,
   };
 });
@@ -119,7 +120,8 @@ check(B.logBeltEndLocal[0] > B.layout.x0 && B.logBeltEndLocal[0] < B.layout.x1 &
 check(B.collider === 2.15, `static collider unchanged: SAWMILL_POS r ${B.collider}`);
 check(near(B.dropoff[0], 2.75, 1e-6) && near(B.dropoff[1], 1.7, 1e-6), `log drop-off point unchanged: SAWMILL_POS + ${J(B.dropoff)}`);
 check(near(B.upPad[0], 0, 1e-6) && near(B.upPad[1], 4.4, 1e-6), `level-2 pad unchanged: SAWMILL_POS + ${J(B.upPad.map((v) => +v.toFixed(2)))}`);
-check(B.obb.length === 2 && B.pushedHall && B.pushedBay, `the hall is solid for the player (oriented boxes ${J(B.obb)}, pushed out of the wall: ${B.pushedHall}, out of the bay: ${B.pushedBay})`);
+// 2026-10-05 (6): the hall is solid where it is solid (walls, belt table, machinery block = real oriented boxes), the open log bay in the east gable stays walkable
+check(B.obb.length >= 6 && B.pushedHall && B.pushedMach && !B.pushedBay, `the hall follows its real walls (${B.obb.length} oriented boxes ${J(B.obb.map((o) => o.l))}, pushed out of the west wall: ${B.pushedHall}, out of the machinery block: ${B.pushedMach}, the open log bay is walkable: ${!B.pushedBay})`);
 
 // levels: mesh counts, draw calls (same camera), footprint vs neighbours, roads untouched
 const roadUuids = () => ev(() => {

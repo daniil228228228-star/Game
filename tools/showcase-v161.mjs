@@ -1,6 +1,10 @@
 // Showcase + physics audit for every building the player can see (2026-10-05 (4), docs/BUILDINGS_V161.md is the catalogue this feeds).
 //   node tools/showcase-v161.mjs [--stages 0,1,..|all] [--levels 1,5,10] [--house-levels 1-10] [--views front,side,top,iso] [--other-views iso]
 //                                [--survey] [--survey-shots N] [--out DIR] [--tag base] [--json FILE]
+//   node tools/showcase-v161.mjs --plants [--plant-levels 1,3] [--plant-views front,iso] [--plant-only sawmill,concrete,metal,frame]   (2026-10-05 (6), family #2)
+//     the late-game world is built out, then every industrial plant (sawmill, concrete plant, metal yard, frame workshop) is shown at every level in a LIVE mid-cycle pose
+//     (timers set, one synchronous update, one shot) next to the OLD builder of the same plant (PlantsV161.enabled = false; the sawmill has no old version): PHYSICS
+//     numbers (meshes, draw calls, triangles, min y, collider overlap/outside/walk-in) and DIR/<tag>-plant-<id>-L<n>-<view>.jpg (+ -old-).
 // ONE browser launch per run. Stage buildings (all 16 STAGES) are built by the game's real builder chain (createBuildingMesh: BUILDERS + polish layers +
 // v44 + v157 + late-game gold tiers), put alone on the grass (everything else in the scene is hidden for the shot), registered in the real v83 collision
 // registry with the call rebuildStatic uses, and shot from four fixed cameras at the phone viewport 390x664: DIR/bld-<id>-L<n>-<view>.jpg.
@@ -20,6 +24,7 @@ const TAG = opt('tag', 'bld');
 const VIEWS = String(opt('views', 'front,side,top,iso')).split(',');
 const OTHER_VIEWS = String(opt('other-views', 'iso')).split(',');
 const WANT_SURVEY = !!opt('survey', false);
+const WANT_PLANTS = !!opt('plants', false);
 fs.mkdirSync(OUT, { recursive: true });
 
 const LATE = { saveVersion: 20, stageIndex: 16, money: 5e8, planks: 5000, concrete: 500, metal: 500, buildings: Array.from({ length: 16 }, (_, i) => ({ index: i, level: 5 })) };
@@ -27,7 +32,7 @@ const g = await openGame({ save: LATE, waitMs: 8000 });
 const { page } = g;
 await page.evaluate(installProbe);
 const info = await page.evaluate(() => __BLD_PROBE__.stageInfo());
-const stages = parseList(opt('stages', 'all'), Array.from({ length: info.n }, (_, i) => i));
+const stages = WANT_PLANTS && !opt('stages', false) ? [] : parseList(opt('stages', 'all'), Array.from({ length: info.n }, (_, i) => i));
 const levels = parseList(opt('levels', '1,5,10'), [1, 5, 10]);
 const houseLevels = parseList(opt('house-levels', '1-10'), Array.from({ length: 10 }, (_, i) => i + 1));
 const save = (name, dataUrl) => fs.writeFileSync(path.join(OUT, name), Buffer.from(dataUrl.split(',')[1], 'base64'));
@@ -75,6 +80,67 @@ if (WANT_SURVEY) {
   }
 }
 
+// ------------------------------------------------------------------------------------------------ 2b. industrial plants (family #2): live pose + old builder side by side
+const plantRows = [];
+if (WANT_PLANTS) {
+  const built = await page.evaluate(() => __BLD_PROBE__.buildOut());
+  console.log('BUILD-OUT', built.join(' | '));
+  await page.waitForTimeout(4000);
+  await page.evaluate(() => __BLD_PROBE__.finishGrowth());
+  await page.waitForTimeout(2500);
+  const plantLevels = parseList(opt('plant-levels', '1,2,3'), [1, 2, 3]);
+  const plantViews = String(opt('plant-views', 'front,iso')).split(',');
+  const only = String(opt('plant-only', 'sawmill,concrete,metal,frame')).split(',');
+  for (const kind of only) {
+    for (const L of kind === 'frame' ? [1] : plantLevels) {
+      for (const old of kind === 'sawmill' ? [false] : [false, true]) {
+        const r = await page.evaluate(({ kind, L, old, views }) => {
+          const P = __BLD_PROBE__;
+          // production level (frame workshop has none); the plants rebuild through the game's own refresh path
+          if (kind !== 'frame') { industrialLevelsV161[kind] = L; refreshIndustrialBadgesV161(); }
+          const live = {
+            sawmill: () => scene.getObjectByName('v161SawmillMill'),
+            concrete: () => concretePlant.group, metal: () => metalPlant.group, frame: () => PRODUCTION_CHAIN_V161.prop().group,
+          };
+          const posOf = { concrete: CONCRETE_PLANT_POS, metal: METAL_YARD_POS };
+          let root = live[kind](), entries = null, restore = () => {};
+          if (old) {
+            // the OLD builder: hide the new group, rebuild the old plant, measure it with the old circle collider the game registered for it
+            PlantsV161.enabled = false;
+            const was = root; was.visible = false;
+            if (kind === 'concrete') { const o = buildConcretePlant(); root = o.group; restore = () => { scene.remove(root); disposeObject3D(root); }; }
+            else if (kind === 'metal') { const o = buildMetalYard(); root = o.group; restore = () => { scene.remove(root); disposeObject3D(root); }; }
+            else { PRODUCTION_CHAIN_V161.rebuildProp(); root = PRODUCTION_CHAIN_V161.prop().group; restore = () => { PlantsV161.enabled = true; PRODUCTION_CHAIN_V161.rebuildProp(); }; }
+            const c = STATIC_COLLIDERS.find((q) => Math.hypot(q.pos.x - root.position.x, q.pos.z - root.position.z) < 0.01);
+            entries = c ? [{ shape: 'circle', pos: c.pos, radius: c.radius, label: 'static-circle', flags: { player: true } }] : [];
+            restore = ((r0) => () => { r0(); PlantsV161.enabled = true; was.visible = true; })(restore);
+            root.updateMatrixWorld(true);
+          } else {
+            // LIVE pose: the real timers set to a mid-cycle value, then one synchronous update (nothing else runs in between)
+            if (kind === 'sawmill') { stageIndex = 16; planks = 7; sawmillAutoTimer = 0.52 * sawmillAutoInterval(); updateSawmillMillV161(0); }
+            if (kind === 'concrete') { concrete = 6; concretePlantTimer = 0.9 * concreteInterval(); PlantsV161.updateConcrete(0); }
+            if (kind === 'metal') { metal = 7; metalPlantTimer = 0.72 * metalInterval(); PlantsV161.updateMetal(0); }
+            if (kind === 'frame') { framesV161 = 5; PlantsV161.updateWorkshop(PRODUCTION_CHAIN_V161.prop(), 0); }
+          }
+          function concreteInterval() { return CONCRETE_AUTO_INTERVAL / productionSpeedMultiplier() / industrialSpeedV161('concrete'); }
+          function metalInterval() { return METAL_AUTO_INTERVAL / productionSpeedMultiplier() / industrialSpeedV161('metal'); }
+          try {
+            const meas = entries ? P.measure(root, entries) : P.measureLive(root);
+            const sh = P.shoot(root, views);
+            meas.draw = sh.calls.draw; meas.drawTris = sh.calls.tris;
+            return { meas, shots: sh.shots };
+          } finally { restore(); }
+        }, { kind, L, old, views: plantViews });
+        for (const [v, url] of Object.entries(r.shots)) save(`${TAG}-plant-${kind}-L${L}-${old ? 'old-' : ''}${v}.jpg`, url);
+        plantRows.push({ id: `${kind}${old ? '-old' : ''}`, arch: 'plant', level: L, ...r.meas });
+      }
+    }
+  }
+  // restore the production levels the save started with
+  await page.evaluate(() => { for (const k of ['sawmill', 'concrete', 'metal']) industrialLevelsV161[k] = 1; refreshIndustrialBadgesV161(); });
+  report.push(...plantRows);
+}
+
 // ------------------------------------------------------------------------------------------------ 1. stage buildings, isolated (after the survey: the forced surface scans below push the scan clock ahead)
 const passes = [{ legacy: false }];
 if (opt('also-legacy', false)) passes.push({ legacy: true });
@@ -107,7 +173,7 @@ for (const pass of passes) for (const i of stages) {
 }
 
 // neighbourhood mini houses (district housing ring)
-for (const legacy of opt('also-legacy', false) ? [false, true] : [false]) {
+for (const legacy of WANT_PLANTS ? [] : opt('also-legacy', false) ? [false, true] : [false]) {
   const r = await page.evaluate(({ legacy, views }) => {
     const P = __BLD_PROBE__; if (window.BuildingsV161) BuildingsV161.enabled = !legacy;
     const m = P.miniMesh(0xe0bb91, 0x8b4c39);
