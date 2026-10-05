@@ -321,9 +321,17 @@ export function installProbe() {
   // assets/surface-world-v152.js scan() bakes the physical UVs of new meshes on its own 1.5 s tick; an isolated shot must look like the finished game, so the
   // visual ticks are run now with a clock that is always ahead of their throttle
   P.forceScan = () => { P._T = (P._T || performance.now()) + 1700; for (const t of window.__TYCOON_VISUAL_TICKS__ || []) { try { t(P._T); } catch (e) { /* */ } } };
-  // neighbourhood mini house (makeMiniHouse), placed at the origin with the collider the game registers for it (circle r 0.92)
-  P.miniMesh = (color, accent) => { const m = makeMiniHouse(color, accent); m.position.set(0, 0, 0); scene.add(m); m.updateMatrixWorld(true); P.forceScan(); return m; };
-  P.miniEntries = () => [{ shape: 'circle', pos: new THREE.Vector3(0, 0, 0), radius: 0.92, label: 'miniHouse', flags: { player: true } }];
+  // neighbourhood mini house (makeMiniHouse), placed at the origin, variant 0..2 (assets/buildings-v161.js). Its colliders = what the registry makes of it: the wall boxes of
+  // userData.v161Footprint (oriented, house yaw) - or, with BuildingsV161.enabled = false, the old circle r 0.92 the game registered
+  P.miniMesh = (color, accent, variant) => { const m = makeMiniHouse(color, accent, variant); m.position.set(0, 0, 0); scene.add(m); m.updateMatrixWorld(true); P.forceScan(); return m; };
+  P.miniEntries = (m) => {
+    const boxes = m && window.BuildingsV161 && window.BuildingsV161.enabled !== false ? window.BuildingsV161.footprintWorld(m) : null;
+    if (boxes && boxes.length) return boxes.map((b, i) => ({ shape: 'obb', pos: b.pos, hx: b.hx, hz: b.hz, yaw: b.yaw, label: 'miniHouse:wall' + i, flags: { player: true } }));
+    return [{ shape: 'circle', pos: new THREE.Vector3(0, 0, 0), radius: 0.92, label: 'miniHouse', flags: { player: true } }];
+  };
+  // the live suburb district identity group (cityWorldRuntime.districtIdentity 'suburb') and the registry entries it owns (houses = obb, tree trunks = circles)
+  P.suburbGroup = () => { try { return cityWorldRuntime.districtIdentity.get('suburb') || null; } catch (e) { return null; } };
+  P.suburbEntries = (g, kind = 'house') => [...reg().registry.values()].filter((e) => e.owner === g && e.flags?.player && String(e.label).startsWith('suburb:' + kind));
   P.liveByName = (name) => scene.getObjectByName(name);
   P.liveByExpr = (expr) => { try { return new Function('return (' + expr + ')')() || null; } catch (e) { return null; } };
   P.dropMesh = (m) => { try { reg().unregisterOwner(m); } catch (_) { /* */ } scene.remove(m); disposeObject3D(m); };
@@ -371,7 +379,7 @@ export function installProbe() {
     for (const k of Object.keys(LOGISTICS_ZONES)) add('pickup:' + k, LOGISTICS_ZONES[k].pos, 'industrial');
     add('sawmill-dropoff', SAWMILL_DROPOFF_POS, 'industrial');
     for (const k of ['concrete', 'metal']) { const g = scene.getObjectByName('manualMineV119_' + k); if (g) add('mine:' + k, g.position, 'industrial'); } // the manual gathering pads next to the plants
-    for (const b of buildings) if (b.upgradePad?.pos) add('upgrade-pad:stage' + b.index, b.upgradePad.pos, STAGES[b.index].archetype === 'house' ? 'house' : 'stage');
+    for (const b of buildings) if (b.upgradePad?.pos) add('upgrade-pad:stage' + b.index, b.upgradePad.pos, ['house', 'shop'].includes(STAGES[b.index].archetype) ? 'house' : 'stage'); // 'house' = the family with hard pad checks (houses, shop)
     for (const s of (typeof INDUSTRIAL_BUILD_STEPS_V118 !== 'undefined' ? INDUSTRIAL_BUILD_STEPS_V118 : [])) if (s.pos && industrialPadMarkersV118?.has?.(s.id)) add('industrial-pad:' + s.id, s.pos, 'industrial');
     for (const f of (typeof FIELD_UPGRADE_CONFIGS !== 'undefined' ? FIELD_UPGRADE_CONFIGS : [])) add('field-pad:' + (f.key || f.id || ''), f.pos, 'industrial');
     return pts;

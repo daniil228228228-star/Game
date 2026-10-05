@@ -15,9 +15,12 @@
 //   (back wall, side panels, counter) and the big props are solid and cover the walls >= 90 %, the player walked at the centre from 8 directions never gets inside, the customer side in front of the
 //   counter is open and walkable up to it, the lane from the plaza centre to every stall is free, the stall can be used from there (nearestManualTargetV53), fountain / benches / planters solid,
 //   the entrance gate walkable, mesh budgets.
-// IN SCOPE (hard checks): the house family = stage 0/1 at every level, the neighbourhood mini house, the four industrial plants, the market. Everything else in the catalogue is measured and
+//   B4 (2026-10-05 (8), backlog #4): the SUBURB district identity group (lawn, trees, planters, ring of mini houses): real wall boxes for every house (+ shed), tree trunks standing on the ground and
+//   clear of the houses, nothing floating or sunk, <= 8 meshes (was ~116), the player walked at every house from 8 directions never gets inside; the three mini-house variants are HARD in section A
+//   (walls cover the footprint, no walk-in, min y 0), and the SHOP (stage 2, levels 1..10, backlog #5) joins the house family in sections A / B (walls, door, step, pad outside the collider).
+// IN SCOPE (hard checks): the house family = stage 0/1 at every level + the shop (stage 2) at every level, the three neighbourhood / suburb mini houses, the suburb district, the four industrial plants, the market. Everything else in the catalogue is measured and
 //   printed as `KNOWN ISSUE:` (exit 0) - those lines are the backlog of the next building families. SHOTS_DIR=<dir> writes front + iso pictures of house levels 1/3/5/10
-//   and of the plants at levels 1/3.
+//   and of the plants at levels 1/3, the shop at levels 1/3/5/10.
 import fs from 'node:fs';
 import path from 'node:path';
 import { openGame, check } from './lib/harness.mjs';
@@ -38,10 +41,10 @@ const info = await ev(() => __BLD_PROBE__.stageInfo());
 // ------------------------------------------------------------------------------------------------ A. stage buildings, isolated
 const rows = [];
 for (let i = 0; i < info.n; i++) {
-  const house = info.arch[i] === 'house';
-  const levels = house ? Array.from({ length: info.maxLevel }, (_, k) => k + 1) : [1, 5, 10];
+  const house = info.arch[i] === 'house', shop = info.arch[i] === 'shop';
+  const levels = house || shop ? Array.from({ length: info.maxLevel }, (_, k) => k + 1) : [1, 5, 10];
   for (const L of levels) {
-    const shots = SHOTS && house && [1, 3, 5, 10].includes(L) ? ['front', 'iso'] : [];
+    const shots = SHOTS && (house || shop) && [1, 3, 5, 10].includes(L) ? ['front', 'iso'] : [];
     const r = await ev(({ i, L, shots }) => {
       const P = __BLD_PROBE__, m = P.stageMesh(i, L);
       try {
@@ -50,8 +53,8 @@ for (let i = 0; i < info.n; i++) {
         const meas = P.measure(m, P.ownEntries(m));
         meas.door = P.doorInfo(m, i);
         meas.gold = m.userData.goldTierV161 || 0;
-        meas.goldMesh = m.children.some((c) => c.name === 'houseGoldV161');
-        meas.goldTris = (() => { const c = m.children.find((x) => x.name === 'houseGoldV161'); return c ? c.geometry.index.count / 3 : 0; })();
+        meas.goldMesh = m.children.some((c) => c.name === 'houseGoldV161' || c.name === 'shopGoldV161');
+        meas.goldTris = (() => { const c = m.children.find((x) => x.name === 'houseGoldV161' || x.name === 'shopGoldV161'); return c ? c.geometry.index.count / 3 : 0; })();
         meas.legacyPlayer = legacyEntry ? !!legacyEntry.flags.player : null;
         meas.legacyPlacement = legacyEntry ? !!legacyEntry.flags.placement : null;
         meas.legacyCamera = legacyEntry ? !!legacyEntry.flags.camera : null;
@@ -65,7 +68,7 @@ for (let i = 0; i < info.n; i++) {
       } finally { P.dropMesh(m); }
     }, { i, L, shots });
     if (r.shots) for (const [v, url] of Object.entries(r.shots)) fs.writeFileSync(path.join(SHOTS, `bld-stage${i}-L${L}-${v}.jpg`), Buffer.from(url.split(',')[1], 'base64'));
-    rows.push({ i, L, arch: info.arch[i], house, ...r.meas });
+    rows.push({ i, L, arch: info.arch[i], house, shop, ...r.meas });
   }
 }
 // the old house for the draw-call comparison (same builder chain with the new house switched off)
@@ -76,16 +79,28 @@ const old = await ev(() => {
   BuildingsV161.enabled = true;
   return out;
 });
-const mini = await ev(() => {
-  const P = __BLD_PROBE__, m = P.miniMesh(0xe0bb91, 0x8b4c39);
-  try { return P.measure(m, P.miniEntries()); } finally { P.dropMesh(m); }
+const oldShop = await ev(() => {
+  const P = __BLD_PROBE__, out = {};
+  ShopV161.enabled = false;
+  for (const L of [1, 3, 5, 10]) { const m = P.stageMesh(2, L); out[L] = P.measure(m, P.ownEntries(m), { sweep: false }).meshes; P.dropMesh(m); }
+  ShopV161.enabled = true;
+  return out;
 });
-rows.push({ i: -1, L: 1, arch: 'mini-house', house: true, ...mini });
+const minis = [];
+for (const v of [0, 1, 2]) {
+  const mini = await ev((v) => {
+    const P = __BLD_PROBE__, m = P.miniMesh(0xe0bb91, 0x8b4c39, v);
+    try { const r = P.measure(m, P.miniEntries(m)); r.variant = m.userData.v161Variant; return r; } finally { P.dropMesh(m); }
+  }, v);
+  minis.push(mini);
+  rows.push({ i: -1, L: 1, arch: 'mini-house', house: true, ...mini });
+}
+const mini = minis[0];
 
 const label = (r) => (r.i < 0 ? 'mini house' : `stage ${r.i} (${r.arch}) L${r.L}`);
-const hard = rows.filter((r) => r.house);
-console.log(`measured ${rows.length} building meshes: ${hard.length} in the house family (hard checks), ${rows.length - hard.length} others (KNOWN ISSUE lines)`);
-check(rows.length >= 16 * 3 + 14, `every stage x level measured (${rows.length})`);
+const hard = rows.filter((r) => r.house || r.shop);
+console.log(`measured ${rows.length} building meshes: ${hard.length} in the house / shop family (hard checks), ${rows.length - hard.length} others (KNOWN ISSUE lines)`);
+check(rows.length >= 16 * 3 + 14 + 10, `every stage x level measured (${rows.length})`);
 
 // --- hard checks, house family
 const bad = (pred) => hard.filter((r) => !pred(r)).map(label);
@@ -99,7 +114,7 @@ check(b.length === 0, `house family: no collider extends more than 1.0 m beyond 
 b = bad((r) => r.sweepReached === 0);
 check(b.length === 0, `house family: the player walked at the centre from 8 directions never stands inside the building (${b.length} bad ${J(b.slice(0, 4))})`);
 b = bad((r) => r.i < 0 || (r.door && r.door.dot >= 0.95 && r.door.dist <= r.door.radius + 1.5));
-check(b.length === 0, `house family: the door faces its driveway and is within radius + 1.5 m of its end (${b.length} bad; door ${J(rows.find((r) => r.i === 0 && r.L === 1).door)})`);
+check(b.length === 0, `house / shop family: the door faces its driveway and is within radius + 1.5 m of its end (${b.length} bad; door ${J(rows.find((r) => r.i === 0 && r.L === 1).door)})`);
 const houses = rows.filter((r) => r.i >= 0 && r.house);
 b = houses.filter((r) => !(r.walls >= 1 && r.legacyPlayer === false && r.legacyPlacement === true && r.legacyCamera === true && r.front)).map(label);
 check(b.length === 0, `houses: wall boxes are the player/agent colliders, the whole-mesh box keeps placement + camera only (${b.length} bad ${J(b.slice(0, 3))})`);
@@ -111,19 +126,35 @@ for (const s of [0, 1]) {
   const gt = houses.filter((r) => r.i === s && r.L >= 6).sort((p, q) => p.L - q.L);
   check(gt.every((r) => r.gold === r.L && r.goldMesh) && gt.every((r, k) => k === 0 || r.goldTris >= gt[k - 1].goldTris) && gt[4].goldTris > gt[3].goldTris, `house ${s}: gold tiers 6..10 carry the tier and more gold with every level, the crown comes at 10 (gold triangles ${gt.map((r) => r.goldTris)})`);
 }
+// ---- the shop (stage 2, levels 1..10, assets/shop-v161.js)
+const shops = rows.filter((r) => r.shop).sort((p, q) => p.L - q.L);
+b = shops.filter((r) => !(r.walls >= 1 && r.legacyPlayer === false && r.legacyPlacement === true && r.legacyCamera === true && r.front)).map(label);
+check(shops.length === 10 && b.length === 0, `shop: wall boxes are the player/agent colliders, the whole-mesh box keeps placement + camera only (${shops.length} levels, ${b.length} bad ${J(b.slice(0, 3))}; before: one whole-mesh box 1.96 x 2.05 m = 7.5 m2 invisible wall, up to 1.43 m)`);
+b = shops.filter((r) => Math.abs((r.wallYaw ?? 0) - r.meshYaw) > 1e-6).map(label);
+check(b.length === 0, `shop wall boxes are rotated with the mesh (yaw ${J(shops.slice(0, 2).map((r) => [r.wallYaw, r.meshYaw]))})`);
+b = shops.filter((r) => !(r.outsideMax <= 0.3 && r.outside <= 0.8)).map(label);
+check(b.length === 0, `shop: the collider is at most 0.3 m (and 0.8 m2) outside the walls at every level (worst ${Math.max(...shops.map((r) => r.outsideMax))} m / ${Math.max(...shops.map((r) => r.outside))} m2; before 1.43 m / 7.5 m2)`);
+{ const t = shops.map((r) => r.tris);
+  check(t.slice(0, 5).every((v, k) => k === 0 || v > t[k - 1]), `shop: the silhouette grows with every level 1..5 (triangles ${t.slice(0, 5)})`);
+  const gt = shops.filter((r) => r.L >= 6);
+  check(gt.every((r) => r.gold === r.L && r.goldMesh) && gt.every((r, k) => k === 0 || r.goldTris >= gt[k - 1].goldTris) && gt[4].goldTris > gt[3].goldTris, `shop: gold tiers 6..10 carry the tier and more gold with every level, the crown comes at 10 (gold triangles ${gt.map((r) => r.goldTris)})`); }
+{ const mx = Math.max(...shops.map((r) => r.meshes));
+  check(mx <= 14 && shops.every((r) => oldShop[r.L] === undefined || r.meshes < oldShop[r.L]), `shop draw calls: <= ${mx} meshes at any level (old builder ${J(oldShop)} for levels 1/3/5/10)`); }
 const newMax = Math.max(...houses.map((r) => r.meshes)), oldMin = Math.min(...Object.values(old));
 check(newMax <= 20 && newMax <= oldMin, `house draw calls: <= ${newMax} meshes per house at any level (old builder ${J(old)})`);
-check(mini.meshes <= 5, `mini house: ${mini.meshes} meshes (old 5)`);
+check(minis.every((m) => m.meshes <= 5), `mini houses: <= 5 meshes each (${J(minis.map((m) => m.meshes))}; old 5)`);
+check(minis.every((m) => m.minY >= -0.05 && m.minY <= 0.05 && m.overlap >= 0.9 && m.outsideMax <= 0.3 && m.sweepReached === 0), `mini houses (3 variants): min y within 5 cm, the wall boxes cover >= 90 % of the footprint (${J(minis.map((m) => m.overlap))}), no collider more than 0.3 m outside the walls, the player walked at the centre from 8 directions never gets inside (reach ${J(minis.map((m) => m.sweepReached))}; the old r 0.92 circle: reach 0, but the wall corners poked 6 cm out of it)`);
+check(new Set(minis.map((m) => m.tris)).size === 3 && new Set(minis.map((m) => m.variant)).size === 3, `mini houses: three distinct variants (triangles ${J(minis.map((m) => m.tris))})`);
 
 // --- known issues, everything else
-for (const r of rows.filter((x) => !x.house)) {
+for (const r of rows.filter((x) => !x.house && !x.shop)) {
   if (r.minY < -0.05 || r.minY > 0.05) issue(`${label(r)}: floating or sunk, min y ${r.minY}`);
   if (r.overlap !== null && r.overlap < 0.9) issue(`${label(r)}: collider covers only ${Math.round(r.overlap * 100)} % of the wall footprint`);
   if (r.outsideMax > 1.0 && (r.L === 1 || r.L === 5)) issue(`${label(r)}: collider (whole-mesh box) extends ${r.outsideMax} m beyond the walls (${r.outside} m2 of invisible wall)`);
   if (r.sweepReached > 0) issue(`${label(r)}: the player can walk into the building from ${r.sweepReached} of 8 directions`);
 }
 const kinds = {};
-for (const r of rows.filter((x) => !x.house)) { (kinds[r.i] = kinds[r.i] || []).push(r); }
+for (const r of rows.filter((x) => !x.house && !x.shop)) { (kinds[r.i] = kinds[r.i] || []).push(r); }
 check(Object.values(kinds).every((rs) => rs.every((r) => r.sweepReached === 0)), 'other stage buildings: the player cannot walk into any of them (whole-mesh boxes cover the walls)');
 
 // ------------------------------------------------------------------------------------------------ B. live world
@@ -134,7 +165,7 @@ await ev(() => __BLD_PROBE__.finishGrowth());
 await page.waitForTimeout(2500);
 const live = await ev(() => {
   const P = __BLD_PROBE__, reg = __TYCOON_V83_COLLISIONS__.registry, out = { houses: [] };
-  for (const idx of [0, 1]) {
+  for (const idx of [0, 1, 2]) {
     const e = buildings.find((x) => x.index === idx), m = e.mesh, own = [...reg.values()].filter((x) => x.owner === m);
     let door = null; m.traverse((o) => { if (o.userData?.v161Door) door = o; });
     const w = new THREE.Vector3(); door.getWorldPosition(w);
@@ -155,7 +186,8 @@ for (const h of live.houses) {
 }
 console.log(`work points checked: ${live.points.length} (${live.points.map((p) => p.id).join(', ')})`);
 const houseBad = live.points.filter((p) => p.family === 'house' && p.b.moved > 0.25);
-check(houseBad.length === 0, `house upgrade pads are reachable: not deeper than 25 cm inside a collider (${J(houseBad)})`);
+check(houseBad.length === 0 && live.points.some((p) => p.id === 'upgrade-pad:stage2'), `house and shop upgrade pads are reachable: not deeper than 25 cm inside a collider (${J(houseBad)}; the shop pad stood 0.07 m inside its 1.43 m invisible wall)`);
+check(live.points.filter((p) => p.id === 'upgrade-pad:stage2').every((p) => !p.b.hit), `the shop upgrade pad stands OUTSIDE every collider (${J(live.points.filter((p) => p.id === 'upgrade-pad:stage2'))})`);
 const padsInside = live.points.filter((x) => x.family !== 'house' && x.b.hit);
 for (const p of padsInside) issue(`${p.id} @${p.x},${p.z} is inside a collider (${p.b.by.join(', ')}; the player circle would be pushed ${p.b.moved} m)`);
 // every pickup / drop-off / pad / mine of the industrial family (sawmill, plants, mines, field pads) stands outside every collider (2026-10-05 (6): hard)
@@ -300,6 +332,49 @@ check(M.every((s) => s.target && s.target.type === 'stall' && s.target.id === s.
 check(M.every((s) => s.yawOk), 'market: every stall keeps its configured facing (group.rotation.y == cfg.facing: the counter faces the plaza centre)');
 check(mk.plaza.fountain.hit && mk.plaza.fountain.moved >= 1.0 && !mk.plaza.gate.hit && !mk.plaza.gateInside.hit && mk.plaza.ring3 && mk.plaza.gateLane <= 0.01 && mk.plaza.freeGaps.length >= 3 && mk.plaza.freeGaps.includes(mk.plaza.gateSlot), `market plaza (free ways in between the stalls: ${J(mk.plaza.freeGaps)} of 7 gaps, the gate gap among them): the fountain is solid (a player on its centre is pushed ${mk.plaza.fountain.moved} m out), the entrance gate is walkable (${J([mk.plaza.gate.moved, mk.plaza.gateInside.moved])}) and the lane from the gate to the fountain is free (largest push ${mk.plaza.gateLane} m, gate in the gap after stall slot ${mk.plaza.gateSlot}), the ring at r = 3.3 m is free (${mk.plaza.ring3})`);
 check(M.every((s) => s.meshes <= 8) && mk.plaza.meas.meshes <= 10, `market: mesh (= draw call) budget <= 8 per stall, <= 10 plaza (stalls ${J(M.map((s) => s.meshes))}, plaza ${mk.plaza.meas.meshes}; before: 11 per stall, 32 plaza (12 objects, the 4 lamps are 2 meshes each))`);
+
+// ------------------------------------------------------------------------------------------------ B4. suburb district (backlog #4, 2026-10-05 (8)): HARD
+// The late world has the suburb identity group (cityWorldRuntime.districtIdentity 'suburb'): lawn + path, 4+lv trees, 3 planters, 2+lv mini houses on the old ring. Numbers are read from the scene
+// and the v83 registry; the same group is rebuilt with BuildingsV161.enabled = false for the before numbers.
+const sub = await ev(() => {
+  const P = __BLD_PROBE__, g = P.suburbGroup();
+  if (!g) return null;
+  g.updateMatrixWorld(true);
+  const count = (root) => { let n = 0; root.traverse((o) => { if (o.isMesh) n++; }); return n; };
+  const houses = P.suburbEntries(g, 'house'), trees = P.suburbEntries(g, 'tree');
+  const meas = P.measure(g, houses, { sweep: false });
+  const inside = (e, x, z) => { const sy = Math.sin(e.yaw), cy = Math.cos(e.yaw), dx = x - e.pos.x, dz = z - e.pos.z, lx = dx * cy - dz * sy, lz = dx * sy + dz * cy; return Math.abs(lx) < e.hx - 0.05 && Math.abs(lz) < e.hz - 0.05; };
+  const saved = playerVelocity.clone();
+  let walks = 0, reached = 0;
+  for (const e of houses) for (let k = 0; k < 8; k++) {
+    const a = k * Math.PI / 4, dx = Math.sin(a), dz = Math.cos(a), R = e.radius + 2.5;
+    let x = e.pos.x + dx * R, z = e.pos.z + dz * R, hit = false;
+    for (let s = 0; s < Math.ceil(R / 0.1) + 30; s++) { playerVelocity.set(-dx * 4, 0, -dz * 4); const r = resolvePlayerCircleCollisions(x - dx * 0.1, z - dz * 0.1, houses); x = r.x; z = r.z; if (inside(e, x, z)) hit = true; }
+    walks++; if (hit) reached++;
+  }
+  playerVelocity.copy(saved);
+  const obbDist = (e, x, z) => { const sy = Math.sin(e.yaw), cy = Math.cos(e.yaw), dx = x - e.pos.x, dz = z - e.pos.z, lx = dx * cy - dz * sy, lz = dx * sy + dz * cy; return Math.hypot(Math.max(0, Math.abs(lx) - e.hx), Math.max(0, Math.abs(lz) - e.hz)); };
+  const treeGap = Math.min(...trees.flatMap((t) => houses.map((h) => obbDist(h, t.pos.x, t.pos.z))));
+  const flags = [...houses, ...trees].every((e) => e.flags.player && e.flags.agent && !e.flags.placement && !e.flags.camera);
+  const trunkSolid = trees.every((t) => P.blockedAt(t.pos.x, t.pos.z).hit);
+  const lv = districtLevel('suburb');
+  const now = { meshes: count(g), minY: meas.minY, tris: meas.tris, overlap: meas.overlap, outsideMax: meas.outsideMax, outside: meas.outside, uncovered: meas.uncovered };
+  // before: the old group
+  BuildingsV161.enabled = false; refreshDistrictIdentityWorldV363();
+  const og = P.suburbGroup(), oldM = og ? { meshes: count(og), minY: P.measure(og, [], { sweep: false }).minY } : null;
+  BuildingsV161.enabled = true; refreshDistrictIdentityWorldV363(); __TYCOON_V83_COLLISIONS__.rebuild();
+  return { lv, now, old: oldM, houses: houses.length, trees: trees.length, nHouses: g.userData.v161Houses, nTrees: g.userData.v161Trees, variants: g.userData.v161Variants, reached, walks, treeGap: +treeGap.toFixed(2), flags, trunkSolid, pos: g.position.toArray() };
+});
+check(!!sub, 'suburb: the district identity group exists in the late world');
+console.log('suburb:', J(sub));
+check(sub.nHouses === 2 + sub.lv && sub.nTrees === 4 + sub.lv, `suburb: the ring keeps its count (level ${sub.lv}: ${sub.nHouses} houses = 2 + lv, ${sub.nTrees} trees = 4 + lv)`);
+check(sub.houses >= sub.nHouses && sub.flags, `suburb: every house has real wall boxes (${sub.houses} for ${sub.nHouses} houses, sheds included) and every trunk a circle in the registry, player + agent only (no placement / camera: roads and decor planners read nothing new; before: no collider at all, walk-through from 5 of 8 directions)`);
+check(sub.walks >= 8 * sub.nHouses && sub.reached === 0, `suburb: the player walked at every house wall box from 8 directions never gets inside (${sub.walks} walks, ${sub.reached} reached)`);
+check(sub.now.minY >= -0.05 && sub.now.minY <= 0.05, `suburb: nothing floating or sunk, min y ${sub.now.minY} (before ${sub.old && sub.old.minY}: the trees were sunk)`);
+check(sub.now.overlap !== null && sub.now.overlap >= 0.9 && sub.now.outsideMax <= 0.3, `suburb: the wall boxes cover >= 90 % of the house footprint (${sub.now.overlap}, ${sub.now.uncovered} m2 uncovered) and stick out at most 0.3 m (${sub.now.outsideMax} m)`);
+check(sub.trunkSolid && sub.treeGap >= 0.9, `suburb: tree trunks are solid and every trunk is >= 0.9 m from every house wall (closest ${sub.treeGap} m: no crown inside a house)`);
+check(sub.now.meshes <= 8 && sub.old && sub.now.meshes < sub.old.meshes / 5, `suburb: ${sub.now.meshes} meshes per district (before ${sub.old && sub.old.meshes}; goal well under 60)`);
+check(new Set(sub.variants).size === Math.min(3, sub.nHouses), `suburb: the houses use ${new Set(sub.variants).size} distinct variants (${J(sub.variants)}) so the ring does not look cloned`);
 
 // ------------------------------------------------------------------------------------------------ C. a real upgrade keeps colliders, re-lays no road
 // house 0 is level 5 in the late save: the next real upgrade is the first gold tier (6). The road signature uses min(level, 5), so no road may be re-laid.

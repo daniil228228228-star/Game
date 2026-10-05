@@ -9,6 +9,10 @@
 //     the late-game world is built out, then the whole market is shot (plaza overview from above / from the gate / street level, each stall front + iso, one vacant lot) first with
 //     the OLD plaza and stalls (MarketV161.enabled = false, rebuilt through the game's own buildMarketPlazaV116) and then with the new ones; numbers for the whole market
 //     (meshes, draw calls in an overview frame, triangles) and per object (min y, collider cover, walk-in from 8 directions): DIR/<tag>-market-<id>-<view>.jpg (+ -old-).
+//   node tools/showcase-v161.mjs --shop [--shop-levels 1,2,3,4,5,6,10] [--shop-views front,iso,side,top] [--shop-no-old] [--suburb] [--suburb-views ...]   (2026-10-05 (8), backlog #4 + #5)
+//     --shop: the main-line shop (STAGES[2]) built by the real chain at every listed level, old builder (ShopV161.enabled = false) and new, numbers (meshes, draw calls, triangles, min y, collider cover /
+//     outside / walk-in from 8 directions, door vs driveway) and DIR/<tag>-shop-L<n>-<view>.jpg (+ -old-). --suburb: the late-game world is built out, the suburb district identity group (lawn, trees,
+//     planters, ring of mini houses) is rebuilt with the old and the new builders (BuildingsV161.enabled) and shot from above / low / one house of every variant: DIR/<tag>-suburb-*.jpg.
 // ONE browser launch per run. Stage buildings (all 16 STAGES) are built by the game's real builder chain (createBuildingMesh: BUILDERS + polish layers +
 // v44 + v157 + late-game gold tiers), put alone on the grass (everything else in the scene is hidden for the shot), registered in the real v83 collision
 // registry with the call rebuildStatic uses, and shot from four fixed cameras at the phone viewport 390x664: DIR/bld-<id>-L<n>-<view>.jpg.
@@ -30,6 +34,8 @@ const OTHER_VIEWS = String(opt('other-views', 'iso')).split(',');
 const WANT_SURVEY = !!opt('survey', false);
 const WANT_PLANTS = !!opt('plants', false);
 const WANT_MARKET = !!opt('market', false);
+const WANT_SHOP = !!opt('shop', false);
+const WANT_SUBURB = !!opt('suburb', false);
 fs.mkdirSync(OUT, { recursive: true });
 
 const LATE = { saveVersion: 20, stageIndex: 16, money: 5e8, planks: 5000, concrete: 500, metal: 500, buildings: Array.from({ length: 16 }, (_, i) => ({ index: i, level: 5 })) };
@@ -37,7 +43,7 @@ const g = await openGame({ save: LATE, waitMs: 8000 });
 const { page } = g;
 await page.evaluate(installProbe);
 const info = await page.evaluate(() => __BLD_PROBE__.stageInfo());
-const stages = (WANT_PLANTS || WANT_MARKET) && !opt('stages', false) ? [] : parseList(opt('stages', 'all'), Array.from({ length: info.n }, (_, i) => i));
+const stages = (WANT_PLANTS || WANT_MARKET || WANT_SHOP || WANT_SUBURB) && !opt('stages', false) ? [] : parseList(opt('stages', 'all'), Array.from({ length: info.n }, (_, i) => i));
 const levels = parseList(opt('levels', '1,5,10'), [1, 5, 10]);
 const houseLevels = parseList(opt('house-levels', '1-10'), Array.from({ length: 10 }, (_, i) => i + 1));
 const save = (name, dataUrl) => fs.writeFileSync(path.join(OUT, name), Buffer.from(dataUrl.split(',')[1], 'base64'));
@@ -204,6 +210,96 @@ if (WANT_MARKET) {
   report.push(...marketRows);
 }
 
+
+// ------------------------------------------------------------------------------------------------ 2d. shop (backlog #5): stage 2 at every level, old builder and new
+const shopRows = [];
+if (WANT_SHOP) {
+  const shopLevels = parseList(opt('shop-levels', '1,2,3,4,5,6,10'), [1, 2, 3, 4, 5, 6, 10]);
+  const shopViews = String(opt('shop-views', 'front,iso')).split(',');
+  for (const old of opt('shop-no-old', false) ? [false] : [true, false]) {
+    for (const L of shopLevels) {
+      const r = await page.evaluate(({ L, old, views }) => {
+        const P = __BLD_PROBE__;
+        window.ShopV161.enabled = !old;
+        const m = P.stageMesh(2, L);
+        try {
+          P.registerStage(m, 2);
+          const meas = P.measure(m, P.ownEntries(m));
+          meas.door = P.doorInfo(m, 2);
+          meas.gold = m.userData.goldTierV161 || 0;
+          meas.yaw = +m.rotation.y.toFixed(3);
+          const sh = P.shoot(m, views);
+          meas.draw = sh.calls.draw; meas.drawTris = sh.calls.tris;
+          return { meas, shots: sh.shots };
+        } finally { P.dropMesh(m); window.ShopV161.enabled = true; }
+      }, { L, old, views: old ? ['iso'] : shopViews });
+      for (const [v, url] of Object.entries(r.shots)) save(`${TAG}-shop-L${L}-${old ? 'old-' : ''}${v}.jpg`, url);
+      shopRows.push({ id: `shop${old ? '-old' : ''}`, arch: 'shop', level: L, ...r.meas });
+    }
+  }
+  report.push(...shopRows);
+}
+
+// ------------------------------------------------------------------------------------------------ 2e. suburb district (backlog #4): the identity group with the old and the new builders
+const suburbRows = [];
+if (WANT_SUBURB) {
+  const built = await page.evaluate(() => __BLD_PROBE__.buildOut());
+  console.log('BUILD-OUT', built.join(' | '));
+  await page.waitForTimeout(4000);
+  await page.evaluate(() => __BLD_PROBE__.finishGrowth());
+  await page.waitForTimeout(2500);
+  const sviews = String(opt('suburb-views', 'top,low,iso')).split(',');
+  for (const old of opt('suburb-no-old', false) ? [false] : [true, false]) {
+    const r = await page.evaluate(({ old, sviews }) => {
+      const P = __BLD_PROBE__;
+      BuildingsV161.enabled = !old;
+      refreshDistrictIdentityWorldV363(); __TYCOON_V83_COLLISIONS__.rebuild(); P.forceScan();
+      const g = P.suburbGroup();
+      if (!g) return { missing: true };
+      const meas = P.measure(g, [...P.suburbEntries(g, 'house'), ...P.suburbEntries(g, 'tree')], { sweep: false });
+      const houses = P.suburbEntries(g, 'house');
+      const center = new THREE.Box3().setFromObject(g).getCenter(new THREE.Vector3());
+      const shots = {}, tgt = new THREE.Vector3(g.position.x + 1.6, 0.6, g.position.z + 0.1);
+      const views = { top: { az: 0, el: 1.45, dist: 33 }, low: { az: 0.5, el: 0.4, dist: 27 }, iso: { az: -0.7, el: 0.75, dist: 30 } };
+      let draw = 0;
+      for (const v of sviews) { const o = P.overview([g], { target: tgt, ...views[v] }); shots[v] = o.url; draw = Math.max(draw, o.draw); }
+      let tris = 0, meshes = 0; g.traverse((o) => { if (o.isMesh) { meshes++; tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });
+      meas.draw = draw; meas.meshes = meshes; meas.tris = Math.round(tris); meas.nHouses = houses.length;
+      return { meas, shots, pos: g.position.toArray() };
+    }, { old, sviews });
+    if (r.missing) { console.log('  (suburb group missing)'); continue; }
+    for (const [v, url] of Object.entries(r.shots)) save(`${TAG}-suburb-${old ? 'old-' : ''}${v}.jpg`, url);
+    suburbRows.push({ id: `suburb${old ? '-old' : ''}`, arch: 'district', level: 3, ...r.meas });
+  }
+  await page.evaluate(() => { BuildingsV161.enabled = true; refreshDistrictIdentityWorldV363(); __TYCOON_V83_COLLISIONS__.rebuild(); });
+  // one mini house per variant, isolated (front + iso), numbers with the colliders the registry would give it
+  for (let v = 0; v < 3; v++) {
+    const r = await page.evaluate(({ v }) => {
+      const P = __BLD_PROBE__, m = P.miniMesh(0xe0bb91, 0x8b4c39, v);
+      try { const meas = P.measure(m, P.miniEntries(m)); const sh = P.shoot(m, ['front', 'iso']); meas.draw = sh.calls.draw; return { meas, shots: sh.shots }; } finally { P.dropMesh(m); }
+    }, { v });
+    for (const [vw, url] of Object.entries(r.shots)) save(`${TAG}-mini-house-v${v}-${vw}.jpg`, url);
+    suburbRows.push({ id: `mini-house-v${v}`, arch: 'house', level: 1, ...r.meas });
+  }
+  // the neighbourhood ring around an apartment block (refreshNeighborhoodWorld, variants 0 / 1 by index): shot from above and low, with the wall boxes the registry holds for it
+  const nb = await page.evaluate(() => {
+    const P = __BLD_PROBE__; let found = null;
+    { const h = cityState.housing.suburb; h.apartmentBlockBuilt = true; h.neighborhoodLevel = Math.max(2, h.neighborhoodLevel || 0); refreshNeighborhoodWorld(); __TYCOON_V83_COLLISIONS__.rebuild(); P.forceScan(); }
+    for (const [id, grp] of cityWorldRuntime.neighborhoods) { if (grp.children.some((c) => c.userData && c.userData.v161MiniHouse)) { found = [id, grp]; break; } }
+    if (!found) return null;
+    const [id, grp] = found, houses = grp.children.filter((c) => c.userData && c.userData.v161MiniHouse);
+    const b = new THREE.Box3().setFromObject(grp), c = b.getCenter(new THREE.Vector3()), size = b.getSize(new THREE.Vector3());
+    const boxes = [...__TYCOON_V83_COLLISIONS__.registry.values()].filter((e) => e.owner === grp && e.flags.player);
+    const circles = [...__TYCOON_V83_COLLISIONS__.registry.values()].filter((e) => String(e.label).startsWith('miniHouse:') && e.shape === 'circle');
+    const dist = Math.max(size.x, size.z) * 2.3;
+    const top = P.overview([grp], { target: new THREE.Vector3(c.x, 0.5, c.z), az: 0, el: 1.45, dist }), low = P.overview([grp], { target: new THREE.Vector3(c.x, 0.5, c.z), az: 0.6, el: 0.4, dist: dist * 0.8 });
+    let meshes = 0, minY = 1e9; grp.traverse((o) => { if (o.isMesh) { meshes++; } });
+    return { id, houses: houses.length, variants: houses.map((h) => h.userData.v161Variant), boxes: boxes.length, circlesPlayer: circles.filter((e) => e.flags.player).length, circlesPlacement: circles.filter((e) => e.flags.placement).length, meshes, shots: { top: top.url, low: low.url } };
+  });
+  if (nb) { for (const [v, url] of Object.entries(nb.shots)) save(`${TAG}-neighborhood-${v}.jpg`, url); delete nb.shots; console.log('NEIGHBOURHOOD', JSON.stringify(nb)); } else console.log('NEIGHBOURHOOD none built');
+  report.push(...suburbRows);
+}
+
 // ------------------------------------------------------------------------------------------------ 1. stage buildings, isolated (after the survey: the forced surface scans below push the scan clock ahead)
 const passes = [{ legacy: false }];
 if (opt('also-legacy', false)) passes.push({ legacy: true });
@@ -235,15 +331,17 @@ for (const pass of passes) for (const i of stages) {
   }
 }
 
-// neighbourhood mini houses (district housing ring)
-for (const legacy of WANT_PLANTS ? [] : opt('also-legacy', false) ? [false, true] : [false]) {
-  const r = await page.evaluate(({ legacy, views }) => {
-    const P = __BLD_PROBE__; if (window.BuildingsV161) BuildingsV161.enabled = !legacy;
-    const m = P.miniMesh(0xe0bb91, 0x8b4c39);
-    try { const meas = P.measure(m, P.miniEntries()); const sh = P.shoot(m, views); meas.draw = sh.calls.draw; return { meas, shots: sh.shots }; } finally { P.dropMesh(m); if (window.BuildingsV161) BuildingsV161.enabled = true; }
-  }, { legacy, views: legacy ? ['iso'] : ['front', 'iso'] });
-  if (!legacy) for (const [v, url] of Object.entries(r.shots)) save(`${TAG}-mini-house-${v}.jpg`, url);
-  report.push({ id: 'mini-house' + (legacy ? '-old' : ''), arch: 'house', level: 1, ...r.meas });
+// neighbourhood mini houses (district housing ring): the three variants, old (circle collider) and new
+for (const legacy of WANT_PLANTS || WANT_SUBURB || WANT_SHOP || WANT_MARKET ? [] : opt('also-legacy', false) ? [false, true] : [false]) {
+  for (const v of legacy ? [0] : [0, 1, 2]) {
+    const r = await page.evaluate(({ legacy, views, v }) => {
+      const P = __BLD_PROBE__; if (window.BuildingsV161) BuildingsV161.enabled = !legacy;
+      const m = P.miniMesh(0xe0bb91, 0x8b4c39, v);
+      try { const meas = P.measure(m, P.miniEntries(m)); const sh = P.shoot(m, views); meas.draw = sh.calls.draw; return { meas, shots: sh.shots }; } finally { P.dropMesh(m); if (window.BuildingsV161) BuildingsV161.enabled = true; }
+    }, { legacy, views: legacy ? ['iso'] : ['front', 'iso'], v });
+    if (!legacy) for (const [vw, url] of Object.entries(r.shots)) save(`${TAG}-mini-house-v${v}-${vw}.jpg`, url);
+    report.push({ id: 'mini-house' + (legacy ? '-old' : '-v' + v), arch: 'house', level: 1, ...r.meas });
+  }
 }
 
 // ------------------------------------------------------------------------------------------------ 3. PHYSICS REPORT

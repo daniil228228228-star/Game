@@ -387,39 +387,236 @@ const lin = (hex) => new THREE.Color(hex).convertSRGBToLinear();
     return group;
   }
 
-  // ------------------------------------------------------------------------------------------------ neighbourhood mini house (makeMiniHouse in tycoon-v161.html)
-  // 4 meshes (siding body + gable ends, roof, vertex-coloured trim/door/chimney, glass) instead of 5; same footprint (collider circle r 0.92 stays), front = +z.
-  const MINI = { siding: new Map(), roof: new Map() };
-  function buildMiniHouseV161(color = 0xd9b28b, accent = 0x874d3a) {
-    const M = mats();
-    const share = (m) => { m.userData.sharedSurfaceV153 = true; return m; };
-    let ms = MINI.siding.get(color); if (!ms) { ms = share(createSurfaceMaterialV152('siding', lin(new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.35).getHex()), { roughness: 0.9 })); MINI.siding.set(color, ms); }
-    let mr = MINI.roof.get(accent); if (!mr) { mr = share(createSurfaceMaterialV152('roof', lin(accent), { roughness: 0.88, side: THREE.DoubleSide })); MINI.roof.set(accent, mr); }
-    const ctx = makeCtx(1), bS = batch(), bR = batch(), bD = batch(true), bG = batch();
-    const W = 1.5, D = 1.25, y0 = 0.14, H = 0.95, hw0 = W / 2, zf = D / 2, yw = y0 + H, tn = 0.72;
-    box(bD, ctx, 0, 0.07, 0, W + 0.1, 0.14, D + 0.1, { color: 0xb9b0a2 });
-    box(bS, ctx, 0, y0 - 0.02 + (H + 0.02) / 2, 0, W - 0.04, H + 0.02, D);
-    const r = roofPlanes(bR, ctx, hw0, 0.16, yw, tn, zf + 0.16, {});
-    tri(bS, ctx, [-hw0, yw - 0.01, zf], [hw0, yw - 0.01, zf], [0, r.yr - 0.01, zf]);
-    tri(bS, ctx, [hw0, yw - 0.01, -zf], [-hw0, yw - 0.01, -zf], [0, r.yr - 0.01, -zf]);
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(bD, ctx, sx * (hw0 - 0.01), y0 + (H - 0.06) / 2, sz * (zf - 0.01), 0.07, H - 0.06, 0.07, { color: 0xfaf6ec });
-    for (const sx of [-1, 1]) box(bD, ctx, sx * r.hw, r.ye - 0.03, 0, 0.04, 0.08, 2 * (zf + 0.16), { color: 0xfaf6ec });
-    box(bD, ctx, 0, r.yr + 0.03, 0, 0.1, 0.06, 2 * (zf + 0.16) + 0.04, { color: 0x6a2a1c });
-    box(bD, ctx, 0, y0 + 0.38, zf + 0.012, 0.3, 0.76, 0.04, { color: 0x6b4a3a });            // door
-    box(bD, ctx, 0, y0 + 0.4, zf + 0.002, 0.4, 0.82, 0.02, { color: 0xfaf6ec });             // door frame
-    box(bD, ctx, 0, 0.07, zf + 0.2, 0.7, 0.14, 0.3, { color: 0xb9b0a2 });                    // stoop
-    for (const sx of [-1, 1]) {
-      box(bD, ctx, sx * 0.5, y0 + 0.56, zf + 0.005, 0.38, 0.38, 0.02, { color: 0xfaf6ec });
-      box(bG, ctx, sx * 0.5, y0 + 0.56, zf + 0.016, 0.3, 0.3, 0.015);
-      box(bD, ctx, sx * 0.5, y0 + 0.56, zf + 0.026, 0.025, 0.3, 0.01, { color: 0xfaf6ec });
-      box(bD, ctx, sx * 0.5, y0 + 0.4, zf + 0.04, 0.42, 0.04, 0.07, { color: 0xfaf6ec });     // sill
+  // ------------------------------------------------------------------------------------------------ extra primitives (shared with assets/shop-v161.js through BuildingsV161.kit)
+  // vertical n-gon prism / frustum standing on y0 (r0 at the bottom, r1 at the top), optional cap; same winding rules as cone()
+  function cyl(bt, ctx, cx, y0, cz, r0, r1, h, n = 8, o = {}) {
+    for (let i = 0; i < n; i++) {
+      const a0 = i / n * Math.PI * 2, a1 = (i + 1) / n * Math.PI * 2, c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+      quad(bt, ctx, [cx + c0 * r0, y0, cz + s0 * r0], [cx + c0 * r1, y0 + h, cz + s0 * r1], [cx + c1 * r1, y0 + h, cz + s1 * r1], [cx + c1 * r0, y0, cz + s1 * r0], o);
+      if (o.cap !== false && r1 > 0) tri(bt, ctx, [cx, y0 + h, cz], [cx + c1 * r1, y0 + h, cz + s1 * r1], [cx + c0 * r1, y0 + h, cz + s0 * r1], o);
     }
-    { const cy = r.yr - 0.42 * tn; box(bD, ctx, -0.42, (cy - 0.05 + r.yr + 0.2) / 2, -0.25, 0.2, r.yr + 0.25 - cy, 0.2, { color: 0xa8432d }); } // chimney, standing on the slope
-    const g = new THREE.Group(); g.name = 'miniHouseV161';
+  }
+  // flat horizontal disc / ring at height y (facing up)
+  function disc(bt, ctx, cx, cz, r0, r1, y, n = 28, o = {}) {
+    for (let i = 0; i < n; i++) {
+      const a0 = i / n * Math.PI * 2, a1 = (i + 1) / n * Math.PI * 2, c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+      if (r0 <= 0) tri(bt, ctx, [cx, y, cz], [cx + c1 * r1, y, cz + s1 * r1], [cx + c0 * r1, y, cz + s0 * r1], o);
+      else quad(bt, ctx, [cx + c0 * r0, y, cz + s0 * r0], [cx + c1 * r0, y, cz + s1 * r0], [cx + c1 * r1, y, cz + s1 * r1], [cx + c0 * r1, y, cz + s0 * r1], o);
+    }
+  }
+  const shade = (hex, f) => new THREE.Color(hex).multiplyScalar(f).getHex();
+
+  // ------------------------------------------------------------------------------------------------ neighbourhood mini house (makeMiniHouse in tycoon-v161.html) + the suburb district
+  // 2026-10-05 (8), backlog #4: three variants of one small family house in the style of the main house (cream siding, red roofs, framed windows with shutters, picket fence / hedge,
+  // mailbox, lamp): 0 = front gable + door hood, 1 = side gable (ridge across the front) + gabled porch, 2 = front gable + flat porch + side shed. Front = +z, centred on the origin.
+  // Everything is merged into 5 vertex-coloured batches (siding S, roof R, soft detail D, glass G, lamp L) so a whole district is 5-6 draw calls.
+  const MINI_V = [
+    { wall: 0xf1e3bd, roof: 0xc24d32, shut: 0x4f7f5a, door: 0x7a3f2a, fence: 0xfaf6ec },
+    { wall: 0xe8e1cf, roof: 0x5f7690, shut: 0x2f5f7a, door: 0x33506b, fence: 0xdfe8ee },
+    { wall: 0xf3dcab, roof: 0x9a4e33, shut: 0x8a3b2e, door: 0x5e3b2a, fence: 0xfaf6ec },
+  ];
+  const miniBatches = () => ({ S: batch(true), R: batch(true), D: batch(true), G: batch(), L: batch() });
+  // writes one house into the batches in the current ctx frame; returns the wall boxes (local x, z, hx, hz) = the real solid parts
+  function miniHouseParts(B, ctx, v, wallC, roofC) {
+    const V = MINI_V[v], side = v === 1, TRIM = 0xfaf6ec, PL = 0xb9b0a2, BRICK = 0xa8432d;
+    const W = side ? 1.64 : 1.5, D = side ? 1.16 : 1.25, y0 = 0.14, H = side ? 0.9 : 0.95, hw0 = W / 2, zf = D / 2, yw = y0 + H, tn = side ? 0.8 : 0.72, ovh = 0.16;
+    const fp = [{ x: 0, z: 0, hx: hw0 + 0.04, hz: zf + 0.04 }];
+    const doorX = v === 2 ? -0.3 : 0;
+    box(B.D, ctx, 0, y0 / 2, 0, W + 0.1, y0, D + 0.1, { color: PL });                                                  // plinth
+    box(B.S, ctx, 0, y0 - 0.02 + (H + 0.02) / 2, 0, W - 0.04, H + 0.02, D, { color: wallC });                          // walls (the solid part)
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(B.D, ctx, sx * (hw0 - 0.01), y0 + (H - 0.06) / 2, sz * (zf - 0.01), 0.07, H - 0.06, 0.07, { color: TRIM });
+    // ---- roof
+    let ridgeY, eaveY, roofHalf;
+    const rd = shade(roofC, 0.78);
+    if (!side) {
+      const r = roofPlanes(B.R, ctx, hw0, ovh, yw, tn, zf + ovh, { color: roofC }); ridgeY = r.yr; eaveY = r.ye; roofHalf = r.hw;
+      tri(B.S, ctx, [-hw0, yw - 0.01, zf], [hw0, yw - 0.01, zf], [0, r.yr - 0.01, zf], { color: wallC });
+      tri(B.S, ctx, [hw0, yw - 0.01, -zf], [-hw0, yw - 0.01, -zf], [0, r.yr - 0.01, -zf], { color: wallC });
+      for (const sx of [-1, 1]) box(B.D, ctx, sx * r.hw, r.ye - 0.03, 0, 0.04, 0.08, 2 * (zf + ovh), { color: TRIM });
+      box(B.D, ctx, 0, r.yr + 0.03, 0, 0.1, 0.06, 2 * (zf + ovh) + 0.04, { color: rd });
+    } else {
+      ctx.at(0, 0, 0, Math.PI / 2, () => {                                                                              // ridge along the wall: frame turned by 90 degrees
+        const r = roofPlanes(B.R, ctx, zf, ovh, yw, tn, hw0 + ovh, { color: roofC }); ridgeY = r.yr; eaveY = r.ye; roofHalf = r.hw;
+        tri(B.S, ctx, [-zf, yw - 0.01, hw0], [zf, yw - 0.01, hw0], [0, r.yr - 0.01, hw0], { color: wallC });
+        tri(B.S, ctx, [zf, yw - 0.01, -hw0], [-zf, yw - 0.01, -hw0], [0, r.yr - 0.01, -hw0], { color: wallC });
+        for (const sx of [-1, 1]) box(B.D, ctx, sx * r.hw, r.ye - 0.03, 0, 0.04, 0.08, 2 * (hw0 + ovh), { color: TRIM });
+        box(B.D, ctx, 0, r.yr + 0.03, 0, 0.1, 0.06, 2 * (hw0 + ovh) + 0.04, { color: rd });
+      });
+    }
+    // ---- chimney (brick) standing on the slope
+    {
+      const cx = side ? 0.5 : -0.42, cz = side ? -0.12 : -0.25;
+      const ys = side ? yw + (zf - Math.abs(cz)) * tn : yw + (hw0 - Math.abs(cx)) * tn, top = ridgeY + 0.2;
+      box(B.D, ctx, cx, (ys - 0.15 + top) / 2, cz, 0.2, top - ys + 0.15, 0.2, { color: BRICK });
+      box(B.D, ctx, cx, top + 0.025, cz, 0.27, 0.05, 0.27, { color: TRIM });
+    }
+    // ---- door, stoop, porch
+    box(B.D, ctx, doorX, y0 + 0.4, zf + 0.002, 0.4, 0.82, 0.02, { color: TRIM });                                       // door frame
+    box(B.D, ctx, doorX, y0 + 0.38, zf + 0.014, 0.3, 0.76, 0.03, { color: V.door });                                    // door
+    box(B.L, ctx, doorX + 0.09, y0 + 0.38, zf + 0.04, 0.03, 0.03, 0.02);                                                // knob (lit batch: no extra material)
+    box(B.D, ctx, doorX, 0.07, zf + 0.2, 0.7, 0.14, 0.3, { color: PL });                                                // stoop (top = door sill)
+    if (v === 0) {                                                                                                     // hood on two brackets
+      box(B.D, ctx, doorX, y0 + 0.97, zf + 0.22, 0.74, 0.04, 0.5, { rx: 0.3, color: roofC });                         // (soft detail batch: a thin tilted slab must not read as a wall)
+      for (const sx of [-1, 1]) box(B.D, ctx, doorX + sx * 0.3, y0 + 0.86, zf + 0.1, 0.03, 0.03, 0.22, { rx: -0.5, color: TRIM });
+    } else if (v === 1) {                                                                                              // small gabled porch on two posts
+      for (const sx of [-1, 1]) box(B.D, ctx, doorX + sx * 0.36, y0 + 0.44, zf + 0.46, 0.05, 0.88, 0.05, { color: TRIM });
+      ctx.at(doorX, 0, zf + 0.27, 0, () => {
+        roofPlanes(B.R, ctx, 0.44, 0.06, y0 + 0.86, 0.75, 0.3, { color: roofC });
+        tri(B.S, ctx, [-0.44, y0 + 0.86 - 0.01, 0.3], [0.44, y0 + 0.86 - 0.01, 0.3], [0, y0 + 0.86 + 0.44 * 0.75 - 0.01, 0.3], { color: wallC });
+      });
+    } else {                                                                                                           // flat porch roof, posts, rail
+      box(B.D, ctx, doorX, y0 + 0.9, zf + 0.3, 0.86, 0.05, 0.62, { color: TRIM });
+      for (const sx of [-1, 1]) box(B.D, ctx, doorX + sx * 0.38, y0 + 0.44, zf + 0.56, 0.045, 0.88, 0.045, { color: TRIM });
+    }
+    // ---- windows (frame plate + glass + muntins + sill + shutters); frame T(x,y,z)*Ry(ry), z outwards
+    const win = (x, z, ry, ww, wh, shutters = true) => ctx.at(x, y0 + 0.56, z, ry, () => {
+      box(B.D, ctx, 0, 0, 0.005, ww + 0.08, wh + 0.08, 0.02, { color: TRIM });
+      box(B.G, ctx, 0, 0, 0.016, ww, wh, 0.015);
+      box(B.D, ctx, 0, 0, 0.026, 0.025, wh, 0.01, { color: TRIM }); box(B.D, ctx, 0, 0, 0.026, ww, 0.025, 0.01, { color: TRIM });
+      box(B.D, ctx, 0, -wh / 2 - 0.06, 0.035, ww + 0.12, 0.035, 0.07, { color: TRIM });
+      if (shutters) for (const sx of [-1, 1]) box(B.D, ctx, sx * (ww / 2 + 0.12), 0, 0.02, 0.1, wh + 0.04, 0.025, { color: V.shut });
+    });
+    if (v === 0) { win(-0.5, zf, 0, 0.28, 0.32); win(0.5, zf, 0, 0.28, 0.32); }
+    else if (v === 1) { win(-0.6, zf, 0, 0.3, 0.32); win(0.6, zf, 0, 0.3, 0.32); }
+    else { win(0.36, zf, 0, 0.34, 0.32); }
+    if (v !== 2) win(hw0 - 0.028, 0, Math.PI / 2, 0.26, 0.28, false); win(-hw0 + 0.028, 0, -Math.PI / 2, 0.26, 0.28, false);
+    // ---- side shed (variant 2): a closed little storeroom with a mono-pitch roof, solid
+    if (v === 2) {
+      const sx0 = hw0 - 0.04, sw = 0.6, sd = 0.9, scx = sx0 + sw / 2, scz = -0.1, sh = 0.62, sy = y0 - 0.02;
+      box(B.D, ctx, scx, y0 / 2, scz, sw + 0.08, y0, sd + 0.08, { color: PL });
+      box(B.S, ctx, scx, sy + (sh + 0.02) / 2, scz, sw, sh + 0.02, sd, { color: wallC });
+      const yh = y0 + sh + 0.12, yl = y0 + sh - 0.02;
+      quad(B.R, ctx, [sx0 - 0.02, yh, scz + sd / 2 + 0.1], [scx + sw / 2 + 0.1, yl, scz + sd / 2 + 0.1], [scx + sw / 2 + 0.1, yl, scz - sd / 2 - 0.1], [sx0 - 0.02, yh, scz - sd / 2 - 0.1], { color: roofC });
+      tri(B.S, ctx, [sx0, yh - 0.01, scz + sd / 2], [scx + sw / 2, yl - 0.01, scz + sd / 2], [scx + sw / 2, yh - 0.01, scz + sd / 2], { color: wallC });
+      box(B.D, ctx, scx, y0 + 0.28, scz + sd / 2 + 0.005, 0.32, 0.5, 0.02, { color: V.door });                       // shed door
+      box(B.D, ctx, scx, y0 + 0.28, scz + sd / 2 - 0.004, 0.38, 0.56, 0.01, { color: TRIM });
+      fp.push({ x: scx, z: scz, hx: sw / 2 + 0.04, hz: sd / 2 + 0.04 });
+    }
+    // ---- yard: picket fence (0, 2) or hedge (1) along the front and the two sides, a gate gap at the path, path slabs, corner shrubs, mailbox, lamp
+    const fz = zf + 0.64, fw = 0.84, gap = 0.2;
+    const hedge = (x, z, k = 1) => { blob(B.D, ctx, x, 0.15, z, 0.2 * k, 0.15, 0.17, 1, { color: 0x4f8a4a }); blob(B.D, ctx, x + 0.1, 0.13, z, 0.15 * k, 0.12, 0.15, 1, { color: 0x5e9a52 }); };
+    const picket = (x0, z0, x1, z1) => {
+      const len = Math.hypot(x1 - x0, z1 - z0), ang = Math.atan2(-(z1 - z0), x1 - x0), cnt = Math.max(2, Math.round(len / 0.11));
+      ctx.at((x0 + x1) / 2, 0, (z0 + z1) / 2, ang, () => {
+        box(B.D, ctx, 0, 0.12, 0, len, 0.03, 0.02, { color: V.fence }); box(B.D, ctx, 0, 0.28, 0, len, 0.03, 0.02, { color: V.fence });
+        for (let i = 0; i <= cnt; i++) box(B.D, ctx, -len / 2 + i * len / cnt, 0.19, 0.012, 0.045, 0.34, 0.018, { color: V.fence });
+      });
+    };
+    const post = (x, z) => box(B.D, ctx, x, 0.22, z, 0.06, 0.44, 0.06, { color: shade(V.fence, 0.92) });
+    if (v === 1) {                                                                                                     // hedge along the front, short picket returns
+      for (let x = -fw + 0.1; x <= fw - 0.05; x += 0.2) if (Math.abs(x - doorX) > gap + 0.05) hedge(x, fz, 1);
+      picket(-fw, fz, -fw, zf + 0.12); picket(fw, fz, fw, zf + 0.12);
+    } else {
+      picket(-fw, fz, doorX - gap, fz); picket(doorX + gap, fz, fw, fz); picket(-fw, fz, -fw, zf + 0.12); picket(fw, fz, fw, zf + 0.12);
+      for (const x of [-fw, fw, doorX - gap, doorX + gap]) post(x, fz);
+    }
+    for (const sx of [-1, 1]) hedge(sx * (hw0 - 0.12), zf + 0.2, 0.9);                                                 // shrubs at the front corners
+    box(B.D, ctx, doorX, 0.012, (zf + 0.35 + fz) / 2, 0.3, 0.024, fz - zf - 0.35, { color: 0xd6cdbf });               // path slabs
+    { const mx = fw + 0.14, mz = fz - 0.05;                                                                            // mailbox
+      box(B.D, ctx, mx, 0.28, mz, 0.04, 0.56, 0.04, { color: 0x6a4a2e }); box(B.D, ctx, mx, 0.6, mz, 0.18, 0.12, 0.26, { color: 0x3a5f8f }); box(B.D, ctx, mx + 0.1, 0.65, mz + 0.04, 0.02, 0.09, 0.05, { color: 0xd23b30 }); }
+    { const lx = -fw - 0.12, lz = fz - 0.05;                                                                           // lamp post
+      box(B.D, ctx, lx, 0.36, lz, 0.04, 0.72, 0.04, { color: 0x3b4350 }); box(B.D, ctx, lx, 0.01, lz, 0.12, 0.02, 0.12, { color: 0x3b4350 });
+      box(B.L, ctx, lx, 0.8, lz, 0.1, 0.1, 0.1); box(B.D, ctx, lx, 0.87, lz, 0.14, 0.03, 0.14, { color: 0x3b4350 }); }
+    return { fp, reach: Math.max(hw0 + (v === 2 ? 0.64 : 0), fw + 0.2), fz };
+  }
+  const miniMats = () => {
+    const M = mats();
+    if (!M.sidingVC) {
+      const share = (m) => { m.userData.sharedSurfaceV153 = true; return m; };
+      M.sidingVC = share(createSurfaceMaterialV152('siding', lin(0xffffff), { roughness: 0.9, vertexColors: true }));
+      M.roofVC = share(createSurfaceMaterialV152('roof', lin(0xffffff), { roughness: 0.88, side: THREE.DoubleSide, vertexColors: true }));
+    }
+    return M;
+  };
+  const miniMeshes = (B, M, g) => {
     const add = (m) => { if (m) g.add(m); };
-    add(toMesh(bS, ms, { cast: !VISUAL_MOBILE })); add(toMesh(bR, mr, { cast: !VISUAL_MOBILE })); add(toMesh(bD, M.detail, {})); add(toMesh(bG, M.glass, { receive: false }));
-    g.userData.v161MiniHouse = true;
+    add(toMesh(B.S, M.sidingVC, { cast: !VISUAL_MOBILE })); add(toMesh(B.R, M.roofVC, { cast: !VISUAL_MOBILE })); add(toMesh(B.D, M.detail, { soft: true }));
+    add(toMesh(B.G, M.glass, { receive: false })); add(toMesh(B.L, M.lamp, { soft: true, receive: false }));
+  };
+  const miniVariantFor = (color, accent) => { const h = ((color >>> 0) * 31 + (accent >>> 0) * 17) >>> 0; return h % 2; };
+  function buildMiniHouseV161(color = 0xd9b28b, accent = 0x874d3a, variant) {
+    const M = miniMats(), v = Number.isInteger(variant) ? ((variant % 3) + 3) % 3 : miniVariantFor(color, accent);
+    const ctx = makeCtx(1), B = miniBatches();
+    const wall = new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.45).getHex();
+    const parts = miniHouseParts(B, ctx, v, wall, accent);
+    const g = new THREE.Group(); g.name = 'miniHouseV161';
+    miniMeshes(B, M, g);
+    g.userData.v161MiniHouse = true; g.userData.v161Variant = v; g.userData.v161Footprint = parts.fp;
     return g;
+  }
+
+  // ---- the suburb district (makeDistrictIdentityGroupV363, id 'suburb'): lawn + path, 4+lv trees, 3 planters, 2+lv mini houses on the old ring (same angles, radii, yaw, scale 0.9)
+  // 6 meshes in total (ground, soft detail with trees / planters / fences / hedges, siding, roof, glass, lamps) instead of ~96. Houses are solid (wall boxes + shed), tree trunks are small circles.
+  const SUBURB_HOUSE_SCALE = 0.9;
+  function buildSuburbV161(lv) {
+    const M = miniMats(), g = new THREE.Group(); g.name = 'suburbV161';
+    const ctx = makeCtx(1), B = miniBatches(), gnd = batch(true);
+    disc(gnd, ctx, 0, 0, 0, 2.25, 0.03, 28, { color: 0x72b25f });                                                      // lawn
+    disc(gnd, ctx, 0, 0, 1.05, 1.32, 0.05, 28, { color: 0xdccfc2 });                                                   // path ring
+    const solids = [], trunks = [];
+    // planters (3, as before: r 1.85, start pi/6)
+    for (let i = 0; i < 3; i++) {
+      const a = Math.PI / 6 + i / 3 * Math.PI * 2, x = Math.cos(a) * 1.85, z = Math.sin(a) * 1.85;
+      cyl(B.D, ctx, x, 0, z, 0.5, 0.44, 0.24, 12, { color: 0xc9beb0 }); cyl(B.D, ctx, x, 0.24, z, 0.4, 0.36, 0.04, 12, { color: 0x7fbf73 });
+      blob(B.D, ctx, x, 0.4, z, 0.3, 0.2, 0.3, 1, { color: 0x5e9a52 }); blob(B.D, ctx, x + 0.1, 0.5, z - 0.05, 0.16, 0.12, 0.16, 1, { color: 0xf08ab0 });
+    }
+    // trees (4+lv, r 3.2): deciduous / conifer alternating, sizes vary by index, base exactly on the ground
+    const nTrees = 4 + lv;
+    for (let i = 0; i < nTrees; i++) {
+      const a = i / nTrees * Math.PI * 2, x = Math.cos(a) * 3.2, z = Math.sin(a) * 3.2, k = 0.9 + 0.12 * (i % 3);
+      if (i % 2 === 0) {
+        cyl(B.D, ctx, x, 0, z, 0.1 * k, 0.07 * k, 0.9 * k, 6, { color: 0x6b4a2f });
+        blob(B.D, ctx, x, 1.35 * k, z, 0.62 * k, 0.55 * k, 0.62 * k, 1, { color: 0x6ea95d }); blob(B.D, ctx, x + 0.18 * k, 1.75 * k, z - 0.1 * k, 0.4 * k, 0.36 * k, 0.4 * k, 1, { color: 0x7dbb6a });
+      } else {
+        cyl(B.D, ctx, x, 0, z, 0.09 * k, 0.07 * k, 0.45 * k, 6, { color: 0x6b4a2f });
+        for (let j = 0; j < 3; j++) cone(B.D, ctx, x, (0.35 + j * 0.5) * k, z, (0.62 - j * 0.14) * k, 0.8 * k, 8, { color: [0x3f7d4a, 0x468a50, 0x4f9657][j] });
+      }
+      trunks.push({ x, z, r: 0.2 });
+    }
+    // houses on the old ring, variant by index (colours of the old palette family, geometry of the three variants)
+    const nHouses = 2 + lv, variants = [];
+    for (let i = 0; i < nHouses; i++) {
+      const a = -Math.PI * 0.32 + i * (Math.PI / (1 + lv)), hx = Math.cos(a) * 5.2, hz = Math.sin(a) * 5.0, yaw = -a + Math.PI / 2, v = i % 3, V = MINI_V[v];
+      variants.push(v);
+      let parts = null;
+      const c2 = makeCtx(1);
+      c2.P = new M4().makeTranslation(hx, 0, hz).multiply(new M4().makeRotationY(yaw)).multiply(new M4().makeScale(SUBURB_HOUSE_SCALE, SUBURB_HOUSE_SCALE, SUBURB_HOUSE_SCALE));
+      parts = miniHouseParts(B, c2, v, V.wall, V.roof);
+      const cy = Math.cos(yaw), sy = Math.sin(yaw);
+      for (const f of parts.fp) solids.push({ x: hx + (f.x * cy + f.z * sy) * SUBURB_HOUSE_SCALE, z: hz + (-f.x * sy + f.z * cy) * SUBURB_HOUSE_SCALE, hx: f.hx * SUBURB_HOUSE_SCALE, hz: f.hz * SUBURB_HOUSE_SCALE, yaw });
+    }
+    g.add(toMesh(gnd, M.detail, { soft: true }));
+    miniMeshes(B, M, g);
+    g.userData.v161Suburb = true; g.userData.v161Solids = solids; g.userData.v161Trunks = trunks; g.userData.v161Houses = nHouses; g.userData.v161Trees = nTrees; g.userData.v161Variants = variants;
+    return g;
+  }
+  // world boxes / circles of the suburb group (registry hook, tycoon-v161.html rebuildStatic): houses + sheds = oriented boxes, trunks = circles
+  function districtObstacles() {
+    const out = [];
+    let map = null; try { map = cityWorldRuntime.districtIdentity; } catch (_) { return out; }
+    const g = map && map.get && map.get('suburb');
+    if (!g || !g.userData || !g.userData.v161Suburb || g.visible === false) return out;
+    g.updateMatrixWorld(true);
+    const p = new V3();
+    (g.userData.v161Solids || []).forEach((s, i) => { p.set(s.x, 0, s.z).applyMatrix4(g.matrixWorld); out.push({ owner: g, category: 'cityBuilding', label: `suburb:house${i}`, shape: 'obb', pos: new V3(p.x, 0, p.z), hx: s.hx, hz: s.hz, yaw: s.yaw }); });
+    (g.userData.v161Trunks || []).forEach((t, i) => { p.set(t.x, 0, t.z).applyMatrix4(g.matrixWorld); out.push({ owner: g, category: 'tree', label: `suburb:tree${i}`, shape: 'circle', pos: new V3(p.x, 0, p.z), radius: t.r }); });
+    return out;
+  }
+  // the registry also needs the mini houses of the neighbourhood ring (refreshNeighborhoodWorld): their wall boxes in world space
+  function neighborhoodObstacles() {
+    const out = [];
+    let map = null; try { map = cityWorldRuntime.neighborhoods; } catch (_) { return out; }
+    if (!map) return out;
+    for (const [id, grp] of map) {
+      if (!grp || grp.visible === false) continue;
+      grp.updateMatrixWorld(true);
+      for (const h of grp.children) {
+        if (!h.userData || !h.userData.v161MiniHouse) continue;
+        const boxes = footprintWorld(h) || [];
+        boxes.forEach((b, i) => out.push({ owner: grp, category: 'cityBuilding', label: `miniHouse:${id}:${i}`, shape: 'obb', pos: b.pos, hx: b.hx, hz: b.hz, yaw: b.yaw }));
+      }
+    }
+    return out;
   }
 
   // ------------------------------------------------------------------------------------------------ gold tiers 6..10 for the house
@@ -480,12 +677,15 @@ const lin = (hex) => new THREE.Color(hex).convertSRGBToLinear();
     for (const f of fp) {
       const p = new V3(f.x, 0, f.z).applyMatrix4(root.matrixWorld);
       const sx = root.scale ? root.scale.x : 1, sz = root.scale ? root.scale.z : 1;
-      out.push({ pos: new V3(p.x, 0, p.z), hx: f.hx * sx, hz: f.hz * sz, yaw });
+      out.push({ pos: new V3(p.x, 0, p.z), hx: f.hx * sx, hz: f.hz * sz, yaw: yaw + (f.yaw || 0) });
     }
     return out;
   }
 
   window.buildHouseV161 = buildHouseV161;
   window.buildMiniHouseV161 = buildMiniHouseV161;
-  window.BuildingsV161 = { enabled: true, buildHouse: buildHouseV161, addHouseGold, footprintWorld, mats, version: 'v161-buildings-houses' };
+  window.buildSuburbV161 = buildSuburbV161;
+  // the shared kit: assets/shop-v161.js builds its meshes with the same merged-geometry helpers
+  const kit = { batch, box, tri, quad, cone, cyl, disc, blob, roofPlanes, makeCtx, toMesh, mats, lin, rgb, shade, M4, V3 };
+  window.BuildingsV161 = { enabled: true, buildHouse: buildHouseV161, addHouseGold, footprintWorld, districtObstacles, neighborhoodObstacles, mats, kit, version: 'v161-buildings-houses-suburb' };
 })();

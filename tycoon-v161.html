@@ -925,6 +925,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="assets/buildings-v161.js"></script>
 <script src="assets/plants-v161.js"></script>
 <script src="assets/market-v161.js"></script>
+<script src="assets/shop-v161.js"></script>
 <script src="assets/foliage-v154.js"></script>
 <script src="assets/work-session-v158.js"></script>
 <script src="assets/development-core-v160.js"></script>
@@ -6461,7 +6462,9 @@ function createBuildingMesh(stage, level = 1) {
   // v161 buildings (assets/buildings-v161.js, 2026-10-05 (4)): the house archetype has its own merged-geometry builder that does its own trim, details,
   // collision footprint (userData.v161Footprint) and sets the flags that make the shared polish passes below, v44 micro details and v157 finish skip it.
   const houseV161 = stage.archetype === 'house' && typeof buildHouseV161 === 'function' && window.BuildingsV161?.enabled !== false;
-  const group = houseV161 ? buildHouseV161(stage, height, baseSize, level) : builder(stage, height, baseSize);
+  // v161 shop (assets/shop-v161.js, 2026-10-05 (8)): the main-line shop (STAGES entry, not the city / base / project shops that share the archetype) has its own merged-geometry builder with real wall colliders.
+  const shopV161 = stage.archetype === 'shop' && STAGES.indexOf(stage) >= 0 && typeof buildShopV161 === 'function' && window.ShopV161?.enabled !== false;
+  const group = houseV161 ? buildHouseV161(stage, height, baseSize, level) : shopV161 ? buildShopV161(stage, height, baseSize, level) : builder(stage, height, baseSize);
   if (!group.userData.v161Complete) {
     enhanceBuildingGeometry(group, stage, height, baseSize, level);
     addBuildingVisualPolish(group, stage, height, baseSize, level);
@@ -12177,8 +12180,8 @@ function buildFireStation(id){
   f.pendingUntil=Date.now()+5.6*1000;spawnConstructionSite(new THREE.Vector3(f.pos.x,0,f.pos.z),{archetype:'warehouse',baseSize:2.6,height:3.2,color:0xd95a4d},5.6);
   sfx.build();haptic('medium');toast(lang==='ru'?'🚒 Строим пожарную часть':'🚒 Building fire station');renderCityPanel();save();
 }
-function makeMiniHouse(color=0xd9b28b,accent=0x874d3a){
-  if(typeof buildMiniHouseV161==='function'&&window.BuildingsV161?.enabled!==false)return buildMiniHouseV161(color,accent); // v161 buildings: merged-geometry neighbourhood house (assets/buildings-v161.js)
+function makeMiniHouse(color=0xd9b28b,accent=0x874d3a,variant){
+  if(typeof buildMiniHouseV161==='function'&&window.BuildingsV161?.enabled!==false)return buildMiniHouseV161(color,accent,variant); // v161 buildings: merged-geometry neighbourhood house, variant 0..2 (assets/buildings-v161.js)
   const g=new THREE.Group();const wall=new THREE.MeshStandardMaterial({color,roughness:.84});const roofMat=new THREE.MeshStandardMaterial({color:accent,roughness:.88});
   const body=new THREE.Mesh(new THREE.BoxGeometry(1.5,1.15,1.25),wall);body.position.y=.58;body.castShadow=!VISUAL_MOBILE;body.receiveShadow=true;g.add(body);
   const roof=new THREE.Mesh(new THREE.ConeGeometry(1.18,.72,4),roofMat);roof.position.y=1.50;roof.rotation.y=Math.PI/4;roof.castShadow=!VISUAL_MOBILE;g.add(roof);
@@ -12212,7 +12215,7 @@ function refreshNeighborhoodWorld(){
       // Also keep mini houses from overlapping each other -- they were only spaced by the angle
       // formula above, with no actual distance check between already-placed houses in this ring.
       if(placedThisDistrict.some(p=>Math.hypot(x-p.x,z-p.z)<2.05))continue;
-      const c=palette[i%palette.length],house=makeMiniHouse(c[0],c[1]);house.position.set(x,0,z);house.rotation.y=-a+Math.PI/2;g.add(house);cityWorldRuntime.neighborhoodColliders.push({pos:{x,z},radius:.92});placedThisDistrict.push({x,z});
+      const c=palette[i%palette.length],house=makeMiniHouse(c[0],c[1],i%2);house.position.set(x,0,z);house.rotation.y=-a+Math.PI/2;g.add(house);cityWorldRuntime.neighborhoodColliders.push({pos:{x,z},radius:.92});placedThisDistrict.push({x,z});
       if(i%2===0){const bush=makeBush();bush.position.set(x+Math.cos(a+.8)*1.05,0,z+Math.sin(a+.8)*1.05);bush.scale.setScalar(.48);g.add(bush);}
     }
     scene.add(g);cityWorldRuntime.neighborhoods.set(id,g);
@@ -16631,6 +16634,8 @@ function makeDistrictIdentityGroupV363(cfg){
   const lv=districtLevel(cfg.id),g=new THREE.Group();
   if(lv<=0)return g;
   if(cfg.id==='suburb'){
+    // v161 buildings (assets/buildings-v161.js, 2026-10-05 (8)): the whole suburb identity (lawn, trees, planters, ring of 3-variant mini houses) as 6 merged meshes with real wall colliders; BuildingsV161.enabled = false brings back the old ~96-mesh group below
+    if(typeof buildSuburbV161==='function'&&window.BuildingsV161?.enabled!==false){Promise.resolve().then(()=>{try{window.__TYCOON_V83_COLLISIONS__?.rebuild?.();}catch(_){}});return buildSuburbV161(lv);}
     const lawn=new THREE.Mesh(new THREE.CircleGeometry(2.25,24),new THREE.MeshStandardMaterial({color:0x8dc37c,roughness:.98}));
     lawn.rotation.x=-Math.PI/2;lawn.position.y=.03;g.add(lawn);
     const path=new THREE.Mesh(new THREE.RingGeometry(1.05,1.32,24),createConcreteMaterial(0xdccfc2,{roughness:.96}));
@@ -32636,9 +32641,15 @@ window.__TYCOON_V74_BUILD__={
 
     // Mini-houses remain represented by their generated neighborhood collision list because the
     // neighborhood runtime stores a district group, not one persistent root per house.
+    // v161 buildings (assets/buildings-v161.js, 2026-10-05 (8)): the three-variant mini houses of the neighbourhood ring are solid as their real wall boxes (+ shed); the old r .92 circle stays for
+    // road / decor planning only (placement + camera, no player / agent flag) so the road signature (neighborhoodColliders) and the planners read exactly what they read before.
+    const miniBoxesV161=window.BuildingsV161&&window.BuildingsV161.enabled!==false?window.BuildingsV161.neighborhoodObstacles():[];
+    for(const o of miniBoxesV161)register({owner:o.owner,category:'cityBuilding',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{player:true,agent:true,placement:false,camera:false}});
     for(let i=0;i<(cityWorldRuntime?.neighborhoodColliders||[]).length;i++){
-      const c=cityWorldRuntime.neighborhoodColliders[i];if(c?.pos)registerCircle(c.pos,Math.max(.62,Number(c.radius)||.92),'cityBuilding',`miniHouse:${i}`);
+      const c=cityWorldRuntime.neighborhoodColliders[i];if(c?.pos)registerCircle(c.pos,Math.max(.62,Number(c.radius)||.92),'cityBuilding',`miniHouse:${i}`,null,miniBoxesV161.length?{player:false,agent:false}:{});
     }
+    // v161 suburb district: houses + shed = oriented boxes, tree trunks = small circles (placement / camera off: planners read nothing new)
+    for(const o of (window.BuildingsV161&&window.BuildingsV161.enabled!==false?window.BuildingsV161.districtObstacles():[]))register({owner:o.owner,category:o.category,label:o.label,shape:o.shape,pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,radius:o.radius,flags:{player:true,agent:true,placement:false,camera:false}});
     // Fallback for plot colliders that are not currently backed by an active landPlot root.
     for(let i=0;i<(cityWorldRuntime?.plotColliders||[]).length;i++){
       const c=cityWorldRuntime.plotColliders[i];if(c?.pos)registerCircle(c.pos,Math.max(.72,Number(c.radius)||1.5),'cityPlot',`plotFallback:${i}`,null,{camera:false});

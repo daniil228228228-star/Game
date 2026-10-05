@@ -103,8 +103,10 @@
     const g = createBefore.call(this, stage, Math.min(level, 5));
     if (level > 5) {
       try {
-        // houses (assets/buildings-v161.js) carry their own gold trim that fits the house silhouette; every other archetype keeps addGoldTiers
-        if (g.userData.v161House && window.BuildingsV161?.addHouseGold) window.BuildingsV161.addHouseGold(g, stage, level); else addGoldTiers(g, stage, level);
+        // houses (assets/buildings-v161.js) and the shop (assets/shop-v161.js) carry their own gold trim that fits their silhouette; every other archetype keeps addGoldTiers
+        if (g.userData.v161House && window.BuildingsV161?.addHouseGold) window.BuildingsV161.addHouseGold(g, stage, level);
+        else if (g.userData.v161Shop && window.ShopV161?.addGold) window.ShopV161.addGold(g, stage, level); // the shop (assets/shop-v161.js) has gold trim that fits its facade
+        else addGoldTiers(g, stage, level);
       } catch (err) { console.warn('[v161 gold tiers]', err); }
     }
     return g;
