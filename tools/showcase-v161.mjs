@@ -5,6 +5,10 @@
 //     the late-game world is built out, then every industrial plant (sawmill, concrete plant, metal yard, frame workshop) is shown at every level in a LIVE mid-cycle pose
 //     (timers set, one synchronous update, one shot) next to the OLD builder of the same plant (PlantsV161.enabled = false; the sawmill has no old version): PHYSICS
 //     numbers (meshes, draw calls, triangles, min y, collider overlap/outside/walk-in) and DIR/<tag>-plant-<id>-L<n>-<view>.jpg (+ -old-).
+//   node tools/showcase-v161.mjs --market [--market-views front,iso] [--market-only team,exchange] [--market-no-old]   (2026-10-05 (7), family #3)
+//     the late-game world is built out, then the whole market is shot (plaza overview from above / from the gate / street level, each stall front + iso, one vacant lot) first with
+//     the OLD plaza and stalls (MarketV161.enabled = false, rebuilt through the game's own buildMarketPlazaV116) and then with the new ones; numbers for the whole market
+//     (meshes, draw calls in an overview frame, triangles) and per object (min y, collider cover, walk-in from 8 directions): DIR/<tag>-market-<id>-<view>.jpg (+ -old-).
 // ONE browser launch per run. Stage buildings (all 16 STAGES) are built by the game's real builder chain (createBuildingMesh: BUILDERS + polish layers +
 // v44 + v157 + late-game gold tiers), put alone on the grass (everything else in the scene is hidden for the shot), registered in the real v83 collision
 // registry with the call rebuildStatic uses, and shot from four fixed cameras at the phone viewport 390x664: DIR/bld-<id>-L<n>-<view>.jpg.
@@ -25,6 +29,7 @@ const VIEWS = String(opt('views', 'front,side,top,iso')).split(',');
 const OTHER_VIEWS = String(opt('other-views', 'iso')).split(',');
 const WANT_SURVEY = !!opt('survey', false);
 const WANT_PLANTS = !!opt('plants', false);
+const WANT_MARKET = !!opt('market', false);
 fs.mkdirSync(OUT, { recursive: true });
 
 const LATE = { saveVersion: 20, stageIndex: 16, money: 5e8, planks: 5000, concrete: 500, metal: 500, buildings: Array.from({ length: 16 }, (_, i) => ({ index: i, level: 5 })) };
@@ -32,7 +37,7 @@ const g = await openGame({ save: LATE, waitMs: 8000 });
 const { page } = g;
 await page.evaluate(installProbe);
 const info = await page.evaluate(() => __BLD_PROBE__.stageInfo());
-const stages = WANT_PLANTS && !opt('stages', false) ? [] : parseList(opt('stages', 'all'), Array.from({ length: info.n }, (_, i) => i));
+const stages = (WANT_PLANTS || WANT_MARKET) && !opt('stages', false) ? [] : parseList(opt('stages', 'all'), Array.from({ length: info.n }, (_, i) => i));
 const levels = parseList(opt('levels', '1,5,10'), [1, 5, 10]);
 const houseLevels = parseList(opt('house-levels', '1-10'), Array.from({ length: 10 }, (_, i) => i + 1));
 const save = (name, dataUrl) => fs.writeFileSync(path.join(OUT, name), Buffer.from(dataUrl.split(',')[1], 'base64'));
@@ -139,6 +144,64 @@ if (WANT_PLANTS) {
   // restore the production levels the save started with
   await page.evaluate(() => { for (const k of ['sawmill', 'concrete', 'metal']) industrialLevelsV161[k] = 1; refreshIndustrialBadgesV161(); });
   report.push(...plantRows);
+}
+
+// ------------------------------------------------------------------------------------------------ 2c. market (family #3): plaza + 7 stalls + a vacant lot, old and new
+const marketRows = [];
+if (WANT_MARKET) {
+  const built = await page.evaluate(() => __BLD_PROBE__.buildOut());
+  console.log('BUILD-OUT', built.join(' | '));
+  await page.waitForTimeout(4000);
+  await page.evaluate(() => __BLD_PROBE__.finishGrowth());
+  await page.waitForTimeout(2500);
+  const mviews = String(opt('market-views', 'front,iso')).split(',');
+  const only = String(opt('market-only', 'team,fleet,tenders,operations,meta,bonus,exchange')).split(',');
+  for (const old of opt('market-no-old', false) ? [false] : [true, false]) {
+    const r = await page.evaluate(({ old, mviews, only }) => {
+      const P = __BLD_PROBE__, out = { stalls: [], overview: {} };
+      // rebuild the market with the old or the new builders through the game's own owner function
+      MarketV161.enabled = !old;
+      { const pl = scene.getObjectByName('marketPlazaV116'); if (pl) { scene.remove(pl); disposeObject3D(pl); } }
+      for (const m of [marketRuntimeV116.stalls, marketRuntimeV116.vacant]) { for (const v of m.values()) { const g = v.group || v; scene.remove(g); disposeObject3D(g); } m.clear(); }
+      buildMarketPlazaV116(); __TYCOON_V83_COLLISIONS__.rebuild(); P.forceScan();
+      const plaza = scene.getObjectByName('marketPlazaV116'), C = MARKET_PLAZA_CENTER_V116;
+      const roots = () => [plaza, ...[...marketRuntimeV116.stalls.values()].map((s) => s.group), ...[...marketRuntimeV116.vacant.values()]];
+      const gate = Math.atan2(-C.z, -C.x);
+      const target = new THREE.Vector3(C.x, 0.4, C.z);
+      const views = { top: { az: 0, el: 1.5, dist: 22 }, gate: { az: Math.PI / 2 - gate + Math.PI / 2 * 0, el: 0.62, dist: 21 }, low: { az: Math.PI / 2 - gate, el: 0.32, dist: 17 }, high: { az: Math.PI / 2 - gate, el: 0.95, dist: 19 } };
+      for (const [k, v] of Object.entries(views)) { const o = P.overview(roots(), { target, ...v }); out.overview[k] = { url: o.url, draw: o.draw, tris: o.tris }; }
+      out.market = { meshes: roots().reduce((n, r) => { let c = 0; r.traverse((m) => { if (m.isMesh) c++; }); return n + c; }, 0), sprites: roots().reduce((n, r) => { let c = 0; r.traverse((m) => { if (m.isSprite) c++; }); return n + c; }, 0), draw: out.overview.high.draw, tris: out.overview.high.tris };
+      out.plaza = (() => { const m = P.measure(plaza, P.ownEntries(plaza)); delete m.colliders; return m; })();
+      for (const id of only) {
+        const st = marketRuntimeV116.stalls.get(id); if (!st) continue;
+        const g = st.group, meas = P.measure(g, P.ownEntries(g), { ascii: true });
+        meas.unc = (meas.unc || []).slice(0, 24); delete meas.ascii; delete meas.far;
+        const sh = P.shoot(g, mviews, { only: [g] });
+        meas.draw = P.overview([g], { target: g.position.clone().add(new THREE.Vector3(0, 1, 0)), az: g.rotation.y, el: 0.4, dist: 7 }).draw;
+        out.stalls.push({ id, meas, shots: sh.shots });
+      }
+      // a vacant lot: take 'meta' out of the built set for one frame
+      if (!old) {
+        const cfg = marketStallConfig('meta'), keep = stageIndex;
+        const g0 = marketRuntimeV116.stalls.get('meta'); scene.remove(g0.group); disposeObject3D(g0.group); marketRuntimeV116.stalls.delete('meta'); marketStallsBuiltV118.delete('meta');
+        stageIndex = Math.max(stageIndex, cfg.unlock); refreshMarketStallsV118(); P.forceScan();
+        const lot = marketRuntimeV116.vacant.get('meta');
+        const meas = P.measure(lot, P.ownEntries(lot)), sh = P.shoot(lot, ['front', 'iso'], { only: [lot, plaza] });
+        out.vacant = { meas, shots: sh.shots };
+        marketRuntimeV116.vacant.delete('meta'); scene.remove(lot); disposeObject3D(lot); marketStallsBuiltV118.add('meta'); stageIndex = keep; refreshMarketStallsV118(); P.forceScan();
+      }
+      return out;
+    }, { old, mviews, only });
+    const tag = old ? 'old-' : '';
+    for (const [k, v] of Object.entries(r.overview)) save(`${TAG}-market-${tag}overview-${k}.jpg`, v.url);
+    for (const st of r.stalls) { for (const [v, url] of Object.entries(st.shots)) save(`${TAG}-market-${tag}${st.id}-${v}.jpg`, url); delete st.shots; }
+    if (r.vacant) { for (const [v, url] of Object.entries(r.vacant.shots)) save(`${TAG}-market-vacant-${v}.jpg`, url); delete r.vacant.shots; }
+    console.log(`MARKET ${old ? 'OLD' : 'NEW'}: meshes ${r.market.meshes} + sprites ${r.market.sprites}, draw calls in the overview ${r.market.draw}, triangles ${r.market.tris}; per view draw ${Object.entries(r.overview).map(([k, v]) => k + ':' + v.draw).join(' ')}`);
+    marketRows.push({ id: 'plaza' + (old ? '-old' : ''), arch: 'market', level: 0, ...r.plaza });
+    for (const st of r.stalls) { marketRows.push({ id: `stall-${st.id}${old ? '-old' : ''}`, arch: 'market', level: 0, ...st.meas }); if (!old && st.meas.unc && st.meas.unc.length) console.log(`  uncovered cells ${st.id}: ${JSON.stringify(st.meas.unc)}`); }
+    if (r.vacant) marketRows.push({ id: 'vacant-lot', arch: 'market', level: 0, ...r.vacant.meas });
+  }
+  report.push(...marketRows);
 }
 
 // ------------------------------------------------------------------------------------------------ 1. stage buildings, isolated (after the survey: the forced surface scans below push the scan clock ahead)

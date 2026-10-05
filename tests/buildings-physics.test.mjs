@@ -11,7 +11,11 @@
 //   (industrialLevelsV161 -> refreshIndustrialBadgesV161) and measured with the colliders they own in the real registry: nothing floating or sunk, the colliders cover the walls /
 //   machines (>= 90 %) and stick out <= 1.0 m, the player walked at the centre from 8 directions never gets inside (open bays stay walkable: the footprint is walls + machines),
 //   every pad / pickup / mine / badge of the plant is outside every collider, the mines stand on their pad, draw-call budgets.
-// IN SCOPE (hard checks): the house family = stage 0/1 at every level, the neighbourhood mini house, the four industrial plants. Everything else in the catalogue is measured and
+//   B3 (2026-10-05 (7), family #3): the MARKET - plaza + the 7 stalls built by the game (marketRuntimeV116) and measured with the colliders they own: nothing floating or sunk, the sealed stall body
+//   (back wall, side panels, counter) and the big props are solid and cover the walls >= 90 %, the player walked at the centre from 8 directions never gets inside, the customer side in front of the
+//   counter is open and walkable up to it, the lane from the plaza centre to every stall is free, the stall can be used from there (nearestManualTargetV53), fountain / benches / planters solid,
+//   the entrance gate walkable, mesh budgets.
+// IN SCOPE (hard checks): the house family = stage 0/1 at every level, the neighbourhood mini house, the four industrial plants, the market. Everything else in the catalogue is measured and
 //   printed as `KNOWN ISSUE:` (exit 0) - those lines are the backlog of the next building families. SHOTS_DIR=<dir> writes front + iso pictures of house levels 1/3/5/10
 //   and of the plants at levels 1/3.
 import fs from 'node:fs';
@@ -160,9 +164,8 @@ check(industrialPads.length >= 8 && industrialPads.every((p) => !p.b.hit), `indu
 
 // live groups (named by the owning code; positions from the late-game survey)
 const targets = [
-  { id: 'fleet-yard', name: 'v116FleetYard' }, { id: 'market-plaza', name: 'marketPlazaV116' },
-  ...['team', 'fleet', 'tenders', 'operations', 'meta', 'bonus', 'exchange'].map((k) => ({ id: 'market-stall-' + k, name: 'marketStallV116_' + k })),
-]; // the plants (sawmill, concrete plant, metal yard, frame workshop, their mines) are HARD checks in section B2 below
+  { id: 'fleet-yard', name: 'v116FleetYard' },
+]; // the plants (sawmill, concrete plant, metal yard, frame workshop, their mines) are HARD checks in section B2 below, the market (plaza + 7 stalls) in section B3
 const liveRows = await ev((targets) => {
   const P = __BLD_PROBE__, out = [];
   for (const t of targets) {
@@ -173,7 +176,7 @@ const liveRows = await ev((targets) => {
   return out;
 }, targets);
 console.log('live groups:', liveRows.map((r) => (r.missing ? `${r.id}: missing` : `${r.id}: meshes ${r.meshes}, min y ${r.minY}, footprint ${r.footprintArea} m2, collider ${r.colliderArea} m2, overlap ${r.overlap}, outside max ${r.outsideMax} m, walk-in ${r.sweepReached ?? '-'}/8`)).join('\n  '));
-check(liveRows.filter((r) => !r.missing).length >= 8, `live groups found and measured (${liveRows.filter((r) => !r.missing).length} of ${liveRows.length})`);
+check(liveRows.filter((r) => !r.missing).length >= 1, `live groups found and measured (${liveRows.filter((r) => !r.missing).length} of ${liveRows.length})`);
 for (const r of liveRows.filter((x) => !x.missing)) {
   if (r.minY < -0.05 || r.minY > 0.05) issue(`${r.id}: floating or sunk, min y ${r.minY}`);
   if (r.footprintArea > 1 && r.overlap !== null && r.overlap < 0.9) issue(`${r.id}: collider covers only ${Math.round(r.overlap * 100)} % of the wall footprint (${r.uncovered} m2 uncovered)`);
@@ -243,6 +246,60 @@ check(mill.every((r) => r.bay && !r.bay.hit && r.mach && r.mach.hit), `sawmill: 
 const lv = (k) => plantRows.filter((r) => r.kind === k);
 check(lv('concrete').every((r, i, a) => i === 0 || r.meas.tris > a[i - 1].meas.tris) && lv('metal').every((r, i, a) => i === 0 || r.meas.tris > a[i - 1].meas.tris), `concrete and metal: every level adds parts to the SAME building (triangles ${J(lv('concrete').map((r) => r.meas.tris))} / ${J(lv('metal').map((r) => r.meas.tris))})`);
 console.log('plant rows:', plantRows.map((r) => `${pl(r)}: meshes ${r.meas.meshes}, tris ${r.meas.tris}, min y ${r.meas.minY}, footprint ${r.meas.footprintArea} m2, collider ${r.meas.colliderArea} m2, overlap ${r.meas.overlap}, outside max ${r.meas.outsideMax} m, walk-in ${r.meas.sweepReached}/8, boxes ${r.own}`).join('\n  '));
+
+// ------------------------------------------------------------------------------------------------ B3. market (family #3, 2026-10-05 (7)): HARD
+// The late save has every stall built (old-format save: staged flags true), so the stalls are the real marketRuntimeV116 groups. Everything is read from the scene and the v83 registry.
+const mk = await ev(() => {
+  const P = __BLD_PROBE__, C = MARKET_PLAZA_CENTER_V116, out = { stalls: [], plaza: null };
+  const plaza = scene.getObjectByName('marketPlazaV116');
+  const lane = (from, to) => { // a player circle walked from -> to through the game's resolver, only registry entries (no vehicles): the largest push on the way
+    const saved = playerVelocity.clone(); let worst = 0; const n = Math.ceil(Math.hypot(to.x - from.x, to.z - from.z) / 0.1);
+    const entries = gatherPhysicsCircles().filter((e) => e.category !== 'vehicle' && !String(e.label || '').startsWith('vehicle'));
+    for (let i = 0; i <= n; i++) { const x = from.x + (to.x - from.x) * i / n, z = from.z + (to.z - from.z) * i / n; playerVelocity.set(0, 0, 0); const r = resolvePlayerCircleCollisions(x, z, entries); worst = Math.max(worst, Math.hypot(r.x - x, r.z - z)); }
+    playerVelocity.copy(saved); return +worst.toFixed(3);
+  };
+  const pm = P.measure(plaza, P.ownEntries(plaza)); delete pm.colliders;
+  const gate = plaza.userData.v161Gate;
+  const around = [];
+  for (let k = 0; k < 16; k++) { const a = k * Math.PI / 8, r = 3.3; around.push(P.blockedAt(C.x + Math.cos(a) * r, C.z + Math.sin(a) * r).moved); }
+  out.plaza = { meas: pm, fountain: P.blockedAt(C.x, C.z), gate: P.blockedAt(C.x + gate.x, C.z + gate.z), gateInside: P.blockedAt(C.x + gate.x * 0.85, C.z + gate.z * 0.85), ring3: around.every((m) => m <= 0.01), own: P.ownEntries(plaza).length,
+    gateLane: lane({ x: C.x + gate.x * 1.15, z: C.z + gate.z * 1.15 }, { x: C.x + Math.cos(gate.angle) * 2.2, z: C.z + Math.sin(gate.angle) * 2.2 }), gateSlot: gate.slot,
+    freeGaps: [0, 1, 2, 3, 4, 5, 6].filter((i) => [-0.1, -0.05, 0, 0.05, 0.1].some((d) => { const a = -Math.PI / 2 + i * 2 * Math.PI / 7 + Math.PI / 7 + d; return lane({ x: C.x + Math.cos(a) * 7.4, z: C.z + Math.sin(a) * 7.4 }, { x: C.x + Math.cos(a) * 3.5, z: C.z + Math.sin(a) * 3.5 }) <= 0.01; })) };
+  for (const cfg of MARKET_STALLS_V116) {
+    const st = marketRuntimeV116.stalls.get(cfg.id), g = st.group; g.updateMatrixWorld(true);
+    const D = MarketV161.SPEC[cfg.id], own = P.ownEntries(g), meas = P.measure(g, own); delete meas.colliders;
+    const W = (x, z) => { const v = g.localToWorld(new THREE.Vector3(x, 0, z)); return { x: v.x, z: v.z }; };
+    const at = (x, z) => P.blockedAt(W(x, z).x, W(x, z).z);
+    const front = W(0, D.hd + 0.5), axis = new THREE.Vector3(C.x - cfg.pos.x, 0, C.z - cfg.pos.z).normalize();
+    const start = { x: C.x - axis.x * 2.0, z: C.z - axis.z * 2.0 };       // just outside the fountain collider, on the stall's axis
+    out.stalls.push({
+      id: cfg.id, meas, own: own.length, flags: own.every((e) => e.flags.player && e.flags.agent && !e.flags.placement && !e.flags.camera && e.category === 'market'),
+      counter: at(0, D.hd - 0.2), back: at(0, -D.hd + 0.04), left: at(-(D.hw - 0.04), 0), right: at(D.hw - 0.04, 0),
+      front: [at(0, D.hd + 0.5), at(-D.hw * 0.6, D.hd + 0.5), at(D.hw * 0.6, D.hd + 0.5), at(0, D.hd + 1.2)],
+      lane: lane(start, front), apron: at(0, D.hd + 0.8),
+      target: (() => { player.position.set(front.x, 0, front.z); const t = nearestManualTargetV53(); return t && { type: t.type, id: t.stall?.id, dist: t.dist == null ? null : +t.dist.toFixed(2) }; })(),
+      yawOk: Math.abs(g.rotation.y - cfg.facing) < 1e-6, legacyEntries: [...__TYCOON_V83_COLLISIONS__.registry.values()].filter((e) => e.owner === g && !String(e.label).includes('-v161:')).length,
+      meshes: meas.meshes,
+    });
+  }
+  player.position.set(0, 0, 0);
+  return out;
+});
+const M = mk.stalls;
+console.log('market plaza:', J({ meshes: mk.plaza.meas.meshes, minY: mk.plaza.meas.minY, overlap: mk.plaza.meas.overlap, outsideMax: mk.plaza.meas.outsideMax, reach: mk.plaza.meas.sweepReached, fountain: mk.plaza.fountain, gate: mk.plaza.gate }));
+console.log('market stalls:\n  ' + M.map((s) => `${s.id}: meshes ${s.meshes}, tris ${s.meas.tris}, min y ${s.meas.minY}, overlap ${s.meas.overlap}, outside max ${s.meas.outsideMax}, walk-in ${s.meas.sweepReached}/8, boxes ${s.own}, lane push ${s.lane}`).join('\n  '));
+check(M.length === 7 && M.every((s) => s.own >= 1 && s.flags && s.legacyEntries === 0), `market: 7 stalls, each with its own real boxes (${J(M.map((s) => [s.id, s.own]))}) flagged player+agent, no placement / camera flags (roads and decor planners read no new box), no whole-mesh legacy box`);
+check(mk.plaza.meas.minY >= -0.05 && mk.plaza.meas.minY <= 0.05 && M.every((s) => s.meas.minY >= -0.05 && s.meas.minY <= 0.05), `market: nothing floating or sunk, min y within 5 cm: plaza ${mk.plaza.meas.minY}, stalls ${J(M.map((s) => s.meas.minY))} (the old plaza torus read -0.03)`);
+check(M.every((s) => s.meas.overlap !== null && s.meas.overlap >= 0.9) && mk.plaza.meas.overlap >= 0.9, `market: colliders cover >= 90 % of the walls / props (stalls ${J(M.map((s) => s.meas.overlap))}, plaza ${mk.plaza.meas.overlap}); the old stalls had no collider at all (0 %)`);
+check(M.every((s) => s.meas.outsideMax <= 1.0) && mk.plaza.meas.outsideMax <= 1.0, `market: no collider extends more than 1.0 m beyond what is drawn (worst stall ${Math.max(...M.map((s) => s.meas.outsideMax))} m, plaza ${mk.plaza.meas.outsideMax} m)`);
+check(M.every((s) => s.meas.sweepReached === 0) && mk.plaza.meas.sweepReached === 0, `market: the player walked at the centre from 8 directions never gets inside a stall (reach ${J(M.map((s) => s.meas.sweepReached))}; was 6-8 of 8 for every old stall)`);
+check(M.every((s) => s.counter.hit && s.back.hit && s.left.hit && s.right.hit), `market: counter, back wall and both side panels are solid (a player circle on them is pushed out: ${J(M.map((s) => [s.id, s.counter.moved, s.back.moved]))})`);
+check(M.every((s) => s.front.every((f) => !f.hit) && !s.apron.hit), `market: the customer side in front of the counter is open and walkable up to it (0.5 m from the counter plane: ${J(M.map((s) => [s.id, s.front.map((f) => f.moved)]))})`);
+check(M.every((s) => s.lane <= 0.01), `market: the lane from the plaza centre (just outside the fountain) to the front of every stall is free, largest push ${J(M.map((s) => [s.id, s.lane]))} m`);
+check(M.every((s) => s.target && s.target.type === 'stall' && s.target.id === s.id), `market: standing in front of the counter a stall is the interaction target of the real nearestManualTargetV53 (pad / trigger reachable with the colliders in place: ${J(M.map((s) => s.target))})`);
+check(M.every((s) => s.yawOk), 'market: every stall keeps its configured facing (group.rotation.y == cfg.facing: the counter faces the plaza centre)');
+check(mk.plaza.fountain.hit && mk.plaza.fountain.moved >= 1.0 && !mk.plaza.gate.hit && !mk.plaza.gateInside.hit && mk.plaza.ring3 && mk.plaza.gateLane <= 0.01 && mk.plaza.freeGaps.length >= 3 && mk.plaza.freeGaps.includes(mk.plaza.gateSlot), `market plaza (free ways in between the stalls: ${J(mk.plaza.freeGaps)} of 7 gaps, the gate gap among them): the fountain is solid (a player on its centre is pushed ${mk.plaza.fountain.moved} m out), the entrance gate is walkable (${J([mk.plaza.gate.moved, mk.plaza.gateInside.moved])}) and the lane from the gate to the fountain is free (largest push ${mk.plaza.gateLane} m, gate in the gap after stall slot ${mk.plaza.gateSlot}), the ring at r = 3.3 m is free (${mk.plaza.ring3})`);
+check(M.every((s) => s.meshes <= 8) && mk.plaza.meas.meshes <= 10, `market: mesh (= draw call) budget <= 8 per stall, <= 10 plaza (stalls ${J(M.map((s) => s.meshes))}, plaza ${mk.plaza.meas.meshes}; before: 11 per stall, 32 plaza (12 objects, the 4 lamps are 2 meshes each))`);
 
 // ------------------------------------------------------------------------------------------------ C. a real upgrade keeps colliders, re-lays no road
 // house 0 is level 5 in the late save: the next real upgrade is the first gold tier (6). The road signature uses min(level, 5), so no road may be re-laid.

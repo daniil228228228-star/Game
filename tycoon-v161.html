@@ -924,6 +924,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="assets/sawmill-v161.js"></script>
 <script src="assets/buildings-v161.js"></script>
 <script src="assets/plants-v161.js"></script>
+<script src="assets/market-v161.js"></script>
 <script src="assets/foliage-v154.js"></script>
 <script src="assets/work-session-v158.js"></script>
 <script src="assets/development-core-v160.js"></script>
@@ -10026,6 +10027,8 @@ function marketStallCostText(cfg){ return opsCostText(cfg.cost); }
 // createSidingMaterial/createCorrugatedMaterial) as buildHouse()/the special-project landmarks,
 // for palette consistency (cream siding, wood trim) per VISION.md's house palette.
 function createMarketStall(cfg){
+  // v161 market (assets/market-v161.js): one striped-awning stall per trade, merged meshes, real colliders; MarketV161.enabled = false brings back the old tent below
+  if (window.MarketV161?.enabled) { const st = MarketV161.buildStall(cfg); scene.add(st.group); return st; }
   const g = new THREE.Group(); g.name = 'marketStallV116_' + cfg.id;
   const hw=1.05, hd=0.72, postH=1.85;
   g.add(createFoundation(hw*2+.3, hd*2+.3, .12, 0xd7d0c4));
@@ -10064,6 +10067,8 @@ function createMarketStall(cfg){
 // createSpecialProjectAvailableMarker()'s exact visual language (disc + icon + cost sign), per
 // the brief's own instruction not to invent a new visual pattern for this.
 function createMarketStallVacantMarker(cfg){
+  // v161 market: an unlocked, not yet built stall is an empty market lot (pad + stakes + rope + flag), not a ghost of the stall
+  if (window.MarketV161?.enabled) { const lot = MarketV161.buildVacant(cfg); scene.add(lot); return lot; }
   const g=new THREE.Group();
   const disc=new THREE.Mesh(new THREE.CylinderGeometry(1.05,1.1,.1,24),new THREE.MeshStandardMaterial({color:0xffb84d,roughness:.5,metalness:.05,emissive:0x8a5216,emissiveIntensity:.24}));
   disc.position.y=.06; disc.receiveShadow=true; g.add(disc);
@@ -10077,17 +10082,20 @@ const marketRuntimeV116 = { stalls:new Map(), vacant:new Map() };
 // Keeps built-stall tents / unlocked-vacant markers in sync with marketStallsBuiltV118 and
 // stageIndex -- call after boot, after load(), and after every marketStallBuild().
 function refreshMarketStallsV118(){
+  let changedV161=false;
   for(const cfg of MARKET_STALLS_V116){
     const built=marketStallsBuiltV118.has(cfg.id);
     if(built){
       if(marketRuntimeV116.vacant.has(cfg.id)){ const g=marketRuntimeV116.vacant.get(cfg.id); scene.remove(g); disposeObject3D(g); marketRuntimeV116.vacant.delete(cfg.id); }
-      if(!marketRuntimeV116.stalls.has(cfg.id)) marketRuntimeV116.stalls.set(cfg.id, createMarketStall(cfg));
+      if(!marketRuntimeV116.stalls.has(cfg.id)){ marketRuntimeV116.stalls.set(cfg.id, createMarketStall(cfg)); changedV161=true; }
     } else if(stageIndex>=cfg.unlock){
       if(!marketRuntimeV116.vacant.has(cfg.id)) marketRuntimeV116.vacant.set(cfg.id, createMarketStallVacantMarker(cfg));
     } else if(marketRuntimeV116.vacant.has(cfg.id)){
       const g=marketRuntimeV116.vacant.get(cfg.id); scene.remove(g); disposeObject3D(g); marketRuntimeV116.vacant.delete(cfg.id);
     }
   }
+  // v161 market: a new stall brings its colliders (the v83 registry reads MarketV161.obstacles(); before the registry exists its first rebuild does)
+  if(changedV161 && window.MarketV161?.enabled){ try{ window.__TYCOON_V83_COLLISIONS__?.rebuild?.(); }catch(_){ /* registry not up yet */ } }
 }
 // Builds one stall (pays its cost, swaps its vacant marker for the real tent). Reuses the exact
 // same purchase mechanics/effects every other ground pad in this file already uses.
@@ -10113,6 +10121,8 @@ function marketStallBuild(id){
   return true;
 }
 function buildMarketPlazaV116(){
+  // v161 market: paving rings, curb, fountain, benches, planters, lamps, entrance gate (assets/market-v161.js); MarketV161.enabled = false brings back the old plaza below
+  if (window.MarketV161?.enabled) { scene.add(MarketV161.buildPlaza(MARKET_PLAZA_CENTER_V116)); refreshMarketStallsV118(); return; }
   const plazaGroup = new THREE.Group(); plazaGroup.name = 'marketPlazaV116';
   const outerR = MARKET_STALL_RING_RADIUS_V116 + 2.1;
   const plaza = new THREE.Mesh(new THREE.CylinderGeometry(outerR, outerR, .06, 40), createConcreteMaterial(0xc9c2b4, { roughness:.92 }));
@@ -32584,6 +32594,8 @@ window.__TYCOON_V74_BUILD__={
     for(const o of (typeof sawmillObstaclesV161==='function'?sawmillObstaclesV161():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
     // v161 plants: the concrete plant, metal yard and frame workshop as oriented boxes of their real machines/walls (userData.v161Footprint), same flags as the sawmill's
     for(const o of (window.PlantsV161?window.PlantsV161.obstacles():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
+    // v161 market (assets/market-v161.js): the sealed stall bodies + big props, the fountain, benches, planters, gate posts as real oriented boxes / circles (the customer side in front of a counter stays open); placement off on purpose
+    for(const o of (window.MarketV161&&window.MarketV161.enabled?window.MarketV161.obstacles():[]))register({owner:o.owner,category:'market',label:o.label,shape:o.shape,pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,radius:o.radius,flags:{player:true,agent:true,placement:false,camera:false}});
 
     // Real company-base modules and special-project landmarks use their actual visible bounds.
     for(const [key,g] of (baseRuntime?.groups||new Map()))registerRoot(g,'base',`base:${key}`,{shrink:.93});

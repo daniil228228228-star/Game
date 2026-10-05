@@ -403,6 +403,16 @@ export function installProbe() {
     return P.measure(root, [...set]);
   };
   P.shootLive = (root, views, opts) => P.shoot(root, views, { ...(opts || {}), only: [root] });
+  // free camera on `target`: azimuth az (0 = looking from +z), elevation el (rad), distance D; renders only `only` (+ lights and the ground). Returns the picture and the draw calls / triangles
+  // of `only` alone (a render with only the ground subtracted), the number the player's GPU pays for those objects when they are all in view.
+  P.overview = (only, { target, az = 0, el = 0.9, dist = 18, fov = 34, quality = 0.86 } = {}) => {
+    const keep = new Set(only), full = scene.children, cv = renderer.domElement;
+    const cam = new THREE.PerspectiveCamera(fov, cv.width / cv.height, 0.3, 400);
+    cam.position.set(target.x + Math.sin(az) * Math.cos(el) * dist, target.y + Math.sin(el) * dist, target.z + Math.cos(az) * Math.cos(el) * dist);
+    cam.up.set(0, 1, 0); cam.lookAt(target); cam.updateMatrixWorld(true);
+    const draw = (set) => { scene.children = full.filter((o) => o.isLight || o === ground || set.has(o)); renderer.render(scene, cam); return { calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; };
+    try { const base = draw(new Set()), all = draw(keep); return { url: cv.toDataURL('image/jpeg', quality), draw: all.calls - base.calls, tris: all.tris - base.tris }; } finally { scene.children = full; }
+  };
   P.findNamed = (name) => scene.getObjectByName(name);
   P.sceneChildAt = (cx, cz, tol = 1.5) => scene.children.find((o) => { if (o.isLight || o === ground || o.isSprite) return false; const b = new THREE.Box3().setFromObject(o); if (b.isEmpty()) return false; const s = b.getSize(new THREE.Vector3()); if (s.x > 60 || s.z > 60) return false; return Math.abs((b.min.x + b.max.x) / 2 - cx) < tol && Math.abs((b.min.z + b.max.z) / 2 - cz) < tol; });
   return true;
