@@ -3043,7 +3043,7 @@ const METAL_YARD_POS = new THREE.Vector3(-7.3 + INDUSTRIAL_ZONE_OFFSET_X, 0, -10
 // function for all four steps, below), so a partially-built zone never leaves an invisible wall
 // over grass for a building that doesn't exist yet.
 const STATIC_COLLIDERS = [
-  ...(sawmillBuiltV118 ? [{ pos: GENERATOR_POS, radius: 1.9 }, { pos: SAWMILL_POS, radius: 2.15 }] : []),
+  ...(sawmillBuiltV118 ? [{ pos: SAWMILL_POS, radius: 2.15 }] : []), // v161: the camp collider at GENERATOR_POS (r 1.9) left with the camp
   ...(concretePlantBuiltV118 ? [{ pos: CONCRETE_PLANT_POS, radius: 1.7 }] : []),
   ...(metalYardBuiltV118 ? [{ pos: METAL_YARD_POS, radius: 1.75 }] : []),
 ];
@@ -3142,29 +3142,9 @@ function sanitizeIndustrialLevelsV161(raw) {
   return out;
 }
 
-/* v116 (de-elevation): this belt used to cross the depot service road segment
-   `sawmillBypass`->`depotWest` (measured live with a real OBB-vs-OBB test: 2 overlaps, depth
-   1.5/1.12 -- see git history / ROADS_V116_NOTES.md for the original investigation), so it was
-   raised onto a short bridge over the exact stretch the road crossed (`CONVEYOR_BRIDGE_*`,
-   `conveyorElevationAt()`, `addConveyorSpanBox()`, plus braced support posts). The industrial-
-   zone relocation above did not remove that crossing by itself (a road segment launching from
-   BETWEEN the belt's two endpoints in X will always cross it, wherever the cluster sits) -- what
-   removes it is the companion change in serviceAccessGraph() (see its own big v116 comment):
-   `depotWest` no longer descends off `sawmillBypass` directly between GENERATOR_POS and
-   SAWMILL_POS; it now reaches the concrete/metal corridor via `depotDetourE`/`depotDetourS`,
-   which stay east of BOTH building anchors the whole way down. Measured after that reroute
-   (scratchpad/zone116/conveyor_crossing_after.js, same real OBB-vs-OBB method as the original
-   investigation): 0 overlaps between the belt and any service-road deck. With nothing left to
-   clear, the belt is back to two simple flat boxes at ground level -- no ramp, no elevation
-   profile, no bracing. */
-function addConveyorFlatBox(width, thickness, baseY, material, beltAngle, beltLen) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, thickness, beltLen), material);
-  mesh.position.set((GENERATOR_POS.x + SAWMILL_BELT_END_V161.x) / 2, baseY, (GENERATOR_POS.z + SAWMILL_BELT_END_V161.z) / 2); // v161: belt ends at the mill dock
-  mesh.rotation.y = beltAngle;
-  mesh.receiveShadow = true;
-  mesh.userData.v116Conveyor = true;
-  return mesh;
-}
+/* v161 (user, iPhone test: "убери нафиг правое здание и конвеер между"): the log belt GENERATOR_POS -> mill (33 scene objects: two flat boxes, 8 support frames, 12 slats, 10 rollers,
+   motor) and the camp it started at (siding shed with porch, rack of boards, log pile) are gone; see buildSawmillScenery(). v116's history of this belt (a bridge over a service-road deck, then
+   the serviceAccessGraph() reroute that removed the crossing) no longer applies: nothing is left to cross a road. */
 
 const logsInTransit = []; // { mesh, path, segment, t }
 const sourceTrees = []; // { mesh, state: 'grown'|'chopping'|'regrowing', timer, baseScale, logSpawned }
@@ -3176,7 +3156,6 @@ const SAWMILL_DROPOFF_POS = SAWMILL_POS.clone().add(new THREE.Vector3(2.75, 0, 1
 // i.e. at the dock inside the east loading bay, under the roof of the single mill building.
 const SAWMILL_BELT_END_V161 = SAWMILL_POS.clone().addScaledVector(new THREE.Vector3().subVectors(GENERATOR_POS, SAWMILL_POS).setY(0).normalize(), 2.0);
 let nearSawmillDropoff = false;
-const conveyorSlats = [];
 let sawmillBlade = null;
 let conveyorData = null;
 let nearbyHarvestTree = null;
@@ -3198,92 +3177,10 @@ function sawmillAutoInterval() {
 }
 
 
-function addLogPile(center, count = 4) {
-  const pile = new THREE.Group();
-  const mat = createWoodMaterial(0x8a5a34, { roughness: 0.9 });
-  for (let i = 0; i < count; i++) {
-    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.95, 10), mat);
-    finishLogV152(log);
-    log.rotation.z = Math.PI / 2;
-    log.position.set((i % 2) * 0.36 - 0.16, 0.2 + Math.floor(i / 2) * 0.18, (i % 3) * 0.16 - 0.18);
-    log.castShadow = true;
-    pile.add(log);
-  }
-  pile.position.copy(center);
-  scene.add(pile);
-}
-
 function buildSawmillScenery() {
-  const woodDark = createWoodMaterial(0x65462f, { roughness: 0.9 });
-  const woodLight = createWoodMaterial(0xb47c45, { roughness: 0.9 });
-  const yardMat = createConcreteMaterial(0xd8ceb8, { roughness: 0.94 });
-
-  const camp = new THREE.Group();
-  camp.add(createFoundation(3.8, 3.7, 0.18, 0xcfc4af));
-  const officeYard = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.04, 4.4), yardMat);
-  officeYard.position.set(0, 0.2, 0.2);
-  camp.add(officeYard);
-
-  const shedBody = new THREE.Mesh(new THREE.BoxGeometry(2.8, 2.02, 2.5), createSidingMaterial(0x9f7145, { roughness: 0.88 }));
-  shedBody.position.y = 1.1;
-  shedBody.castShadow = true;
-  shedBody.receiveShadow = true;
-  camp.add(shedBody);
-  const shedRoof = createGableRoof(3.1, 2.92, 0.94, createRoofMaterial(0x5c3a1e, { roughness: 0.92 }));
-  shedRoof.position.y = 2.1;
-  camp.add(shedRoof);
-  // v116 art pass: corner trim + a ridge cap + a roof vent -- same "cream/trim accent on a
-  // plain box" treatment buildHouse() uses (addCornerPillars), so the sawmill office reads at
-  // the same finish level as the neighboring houses instead of a flat siding box.
-  addCornerPillars(camp, 2.8, 2.5, 2.02 + 0.14, 0xf4eee3);
-  const shedRidgeCap = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 2.9), createWoodMaterial(0x3d2814, { roughness: 0.86 }));
-  shedRidgeCap.position.set(0, 2.1 + 0.94, 0);
-  camp.add(shedRidgeCap);
-  addRoofVent(camp, -0.85, 2.55, 0.35, 0.22, 0.28, 0.2);
-  const porch = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.1, 0.82), createConcreteMaterial(0xd4cab6));
-  porch.position.set(0, 0.1, 1.66);
-  camp.add(porch);
-  const porchRoof = createGableRoof(1.9, 0.9, 0.2, createRoofMaterial(0x6b4727));
-  porchRoof.position.set(0, 1.88, 1.66);
-  camp.add(porchRoof);
-  for (const sx of [-0.72, 0.72]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.52, 0.1), woodDark);
-    post.position.set(sx, 0.86, 1.66);
-    post.castShadow = true;
-    camp.add(post);
-  }
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.0, 0.06), createWoodMaterial(0x4a2f1a, { roughness: 0.86 }));
-  door.position.set(0, 0.54, 1.28);
-  camp.add(door);
-  const sign = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.28, 0.08), createWoodMaterial(0xefe0ac, { roughness: 0.82 }));
-  sign.position.set(0, 1.7, 1.31);
-  camp.add(sign);
-  for (const sx of [-0.76, 0.76]) {
-    const w = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.54, 0.05), createGlassMaterial({ opacity: 0.72, roughness: 0.08, emissive: 0x31536b, emissiveIntensity: 0.12 }));
-    w.position.set(sx, 1.08, 1.26);
-    camp.add(w);
-  }
-  const rack = new THREE.Group();
-  rack.position.set(-1.7, 0, -1.05);
-  for (const sx of [-0.52, 0.52]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.08, 0.1), woodDark);
-    post.position.set(sx, 0.54, 0);
-    rack.add(post);
-  }
-  for (let i = 0; i < 4; i++) {
-    const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.08, 0.44), woodDark);
-    shelf.position.set(0, 0.16 + i * 0.24, 0);
-    rack.add(shelf);
-  }
-  for (let i = 0; i < 5; i++) {
-    const board = new THREE.Mesh(new THREE.BoxGeometry(1.08, 0.08, 0.16), woodLight);
-    board.position.set(0.04, 0.2 + (i % 3) * 0.24, -0.06 + (i % 2) * 0.1);
-    rack.add(board);
-  }
-  camp.add(rack);
-  camp.position.copy(GENERATOR_POS);
-  scene.add(camp);
-
+  // v161 (user: "убери нафиг правое здание и конвеер между"): this used to build the camp at GENERATOR_POS (siding shed + porch + rack of boards + log pile, 20 child meshes)
+  // and the 33-object log belt from it to the mill. Both are gone. What stays at GENERATOR_POS is the log source itself -- the 6 choppable trees around it -- plus the point
+  // as an anchor (mill orientation, workers' home base, no-road lot); the collider that belonged to the shed is gone with it.
   for (let i = 0; i < 6; i++) {
     const tree = makeTree();
     const a = (i / 6) * Math.PI * 2 + 0.2;
@@ -3294,77 +3191,20 @@ function buildSawmillScenery() {
     registerCameraFoliage(tree);
     sourceTrees.push({ mesh: tree, state: 'grown', timer: 0, baseScale, logSpawned: false, pulse: Math.random() * 6.28 });
   }
-  addLogPile(new THREE.Vector3(GENERATOR_POS.x + 1.7, 0, GENERATOR_POS.z - 1.2), 6);
 
-  // v161 redesign (assets/sawmill-v161.js): open timber-frame sawmill (saw carriage on the belt axis, circular saw, plank conveyor,
-  // lumber stacks, log yard, sawdust) replaces the old siding box + gable roof that read as a house. Same position/collider/belt.
+  // v161 redesign (assets/sawmill-v161.js): one enclosed sawmill building (saw carriage on the log axis, circular saw, plank conveyor, plank pickup pad, log yard, sawdust).
   installSawmillMillV161(industrialLevelV161('sawmill'));
 
-  const beltDir = new THREE.Vector3().subVectors(SAWMILL_BELT_END_V161, GENERATOR_POS); // v161: ends at the dock under the roof
-  const beltLen = beltDir.length();
-  const beltAngle = Math.atan2(beltDir.x, beltDir.z);
-  const beltDirNorm = beltDir.clone().normalize();
-
-  // v116 (de-elevation): back to two simple flat boxes -- see the comment above
-  // addConveyorFlatBox() for why the bridge is gone.
-  const beltMaterialBase = createCorrugatedMaterial(0x2b2f38, { roughness: 0.88, metalness: 0.16 });
-  const beltMaterialTop = createCorrugatedMaterial(0x3a3f49, { roughness: 0.84, metalness: 0.16 });
-  scene.add(addConveyorFlatBox(1.5, 0.28, 0.12, beltMaterialBase, beltAngle, beltLen));
-  scene.add(addConveyorFlatBox(1.12, 0.07, 0.24, beltMaterialTop, beltAngle, beltLen));
-  // v116 (de-elevation): support posts back to a constant height, evenly spread across the
-  // whole belt -- no more bridge, so no dense run of tall braced posts concentrated over it.
-  function addConveyorSupport(worldT) {
-    const support = new THREE.Group();
-    const pos = GENERATOR_POS.clone().lerp(SAWMILL_BELT_END_V161, worldT / beltLen);
-    const postH = 0.44;
-    const postMat = createMetalMaterial(0x746955, { roughness: 0.84, metalness: 0.12 });
-    const postL = new THREE.Mesh(new THREE.BoxGeometry(0.12, postH, 0.12), postMat);
-    const postR = postL.clone();
-    postL.position.set(-0.38, postH / 2, 0);
-    postR.position.set(0.38, postH / 2, 0);
-    postL.castShadow = postR.castShadow = true;
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.08, 0.12), createMetalMaterial(0x8a826f, { roughness: 0.82 }));
-    beam.position.set(0, postH, 0);
-    support.add(postL, postR, beam);
-    support.position.set(pos.x, 0.02, pos.z);
-    support.rotation.y = beltAngle;
-    support.userData.v116Conveyor = true;
-    scene.add(support);
-  }
-  for (let i = 0; i <= 7; i++) addConveyorSupport((i / 7) * beltLen);
-  for (let i = 0; i < 12; i++) {
-    const slat = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.03, 0.16), createWoodMaterial(0x7d6242, { roughness: 0.9 }));
-    slat.rotation.y = beltAngle;
-    slat.castShadow = true;
-    slat.userData.v116Conveyor = true;
-    scene.add(slat);
-    conveyorSlats.push({ mesh: slat, offset: (i / 12) * beltLen });
-  }
-  const rollerMat = createMetalMaterial(0x9099a6, { roughness: 0.46, metalness: 0.5 });
-  for (let i = 0; i < 10; i++) {
-    const t = (i + 0.5) / 10;
-    const pos = new THREE.Vector3().lerpVectors(GENERATOR_POS, SAWMILL_BELT_END_V161, t);
-    const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.02, 14), rollerMat);
-    roller.rotation.z = Math.PI / 2;
-    roller.rotation.y = beltAngle;
-    roller.position.set(pos.x, 0.27, pos.z);
-    roller.userData.v116Conveyor = true;
-    scene.add(roller);
-  }
-  const motor = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.5, 0.72), createMetalMaterial(0x3d6b85, { roughness: 0.5, metalness: 0.24 }));
-  const motorPos = new THREE.Vector3().lerpVectors(GENERATOR_POS, SAWMILL_BELT_END_V161, 0.82);
-  motor.position.set(motorPos.x + Math.cos(beltAngle) * 0.94, 0.3, motorPos.z - Math.sin(beltAngle) * 0.94);
-  motor.rotation.y = beltAngle;
-  motor.userData.v116Conveyor = true;
-  scene.add(motor);
-
+  // Hand-cut logs no longer ride a belt from the camp: they roll the last 1.2 m from the orange drop-off pad into the open log bay (the dock under the roof). Same 3-point
+  // path [drop-off, middle, dock] and the same WOOD_TRAVEL_TIME, so a saved log in flight (segment 0/1) restores unchanged. No mesh: the logs themselves are the animation.
+  const dock = SAWMILL_BELT_END_V161.clone();
+  const run = new THREE.Vector3().subVectors(dock, SAWMILL_DROPOFF_POS).setY(0);
   conveyorData = {
-    start: GENERATOR_POS.clone().lerp(SAWMILL_BELT_END_V161, 0.17).setY(0.34),
-    end: SAWMILL_BELT_END_V161.clone().lerp(GENERATOR_POS, -0.02).setY(0.34),
-    flatStart: GENERATOR_POS.clone().lerp(SAWMILL_BELT_END_V161, 0.02),
-    dir: beltDirNorm,
-    length: beltLen,
-    angle: beltAngle,
+    start: SAWMILL_DROPOFF_POS.clone().lerp(dock, 0.5).setY(0.34),
+    end: dock.setY(0.34),
+    dir: run.clone().normalize(),
+    length: run.length(),
+    angle: Math.atan2(run.x, run.z),
   };
 }
 
@@ -3707,7 +3547,14 @@ function createLoadingZone(key, pos, emoji, ru, en, color, rotation = 0) {
 
 // v34.3 transport QA: loading bays sit outside the physical plant footprints so a truck
 // no longer noses into the sawmill/mixer/steel-yard collider while loading.
-createLoadingZone('planks', SAWMILL_POS.clone().add(new THREE.Vector3(3.75, 0, 4.50)), '🪵', 'ДОСКИ', 'PLANKS', 0xc99854, 0.12); // v114: loading court stays on plankBay while the mill itself moves deeper into its lot
+{ // v161 (user: "перенеси вот этот блок откуда брать доски"): the planks loading bay stands under the sawmill's lean-to, at the end of the plank belt (assets/sawmill-v161.js sawmillPickupPoseV161),
+  // on the lean-to floor (y 0.2) with its name plate above the roof; it used to be on the road spur at SAWMILL_POS + (3.75, 4.5), which trucks still use (PLANK_TRUCK_BAY_POS_V161).
+  const pk = sawmillPickupPoseV161();
+  const zone = createLoadingZone('planks', pk.pos, '🪵', 'ДОСКИ', 'PLANKS', 0xc99854, pk.yaw);
+  zone.group.position.y = pk.y;
+  zone.label.position.y = 2.45;
+}
+const PLANK_TRUCK_BAY_POS_V161 = SAWMILL_POS.clone().add(new THREE.Vector3(3.75, 0, 4.50)); // road node plankBay (-15.25+OX, -3.2): trucks keep loading on the road, the player's pickup moved to the mill outlet
 createLoadingZone('concrete', CONCRETE_PLANT_POS.clone().add(new THREE.Vector3(0.00, 0, 3.10)), '🧱', 'БЕТОН', 'CONCRETE', 0xbcb8ad, -0.18); // v112: loading zone integrated into clear north service corridor
 createLoadingZone('metal', METAL_YARD_POS.clone().add(new THREE.Vector3(0.00, 0, 3.40)), '🔩', 'МЕТАЛЛ', 'STEEL', 0x91a0af, -0.12); // v112: loading zone integrated into clear north service corridor
 
@@ -4478,15 +4325,6 @@ function updateSawmill(dt) {
       save();
     }
   }
-  if (conveyorData) {
-    for (const slat of conveyorSlats) {
-      slat.offset = (slat.offset + dt * 2.8) % conveyorData.length;
-      const pos = conveyorData.flatStart.clone().addScaledVector(conveyorData.dir, slat.offset);
-      // v116 (de-elevation): belt is flat again, so a moving slat just sits at the deck height.
-      slat.mesh.position.set(pos.x, 0.24, pos.z);
-      slat.mesh.rotation.y = conveyorData.angle;
-    }
-  }
 
   for (const tree of sourceTrees) {
     if (tree.state === 'chopping') {
@@ -5022,8 +4860,7 @@ function addBollard(group, x, z, color = 0xffbf50) {
 
 // v116 industrial-cluster art pass: a straight pipe/conduit between two arbitrary points, used to
 // visually connect process equipment (e.g. silo -> mixer feed) instead of leaving them as
-// unconnected props. Same "compute length + orient" idea the file uses for the conveyor belt
-// box (addConveyorFlatBox above), just as a single cylinder instead of an oriented box.
+// unconnected props. "Compute length + orient" as a single cylinder instead of an oriented box.
 function addPipeSpan(group, a, b, radius, material) {
   const dir = new THREE.Vector3().subVectors(b, a);
   const len = dir.length();
@@ -7350,7 +7187,7 @@ function setVehicleStatus(vehicle, primary, secondary = '') {
 
 function cargoInfo(cargo) {
   const table = {
-    planks: { emoji: '🪵', ru: 'ДОСКИ', en: 'PLANKS', source: (LOGISTICS_ZONES.planks?.pos || SAWMILL_POS).clone(), bonus: 0.06 },
+    planks: { emoji: '🪵', ru: 'ДОСКИ', en: 'PLANKS', source: PLANK_TRUCK_BAY_POS_V161.clone(), bonus: 0.06 }, // v161: the road bay, not the player's pickup pad at the mill outlet
     concrete: { emoji: '🧱', ru: 'БЕТОН', en: 'CONCRETE', source: (LOGISTICS_ZONES.concrete?.pos || CONCRETE_PLANT_POS).clone(), bonus: 0.09 },
     metal: { emoji: '🔩', ru: 'МЕТАЛЛ', en: 'STEEL', source: (LOGISTICS_ZONES.metal?.pos || METAL_YARD_POS).clone(), bonus: 0.12 },
   };
@@ -8503,7 +8340,7 @@ function buildIndustrialStepV118(step) {
   } else if (step.id === 'sawmill') {
     sawmillBuiltV118 = true;
     industrialZoneBuiltV116 = true; // legacy convenience mirror, see its declaration up top
-    STATIC_COLLIDERS.push({ pos: GENERATOR_POS, radius: 1.9 }, { pos: SAWMILL_POS, radius: 2.15 });
+    STATIC_COLLIDERS.push({ pos: SAWMILL_POS, radius: 2.15 });
     buildSawmillScenery();
     spawnIndustrialCampLifeV116(4);
     builtLabel = lang === 'ru' ? '🪵 Лесопилка построена' : '🪵 Sawmill built';
@@ -33036,7 +32873,7 @@ window.__TYCOON_V74_BUILD__={
     out.push(
       {shape:'obb',pos:new THREE.Vector3(-8.70+INDUSTRIAL_ZONE_OFFSET_X,0,6.52),hx:6.18,hz:2.55,yaw:0,category:'industrial',label:'v116:fleet-yard-keepout'},
       {shape:'circle',pos:SAWMILL_POS.clone().add(new THREE.Vector3(.35,0,.10)),radius:3.90,category:'industrial',label:'v114:sawmill-yard'},
-      {shape:'circle',pos:GENERATOR_POS.clone().add(new THREE.Vector3(0,0,.20)),radius:3.28,category:'industrial',label:'v114:generator-yard'},
+      {shape:'circle',pos:GENERATOR_POS.clone().add(new THREE.Vector3(0,0,.20)),radius:3.28,category:'industrial',label:'v114:generator-yard'}, // v161: no camp any more; the lot stays as the log grove's no-road keep-out (roads are not re-laid)
       {shape:'circle',pos:CONCRETE_PLANT_POS.clone().add(new THREE.Vector3(.04,0,.22)),radius:3.02,category:'industrial',label:'v114:concrete-yard'},
       {shape:'circle',pos:METAL_YARD_POS.clone().add(new THREE.Vector3(.18,0,.02)),radius:2.98,category:'industrial',label:'v114:metal-yard'}
     );
@@ -33407,7 +33244,7 @@ function obstacles(i,width){
     // v114: permanent authored no-road lots. These are part of the map blueprint, not
     // temporary runtime decoration, so the canonical stage solver must route around them.
     {shape:'obb',pos:new THREE.Vector3(-8.70+INDUSTRIAL_ZONE_OFFSET_X,0,6.52),hx:6.18,hz:2.55,yaw:0,category:'industrial',label:'v116:fleet-yard-keepout'},
-    {shape:'circle',pos:GENERATOR_POS.clone().add(new THREE.Vector3(0,0,0.20)),radius:3.28,category:'industrial',label:'v114:generator-yard'},
+    {shape:'circle',pos:GENERATOR_POS.clone().add(new THREE.Vector3(0,0,0.20)),radius:3.28,category:'industrial',label:'v114:generator-yard'}, // v161: no camp any more; the lot stays as the log grove's no-road keep-out (roads are not re-laid)
     {shape:'circle',pos:SAWMILL_POS.clone().add(new THREE.Vector3(0.35,0,0.10)),radius:3.90,category:'industrial',label:'v114:sawmill-yard'},
     {shape:'obb',pos:SAWMILL_POS.clone().add(new THREE.Vector3(0.80,0,0.05)),hx:2.70,hz:2.05,yaw:0,category:'industrial',label:'v114:sawmill-frontage'},
     {shape:'circle',pos:SAWMILL_DROPOFF_POS.clone().add(new THREE.Vector3(0.15,0,0.08)),radius:1.62,category:'industrial',label:'v114:sawmill-dropoff'},
@@ -36952,7 +36789,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
       const ready=sourceReadyV119(key),playerOwns=job?.ticket?.assignedVehicle===PLAYER_DELIVERY_RESERVATION_V121,labelKey=`${lang}|${key}|${ready?1:0}|${left}|${playerOwns?1:0}`;
       if(zone.v120LabelKey===labelKey)continue;
       zone.v120LabelKey=labelKey;
-      const title=`${cargoMeta[key].emoji} ${cargoName(key).toUpperCase()}`;
+      const title=cargoName(key).toUpperCase(); // v161: cargoName() already starts with the emoji (the plate read "🪵 🪵 PLANKS")
       const detail=!ready?(lang==='ru'?'ПРОИЗВОДСТВО ЗАКРЫТО':'PRODUCTION LOCKED'):playerOwns?(lang==='ru'?'ЗАКАЗ У ИГРОКА':'PLAYER DELIVERY'):left>0?(lang==='ru'?`ВЗЯТЬ ${left} · ПОГРУЗКА`:`TAKE ${left} · LOADING`):(lang==='ru'?'ПОГРУЗКА':'LOADING');
       updateLabelSprite(zone.label,[title,detail]);
     }

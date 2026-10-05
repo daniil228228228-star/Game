@@ -2,8 +2,8 @@
 // against v161). Everything is measured on the real scene graph (mesh uuids, world matrices, Box3 /
 // OBB), never on the file's own self-audit objects. One browser launch on the old-format save
 // (industrial zone + automatic roads already built, like the user's returning player).
-//   1. no road mesh overlaps the fleet-yard parking lot, no road deck overlaps the conveyor (SAT on
-//      the real triangles),
+//   1. no road mesh overlaps the fleet-yard parking lot, no conveyor object is left (the log belt was removed 2026-10-04 (10); the SAT
+//      check against the real triangles stays as a guard if one is ever added back),
 //   2. after building several houses through purchaseCurrentPad(): every building has a driveway
 //      that reaches it, stage-road CORNER and T/X junction pieces exist, still no overlaps,
 //   3. an unrelated base upgrade and idle ticks must not rebuild the road network (same mesh uuids,
@@ -132,8 +132,9 @@ console.log('geometry (loaded save):', JSON.stringify({ ...geo, driveways: geo.d
 check(geo.roadCount > 0, `road meshes present in the scene (${geo.roadCount})`);
 check(geo.fleetFound, 'fleet-yard parking lot (v116FleetYard) exists in the scene');
 check(geo.fleetOverlaps === 0, `no road mesh overlaps the fleet-yard lot (${geo.fleetOverlaps} ${JSON.stringify(geo.fleetHits)})`);
-check(geo.conveyorCount > 0, `conveyor meshes present (${geo.conveyorCount})`);
-check(geo.conveyorOverlaps === 0, `no road deck overlaps the conveyor (${geo.conveyorOverlaps})`);
+// 2026-10-04 (10): the log belt (and the camp it started at) was removed on the user's request; there must be no conveyor object left, hence nothing to overlap a road
+check(geo.conveyorCount === 0, `no conveyor meshes left in the scene (${geo.conveyorCount}; removed 2026-10-04 (10), was 33 objects)`);
+check(geo.conveyorOverlaps === 0, `no road deck overlaps a conveyor (${geo.conveyorOverlaps})`);
 
 // ---- 2. several houses through the real purchase path, then network pieces + driveways
 const before6 = await net();

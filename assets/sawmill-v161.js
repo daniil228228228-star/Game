@@ -6,17 +6,19 @@
  *   - solid boarded back and west walls with windows, a front wall with window openings and a big plank OUTLET, an open log
  *     LOADING BAY in the east gable (the game's log belt runs in under the roof and ends at the dock), gabled corrugated
  *     roof on king-post trusses, dust hood + exhaust stack through the roof, a lean-to attached to the front wall that roofs
- *     the end of the plank conveyor and the finished-plank stacks;
- *   - level 2: the same hall grows by a north annex (bigger roof section, ridge vent, second log pile, more stacks) and gets a
- *     trimmer saw over the plank belt; level 3: second trimmer saw, deeper lean-to with more stacks, lamp.
+ *     the end of the plank conveyor and the plank PICKUP pad (see "plank pickup" below: the game's "ДОСКИ · ПОГРУЗКА" loading bay lives
+ *     here since 2026-10-04 (10); its board stack is the real plank stock, there are no static lumber piles any more);
+ *   - level 2: the same hall grows by a north annex (bigger roof section, ridge vent, second log pile) and gets a
+ *     trimmer saw over the plank belt; level 3: second trimmer saw, deeper lean-to, lamp.
  * A real work cycle (no shuttling): a hoist on the runway beam lifts a log from the log pile onto the saw carriage, the carriage
  * moves ONE way slowly through the circular saw (the log gets shorter, the sawn part appears as 3 boards on the plank belt, sawdust
  * puffs), then the carriage returns fast while the hoist fetches the next log; the belt carries the boards out through the outlet
- * and onto the plank stack. The cycle phase is the game's own sawmill timer (sawmillAutoTimer / sawmillAutoInterval()), so the
+ * and onto the pickup stack. The cycle phase is the game's own sawmill timer (sawmillAutoTimer / sawmillAutoInterval()), so the
  * speed follows level 1/2/3 and productionSpeedMultiplier(); the board reaches the stack in the frame the game credits the planks.
  * Everything is driven from updateSawmillMillV161(dt) (called by updateSawmill each frame): no allocations per frame, <= 12 pooled
  * sawdust points, chimney smoke through the game's own spawnSmokePuff() only while producing.
  * Only existing materials (createSurfaceMaterialV152 families), no textures. Static parts of one material are merged into one mesh.
+ * The hall has no static finished-lumber piles: the only boards at rest are the pickup stack, one merged mesh whose draw range follows floor(planks).
  * Rebuilt by refreshSawmillVisualsV161() when industrialLevelV161('sawmill') changes (refreshIndustrialBadgesV161 -> every 700 ms and after load()).
  */
 'use strict';
@@ -33,6 +35,7 @@ const SAWMILL_L_V161 = Object.freeze({
   CRANE_X: 0.95, PILE_Z: -1.0, PILE_Y: 0.77, LOG_Z: -0.28, LOG_Y: 1.15,
   BELT_X: -0.85, BELT_W: 1.7, BELT_Z0: 0.2, BELT_Z1: 3.05, BELT_TOP: 0.62, BELT_TRAVEL: 2.4, RIB_PITCH: 0.3, BELT_END_DOCK: 2.0,
   DUST_MAX: 12,
+  PICK_X: -1.0, PICK_Z: 3.45, PICK_Y: 0.2, STACK_CAP: 24, STACK_ROWS: 3,   // plank pickup pad under the lean-to (mill frame), floor height, visual board cap
 });
 // phases of one cycle (fractions of sawmillAutoInterval())
 const SAWMILL_P_V161 = Object.freeze({ CUT0: 0.03, CUT1: 0.60, RET1: 0.70, BOARD0: 0.60, BOARD1: 0.97 });
@@ -170,7 +173,6 @@ function buildSawmillMillV161(level) {
   const T = sawmillBatchV161();   // structural timber
   const W = sawmillBatchV161();   // wall boarding
   const R = sawmillBatchV161();   // corrugated roof sheets
-  const P = sawmillBatchV161();   // sawn planks / lumber stacks
   const M = sawmillBatchV161();   // metal: housing, hood, stack, belt frame, lamps
   const WN = sawmillBatchV161();  // window panes
   const LG = sawmillBatchV161();  // log sides
@@ -270,9 +272,7 @@ function buildSawmillMillV161(level) {
   for (const s of [-1, 1]) M.box(0.05, 0.14, BLEN, BX + s * (BW / 2 + 0.02), L.BELT_TOP - 0.01, BZM);
   for (const z of [0.4, 1.4, 2.4, 2.95]) for (const s of [-1, 1]) M.box(0.08, L.BELT_TOP - 0.1 - FLOOR, 0.08, BX + s * (BW / 2 - 0.08), FLOOR + (L.BELT_TOP - 0.1 - FLOOR) / 2, z);
   for (const z of [BZ0 + 0.04, BZ1 - 0.04]) M.cyl(0.07, 0.07, BW + 0.08, 10, BX, L.BELT_TOP - 0.08, z, 0, 0, Math.PI / 2);
-  // log belt end: end stop + dock frame where the game's log belt (SAWMILL_BELT_END_V161) ends under the roof
-  M.box(0.1, 0.5, 1.5, L.BELT_END_DOCK + 0.12, FLOOR + 0.25, 0);
-  for (const z of [-0.78, 0.78]) M.box(0.08, 0.4, 0.08, L.BELT_END_DOCK + 0.05, FLOOR + 0.2, z);
+  // (no log belt any more: hand-cut logs roll in from the orange drop-off pad through the open east bay to the dock SAWMILL_BELT_END_V161, see buildSawmillScenery())
 
   // ---- log pile at the intake (against the north wall, under the hoist) -- the middle log of the upper row is the one the hoist takes
   const LR = 0.2, LL = L.LOG_L;
@@ -292,22 +292,7 @@ function buildSawmillMillV161(level) {
     }
   }
 
-  // ---- lumber stacks (boards in layers with stickers); x = board length direction at yaw 0
-  function pile(x, z, layers, yaw = 0, len = 1.5, wide = 3) {
-    for (let i = 0; i < layers; i++) {
-      const y = FLOOR + 0.045 + i * 0.085;
-      for (let k = 0; k < wide; k++) {
-        const dz = (k - (wide - 1) / 2) * 0.27, off = (i % 2 ? 0.05 : -0.04);
-        P.add(new THREE.BoxGeometry(len, 0.07, 0.25), x + Math.cos(yaw) * off + Math.sin(yaw) * dz, y, z - Math.sin(yaw) * off + Math.cos(yaw) * dz, 0, yaw, 0);
-      }
-    }
-    for (const s of [-0.5, 0, 0.5]) T.add(new THREE.BoxGeometry(0.05, layers * 0.085 + 0.02, 0.27 * wide + 0.04), x + Math.cos(yaw) * s * len * 0.9, FLOOR + (layers * 0.085 + 0.02) / 2, z - Math.sin(yaw) * s * len * 0.9, 0, yaw, 0);
-  }
-  pile(BX, 3.5, 5, 0, 1.5, 3);                    // at the end of the plank belt (boards slide onto it)
-  pile(-2.05, 3.1, 4, Math.PI / 2, 1.3, 2);       // lean-to, west
-  pile(-2.05, 0.6, 5, Math.PI / 2, 1.2, 2);       // inside the hall, west of the belt
-  if (level >= 2) { pile(-1.0, -3.1, 6, 0, 1.4, 3); pile(0.9, -3.1, 6, 0, 1.4, 3); pile(-2.05, -2.0, 4, Math.PI / 2, 1.2, 2); }
-  if (level >= 3) { pile(BX, 4.25, 4, 0, 1.5, 2); pile(-2.05, 4.2, 3, Math.PI / 2, 1.0, 1); pile(2.0, -3.0, 5, Math.PI / 2, 1.3, 3); }
+  // ---- finished lumber: no static piles. The boards that exist are the pickup stack (syncPlankStackV161), the three boards on the belt and the ones in the player's hands.
 
   // ---- sawdust piles
   D.cyl(0.02, 0.5, 0.26, 9, XB + 0.3, FLOOR + 0.13, 0.55, 0, 0, 0);
@@ -342,7 +327,6 @@ function buildSawmillMillV161(level) {
   add(T.toMesh(timberMat, { name: 'v161SawmillFrame' }));
   add(W.toMesh(wallMat, { name: 'v161SawmillWall' }));
   const roof = add(R.toMesh(roofMat, { name: 'v161SawmillRoof' }));
-  add(P.toMesh(plankMat, { name: 'v161SawmillPlanks' }));
   add(M.toMesh(metalMat, { name: 'v161SawmillMetal' }));
   add(WN.toMesh(paneMat, { name: 'v161SawmillWindows', cast: false }));
   add(LG.toMesh([barkMat], { name: 'v161SawmillLogs' }));
@@ -430,7 +414,7 @@ function buildSawmillMillV161(level) {
   root.userData.layout = {
     level, zb: ZB, zf: ZF, x0: X0, x1: X1, zc: ZC, dep: DEP, leanZ1: LEAN_Z1, leanX0: LEAN_X0, leanX1: LEAN_X1,
     roof: { x0: RX0, x1: RX1, z0: ZC - HS, z1: ZC + HS }, trimmers,
-    stackObb: { x: BX, z: 3.5, hx: 0.78, hz: 0.45 },
+    stackObb: { x: L.PICK_X, z: L.PICK_Z, hx: 0.8, hz: 0.45 },   // the pickup stack (the pad itself is walkable)
   };
   root.userData.spinners = blades.map((b) => ({ node: b.node, speed: SAWMILL_SPIN_V161 * b.mult }));
   root.userData.blades = blades;
@@ -517,6 +501,7 @@ function sawmillRandV161(A) { A.seed = (Math.imul(A.seed, 1664525) + 1013904223)
 function updateSawmillMillV161(dt) {
   const mill = sawmillMillV161, A = mill && mill.userData.anim;
   if (!A) return;
+  syncPlankStackV161();
   const L = SAWMILL_L_V161;
   dt = dt > 0.1 ? 0.1 : (dt > 0 ? dt : 0);
   A.t += dt;
@@ -576,6 +561,52 @@ function updateSawmillMillV161(dt) {
   } else A.smokeT = 1.2;
 }
 
+/* ------------------------------------------------------------------------------------------------------------------------------
+ * plank pickup ("ДОСКИ · ПОГРУЗКА") -- user, iPhone test: "перенеси блок откуда брать доски ... на складе доски появлялись в реальном времени,
+ * а то лежат очень много, по факту их нет".
+ * The game's loading bay for planks (LOGISTICS_ZONES.planks: dark plate, stripes, corner posts, name plate, guide ring) used to stand on the
+ * road spur 6.5 m east of the mill; it now stands under the lean-to at the end of the plank belt (sawmillPickupPoseV161), where the boards come out.
+ * What the player takes there is NOT stock: handleManualV119 'load' carries min(carry capacity, ticket remaining) for a construction delivery ticket
+ * whose planks were already paid (and deducted from `planks`) when the construction started, so the take never touches `planks`. The pile is therefore
+ * the real stock the HUD shows: floor(planks), at most STACK_CAP boards, one merged mesh (24 boards, draw range = count), 0 planks = empty plate.
+ * Boards appear in the frame the game credits them (the saw timer, a log arriving, a trade) and vanish when the stock is spent. Trucks keep loading on
+ * the road node plankBay (cargoInfo -> PLANK_TRUCK_BAY_POS_V161).
+ * ---------------------------------------------------------------------------------------------------------------------------- */
+function sawmillPickupPoseV161() {
+  const L = SAWMILL_L_V161, u = new THREE.Vector3().subVectors(GENERATOR_POS, SAWMILL_POS).setY(0).normalize(), yaw = Math.atan2(-u.z, u.x), c = Math.cos(yaw), s = Math.sin(yaw);
+  return { pos: new THREE.Vector3(SAWMILL_POS.x + c * L.PICK_X + s * L.PICK_Z, 0, SAWMILL_POS.z - s * L.PICK_X + c * L.PICK_Z), yaw, y: L.PICK_Y };
+}
+let plankStackV161 = null;   // { zone, mesh, shown, added, removed }
+function buildPlankStackV161() {
+  const L = SAWMILL_L_V161, B = sawmillBatchV161();
+  for (let i = 0; i < L.STACK_CAP; i++) {   // fill order = stacking order: layer by layer, three boards across, so the first n boards are the bottom n
+    const layer = Math.floor(i / L.STACK_ROWS), k = i % L.STACK_ROWS;
+    B.add(new THREE.BoxGeometry(1.5, 0.075, 0.2), ((i * 37) % 7 - 3) * 0.012, 0.105 + layer * 0.08, (k - 1) * 0.22, 0, ((i * 13) % 5 - 2) * 0.014, 0);
+  }
+  const mat = createSurfaceMaterialV152('wood', new THREE.Color(0xe3c590), { roughness: 0.9 });
+  const mesh = B.toMesh([mat], { name: 'v161PlankStack' });   // array material: the surface-UV scan leaves the indexed geometry (and its draw range) alone, like the animated boards
+  mesh.frustumCulled = false;
+  return mesh;
+}
+// Puts the zone on the pickup pose once (idempotent) and makes the stack follow floor(planks). Returns the number of boards shown (-1: no zone yet).
+function syncPlankStackV161() {
+  const zone = typeof LOGISTICS_ZONES !== 'undefined' ? LOGISTICS_ZONES.planks : null;
+  if (!zone || !zone.group) return -1;
+  if (!plankStackV161 || plankStackV161.zone !== zone) {
+    const mesh = buildPlankStackV161();
+    zone.group.add(mesh);
+    plankStackV161 = { zone, mesh, shown: -1, added: 0, removed: 0 };
+  }
+  const S = plankStackV161, real = Number.isFinite(planks) ? Math.max(0, Math.floor(planks)) : 0, n = Math.min(SAWMILL_L_V161.STACK_CAP, real);
+  if (n !== S.shown) {
+    if (S.shown >= 0) { if (n > S.shown) S.added += n - S.shown; else S.removed += S.shown - n; }
+    S.shown = n;
+    S.mesh.geometry.setDrawRange(0, n * 36);   // 36 indices per box
+    S.mesh.visible = n > 0;
+  }
+  return n;
+}
+
 // plain-data snapshot for tests
 function sawmillStateV161() {
   const mill = sawmillMillV161; if (!mill) return null;
@@ -586,6 +617,7 @@ function sawmillStateV161() {
     carriageX: P.carriage.position.x,
     boards: P.boards.map((b) => ({ visible: b.visible, sx: b.scale.x, x: b.position.x, y: b.position.y, z: b.position.z })),
     dustLive: P.dust.live, dustMax: P.dust.n, ribsOff: P.ribs.off,
+    stack: plankStackV161 && { shown: plankStackV161.shown, added: plankStackV161.added, removed: plankStackV161.removed },
     trolleyZ: P.trolley.position.z, hookY: P.hook.position.y,
   };
 }
