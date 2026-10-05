@@ -78,4 +78,24 @@ function animateFoliageV154(now){
     root.rotation.z+=(base.z+press*dx/Math.max(.15,d)*.16-root.rotation.z)*blend;
     root.scale.y+=(base.y*(1-press*.23)-root.scale.y)*blend;
   }
+  // v161 feel: the nearest few trees sway very slightly in the wind (rotation.x only: the chop animation owns rotation.z, the camera fade owns scale). No allocation: the
+  // tree list is rebuilt only when the root list changes, the nearest <= 6 are re-picked twice a second into a fixed array, the others relax back to 0.
+  const trees=state.trees||(state.trees=[]),near=state.nearTrees||(state.nearTrees=[]);
+  if(state.treeCount!==cameraFoliageRoots.length){trees.length=0;for(const r of cameraFoliageRoots)if(r&&vegetationKindV154(r)==='tree')trees.push(r);state.treeCount=cameraFoliageRoots.length;state.pickAt=-1e9;}
+  if(now-state.pickAt>500){
+    state.pickAt=now;const SWAY_N=6;near.length=0;
+    for(const r of trees){
+      if(!r.visible||!r.parent||r.userData.v84HiddenRoadConflict||r.userData.v93RoadClearance||r.userData.v161SawmillClearance)continue;
+      const d2=(player.position.x-r.position.x)**2+(player.position.z-r.position.z)**2;if(d2>196)continue;
+      r.userData.swayD2V161=d2;let i=near.length;near.push(r);
+      while(i>0&&near[i-1].userData.swayD2V161>d2){near[i]=near[i-1];i--;}near[i]=r;if(near.length>SWAY_N)near.length=SWAY_N;
+    }
+  }
+  const swayNow=now*.0013;
+  for(const r of trees){
+    const on=near.includes(r)&&r.visible,u=r.userData,target=on?Math.sin(swayNow+r.position.x*.37+r.position.z*.29)*.016:0,cur=u.swayX||0;
+    if(!on&&cur===0)continue;
+    if(u.swayBaseV161===undefined)u.swayBaseV161=r.rotation.x;
+    const nx=Math.abs(target-cur)<.0004&&!on?0:cur+(target-cur)*blend*.5;u.swayX=nx;r.rotation.x=u.swayBaseV161+nx;
+  }
 }

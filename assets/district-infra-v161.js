@@ -97,6 +97,7 @@
       get level() { return K.level(id) + 1; },
       get ru() { return `${K.ru} L${this.level}`; },
       get en() { return `${K.en} L${this.level}`; },
+      get plateSub() { return { ru: cfg.ru.toUpperCase(), en: cfg.en.toUpperCase() }; }, // 2nd plate line: WHICH district (the four districts share the same 4 titles); read by spawnIndustrialPadMarkerV118
       get pos() { return padPos(cfg, ki); },
       get cost() { try { return K.cost(id) || ZERO; } catch (_) { return ZERO; } },
       built: () => false, // a district ladder is never "finished" as a whole; visibility is `prereq`
@@ -106,6 +107,7 @@
         K.run(id);
         refreshIndustrialPadMarkersV118();
         spawnBurst(step.pos, K.color);
+        triggerShake(0.08, 0.14); // v161 feel: same small kick as a road section (the build functions already play sfx.build + their toast)
         updateHUD();
         return true;
       },
@@ -153,6 +155,7 @@
         v42().plant(P.k);
         refreshIndustrialPadMarkersV118();
         spawnBurst(step.pos, P.color);
+        triggerShake(0.08, 0.14);
         updateHUD();
         return true;
       },

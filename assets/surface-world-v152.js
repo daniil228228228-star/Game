@@ -35,8 +35,21 @@
     });
     if(retired.size){const used=new Set();scene.traverse(o=>{if(o.geometry)used.add(o.geometry);});for(const g of retired)if(!used.has(g))g.dispose();}
   }
+  // v161 feel: a plate never sits under the top HUD (stat chips, top-right buttons, goal card): those rects are read at the layout tick (5 Hz) and such labels stay at opacity 0
+  const hudIds=['hud','topRightBtns','nextCard'],hudRects=[];
+  function hudBlocked(x,y,w,h){
+    for(let i=0;i<hudRects.length;i++){const r=hudRects[i];if(Math.abs(x-r.x)<(w+r.w)/2&&Math.abs(y-r.y)<(h+r.h)/2)return true;}
+    return false;
+  }
   function labelLayout(now){
     if(document.hidden||now-labelLast<180)return;labelLast=now;
+    // v161 feel: plates created since the last scan (opacity 0 until accepted here) join the list at once instead of waiting for the next 1.5 s scene scan
+    const pend=window.__v152PendingLabels;
+    if(pend&&pend.length){
+      for(let i=pend.length-1;i>=0;i--){let o=pend[i];while(o.parent)o=o.parent;if(o===scene){if(!labels.includes(pend[i]))labels.push(pend[i]);pend.splice(i,1);}else if(pend.length>300)pend.splice(i,1);}
+    }
+    hudRects.length=0;
+    for(const id of hudIds){const el=document.getElementById(id);if(!el||el.hidden)continue;const r=el.getBoundingClientRect();if(r.width>1&&r.height>1)hudRects.push({x:(r.left+r.right)/2,y:(r.top+r.bottom)/2,w:r.width,h:r.height});}
     const candidates=[],accepted=[],limit=VISUAL_MOBILE?4:6;
     const target=typeof currentGuidanceTarget==='function'?currentGuidanceTarget()?.pos:null;
     for(const label of labels){
@@ -53,11 +66,12 @@
       const cameraDistance=world.distanceTo(camera.position);
       const pixels=innerHeight/(2*Math.tan(camera.fov*Math.PI/360)*Math.max(.1,cameraDistance));
       const base=label.userData.v157LabelScale||(label.userData.v157LabelScale=label.scale.clone());
-      const zoom=distance<9?THREE.MathUtils.clamp(104/(base.x*pixels),1,2):1;
+      const zoom=distance<9?THREE.MathUtils.clamp(104/(base.x*pixels),1,label.userData.padPlateV161?3.2:2):1; // v161: a pad's own plate may grow to 3.2x (at the far camera, 20 m, 2x left it 49 px wide = unreadable)
       label.scale.copy(base).multiplyScalar(zoom);label.getWorldScale(labelScale);
-      const priority=target&&Math.hypot(world.x-target.x,world.z-target.z)<2.6?0:1;
-      candidates.push({label,distance,priority,x:(point.x+1)*innerWidth/2,y:(1-point.y)*innerHeight/2,
-        w:labelScale.x*pixels+12,h:labelScale.y*pixels+10});
+      const priority=label.userData.padPlateV161||(target&&Math.hypot(world.x-target.x,world.z-target.z)<2.6)?0:1; // v161: a pad's own plate (industrial/infra/chain markers) is never pushed out by decor plates around it
+      const cx=(point.x+1)*innerWidth/2,cy=(1-point.y)*innerHeight/2,cw=labelScale.x*pixels+12,ch=labelScale.y*pixels+10;
+      if(hudBlocked(cx,cy,cw,ch))continue;
+      candidates.push({label,distance,priority,x:cx,y:cy,w:cw,h:ch});
     }
     candidates.sort((a,b)=>a.priority-b.priority||a.distance-b.distance);
     for(const c of candidates){

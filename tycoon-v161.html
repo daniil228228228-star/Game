@@ -1557,9 +1557,40 @@ function treeChoppableV161(tree) {
   if (sceneryRetiredV161(tree.mesh)) return false;
   return tree.mesh.visible !== false || hiddenCameraFoliage.includes(tree.mesh);
 }
+// v161 feel (user: "камера прячет другие деревья на луче"): a tree/bush on the camera->player ray no longer pops out of existence; it SHRINKS to nothing in 0.25 s and grows back the same way
+// (root scale lerp, no material/opacity change, so the shared materials stay untouched; per-root state is two userData fields, the Vector3 is created once per root).
+// `hiddenCameraFoliage` keeps its meaning "roots the ray wants out of the way right now" (never the chop target); camFadeStepV161(dt) (animate loop) does the visual part.
+const camFadeActiveV161 = []; // roots currently below full size or fading
+const CAM_FADE_SECONDS_V161 = 0.25;
+function camFadeApplyV161(root, k) {
+  const u = root.userData;
+  u.camFadeK = k;
+  if (k >= 1) { if (u.camFadeBase) root.scale.copy(u.camFadeBase); root.visible = true; return; }
+  const e = k * k * (3 - 2 * k); // smoothstep
+  root.scale.set(u.camFadeBase.x * e, u.camFadeBase.y * e, u.camFadeBase.z * e);
+  root.visible = k > 0.06;
+}
+function camFadeStepV161(dt) {
+  for (let i = camFadeActiveV161.length - 1; i >= 0; i--) {
+    const root = camFadeActiveV161[i], u = root.userData, k0 = u.camFadeK === undefined ? 1 : u.camFadeK;
+    if (!root.parent || sceneryRetiredV161(root)) { // gone or retired by its owner: full size again, visibility is the owner's business
+      if (k0 < 1 && u.camFadeBase) root.scale.copy(u.camFadeBase);
+      u.camFadeK = 1; u.camFadeActive = false; camFadeActiveV161.splice(i, 1);
+      continue;
+    }
+    let want = hiddenCameraFoliage.includes(root) ? 0 : 1;
+    if (nearbyHarvestTree && nearbyHarvestTree.mesh === root) want = 1;
+    else if (want === 0) { // a tree that is no longer 'grown' (the chop/regrow animation owns its scale) is never faded
+      for (let j = 0; j < sourceTrees.length; j++) if (sourceTrees[j].mesh === root && sourceTrees[j].state !== 'grown') { want = 1; break; }
+    }
+    if (k0 >= 1 && want === 1) { u.camFadeActive = false; camFadeActiveV161.splice(i, 1); continue; } // full size, nothing to do
+    if (k0 >= 1) { if (!u.camFadeBase) u.camFadeBase = new THREE.Vector3(); u.camFadeBase.copy(root.scale); } // the fade starts: remember the full size
+    camFadeApplyV161(root, want === 0 ? Math.max(0, k0 - dt / CAM_FADE_SECONDS_V161) : Math.min(1, k0 + dt / CAM_FADE_SECONDS_V161));
+  }
+}
 function updateCameraFoliageOcclusion() {
-  for (const root of hiddenCameraFoliage) if (root && !sceneryRetiredV161(root)) root.visible = true;
   hiddenCameraFoliage.length = 0;
+  if (nearbyHarvestTree) { const m = nearbyHarvestTree.mesh, u = m && m.userData; if (u && u.camFadeK < 1 && u.camFadeBase) camFadeApplyV161(m, 1); } // the chop target is never mid-fade
   if (!cameraFoliageRoots.length) return;
   camToCam.subVectors(camera.position, camEyeTarget);
   const dist = camToCam.length();
@@ -1568,7 +1599,10 @@ function updateCameraFoliageOcclusion() {
   cameraRaycaster.set(camEyeTarget, camToCam);
   cameraRaycaster.near = 0.35;
   cameraRaycaster.far = Math.max(0.35, dist - 0.12);
+  // a shrunken root would no longer be hit by the ray (-> it would grow back and be hit again: flicker): test every faded root at full size, then put the fade scale back
+  for (let i = 0; i < camFadeActiveV161.length; i++) { const r = camFadeActiveV161[i], u = r.userData; if (u.camFadeK < 1 && u.camFadeBase) { r.scale.copy(u.camFadeBase); r.updateMatrixWorld(true); } }
   const hits = cameraRaycaster.intersectObjects(cameraFoliageRoots, true);
+  for (let i = 0; i < camFadeActiveV161.length; i++) { const r = camFadeActiveV161[i], u = r.userData; if (u.camFadeK < 1 && u.camFadeBase) camFadeApplyV161(r, u.camFadeK); }
   const seen = new Set();
   for (const hit of hits) {
     let root = hit.object;
@@ -1576,9 +1610,10 @@ function updateCameraFoliageOcclusion() {
     if (!root || !root.userData.cameraFoliageRoot || seen.has(root)) continue;
     seen.add(root);
     if (nearbyHarvestTree && nearbyHarvestTree.mesh === root) continue; // v161: the tree the chop prompt is offered for must stay visible (it was hidden in 174 of 912 poses)
-    if (sceneryRetiredV161(root) || root.visible === false) continue;
-    root.visible = false;
+    if (sceneryRetiredV161(root)) continue;
+    if (root.visible === false && !root.userData.camFadeActive) continue; // hidden by another owner (not by this fade)
     hiddenCameraFoliage.push(root);
+    if (!root.userData.camFadeActive) { root.userData.camFadeActive = true; camFadeActiveV161.push(root); }
     if (hiddenCameraFoliage.length >= 8) break;
   }
 }
@@ -1803,9 +1838,14 @@ function ensureAudio() {
   return audioCtx;
 }
 
+// v161 feel: at most 12 oscillators per 300 ms window, so a burst of events (district + infra + production in the same second) cannot pile up on a phone.
+let beepWindowStartV161 = 0, beepWindowCountV161 = 0;
 function beep(freq, start, duration, type = 'sine', gain = 0.12) {
   const ctx = ensureAudio();
   if (!ctx || muted) return;
+  const nowV161 = performance.now();
+  if (nowV161 - beepWindowStartV161 > 300) { beepWindowStartV161 = nowV161; beepWindowCountV161 = 0; }
+  if (++beepWindowCountV161 > 12) return;
   const osc = ctx.createOscillator();
   const g = ctx.createGain();
   osc.type = type;
@@ -2287,6 +2327,9 @@ outerRingMark.rotation.x = -Math.PI / 2;
 // even greater distances.
 outerRingMark.position.y = 0.09;
 scene.add(outerRingMark);
+// v161 feel (user: "тонкая белая кривая на траве к западу от лесопилки, x≈-53.5"): that curve is innerPromenadeCurb (r 54.0-54.5, the white inner curb of the outer ring road), which was always drawn
+// while the ring road it borders (outerRingRoad, r 54.6-60.2) stays hidden until total road levels >= 8 -> a stray line on the lawn. It now follows outerRingRoad's visibility.
+function setRingRoadEdgeVisibleV161(on) { const m = scene.getObjectByName('innerPromenadeCurbV161'); if (m) m.visible = !!on; }
 
 const waterTexture = makeTextureCanvas(256, (ctx, size) => {
   ctx.fillStyle = '#91c9e8'; ctx.fillRect(0, 0, size, size);
@@ -3916,6 +3959,8 @@ function updateMetalPlant(dt) {
   innerPromenadeCurb.rotation.x = -Math.PI / 2;
   innerPromenadeCurb.position.y = 0.084;
   innerPromenadeCurb.receiveShadow = true;
+  innerPromenadeCurb.name = 'innerPromenadeCurbV161';
+  innerPromenadeCurb.visible = false; // shown again with the ring road (setRingRoadEdgeVisibleV161, refreshStaticUrbanVisibilityV37 / rebuildOuter59)
   scene.add(innerPromenadeCurb);
 
   const promenade = new THREE.Mesh(
@@ -6515,7 +6560,7 @@ function upgradeBuilding(entry, options = {}) {
   if (entry.level >= MAX_BUILDING_LEVEL) stats.maxLevelHit = true;
 
   sfx.build();
-  spawnBurst(entry.pos, 0x5ab0ff);
+  spawnBurst(entry.pos, entry.level >= 6 ? 0xffd24a : 0x5ab0ff); // v161 feel: gold tiers 6-10 burst gold
   triggerShake(0.12, 0.2);
   const spentExtra = `${concreteCost > 0 ? `, −${concreteCost} 🧱` : ''}${metalCost > 0 ? `, −${metalCost} 🔩` : ''}`;
   toast(lang === 'ru'
@@ -6532,6 +6577,7 @@ function upgradeBuilding(entry, options = {}) {
 /* ---------------------------------------------------------------------- */
 const particleBursts = [];
 function spawnBurst(pos, color) {
+  if (particleBursts.length >= 30) return; // v161 feel: pooled-by-cap -- never more than 30 live bursts (36 points each), however many events fire at once
   const count = 36;
   const positions = new Float32Array(count * 3);
   const velocities = [];
@@ -7718,9 +7764,13 @@ function spawnIndustrialCampLifeV116(industrialWorkerCount) {
   for (let i = 0; i < industrialWorkerCount; i++) {
     const role = WORKER_ROLES[i % WORKER_ROLES.length];
     const worker = createWorkerNPC(role.key);
-    const base = i < 2 ? GENERATOR_POS : SAWMILL_POS;
+    // v161 feel: the camp at GENERATOR_POS is gone (2026-10-04 (10)); the crew idles in the sawmill yard (mill-local +z = the pad side, 6-7 m in front of the hall, beyond the lean-to and
+    // the 4 m tree keep-out) instead of the empty camp spot; SAWMILL_POS itself is the middle of the hall. Roles keep their own idle angles around the point.
+    const um = new THREE.Vector3().subVectors(GENERATOR_POS, SAWMILL_POS).setY(0).normalize(), yawm = Math.atan2(-um.z, um.x), cm = Math.cos(yawm), sm = Math.sin(yawm);
+    const yard = (lx, lz) => new THREE.Vector3(SAWMILL_POS.x + cm * lx + sm * lz, 0, SAWMILL_POS.z - sm * lx + cm * lz);
+    const base = i < 2 ? yard(-1.0, 7.2) : yard(-4.2, 6.2), a0 = i * Math.PI / 2 + 0.5;
     worker.homeBase = base.clone();
-    worker.group.position.set(base.x + (Math.random() - 0.5) * 2.8, 0, base.z + (Math.random() - 0.5) * 2.8);
+    worker.group.position.set(base.x + Math.cos(a0) * 2.6, 0, base.z + Math.sin(a0) * 2.6);
     chooseWorkerTarget(worker);
     scene.add(worker.group);
     npcWorkers.push(worker);
@@ -8032,18 +8082,28 @@ function makeLabelSprite(lines) {
   sprite.scale.set(1.45, safeLines.length >= 3 ? 0.688 : 0.597, 1);
   sprite.renderOrder = 10;
   sprite.userData.v152WorldLabel = true;
+  // v161 feel: a plate starts invisible and is shown by labelLayout (assets/surface-world-v152.js, <= 4 nearest, none beyond 24 m, none under the HUD) within ~0.2 s; it used to be fully drawn
+  // for up to 1.5 s until the next scene scan, so far plates flashed on creation
+  material.opacity = 0; material.userData.v152BaseOpacity = 1;
+  const pendingV161 = window.__v152PendingLabels || (window.__v152PendingLabels = []);
+  if (pendingV161.length > 400) pendingV161.splice(0, 200); // sprites that never reached the scene
+  pendingV161.push(sprite);
   return sprite;
 }
 
 function updateLabelSprite(sprite, lines) {
   if (!sprite) return;
   const replacement = makeLabelSprite(lines);
+  const keepOpacity = sprite.material ? sprite.material.opacity : undefined; // v161 feel: the new material takes over the layout's current opacity (it used to restart at 1 = a flash of every far plate on each text update)
   if (sprite.material) {
     if (sprite.material.map) sprite.material.map.dispose();
     sprite.material.dispose();
   }
   sprite.material = replacement.material;
   sprite.renderOrder = replacement.renderOrder;
+  if (keepOpacity !== undefined) sprite.material.opacity = keepOpacity;
+  const pend = window.__v152PendingLabels; // the throw-away replacement sprite never enters the scene
+  if (pend) { const i = pend.lastIndexOf(replacement); if (i >= 0) pend.splice(i, 1); }
 }
 
 function spawnPad(index) {
@@ -8231,9 +8291,12 @@ function spawnIndustrialPadMarkerV118(step) {
   group.add(ring);
   group.userData.pulseRing = ring;
   group.userData.disc = disc;
-  const sprite = makeLabelSprite([lang === 'ru' ? step.ru.toUpperCase() : step.en.toUpperCase()]);
+  const plateLines = [lang === 'ru' ? step.ru.toUpperCase() : step.en.toUpperCase()];
+  if (step.plateSub) plateLines.push(lang === 'ru' ? step.plateSub.ru : step.plateSub.en); // v161 feel: infra pads say WHICH district (assets/district-infra-v161.js)
+  const sprite = makeLabelSprite(plateLines);
   sprite.position.y = 1.4;
-  sprite.scale.set(0.9, 0.37, 1);
+  sprite.scale.set(step.plateSub ? 1.1 : 0.9, step.plateSub ? 0.451 : 0.37, 1); // same 512x210 canvas for 1-2 lines -> same aspect; the 2-line (district) plate is a bit wider
+  sprite.userData.padPlateV161 = true; // labelLayout (assets/surface-world-v152.js) ranks a pad's own plate above decor plates
   group.add(sprite);
   group.position.set(step.pos.x, 0, step.pos.z);
   scene.add(group);
@@ -8309,7 +8372,11 @@ function buildIndustrialStepV118(step) {
   if (step.built() || !step.prereq()) return false;
   // v161 district infra (assets/district-infra-v161.js): steps with `infraOf` delegate to the
   // district's own build function (it charges, starts the pending timer and toasts itself).
-  if ((step.infraOf || step.chainV161) && typeof step.run === 'function') return step.run(step); // chainV161: Frame Workshop (assets/production-chain-v161.js)
+  if ((step.infraOf || step.chainV161) && typeof step.run === 'function') { // chainV161: Frame Workshop (assets/production-chain-v161.js)
+    const ran = step.run(step);
+    if (ran && typeof hintNextStepV161 === 'function') hintNextStepV161(); // v161 feel: one-line "what next" toast (assets/feel-v161.js)
+    return ran;
+  }
   if (!tryPayResources(step.cost)) {
     sfx.error();
     toast(lang === 'ru' ? `Не хватает: ${opsCostText(step.cost)}` : `Missing: ${opsCostText(step.cost)}`);
@@ -8331,6 +8398,7 @@ function buildIndustrialStepV118(step) {
     spawnFloatingTextV117(step.pos, upLabel);
     updateHUD();
     save();
+    if (typeof hintNextStepV161 === 'function') hintNextStepV161();
     return true;
   }
   let builtLabel = '';
@@ -8536,12 +8604,20 @@ function nextActionableTargetV117() {
   // it's actually affordable -- before the sawmill exists, the player has no plank source at
   // all (see INDUSTRIAL_BUILD_STEPS_V118/buildIndustrialStepV118()).
   if (typeof INDUSTRIAL_BUILD_STEPS_V118 !== 'undefined') {
+    let nearIndep = null, nearIndepD = Infinity; // v161 feel: of the independent affordable pads (district infra, production chain) the NEAREST one leads, not the first in table order
     for (const step of INDUSTRIAL_BUILD_STEPS_V118) {
       if (step.built() || !step.prereq()) continue;
-      if (canPayResources(step.cost)) return { pos: step.pos.clone(), label: lang === 'ru' ? step.ru : step.en, type: 'industrial', stepId: step.id };
-      if (step.infraOf || step.chainV161) continue; // v161 district infra pads and production-chain pads are independent of each other
+      const independent = !!(step.infraOf || step.chainV161); // v161 district infra pads and production-chain pads are independent of each other
+      if (canPayResources(step.cost)) {
+        if (!independent) return { pos: step.pos.clone(), label: lang === 'ru' ? step.ru : step.en, type: 'industrial', stepId: step.id };
+        const d = player.position.distanceToSquared(step.pos);
+        if (d < nearIndepD) { nearIndepD = d; nearIndep = step; }
+        continue;
+      }
+      if (independent) continue;
       break; // next unbuilt step isn't affordable yet -- don't skip ahead to a later one
     }
+    if (nearIndep) return { pos: nearIndep.pos.clone(), label: lang === 'ru' ? nearIndep.ru : nearIndep.en, type: 'industrial', stepId: nearIndep.id };
   }
   // 4. v161 (assets/district-unlock-v161.js): an unlocked, affordable, really-upgradable district hub pad
   // (open / develop L1-3). Before this the compass, ground arrow and world marker never pointed at it.
@@ -10824,7 +10900,9 @@ function upgradeCityDistrict(id){
   const cost=districtUpgradeCost(cfg); if(!tryPayResources(cost)){sfx.error();toast(lang==='ru'?'Не хватает ресурсов для развития района':'Not enough resources for district upgrade');return;}
   cityState.districts[id]=districtLevel(id)+1; cityState.totalDistrictUpgrades=(cityState.totalDistrictUpgrades||0)+1;
   awardCityReputation(3+districtLevel(id),'district'); sfx.build(); haptic('heavy'); triggerImpactFlash(.2);
+  spawnBurst(cfg.pos, cfg.color); triggerShake(.12,.2); if(districtLevel(id)===1) spawnCompletionRipple(cfg.pos, cfg.color); // v161 feel: hub unlock/upgrade had sound + flash only; the first opening also gets the ripple
   toast(lang==='ru'?`🌆 ${cfg.ru} → уровень ${districtLevel(id)}`:`🌆 ${cfg.en} → level ${districtLevel(id)}`);
+  if(typeof hintNextStepV161==='function') hintNextStepV161();
   refreshCityExpansionWorld(); renderCityPanel(); renderSystemsPanel(); updateHUD(); save();
 }
 function startCityInitiative(id){
@@ -14395,14 +14473,17 @@ function animate() {
       if (!build.upgrading) { stats.buildingsCompleted += 1; awardCityReputation(2 + Math.min(3, Math.floor(build.entry.index / 3)), 'building'); } else { awardCityReputation(1, 'upgrade'); }
       if (build.entry.level < MAX_BUILDING_LEVEL && !build.entry.upgradePad) spawnUpgradePad(build.entry);
       sfx.build();
-      const completionColor = build.upgrading ? 0x5ab0ff : 0xffd479;
+      // v161 feel: gold tiers (level >= 6) finish with a gold burst, the last level (10) with a distinct fanfare: prestige jingle, second white-gold burst, bigger shake
+      const goldTierV161 = build.upgrading && build.entry.level >= 6, crownV161 = build.upgrading && build.entry.level >= MAX_BUILDING_LEVEL;
+      const completionColor = goldTierV161 ? 0xffd24a : build.upgrading ? 0x5ab0ff : 0xffd479;
       spawnBurst(build.entry.pos, completionColor);
       spawnCompletionRipple(build.entry.pos, completionColor);
-      triggerImpactFlash(build.upgrading ? 0.34 : 0.52);
-      triggerShake(build.upgrading ? 0.075 : 0.11, build.upgrading ? 0.16 : 0.22);
+      triggerImpactFlash(crownV161 ? 0.6 : build.upgrading ? 0.34 : 0.52);
+      triggerShake(crownV161 ? 0.17 : build.upgrading ? 0.075 : 0.11, crownV161 ? 0.34 : build.upgrading ? 0.16 : 0.22);
+      if (crownV161) { sfx.prestige(); spawnBurst(build.entry.pos, 0xfff1b8); }
       toast(lang === 'ru'
-        ? `✅ ${stageName(STAGES[build.entry.index])} готов${build.upgrading ? ' — уровень ' + build.entry.level : ''}`
-        : `✅ ${stageName(STAGES[build.entry.index])} complete${build.upgrading ? ' — level ' + build.entry.level : ''}`);
+        ? `${crownV161 ? '🏆' : '✅'} ${stageName(STAGES[build.entry.index])} готов${build.upgrading ? ' — уровень ' + build.entry.level + (crownV161 ? ' (максимум!)' : '') : ''}`
+        : `${crownV161 ? '🏆' : '✅'} ${stageName(STAGES[build.entry.index])} complete${build.upgrading ? ' — level ' + build.entry.level + (crownV161 ? ' (max!)' : '') : ''}`);
       spawnFloatingTextV117(build.entry.pos, `✅ ${stageName(STAGES[build.entry.index])}`);
       updateHUD();
       save();
@@ -14598,6 +14679,7 @@ function animate() {
     shakeOffset.set(0, 0, 0);
   }
 
+  if (camFadeActiveV161.length) safeFrameCallV54('camFadeStepV161', () => camFadeStepV161(dt)); // v161 feel: smooth fade of the roots on the camera ray
   foliageOcclusionAccumulator += dt;
   if (foliageOcclusionAccumulator >= (VISUAL_MOBILE ? 0.10 : 0.034)) {
     foliageOcclusionAccumulator = 0;
@@ -17504,7 +17586,7 @@ refreshStreetlightsWorld=function(){
 };
 
 function refreshStaticUrbanVisibilityV37(){
-  const total=totalRoadLevelsV37();if(typeof innerPlaza!=='undefined')innerPlaza.visible=total>0;if(typeof outerRingRoad!=='undefined')outerRingRoad.visible=total>=8;if(typeof outerRingMark!=='undefined')outerRingMark.visible=total>=8;
+  const total=totalRoadLevelsV37();if(typeof innerPlaza!=='undefined')innerPlaza.visible=total>0;if(typeof outerRingRoad!=='undefined')outerRingRoad.visible=total>=8;if(typeof outerRingMark!=='undefined')outerRingMark.visible=total>=8;setRingRoadEdgeVisibleV161(total>=8);
   scene.traverse(o=>{if(o.userData?.v37LegacyRoadside)o.visible=false;else if(o.userData?.v37ParkingInfra)o.visible=total>0;else if(o.userData?.v37UrbanPlaza)o.visible=total>=2;});
 }
 function refreshInfrastructureWorldV37(){
@@ -18595,8 +18677,8 @@ function startUtilityUpgradeV41(id,type){
 function completeUtilityUpgradesV41(){
   let changed=false,now=Date.now();
   for(const cfg of CITY_DISTRICTS){const d=districtV41(cfg.id);
-    if(d.powerPendingUntil>0&&d.powerPendingUntil<=now){d.powerPendingUntil=0;d.powerLevel=Math.min(3,d.powerLevel+1);d.utilityUpgrades++;v41State.stats.utilityUpgrades++;changed=true;toast(lang==='ru'?`⚡ Электросеть ${cfg.ru} → L${d.powerLevel}`:`⚡ ${cfg.en} power grid → L${d.powerLevel}`);sfx.purchase();haptic('light');}
-    if(d.waterPendingUntil>0&&d.waterPendingUntil<=now){d.waterPendingUntil=0;d.waterLevel=Math.min(3,d.waterLevel+1);d.utilityUpgrades++;v41State.stats.utilityUpgrades++;changed=true;toast(lang==='ru'?`💧 Водоснабжение ${cfg.ru} → L${d.waterLevel}`:`💧 ${cfg.en} water network → L${d.waterLevel}`);sfx.purchase();haptic('light');}
+    if(d.powerPendingUntil>0&&d.powerPendingUntil<=now){d.powerPendingUntil=0;d.powerLevel=Math.min(3,d.powerLevel+1);d.utilityUpgrades++;v41State.stats.utilityUpgrades++;changed=true;spawnBurst(cfg.pos,0xffe35a);toast(lang==='ru'?`⚡ Электросеть ${cfg.ru} → L${d.powerLevel}`:`⚡ ${cfg.en} power grid → L${d.powerLevel}`);sfx.purchase();haptic('light');}
+    if(d.waterPendingUntil>0&&d.waterPendingUntil<=now){d.waterPendingUntil=0;d.waterLevel=Math.min(3,d.waterLevel+1);d.utilityUpgrades++;v41State.stats.utilityUpgrades++;changed=true;spawnBurst(cfg.pos,0x7ec8f5);toast(lang==='ru'?`💧 Водоснабжение ${cfg.ru} → L${d.waterLevel}`:`💧 ${cfg.en} water network → L${d.waterLevel}`);sfx.purchase();haptic('light');}
   }
   if(changed){save();refreshV41World(true);if(document.getElementById('cityOverlay')?.classList.contains('show'))renderCityPanel();updateGuideMarkers();}
 }
@@ -27832,8 +27914,17 @@ body.v46-modal-open #toast{opacity:0!important;visibility:hidden!important;trans
     const wrapped=function(msg){
       const text=String(msg??'').trim();if(!text)return;
       const group=toastGroup(text),t=now(),last=V48.toastByGroup.get(group)||0;
+      // v161 feel: ambient repeats are capped. "Рабочий темп N/3" (rhythm chain level-ups: the chain decays and climbs again all session) shows once per 20 s overall and the same text once per 2 min;
+      // any other 'general' text repeats at most every 6 s (the 700 ms group gap alone let alternating texts run at ~1 toast/s).
+      const rhythmV161=/рабочий темп|work rhythm/i.test(text),textKeyV161=(rhythmV161?'rhythm:':'txt:')+text;
+      if(rhythmV161){if(t-(V48.toastByGroup.get('rhythm')||0)<20000||t-(V48.toastByGroup.get(textKeyV161)||0)<120000)return;}
+      else if(group==='general'){
+        if(V48.toastByGroup.size>160)for(const k of Array.from(V48.toastByGroup.keys()))if(k.startsWith('txt:'))V48.toastByGroup.delete(k);
+        if(t-(V48.toastByGroup.get(textKeyV161)||0)<6000)return;
+      }
       const cooldown=group==='missing'?2200:group==='error'?1800:group==='target'?1800:group==='general'?700:250;
       if(t-last<cooldown)return;
+      if(rhythmV161){V48.toastByGroup.set('rhythm',t);V48.toastByGroup.set(textKeyV161,t);}else if(group==='general')V48.toastByGroup.set(textKeyV161,t);
       V48.toastByGroup.set(group,t);
       let modal=false;try{modal=typeof modalOpenV46==='function'?modalOpenV46():document.body.classList.contains('v46-modal-open');}catch(_){}
       if(modal){
@@ -29616,6 +29707,7 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
     const unlocked=totalRoadLevelsV37()>=8;
     if(typeof outerRingRoad!=='undefined')outerRingRoad.visible=unlocked;
     if(typeof outerRingMark!=='undefined')outerRingMark.visible=false;
+    setRingRoadEdgeVisibleV161(unlocked);
     if(window.__v59OuterRoad&&window.__v59OuterRoad.userData.v59Unlocked===unlocked)return;
     if(window.__v59OuterRoad){scene.remove(window.__v59OuterRoad);disposeObject3D?.(window.__v59OuterRoad);window.__v59OuterRoad=null;}
     if(!unlocked)return;
@@ -38707,6 +38799,7 @@ body.v51-perf-low #jumpBtn{-webkit-backdrop-filter:none!important;backdrop-filte
 <script src="assets/production-chain-v161.js"></script>
 <script src="assets/late-game-v161.js"></script>
 <script src="assets/traffic-v161.js"></script>
+<script src="assets/feel-v161.js"></script>
 </body>
 
 </html>
