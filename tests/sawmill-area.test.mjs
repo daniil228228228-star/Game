@@ -20,8 +20,10 @@ const SHOTS = process.env.SHOTS_DIR || '';
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 const ONLY = process.env.LAUNCHES || '';
 const J = JSON.stringify;
-// road meshes (v70 service roads + v113 starter surface + stage roads) measured on commit 93573ed, before the camp/belt removal
-const ROADS_BEFORE = { fresh: { count: 47, hash: -510574045 }, old: { count: 51, hash: 648310607 } };
+// road meshes (v70 service roads + v113 starter surface + stage roads). OLD_SAVE: measured on commit 93573ed, before the camp/belt removal, and unchanged ever since.
+// fresh (stage 0, depot + sawmill, no house yet): 47 / -510574045 on 93573ed; since 2026-10-05 (5) ("nothing without a reason", tests/world-consistency.test.mjs) the north corridor for the
+// unbuilt concrete / metal plants and the link to the empty city hub are not paved, so the same state is 17 meshes (hash 678830722).
+const ROADS_BEFORE = { fresh: { count: 17, hash: 678830722 }, old: { count: 51, hash: 648310607 } };
 
 // ---- helpers evaluated inside the page (kept as source strings so both launches share them)
 const PAGE = () => {

@@ -11,10 +11,12 @@
  *   - level 2: the same hall grows by a north annex (bigger roof section, ridge vent, second log pile) and gets a
  *     trimmer saw over the plank belt; level 3: second trimmer saw, deeper lean-to, lamp.
  * A real work cycle (no shuttling): a hoist on the runway beam lifts a log from the log pile onto the saw carriage, the carriage
- * moves ONE way slowly through the circular saw (the log gets shorter, the sawn part appears as 3 boards on the plank belt, sawdust
+ * moves ONE way slowly through the circular saw (the log gets shorter, the sawn part appears as as many boards on the plank belt as the game credits for this cut, sawdust
  * puffs), then the carriage returns fast while the hoist fetches the next log; the belt carries the boards out through the outlet
  * and onto the pickup stack. The cycle phase is the game's own sawmill timer (sawmillAutoTimer / sawmillAutoInterval()), so the
- * speed follows level 1/2/3 and productionSpeedMultiplier(); the board reaches the stack in the frame the game credits the planks.
+ * speed follows level 1/2/3 and productionSpeedMultiplier(); the board reaches the stack in the frame the game credits the planks. The number of boards per cut is the
+ * credited number itself (sawmillBoardsPerCycleV161 -> the game's planksPerSawmillCycle(), or planksPerDeliveredLog() for a hand-fed mill before the first house): 1 at
+ * prestige 0 on every level (levels change the speed, not the yield), at most BOARDS_MAX shown.
  * Everything is driven from updateSawmillMillV161(dt) (called by updateSawmill each frame): no allocations per frame, <= 12 pooled
  * sawdust points, chimney smoke through the game's own spawnSmokePuff() only while producing.
  * Only existing materials (createSurfaceMaterialV152 families), no textures. Static parts of one material are merged into one mesh.
@@ -34,11 +36,18 @@ const SAWMILL_L_V161 = Object.freeze({
   CX0: 0.95, APPROACH: 0.3, TRAVEL: 1.8,   // carriage (= log) centre x at the start of the pass; the blade is reached after APPROACH
   CRANE_X: 0.95, PILE_Z: -1.0, PILE_Y: 0.77, LOG_Z: -0.28, LOG_Y: 1.15,
   BELT_X: -0.85, BELT_W: 1.7, BELT_Z0: 0.2, BELT_Z1: 3.05, BELT_TOP: 0.62, BELT_TRAVEL: 2.4, RIB_PITCH: 0.3, BELT_END_DOCK: 2.0,
-  DUST_MAX: 12,
+  DUST_MAX: 12, BOARDS_MAX: 3,
   PICK_X: -1.0, PICK_Z: 3.45, PICK_Y: 0.2, STACK_CAP: 24, STACK_ROWS: 3,   // plank pickup pad under the lean-to (mill frame), floor height, visual board cap
 });
 // phases of one cycle (fractions of sawmillAutoInterval())
 const SAWMILL_P_V161 = Object.freeze({ CUT0: 0.03, CUT1: 0.60, RET1: 0.70, BOARD0: 0.60, BOARD1: 0.97 });
+
+// Boards shown on the belt for one cut = the planks the game credits for it (one number, no constant of its own). Hand-fed mill (stage 0, logs rolling in): planks per delivered log.
+function sawmillBoardsPerCycleV161() {
+  let n = 1;
+  try { n = stageIndex >= 1 ? planksPerSawmillCycle() : planksPerDeliveredLog(); } catch (e) { /* game not ready */ }
+  return Math.max(1, Math.min(SAWMILL_L_V161.BOARDS_MAX, Math.floor(n) || 1));
+}
 
 function sawmillBatchV161() {
   const pos = [], nor = [], uv = [], idx = [];
@@ -292,7 +301,7 @@ function buildSawmillMillV161(level) {
     }
   }
 
-  // ---- finished lumber: no static piles. The boards that exist are the pickup stack (syncPlankStackV161), the three boards on the belt and the ones in the player's hands.
+  // ---- finished lumber: no static piles. The boards that exist are the pickup stack (syncPlankStackV161), the boards of the current cut on the belt (as many as the game credits for it) and the ones in the player's hands.
 
   // ---- sawdust piles
   D.cyl(0.02, 0.5, 0.26, 9, XB + 0.3, FLOOR + 0.13, 0.55, 0, 0, 0);
@@ -348,9 +357,9 @@ function buildSawmillMillV161(level) {
   const log = new THREE.Mesh(logGeo, [barkMat, grainMat, grainMat]);
   log.name = 'v161SawLog'; log.castShadow = true; log.receiveShadow = true;
   root.add(log);
-  // boards: three, lying along x on the plank belt, one behind the other along the belt direction
+  // boards: a pool of BOARDS_MAX, lying along x on the plank belt, one behind the other along the belt direction; a cut shows the first sawmillBoardsPerCycleV161() of them
   const boards = [];
-  for (let k = 0; k < 3; k++) {
+  for (let k = 0; k < L.BOARDS_MAX; k++) {
     const b = sawmillAnimMeshV161(new THREE.BoxGeometry(1, 0.07, 0.3), [plankMat], 'v161SawBoard' + k);
     b.userData.z0 = 0.4 + 0.34 * k;
     b.visible = false; root.add(b); boards.push(b);
@@ -407,7 +416,7 @@ function buildSawmillMillV161(level) {
 
   root.userData.parts = { log, carriage, boards, belt, ribs, trolley, hook, cable, roof, dust, blades };
   root.userData.anim = {
-    p: 0, manualT: 0, t: 0, spin: 0, running: false, cutting: false, smokeT: 0, seed: 12345, dirty: true,
+    p: 0, manualT: 0, t: 0, spin: 0, running: false, cutting: false, smokeT: 0, seed: 12345, dirty: true, boardsN: 0,
     chimney: new THREE.Vector3(XB, ductTop + 0.25, bladeZ),
   };
   // footprint (local) for tests / collision / decor clearing
@@ -458,9 +467,10 @@ function sawmillApplyPoseV161(mill, p) {
   // --- boards: grow from the blade onto the belt table, then ride out through the outlet onto the stack
   const u = p < PH.BOARD0 ? 0 : Math.min(1, (p - PH.BOARD0) / (PH.BOARD1 - PH.BOARD0));
   const sink = p > PH.BOARD1 ? Math.min(1, (p - PH.BOARD1) / (1 - PH.BOARD1)) : 0;
-  for (let k = 0; k < 3; k++) {
+  if (p < PH.CUT0 || A.boardsN < 1) A.boardsN = sawmillBoardsPerCycleV161();   // latched at the start of a cut: the count shown is the count that will be credited
+  for (let k = 0; k < P.boards.length; k++) {
     const b = P.boards[k];
-    b.visible = sawn > 0.02 && sink < 1;
+    b.visible = k < A.boardsN && sawn > 0.02 && sink < 1;
     if (!b.visible) continue;
     const z = b.userData.z0 + L.BELT_TRAVEL * u;
     const onStack = S((z - 2.95) / 0.3);
@@ -612,7 +622,7 @@ function sawmillStateV161() {
   const mill = sawmillMillV161; if (!mill) return null;
   const P = mill.userData.parts, A = mill.userData.anim;
   return {
-    level: mill.userData.levelV161, p: A.p, running: A.running, cutting: A.cutting, spin: A.spin,
+    level: mill.userData.levelV161, p: A.p, running: A.running, cutting: A.cutting, spin: A.spin, boardsN: A.boardsN,
     log: { visible: P.log.visible, sx: P.log.scale.x, x: P.log.position.x, y: P.log.position.y, z: P.log.position.z },
     carriageX: P.carriage.position.x,
     boards: P.boards.map((b) => ({ visible: b.visible, sx: b.scale.x, x: b.position.x, y: b.position.y, z: b.position.z })),

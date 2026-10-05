@@ -5,7 +5,7 @@
 //   B. one building: a single v161SawmillMill group; plank belt inside the roofed footprint; log belt ends at the dock under the roof; collider/drop-off/pads at their
 //      places and clear of the hall; hall blocks the player (oriented box in the collision registry); no overlap with fleet yard / concrete / metal / generator camp;
 //      level 1/2/3 rebuild with <= 26 meshes; road meshes keep their uuids when the production level changes.
-//   C. live cycle: phase = sawmillAutoTimer / sawmillAutoInterval(); the carriage moves one way through the saw, the log shrinks into 3 boards that ride the belt to the
+//   C. live cycle: phase = sawmillAutoTimer / sawmillAutoInterval(); the carriage moves one way through the saw, the log shrinks into the credited number of boards (1 at prestige 0, see tests/world-consistency.test.mjs) that ride the belt to the
 //      stack, the carriage returns fast, the hoist lifts the next log; sawdust <= 12 live points; blade spins; smoke only while producing; no leak over 3 cycles
 //      (scene child count, geometries and textures return to baseline); idle (stage 0, no logs) pauses; the real animate loop advances the cycle.
 //   D. trees: no choppable or decorative tree within the keep-out margin of the footprint, also after chop + regrow and after a new tree is dropped next to the mill.
@@ -190,8 +190,8 @@ const s = C.S;
 check(C.mono && s[0.5].carriageX < s[0.1].carriageX - 0.8, `carriage moves ONE way through the saw: x ${s[0.1].carriageX.toFixed(2)} -> ${s[0.5].carriageX.toFixed(2)} -> ${s[0.58].carriageX.toFixed(2)} (strictly decreasing over 12 samples)`);
 check(C.returnSpan > 0 && C.returnSpan < C.cutSpan / 4, `return is fast: ${C.returnSpan.toFixed(3)} of the cycle vs ${C.cutSpan} for the cut`);
 check(near(s[0.1].log.sx, 1, 1e-3) && s[0.3].log.sx < s[0.1].log.sx - 0.2 && s[0.5].log.sx < s[0.3].log.sx - 0.2 && s[0.58].log.sx < 0.1, `the log gets shorter as it is sawn: scale ${[0.1, 0.3, 0.5, 0.58].map((p) => s[p].log.sx.toFixed(2)).join(' -> ')}`);
-check(!s[0.1].boards[0].visible && s[0.3].boards[0].visible && s[0.5].boards[0].sx > s[0.3].boards[0].sx + 0.3 && near(s[0.58].boards[0].sx, 1.47, 0.1) && s[0.3].boards.every((b) => b.visible), `three boards appear on the belt and grow with the cut: length ${[0.3, 0.5, 0.58].map((p) => s[p].boards[0].sx.toFixed(2)).join(' -> ')}`);
-check(s[0.78].boards[0].z > s[0.61].boards[0].z + 0.5 && s[0.9999].boards[1].z > 2.95 && s[0.9999].boards[0].z > 2.6, `boards ride the belt out through the outlet to the stack: z ${s[0.61].boards[0].z.toFixed(2)} -> ${s[0.78].boards[0].z.toFixed(2)} -> ${s[0.9999].boards[0].z.toFixed(2)} (stack from z 3.1)`);
+check(!s[0.1].boards[0].visible && s[0.3].boards[0].visible && s[0.5].boards[0].sx > s[0.3].boards[0].sx + 0.3 && near(s[0.58].boards[0].sx, 1.47, 0.1) && s[0.3].boards.filter((b) => b.visible).length === 1, `one board (= the 1 plank a cut credits at prestige 0) appears on the belt and grows with the cut: length ${[0.3, 0.5, 0.58].map((p) => s[p].boards[0].sx.toFixed(2)).join(' -> ')}`);
+check(s[0.78].boards[0].z > s[0.61].boards[0].z + 0.5 && s[0.9999].boards[0].z > 2.6, `boards ride the belt out through the outlet to the stack: z ${s[0.61].boards[0].z.toFixed(2)} -> ${s[0.78].boards[0].z.toFixed(2)} -> ${s[0.9999].boards[0].z.toFixed(2)} (stack from z 3.1)`);
 check(s[0.64].log.visible && s[0.64].log.y < 1 && s[0.78].log.y > 1.4 && s[0.95].log.y < 1.2 && s[0.95].log.sx === 1 && near(s[0.95].carriageX, 0.95, 1e-6) && s[0.78].trolleyZ > s[0.64].trolleyZ, `the hoist fetches the next log from the pile (y ${s[0.64].log.y.toFixed(2)}), carries it over (y ${s[0.78].log.y.toFixed(2)}) and puts it on the waiting carriage (y ${s[0.95].log.y.toFixed(2)}, x ${s[0.95].log.x.toFixed(2)})`);
 // blade, sawdust, smoke, pooling
 const D = await ev(() => {

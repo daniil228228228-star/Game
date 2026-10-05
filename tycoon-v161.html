@@ -2232,7 +2232,7 @@ function serviceAccessGraph() {
      every other edge below is the same two endpoints as before, just walked from the opposite
      end, so `metalBypass -> concreteBypass -> depotWest -> depotDetourS -> depotDetourE ->
      garageMid -> liftBay -> sawmillBypass` is the same physical chain, reversed. */
-  return [
+  const full=[
     {id:'junction',p:junction,parent:null},
     {id:'clusterGate',p:new THREE.Vector3(-6.00+OX,0,-3.20),parent:'junction'},
     {id:'metalBypass',p:new THREE.Vector3(-6.00+OX,0,-7.20),parent:'clusterGate'},
@@ -2258,6 +2258,27 @@ function serviceAccessGraph() {
     {id:'garage',p:new THREE.Vector3(-6.30+OX,0,1.55),parent:'garageMid'},
     {id:'garage2',p:new THREE.Vector3(-7.80+OX,0,2.85),parent:'garage'},
   ];
+  return serviceGraphForBuiltV161(full);
+}
+/* v161 "nothing without a reason" (user, iPhone test of a fresh game with the sawmill: "много дороги зачем-то ненужной осталось"): this graph is both the truck route tree and
+   the list of service roads that get paved, and it used to be the FULL tree for every save: with only the depot + sawmill standing, a 20 m road to the (still empty) city hub, the whole
+   north corridor with its 7 m retraced spur for the concrete / metal plants that were not built, and the lift/sawmill/plank spur before the sawmill existed were all laid.
+   Now only branches whose building stands exist: sawmill (liftBay, sawmillBypass, plankBay) with the sawmill, the north corridor (metalBypass, concreteBypass, depotWest, depotDetourS,
+   concreteBay, metalBay) with the concrete plant or the metal yard (without both, the depot reaches the gate on a short direct leg instead of the 25 m detour). The fleet yard nodes
+   (wrapper v65) are the depot's own. Flags that are all true (every old save, every finished game) give the old full tree unchanged, node for node. rebuildServiceRoadsV66() reads this. */
+function serviceGraphForBuiltV161(full){
+  let sawmill=true,concrete=true,metal=true;
+  try{sawmill=!!sawmillBuiltV118;concrete=!!concretePlantBuiltV118;metal=!!metalYardBuiltV118;}catch(e){return full;} // flags not declared yet: full tree
+  if(sawmill&&concrete&&metal)return full;
+  const drop=new Set();
+  if(!sawmill)for(const id of['liftBay','sawmillBypass','plankBay','plankHome','liftHome'])drop.add(id);
+  const reduced=!concrete&&!metal;
+  if(reduced)for(const id of['metalBypass','concreteBypass','depotWest','depotDetourS','concreteBay','concreteHome','metalBay','metalHome'])drop.add(id);
+  const gate=full.find(n=>n.id==='clusterGate');
+  return full.filter(n=>!drop.has(n.id)).map(n=>{
+    if(reduced&&n.id==='depotDetourE')return {id:n.id,p:new THREE.Vector3(gate.p.x,0,n.p.z),parent:'clusterGate'}; // straight down from the gate, then west to garageMid
+    return n;
+  });
 }
 function appendTransportPoint(route,p){ if(!p)return; const last=route[route.length-1]; if(!last||last.distanceToSquared(p)>.025)route.push(p.clone()); }
 function serviceAccessDescriptor(pos){
@@ -3215,6 +3236,11 @@ function maxCarriedLogs() {
 }
 function planksPerDeliveredLog() {
   return BASE_PLANKS_PER_LOG + (fieldUpgrades.yield || 0);
+}
+// v161 "the picture equals the game state": planks the automatic saw cycle credits (updateSawmill below). The mill's animation (assets/sawmill-v161.js, sawmillBoardsPerCycleV161)
+// shows exactly this many boards per cut, so there is one number for the credit and for the picture. Levels 1-3 / productionSpeedMultiplier change the interval, not this.
+function planksPerSawmillCycle() {
+  return 1 + Math.floor(stats.prestige / 3);
 }
 function sawmillAutoInterval() {
   return Math.max(3.2, (BASE_SAWMILL_AUTO_INTERVAL - (fieldUpgrades.sawmill || 0) * 2) / productionSpeedMultiplier()) / industrialSpeedV161('sawmill'); // v161: level 2 = x1.5
@@ -4361,7 +4387,7 @@ function updateSawmill(dt) {
     sawmillAutoTimer += dt;
     if (sawmillAutoTimer >= sawmillAutoInterval()) {
       sawmillAutoTimer -= sawmillAutoInterval();
-      const produced = 1 + Math.floor(stats.prestige / 3);
+      const produced = planksPerSawmillCycle();
       planks += produced;
       stats.planksEarned += produced;
       spawnBurst(SAWMILL_POS, 0xc9a06a);
@@ -8325,6 +8351,7 @@ function refreshIndustrialPadMarkersV118() {
   }
   refreshIndustrialBadgesV161();
   syncStagedPadVisibilityV161();
+  try { window.__TYCOON_V67_ROADS__?.syncLinkV161?.(); } catch (err) { console.warn('[v161 service link]', err); } // pave the link to the city once the first house exists
 }
 // v161: visible result of a production level-2 upgrade -- at the spot of the (now gone) upgrade pad
 // a gold disc + pole with an orb and a "LV II" sprite, built from the same primitives as the pad
@@ -30756,7 +30783,19 @@ function serviceJointV108(group,node,nodes,base){
   mesh.rotation.x=-Math.PI/2;mesh.position.set(node.p.x,.0768,node.p.z);mesh.receiveShadow=true;
   mesh.userData.v66ServiceJoint=true;mesh.userData.v108ServiceJunction=true;group.add(mesh);
 }
+/* v161 "nothing without a reason": the link from the cluster to the city (the 20 m public spine up to the hub, its gap infill and the stub down to the cluster gate) is only paved once
+   a house exists (stageIndex >= 1) -- before that it led to an empty field. serviceLinkedV161() latches on the live group so a prestige reset (stageIndex 0) does not un-pave it. */
+function serviceLinkedV161(){
+  try{return stageIndex>=1||!!cityWorldRuntime?.transportAccessRoads?.userData?.v161Linked;}catch(e){return true;}
+}
+function serviceEdgeDrawnV161(n,by,linked){
+  if(linked)return true;
+  if(n.id==='clusterGate'||n.parent==='clusterGate')return false; // gate -> junction, and the stub from the gate (metalBypass in the full tree, depotDetourE in the reduced one)
+  const p=by.get(n.parent);
+  return !(p&&p.parent==='clusterGate'&&n.id==='garageMid'); // reduced tree: the corner leg depotDetourE -> garageMid only joined the gate stub
+}
 function rebuildServiceRoadsV66(){
+    const linkedV161=serviceLinkedV161();
     // Remove the previous visual deck BEFORE allocating the next material set.
     // disposeObject3D() disposes shared materials/textures too; the old v66 ordering
     // reused those disposed materials on the second delayed refresh. That could make
@@ -30786,7 +30825,7 @@ function rebuildServiceRoadsV66(){
     ensureMaterialsV66();
 
     const nodes0=serviceAccessGraph(),nodes=new Map(nodes0.map(n=>[n.id,n])),group=new THREE.Group();
-    group.name='v70RefinedServiceRoads';
+    group.name='v70RefinedServiceRoads';group.userData.v161Linked=linkedV161;
     const lv=Math.max(1,safe(()=>maxRoadLevelV37())||1);
     const base=(window.__TYCOON_ROAD_SPECS_V59__?.widths?.service?.[lv])||1.60;
     const degree=new Map();
@@ -30794,6 +30833,7 @@ function rebuildServiceRoadsV66(){
 
     for(const n of nodes0){
       if(!n.parent)continue;const p=nodes.get(n.parent);if(!p)continue;
+      if(!serviceEdgeDrawnV161(n,nodes,linkedV161))continue; // v161: not paved before the first house
       // The parking renderer owns the manoeuvring lane and individual bay connectors.
       // Rendering service-width slabs over those same branches creates the visible teeth.
       // v116: x-range translated with the fleet yard (INDUSTRIAL_ZONE_OFFSET_X).
@@ -30839,7 +30879,7 @@ function rebuildServiceRoadsV66(){
     // actually tells trucks to drive, and each leg's own masterRoadSegmentsV362() width so a
     // district's later arterial deck lines up with it exactly if it ever draws over the same
     // stretch.
-    if(nodes.get('junction')){
+    if(nodes.get('junction')&&linkedV161){
       const hubPath=masterGridPathToHub(nodes.get('junction').p);
       const legWidth=(a,b)=>{
         const vertical=Math.abs(a.x-b.x)<.02;
@@ -30881,7 +30921,14 @@ function rebuildServiceRoadsV66(){
 
     scene.add(group);cityWorldRuntime.transportAccessRoads=group;roadGroupV66=group;
     safe(()=>window.__TYCOON_V64_HOTFIX__?.refresh?.());
+    safe(()=>window.__TYCOON_V113_ROADS__?.reseedService?.()); // v161: the append-only layer must treat this graph as already paved
     return group;
+  }
+  // v161: the first house arrives after the depot (depot-first start): lay the link to the city once. Called by refreshIndustrialPadMarkersV118() (700 ms poll); no-op otherwise.
+  function syncServiceLinkV161(){
+    if(typeof fleetDepotBuiltV118!=='undefined'&&!fleetDepotBuiltV118)return false;
+    const g=cityWorldRuntime?.transportAccessRoads;if(!g||!!g.userData.v161Linked===serviceLinkedV161())return false;
+    rebuildServiceRoadsV66();return true;
   }
 
   // Replace only the visual refresh. buildRoadRoute/serviceAccessGraph from v65 stay intact.
@@ -30924,7 +30971,7 @@ function rebuildServiceRoadsV66(){
         // v116: +1 accounts for the spine/depot-cluster gap-infill deck added above -- it has
         // no matching graph edge (it bridges two already-drawn systems, not a node pair), so
         // the raw graph-edge count alone would always read one short once it exists.
-        serviceRoadsRendered:decks.length===nodes0.filter(n=>{const p=nodes.get(n.parent);return p&&!(n.p.z>=4.4&&p.p.z>=4.4&&n.p.x>=-14.6+INDUSTRIAL_ZONE_OFFSET_X&&n.p.x<=-2.8+INDUSTRIAL_ZONE_OFFSET_X);}).length+(hasSpineGapInfill?1:0)&&hasApron&&hasMouth,
+        serviceRoadsRendered:decks.length===nodes0.filter(n=>{const p=nodes.get(n.parent);return p&&serviceEdgeDrawnV161(n,nodes,serviceLinkedV161())&&!(n.p.z>=4.4&&p.p.z>=4.4&&n.p.x>=-14.6+INDUSTRIAL_ZONE_OFFSET_X&&n.p.x<=-2.8+INDUSTRIAL_ZONE_OFFSET_X);}).length+(hasSpineGapInfill?1:0)&&hasApron&&hasMouth,
         noRoadBuildingOverlap:colliderIssues.length===0,
         v65FleetAuditOk:!fleet||((fleet.overlaps?.length||0)===0&&(fleet.sourceQueues?.length||0)===0)
       }
@@ -30943,7 +30990,7 @@ function rebuildServiceRoadsV66(){
   // (syncServiceRoads() only ever appends on top of a network rebuildServiceRoadsV66() already
   // drew; calling it first, before any network exists, just seeds its bookkeeping against
   // nothing and permanently thinks every edge is "already covered").
-  window.__TYCOON_V67_ROADS__={version:VERSION,refresh:rebuildServiceRoadsV66,run:roadAuditV66,rawRebuild:rebuildServiceRoadsV66};
+  window.__TYCOON_V67_ROADS__={version:VERSION,refresh:rebuildServiceRoadsV66,run:roadAuditV66,rawRebuild:rebuildServiceRoadsV66,syncLinkV161:syncServiceLinkV161};
   window.__TYCOON_V66_ROADS__=window.__TYCOON_V67_ROADS__;
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initV66,{once:true});else initV66();
 })();
@@ -36227,7 +36274,9 @@ Do not treat this geometry block as completion of the entire road/transport audi
     return {version:VERSION,active:runtime.active,syncs:runtime.syncs,appended:{...runtime.appended},stageFamilyRebuilds:runtime.stageFamilyRebuilds,serviceFamilyRebuilds:runtime.serviceFamilyRebuilds,fullRoadRebuildsAfterTakeover:runtime.fullRoadRebuildsAfterTakeover,unexpectedRootReplacements:runtime.unexpectedRootReplacements,unexpectedRootEvents:[...runtime.unexpectedRootEvents],unexpectedNow:unexpected,stable,levels:Object.fromEntries(CITY_DISTRICTS.map(c=>[c.id,districtRoadLevelV37(c.id)])),checks:{noGlobalRuntimeRebuilds:runtime.fullRoadRebuildsAfterTakeover===0,noUnexpectedRootReplacement:runtime.unexpectedRootReplacements===0,roadTopologyStable:stable.district&&stable.arterial,serviceLayoutPreserved:true,v112ParkingFixPreserved:true,accessKeysOnlyForRenderedRoads:true}};
   }
 
-  window.__TYCOON_V113_ROADS__={version:VERSION,sync:syncAll,audit,blueprint:{master:masterBlueprintFor,connector:id=>(runtime.frozenConnectorPaths.get(id)||[]).map(p=>p.clone())}};
+  // v161: after a full service-road rebuild (rebuildServiceRoadsV66) the graph is fully paved: mark its edges covered and take its signature (the graph now changes with the built plants / sawmill)
+  function reseedServiceV161(){seedPersistentServiceV116();runtime.serviceSignature=serviceGraphSignature();}
+  window.__TYCOON_V113_ROADS__={version:VERSION,reseedService:reseedServiceV161,sync:syncAll,audit,blueprint:{master:masterBlueprintFor,connector:id=>(runtime.frozenConnectorPaths.get(id)||[]).map(p=>p.clone())}};
   window.__TYCOON_V113_BUILD__={version:VERSION,changes:[
     'road upgrades no longer destroy and rebuild every road family',
     'a fixed master blueprint is frozen once after the canonical V111/V112 bootstrap',
