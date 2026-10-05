@@ -11,13 +11,21 @@
  * The only game-side hook is one line in animate() that returns early while TycoonPlatform.paused.
  * Game audio is muted through the game's own `muted` flag (restored afterwards, localStorage is
  * not touched). localStorage stays the source of truth for saves.
+ *
+ * 2026-10-05 (ROADMAP task 6): LoadingAPI.ready only once the game is really playable (first frame rendered,
+ * boot splash hidden, cloud save decision made); GameplayAPI.start/stop follow "playing" (not hidden / blurred /
+ * in an ad / in a menu); pause reasons hidden + blur; interstitial frequency cap (never in the first minute after
+ * ready, >= 90 s after any ad, never while chopping/carrying); leaderboard throttle; native confirm() replaced by a
+ * two-tap confirmation (the platform iframe may forbid modal dialogs); language taken from
+ * ysdk.environment.i18n.lang when the player has not picked one. Tunables live in TycoonPlatform._cfg (tests).
  */
 (function () {
   'use strict';
   var SAVE_KEY = 'tycoon3d_save_v3'; // same value as SAVE_KEY in tycoon-v161.html
+  var LANG_KEY = 'tycoon3d_lang';    // same value as LANG_KEY in tycoon-v161.html
   var CLOUD_LIMIT = 190000;          // Yandex player data limit is 200 KB in total
-  var UPLOAD_EVERY_MS = 60000;
-  var AD_WATCHDOG_MS = 180000;
+  // Modal screens of the game (same list as currentOverlayV46): the player is not "in gameplay" while one is open.
+  var MODAL_SEL = '#systemsOverlay.show,#metaOverlay.show,#staffOverlay.show,#projectsOverlay.show,#bonusOverlay.show,#fleetOverlay.show,#baseOverlay.show,#tendersOverlay.show,#operationsOverlay.show,#cityOverlay.show,#achOverlay.show,#hintOverlay.show';
   var LEADERBOARD = (typeof window.TYCOON_YANDEX_LEADERBOARD === 'string' && window.TYCOON_YANDEX_LEADERBOARD) || 'tycoon';
 
   function onYandex() {
@@ -30,44 +38,82 @@
   var P = window.TycoonPlatform = window.TycoonPlatform || {};
   P.active = true;
   P.paused = false;
-  var ysdk = null, player = null, lbPromise = null;
-  var reasons = {}, prevMuted = null, adBusy = false, readyDone = false;
+  var CFG = P._cfg = {
+    uploadEveryMs: 60000,        // cloud save / auto leaderboard tick
+    forcedUploadGapMs: 5000,     // forced uploads (tab hidden, pagehide) never closer than this
+    adWatchdogMs: 180000,
+    firstInterstitialMs: 60000,  // no interstitial in the first minute after LoadingAPI.ready
+    interstitialGapMs: 90000,    // ... and none sooner than this after any ad ended
+    scoreGapMs: 10000,           // leaderboard submissions at least this far apart (platform limit is ~1/s)
+    readyFallbackMs: 30000,      // LoadingAPI.ready even if the boot flag never came (game is broken then anyway)
+    cloudWaitMs: 8000,           // ready waits for the cloud-save decision at most this long
+  };
+  var ysdk = null, player = null, lbPromise = null, sdkLang = null, started = false;
+  var reasons = {}, prevMuted = null, adBusy = false, readyDone = false, readyAt = 0, cloudSettled = false, restoring = false;
+  var gpOn = false, lastAdEndAt = 0, lastScoreAt = 0, langDone = false;
 
   function safe(fn) { try { return fn(); } catch (_) { return undefined; } }
   function settle(promise, fallback) { return Promise.resolve(promise).then(function (v) { return v; }, function () { return fallback; }); }
 
-  /* ---- pause / mute (reason-counted: ads and game_api_pause may overlap) ---- */
+  /* ---- pause / mute (reason-counted: ads, game_api_pause, hidden tab and lost focus may overlap) ---- */
   function anyReason() { for (var k in reasons) if (reasons[k]) return true; return false; }
+  function modalOpen() {
+    return !!safe(function () { return document.querySelector(MODAL_SEL) || (document.body && document.body.classList.contains('v46-modal-open')); });
+  }
+  // GameplayAPI.start/stop: "playing" = playable (ready), not paused for any reason, no menu/panel open.
+  function syncGameplay() {
+    var want = readyDone && !anyReason() && !modalOpen();
+    if (want === gpOn) return;
+    gpOn = want;
+    safe(function () { var g = ysdk.features.GameplayAPI; if (want) g.start(); else g.stop(); });
+  }
   function applyPause() {
     var want = anyReason();
-    if (want === P.paused) return;
-    P.paused = want;
-    if (want) {
-      safe(function () { if (typeof muted !== 'undefined') { prevMuted = muted; muted = true; } });
-      safe(function () { if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'running') audioCtx.suspend(); });
-      safe(function () { ysdk && ysdk.features && ysdk.features.GameplayAPI && ysdk.features.GameplayAPI.stop(); });
-    } else {
-      safe(function () { if (typeof muted !== 'undefined' && prevMuted !== null) muted = prevMuted; prevMuted = null; });
-      safe(function () { if (typeof muted !== 'undefined' && !muted && typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); });
-      safe(function () { if (typeof clock !== 'undefined') clock.getDelta(); }); // drop the pause-long frame delta
-      safe(function () { ysdk && ysdk.features && ysdk.features.GameplayAPI && ysdk.features.GameplayAPI.start(); });
+    if (want !== P.paused) {
+      P.paused = want;
+      if (want) {
+        safe(function () { if (typeof muted !== 'undefined') { prevMuted = muted; muted = true; } });
+        safe(function () { if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'running') audioCtx.suspend(); });
+      } else {
+        safe(function () { if (typeof muted !== 'undefined' && prevMuted !== null) muted = prevMuted; prevMuted = null; });
+        safe(function () { if (typeof muted !== 'undefined' && !muted && typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); });
+        safe(function () { if (typeof clock !== 'undefined') clock.getDelta(); }); // drop the pause-long frame delta
+      }
     }
+    syncGameplay();
   }
   function setReason(name, on) { reasons[name] = !!on; applyPause(); }
 
   /* ---- ads ---- */
+  // Never interrupt hands-on work: a tree being chopped, logs or materials in the player's hands.
+  function playerBusy() {
+    return !!safe(function () {
+      if (typeof sourceTrees !== 'undefined' && sourceTrees.some(function (t) { return t && t.state === 'chopping'; })) return true;
+      if (typeof carriedLogs !== 'undefined' && carriedLogs > 0) return true;
+      var c = window.__TYCOON_V123__ && window.__TYCOON_V123__.state && window.__TYCOON_V123__.state.carry;
+      return !!(c && Number(c.amount) > 0);
+    });
+  }
+  function interstitialAllowed() {
+    var now = Date.now();
+    if (!readyDone || now - readyAt < CFG.firstInterstitialMs) return false;
+    if (lastAdEndAt && now - lastAdEndAt < CFG.interstitialGapMs) return false;
+    if (document.hidden || reasons.api || reasons.blur) return false;
+    return !playerBusy();
+  }
   function runAd(kind, reason) {
     return new Promise(function (resolve) {
       if (!ysdk || adBusy) return resolve(false);
+      if (kind !== 'rewarded' && !interstitialAllowed()) return resolve(false);
       var rewarded = false, done = false, timer = null;
       adBusy = true;
       function finish(result) {
         if (done) return; done = true;
         clearTimeout(timer);
-        adBusy = false; setReason('ad', false);
+        adBusy = false; lastAdEndAt = Date.now(); setReason('ad', false);
         resolve(result);
       }
-      timer = setTimeout(function () { finish(kind === 'rewarded' ? rewarded : false); }, AD_WATCHDOG_MS);
+      timer = setTimeout(function () { finish(kind === 'rewarded' ? rewarded : false); }, CFG.adWatchdogMs);
       try {
         if (kind === 'rewarded') {
           ysdk.adv.showRewardedVideo({ callbacks: {
@@ -106,27 +152,31 @@
   P._shouldRestore = shouldRestore;
 
   var lastUploadedRaw = null, lastUploadAt = 0;
-  function cloudSave(data) {
+  function cloudSave(data, flush) {
     if (!player || typeof data !== 'string' || !data || data.length > CLOUD_LIMIT) return Promise.resolve(false);
     var o = parse(data);
-    return settle(player.setData({ save: data, savedAt: (o && Number(o.savedAt)) || Date.now() }).then(function () {
-      lastUploadedRaw = data; lastUploadAt = Date.now(); return true;
+    // flush=true (tab hidden / pagehide) asks the SDK to send now instead of batching; ignored by SDKs that do not know it.
+    return settle(Promise.resolve(player.setData({ save: data, savedAt: (o && Number(o.savedAt)) || Date.now() }, !!flush)).then(function () {
+      lastUploadedRaw = data; return true;
     }), false);
   }
   function cloudLoad() {
     if (!player) return Promise.resolve(null);
-    return settle(player.getData(['save']).then(function (d) { return d && typeof d.save === 'string' ? d.save : null; }), null);
+    return settle(Promise.resolve(player.getData(['save'])).then(function (d) { return d && typeof d.save === 'string' ? d.save : null; }), null);
   }
   function syncTick(force) {
     if (!player) return;
     var raw = safe(function () { return localStorage.getItem(SAVE_KEY); });
     if (!raw || raw === lastUploadedRaw) return;
-    if (!force && Date.now() - lastUploadAt < UPLOAD_EVERY_MS) return;
-    cloudSave(raw);
+    var gap = Date.now() - lastUploadAt;
+    if (gap < (force ? CFG.forcedUploadGapMs : CFG.uploadEveryMs)) return;
+    lastUploadAt = Date.now(); // stamp on request: a slow/failed upload must not be retried in a burst
+    cloudSave(raw, force);
   }
+  // Returns true only when it really starts the reload.
   function restoreFromCloud(cloudRaw) {
     var stamp = String((parse(cloudRaw) || {}).savedAt || '');
-    if (safe(function () { return sessionStorage.getItem('tycoonYandexRestored'); }) === stamp) return; // never loop
+    if (safe(function () { return sessionStorage.getItem('tycoonYandexRestored'); }) === stamp) return false; // never loop
     safe(function () { sessionStorage.setItem('tycoonYandexRestored', stamp); });
     safe(function () { if (typeof suppressAutoSaveV36 !== 'undefined') suppressAutoSaveV36 = true; }); // reload must not re-save the old state
     try {
@@ -134,27 +184,65 @@
       ['tycoon3d_save_v3_backup', 'tycoon3d_save_v52_recovery'].forEach(function (k) { safe(function () { localStorage.removeItem(k); }); });
       lastUploadedRaw = cloudRaw;
       location.reload();
-    } catch (_) { safe(function () { if (typeof suppressAutoSaveV36 !== 'undefined') suppressAutoSaveV36 = false; }); }
+      return true;
+    } catch (_) { safe(function () { if (typeof suppressAutoSaveV36 !== 'undefined') suppressAutoSaveV36 = false; }); return false; }
   }
 
-  /* ---- leaderboard (authorised players only) ---- */
+  /* ---- leaderboard (authorised players only, throttled) ---- */
   var lastScore = 0;
   function submitLeaderboardScore(score) {
     score = Math.max(0, Math.floor(Number(score) || 0));
     if (!ysdk || !player) return Promise.resolve(false);
-    if (safe(function () { return player.getMode && player.getMode() === 'lite'; })) return Promise.resolve(false); // not authorised
+    if (safe(function () { return player.getMode && player.getMode() === 'lite'; })) return Promise.resolve(false); // guest: not authorised
+    if (lastScoreAt && Date.now() - lastScoreAt < CFG.scoreGapMs) return Promise.resolve(false); // the 60 s tick sends the newest value later
+    lastScoreAt = Date.now();
     if (!lbPromise) lbPromise = Promise.resolve().then(function () { return ysdk.getLeaderboards(); });
     return settle(lbPromise.then(function (lb) { return lb.setLeaderboardScore(LEADERBOARD, score); }).then(function () { lastScore = score; return true; }), false);
   }
 
-  /* ---- LoadingAPI.ready: once, after the game rendered its first frames ---- */
-  function maybeReady(started) {
-    if (readyDone || !ysdk) return;
-    var frames = safe(function () { return typeof V54_STABILITY !== 'undefined' ? V54_STABILITY.frame : 0; }) || 0;
-    if (frames > 1 || Date.now() - started > 20000) {
-      readyDone = true;
+  /* ---- boot: loading screen text, language, LoadingAPI.ready ---- */
+  var SPLASH_EN = 'Build your company. Grow districts. Bring the city to life.';
+  function guessLang() {
+    var saved = safe(function () { return localStorage.getItem(LANG_KEY); });
+    if (saved) return saved;
+    return /^ru/i.test(safe(function () { return navigator.language; }) || '') ? 'ru' : 'en';
+  }
+  // The boot splash subtitle is plain Russian in the page; show the English one when the game will start in English.
+  function localizeSplash(l) {
+    safe(function () {
+      var el = document.querySelector('#bootSplash .bootSub');
+      if (el && l && l !== 'ru') el.textContent = SPLASH_EN;
+    });
+  }
+  // Yandex language -> game language (the game has ru/en). CIS languages fall back to Russian, everything else to English.
+  function mapLang(l) { return /^(ru|be|kk|uk|uz)/i.test(String(l || '')) ? 'ru' : 'en'; }
+  function applySdkLang() {
+    if (langDone || !sdkLang) return;
+    langDone = true;
+    if (safe(function () { return localStorage.getItem(LANG_KEY); })) return; // the player chose a language: keep it
+    safe(function () {
+      if (typeof lang === 'undefined' || lang === sdkLang) return;
+      lang = sdkLang;
+      if (typeof applyLanguage === 'function') applyLanguage();
+    });
+  }
+  function bootDone() {
+    if (safe(function () { return bootCompleted === true; }) !== true) return false; // first frame rendered
+    if (!((safe(function () { return V54_STABILITY.frame; }) || 0) >= 2)) return false;
+    return safe(function () { var s = document.getElementById('bootSplash'); return !s || s.classList.contains('hide'); }) !== false;
+  }
+  // LoadingAPI.ready exactly once: the game is playable (booted, splash gone) and the cloud decision is made
+  // (a cloud restore reloads the page, which would make an earlier ready() premature).
+  function maybeReady(t0) {
+    if (readyDone || !ysdk || restoring) return;
+    var elapsed = Date.now() - t0, booted = bootDone();
+    if (booted) applySdkLang();
+    if ((booted && (cloudSettled || elapsed > CFG.cloudWaitMs)) || elapsed > CFG.readyFallbackMs) {
+      readyDone = true; readyAt = Date.now();
+      applySdkLang();
       safe(function () { ysdk.features.LoadingAPI.ready(); });
-    } else setTimeout(function () { maybeReady(started); }, 250);
+      syncGameplay();
+    } else setTimeout(function () { maybeReady(t0); }, 250);
   }
 
   function attach() {
@@ -166,30 +254,72 @@
   }
 
   function start() {
-    var started = Date.now();
+    if (started) return;
+    started = true;
+    var t0 = Date.now();
     Promise.resolve().then(function () { return window.YaGames.init(); }).then(function (sdk) {
       ysdk = sdk; P.sdk = sdk;
+      var rawLang = safe(function () { return sdk.environment.i18n.lang; });
+      sdkLang = rawLang ? mapLang(rawLang) : null; // unknown language: keep the game's own guess
+      if (sdkLang) localizeSplash(sdkLang);
       attach();
       safe(function () { sdk.on('game_api_pause', function () { setReason('api', true); }); });
       safe(function () { sdk.on('game_api_resume', function () { setReason('api', false); }); });
-      maybeReady(started);
-      return settle(sdk.getPlayer({ scopes: false }), null);
+      maybeReady(t0);
+      return settle(sdk.getPlayer({ scopes: false }), null); // guest (lite) players are fine: no auth prompt
     }).then(function (pl) {
-      if (!pl) return;
+      if (!pl) { cloudSettled = true; return; }
       player = pl;
       return cloudLoad().then(function (cloudRaw) {
-        if (cloudRaw && shouldRestore(safe(function () { return localStorage.getItem(SAVE_KEY); }), cloudRaw)) { restoreFromCloud(cloudRaw); return; }
+        if (cloudRaw && shouldRestore(safe(function () { return localStorage.getItem(SAVE_KEY); }), cloudRaw) && restoreFromCloud(cloudRaw)) { restoring = true; return; }
+        cloudSettled = true;
         syncTick(true);
         setInterval(function () {
           syncTick(false);
           var earned = safe(function () { return Math.floor(stats.totalEarned); }) || 0;
           if (earned > lastScore) submitLeaderboardScore(earned);
-        }, UPLOAD_EVERY_MS);
+        }, CFG.uploadEveryMs);
         document.addEventListener('visibilitychange', function () { if (document.hidden) syncTick(true); });
         addEventListener('pagehide', function () { syncTick(true); });
       });
-    }).catch(function () { /* SDK failed: game keeps working without ads/cloud */ });
+    }).catch(function () { cloudSettled = true; /* SDK failed: game keeps working without ads/cloud */ });
   }
+
+  /* ---- page-level hooks (active on the platform even before / without the SDK) ---- */
+  // Hidden tab, lost focus: mute + freeze the loop. Any later interaction proves the focus is back.
+  if (document.hidden) setReason('hidden', true);
+  document.addEventListener('visibilitychange', function () { setReason('hidden', document.hidden); });
+  addEventListener('blur', function () { setReason('blur', true); });
+  ['focus', 'pointerdown', 'touchstart', 'keydown'].forEach(function (ev) {
+    addEventListener(ev, function () { if (reasons.blur) setReason('blur', false); }, { capture: true, passive: true });
+  });
+  // The page's 12 s boot watchdog paints a full-screen, never-removed "Игра не завершила запуск за 12 секунд" over the game. On a slow
+  // phone the game may still finish booting afterwards, so on the platform this one notice is removed once the first frame is out.
+  function dismissSlowBootNotice() {
+    safe(function () {
+      var el = document.getElementById('bootError');
+      if (el && /^Игра не завершила запуск/.test(el.textContent || '') && bootDone()) { if (el.remove) el.remove(); else el.parentNode.removeChild(el); }
+    });
+  }
+  setInterval(function () { syncGameplay(); dismissSlowBootNotice(); }, 500); // menu/panel open or closed; late boot
+  localizeSplash(guessLang());
+
+  // Native confirm() can be blocked in the platform iframe (no allow-modals) and then silently answers false, which
+  // would make "reset" / "prestige" dead buttons. Same flow without a dialog: first call shows a toast, a second call
+  // with the same text within 5 s confirms. (The v52 prestige arming sets confirm=()=>true for its second click itself.)
+  (function () {
+    var armed = {};
+    window.confirm = function (msg) {
+      var k = String(msg), now = Date.now();
+      if (armed[k] && now - armed[k] < 5000) { delete armed[k]; return true; }
+      armed[k] = now;
+      safe(function () {
+        var ru = typeof lang !== 'undefined' ? lang === 'ru' : /^ru/i.test(navigator.language || '');
+        toast(k + ' ' + (ru ? '— нажми ещё раз, чтобы подтвердить' : '— tap again to confirm'));
+      });
+      return false;
+    };
+  })();
 
   if (window.YaGames && typeof window.YaGames.init === 'function') start();
   else {
