@@ -14,7 +14,12 @@
       visited.add(o);
       // Preserve animated/deformed UVs and the canonical road style owner.
       if(o.isSkinnedMesh||o.isInstancedMesh||o.geometry?.isInstancedBufferGeometry)return;
-      o.getWorldScale(scale);const original=o.geometry;
+      o.getWorldScale(scale);
+      // v161 textures: a building under construction / upgrade is created at scale (0.94, 0.08, 0.94), hidden, and reaches (1,1,1) only when it is finished (growingMeshes).
+      // UVs baked with that transient scale were stretched 12x in v for the whole life of the building (siding lines gone, brick courses smeared), so the entry mesh's own
+      // scale is divided out: the UVs are those of the finished building.
+      if(typeof growingMeshes!=='undefined'&&growingMeshes.length)for(let p=o;p;p=p.parent)if(growingMeshes.some(g=>g&&g.mesh===p)){scale.x/=p.scale.x||1;scale.y/=p.scale.y||1;scale.z/=p.scale.z||1;break;}
+      const original=o.geometry;
       let variants=geometryCache.get(original);
       if(!variants){variants=new Map();geometryCache.set(original,variants);}
       const key=family+':'+[scale.x,scale.y,scale.z].join(':');

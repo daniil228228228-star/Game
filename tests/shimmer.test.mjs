@@ -31,9 +31,11 @@ const g = await openGame({ save: OLD_SAVE, waitMs: 5000 });
 const { page } = g;
 const ev = (fn, arg) => page.evaluate(fn, arg);
 await ev(() => { money = 999999999; planks = 999999; concrete = 999999; metal = 999999; });
+let transient = null; // textures pass: the first purchase is left under construction for 4 s so a v152 surface scan runs while the mesh sits at its hidden scale (0.94, 0.08, 0.94)
 for (let i = 0; i < 6; i++) {
   await ev(() => { purchaseCurrentPad(); });
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(i === 0 ? 4000 : 150);
+  if (i === 0) transient = await ev(() => { const b = buildings[buildings.length - 1]; return { index: b.index, sy: +b.mesh.scale.y.toFixed(2), under: !!b.underConstruction }; });
   await ev(() => {
     for (const b of buildings) if (b.underConstruction) { b.underConstruction = false; b.progress = 1; }
     for (let i = growingMeshes.length - 1; i >= 0; i--) if (!growingMeshes[i]?.entry?.underConstruction) { const gm = growingMeshes[i]; gm.mesh.visible = true; gm.mesh.scale.set(1, 1, 1); if (gm.site) { scene.remove(gm.site.group); disposeObject3D(gm.site.group); gm.site = null; } growingMeshes.splice(i, 1); }
@@ -42,6 +44,30 @@ for (let i = 0; i < 6; i++) {
 }
 await page.waitForFunction(() => (cityWorldRuntime?.stageRoads?.userData?.v86StageNetwork?.stageIds?.length || 0) >= 6, null, { timeout: 60000, polling: 500 }).catch(() => {});
 await page.waitForTimeout(3000);
+
+// ---------------------------------------------------------------- UV density of a building that was scanned under construction
+const uvd = await ev((idx) => {
+  const entry = buildings.find((q) => q.index === idx); if (!entry) return { found: false };
+  entry.mesh.updateMatrixWorld(true);
+  const per = [], a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
+  entry.mesh.traverse((o) => {
+    const m = o.isMesh && !Array.isArray(o.material) ? o.material : null, fam = m?.map?.userData?.v152Family;
+    if (!fam || o.geometry.type === 'CylinderGeometry' || !o.geometry.attributes.uv) return;
+    const pos = o.geometry.attributes.position, uv = o.geometry.attributes.uv, idxA = o.geometry.index, cnt = idxA ? idxA.count : pos.count, tile = SURFACES_V152[fam].tile;
+    let aw = 0, au = 0;
+    for (let i = 0; i < cnt; i += 3) {
+      const t = [0, 1, 2].map((k) => (idxA ? idxA.getX(i + k) : i + k));
+      a.fromBufferAttribute(pos, t[0]).applyMatrix4(o.matrixWorld); b.fromBufferAttribute(pos, t[1]).applyMatrix4(o.matrixWorld); c.fromBufferAttribute(pos, t[2]).applyMatrix4(o.matrixWorld);
+      n.crossVectors(b.clone().sub(a), c.clone().sub(a)); const w = n.length() / 2; if (w < 1e-6 || Math.abs(n.y / n.length()) > 0.3) continue; // side faces only
+      const u = Math.abs((uv.getX(t[1]) - uv.getX(t[0])) * (uv.getY(t[2]) - uv.getY(t[0])) - (uv.getY(t[1]) - uv.getY(t[0])) * (uv.getX(t[2]) - uv.getX(t[0]))) / 2;
+      aw += w; au += u;
+    }
+    if (aw > 0.4) per.push({ fam, area: +aw.toFixed(2), rel: +(au / aw * tile * tile).toFixed(3) }); // 1 = exactly one texture tile per tile-size square metre
+  });
+  per.sort((x, y) => x.rel - y.rel);
+  return { found: true, n: per.length, median: per.length ? per[Math.floor(per.length / 2)].rel : 0, min: per[0]?.rel, max: per[per.length - 1]?.rel, list: per.slice(0, 6) };
+}, transient.index);
+console.log('first purchase scanned under construction:', JSON.stringify(transient), '| side-face UV density relative to the family tile (1 = exact):', JSON.stringify(uvd));
 
 // ---------------------------------------------------------------- structural audit
 const audit = await ev(() => {
@@ -231,6 +257,14 @@ const poses = await ev(() => {
   if (corner) new THREE.Box3().setFromObject(corner).getCenter(cp);
   out.cornerFound = !!corner;
   out.corner = { x: cp.x, z: cp.z };
+  // textures pass (2026-10-05): a house (siding + roof) and the concrete / metal plants for the before/after shots
+  const hb = buildings.find((b) => b.mesh) || null, hp = hb ? hb.mesh.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(0, 0, 0);
+  out.house = { x: hp.x, z: hp.z, found: !!hb };
+  let sb = null; // a house whose walls carry the siding texture (cream clapboard + roof)
+  for (const b of buildings) { if (!b.mesh || sb) continue; b.mesh.traverse((o) => { const m = o.isMesh && (Array.isArray(o.material) ? o.material[0] : o.material); if (m && m.map?.userData?.v152Family === 'siding') sb = b; }); }
+  const sp = sb ? sb.mesh.getWorldPosition(new THREE.Vector3()) : hp;
+  out.siding = { x: sp.x, z: sp.z, found: !!sb };
+  out.plants = { x: (CONCRETE_PLANT_POS.x + METAL_YARD_POS.x) / 2, z: (CONCRETE_PLANT_POS.z + METAL_YARD_POS.z) / 2 };
   return out;
 });
 console.log('corner piece at', JSON.stringify(poses));
@@ -300,6 +334,10 @@ const measure = await ev(measureFn, {
     { name: 'grass', pos: [30, 3.0, 42], look: [30, 0, 8] },
     { name: 'sawmill-air', pos: [-51 + 0, 15, -7.7 + 11], look: [-51, 0, -7.7] },
     { name: 'sawmill-side', pos: [-51 + 8, 3.2, -7.7 + 9], look: [-51, 1.2, -7.7] },
+    { name: 'house', pos: [poses.house.x + 7, 5.2, poses.house.z + 9], look: [poses.house.x, 1.2, poses.house.z] },
+    { name: 'siding-house', pos: [poses.siding.x + 6, 4.6, poses.siding.z + 8], look: [poses.siding.x, 1.3, poses.siding.z] },
+    { name: 'grass-near', pos: [12, 1.7, 33], look: [12, 0, 24] },
+    { name: 'plants', pos: [poses.plants.x + 7, 5.5, poses.plants.z + 10], look: [poses.plants.x, 1.0, poses.plants.z] },
   ],
 });
 for (const [name, b64] of Object.entries(measure.shots)) await SHOT(name, b64);
@@ -336,6 +374,7 @@ check(sawInfo[3].meshes <= 26, `mill mesh count stays modest for mobile (sawmill
 
 // ---------------------------------------------------------------- hard checks
 const hard = (cond, msg) => { if (REPORT_ONLY) console.log((cond ? 'ok(report): ' : 'WOULD FAIL(report): ') + msg); else check(cond, msg); };
+hard(uvd.found && uvd.n >= 2 && uvd.median >= 0.8 && uvd.median <= 1.25, `a house that was scanned while under construction (hidden, scale y ${transient.sy}) has the UV density of the finished building: median ${uvd.median} of ${uvd.n} meshes (1 = tile-size square metre per texture tile; the old bake at scale 0.08 gave ~0.08)`);
 hard(audit.badTex.length === 0, `every tiled texture has mipmaps + anisotropy>1 (bad: ${JSON.stringify(audit.badTex.slice(0, 6))})`);
 hard(audit.lowCount === 0, `no visibly different coplanar overlapping meshes on the road/ground layer (top <= 0.1 m, outside building skins): ${audit.lowCount} pairs (building skins, reported only: ${audit.skinCount}; all: ${audit.pairCount})`);
 hard(audit.repeatBad.length === 0, `surface textures keep repeat 1,1 (physical UVs own the tiling): ${JSON.stringify(audit.repeatBad)}`);
