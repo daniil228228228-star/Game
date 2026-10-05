@@ -922,6 +922,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <!-- standaloneAssetsV161: textures/height/roughness maps live in assets/ (inlined by tools/standalone.mjs build) -->
 <script src="assets/materials-v152.js"></script>
 <script src="assets/sawmill-v161.js"></script>
+<script src="assets/buildings-v161.js"></script>
 <script src="assets/foliage-v154.js"></script>
 <script src="assets/work-session-v158.js"></script>
 <script src="assets/development-core-v160.js"></script>
@@ -6416,10 +6417,15 @@ function createBuildingMesh(stage, level = 1) {
   const height = stage.height * (1 + (level - 1) * 0.18);
   const baseSize = stage.baseSize || 2.6;
   const builder = BUILDERS[stage.archetype] || buildHouse;
-  const group = builder(stage, height, baseSize);
-  enhanceBuildingGeometry(group, stage, height, baseSize, level);
-  addBuildingVisualPolish(group, stage, height, baseSize, level);
-  addUnifiedBuildingLanguage(group, stage, height, baseSize, level);
+  // v161 buildings (assets/buildings-v161.js, 2026-10-05 (4)): the house archetype has its own merged-geometry builder that does its own trim, details,
+  // collision footprint (userData.v161Footprint) and sets the flags that make the shared polish passes below, v44 micro details and v157 finish skip it.
+  const houseV161 = stage.archetype === 'house' && typeof buildHouseV161 === 'function' && window.BuildingsV161?.enabled !== false;
+  const group = houseV161 ? buildHouseV161(stage, height, baseSize, level) : builder(stage, height, baseSize);
+  if (!group.userData.v161Complete) {
+    enhanceBuildingGeometry(group, stage, height, baseSize, level);
+    addBuildingVisualPolish(group, stage, height, baseSize, level);
+    addUnifiedBuildingLanguage(group, stage, height, baseSize, level);
+  }
   // v161 (user, iPhone test: "вход в дом с другой стороны от въезда"): every builder puts the door/porch/apron on local +Z,
   // while the driveway of a main-line building always arrives from the hub side (stageAccessAxisV92 -> stageRoadEndpointV367).
   // Turn the whole building (a pure yaw about its own origin, so position/collider/road geometry are untouched) so that
@@ -12120,6 +12126,7 @@ function buildFireStation(id){
   sfx.build();haptic('medium');toast(lang==='ru'?'🚒 Строим пожарную часть':'🚒 Building fire station');renderCityPanel();save();
 }
 function makeMiniHouse(color=0xd9b28b,accent=0x874d3a){
+  if(typeof buildMiniHouseV161==='function'&&window.BuildingsV161?.enabled!==false)return buildMiniHouseV161(color,accent); // v161 buildings: merged-geometry neighbourhood house (assets/buildings-v161.js)
   const g=new THREE.Group();const wall=new THREE.MeshStandardMaterial({color,roughness:.84});const roofMat=new THREE.MeshStandardMaterial({color:accent,roughness:.88});
   const body=new THREE.Mesh(new THREE.BoxGeometry(1.5,1.15,1.25),wall);body.position.y=.58;body.castShadow=!VISUAL_MOBILE;body.receiveShadow=true;g.add(body);
   const roof=new THREE.Mesh(new THREE.ConeGeometry(1.18,.72,4),roofMat);roof.position.y=1.50;roof.rotation.y=Math.PI/4;roof.castShadow=!VISUAL_MOBILE;g.add(roof);
@@ -32462,11 +32469,22 @@ window.__TYCOON_V74_BUILD__={
     const b=meshBoundsXZ(root);if(!b)return null;
     const shrink=Math.max(.68,Math.min(1,Number(opts.shrink)||.94));
     const minHalf=Math.max(.08,Number(opts.minHalf)||.08);
-    return register({
+    const legacy=register({
       owner:root,category,label:label||category,shape:'obb',
       pos:new THREE.Vector3(b.cx,0,b.cz),hx:Math.max(minHalf,b.hx*shrink),hz:Math.max(minHalf,b.hz*shrink),
       yaw:0,bounds:b,flags:opts.flags||{}
     });
+    // v161 buildings (assets/buildings-v161.js): a mesh that lists its real wall boxes (userData.v161Footprint, houses first) is solid only there - the
+    // porch, steps, fence, hedges and mailbox are walkable and the building is no longer a yawed whole-mesh AABB. The whole-mesh box above stays for
+    // placement/camera (road and decor planners and camera occlusion read it exactly as before) and loses its player/agent flags.
+    if(legacy&&category==='building'&&root.userData?.v161Footprint&&window.BuildingsV161?.footprintWorld){
+      const boxes=window.BuildingsV161.footprintWorld(root);
+      if(boxes&&boxes.length){
+        legacy.flags.player=false;legacy.flags.agent=false;
+        for(let i=0;i<boxes.length;i++)register({owner:root,category:'building',label:`${label||category}:wall${i}`,shape:'obb',pos:boxes[i].pos,hx:boxes[i].hx,hz:boxes[i].hz,yaw:boxes[i].yaw,flags:{player:true,agent:true,camera:false,placement:false}});
+      }
+    }
+    return legacy;
   }
   function registerCircle(pos,radius,category,label,owner=null,flags={}){
     if(!pos||!Number.isFinite(pos.x)||!Number.isFinite(pos.z))return null;

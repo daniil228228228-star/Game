@@ -101,7 +101,12 @@
   const createBefore = createBuildingMesh;
   createBuildingMesh = function (stage, level = 1) {
     const g = createBefore.call(this, stage, Math.min(level, 5));
-    if (level > 5) { try { addGoldTiers(g, stage, level); } catch (err) { console.warn('[v161 gold tiers]', err); } }
+    if (level > 5) {
+      try {
+        // houses (assets/buildings-v161.js) carry their own gold trim that fits the house silhouette; every other archetype keeps addGoldTiers
+        if (g.userData.v161House && window.BuildingsV161?.addHouseGold) window.BuildingsV161.addHouseGold(g, stage, level); else addGoldTiers(g, stage, level);
+      } catch (err) { console.warn('[v161 gold tiers]', err); }
+    }
     return g;
   };
 
