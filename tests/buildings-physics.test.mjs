@@ -20,7 +20,10 @@
 //   (walls cover the footprint, no walk-in, min y 0), and the SHOP (stage 2, levels 1..10, backlog #5) joins the house family in sections A / B (walls, door, step, pad outside the collider).
 //   B5 (2026-10-06 (9), backlog #6): the WAREHOUSE (stage 3) and the LOGISTICS TERMINAL (stage 10) join the hard family in sections A / B at every level 1..10 (walls, <= 0.3 m outside, growth, gold,
 //   crown, <= 1/5 of the old meshes, door vs driveway, min y, no walk-in) and their upgrade pads must stand outside every collider (the pad stood 0.54 m inside the old warehouse wall).
-// IN SCOPE (hard checks): the house family = stage 0/1 at every level + the shop (stage 2) + the warehouse (3) and the terminal (10) at every level, the three neighbourhood / suburb mini houses, the suburb district, the four industrial plants, the market. Everything else in the catalogue is measured and
+//   B6 (2026-10-06 (10), backlog #7 + #8): the three FACTORIES (stage 4 mini factory, 5 factory, 13 tech park) join the hard family at every level 1..10 (walls, <= 0.3 m outside, no height stretch, gold, crown, <= 1/5 of the old
+//   meshes, door vs driveway, min y, no walk-in) and their upgrade pads must stand outside every collider; the FLEET YARD (v116FleetYard) is measured with the boxes it owns (<= 16 meshes, min y, fence / walls covered, no walk-in
+//   from N / NE / E / W / NW, open only through the mouth along the service lane, truck homes free).
+// IN SCOPE (hard checks): the house family = stage 0/1 at every level + the shop (stage 2) + the warehouse (3), the terminal (10) and the factories (4, 5, 13) at every level, the fleet yard, the three neighbourhood / suburb mini houses, the suburb district, the four industrial plants, the market. Everything else in the catalogue is measured and
 //   printed as `KNOWN ISSUE:` (exit 0) - those lines are the backlog of the next building families. SHOTS_DIR=<dir> writes front + iso pictures of house levels 1/3/5/10
 //   and of the plants at levels 1/3, the shop at levels 1/3/5/10.
 import fs from 'node:fs';
@@ -43,10 +46,10 @@ const info = await ev(() => __BLD_PROBE__.stageInfo());
 // ------------------------------------------------------------------------------------------------ A. stage buildings, isolated
 const rows = [];
 for (let i = 0; i < info.n; i++) {
-  const house = info.arch[i] === 'house', shop = info.arch[i] === 'shop', logi = info.arch[i] === 'warehouse';
-  const levels = house || shop || logi ? Array.from({ length: info.maxLevel }, (_, k) => k + 1) : [1, 5, 10];
+  const house = info.arch[i] === 'house', shop = info.arch[i] === 'shop', logi = info.arch[i] === 'warehouse', fac = info.arch[i] === 'factory';
+  const levels = house || shop || logi || fac ? Array.from({ length: info.maxLevel }, (_, k) => k + 1) : [1, 5, 10];
   for (const L of levels) {
-    const shots = SHOTS && (house || shop || logi) && [1, 3, 5, 10].includes(L) ? ['front', 'iso'] : [];
+    const shots = SHOTS && (house || shop || logi || fac) && [1, 3, 5, 10].includes(L) ? ['front', 'iso'] : [];
     const r = await ev(({ i, L, shots }) => {
       const P = __BLD_PROBE__, m = P.stageMesh(i, L);
       try {
@@ -55,8 +58,8 @@ for (let i = 0; i < info.n; i++) {
         const meas = P.measure(m, P.ownEntries(m));
         meas.door = P.doorInfo(m, i);
         meas.gold = m.userData.goldTierV161 || 0;
-        meas.goldMesh = m.children.some((c) => c.name === 'houseGoldV161' || c.name === 'shopGoldV161' || c.name === 'logisticsGoldV161');
-        meas.goldTris = (() => { const c = m.children.find((x) => x.name === 'houseGoldV161' || x.name === 'shopGoldV161' || x.name === 'logisticsGoldV161'); return c ? c.geometry.index.count / 3 : 0; })();
+        meas.goldMesh = m.children.some((c) => c.name === 'houseGoldV161' || c.name === 'shopGoldV161' || c.name === 'logisticsGoldV161' || c.name === 'factoryGoldV161');
+        meas.goldTris = (() => { const c = m.children.find((x) => x.name === 'houseGoldV161' || x.name === 'shopGoldV161' || x.name === 'logisticsGoldV161' || x.name === 'factoryGoldV161'); return c ? c.geometry.index.count / 3 : 0; })();
         meas.legacyPlayer = legacyEntry ? !!legacyEntry.flags.player : null;
         meas.legacyPlacement = legacyEntry ? !!legacyEntry.flags.placement : null;
         meas.legacyCamera = legacyEntry ? !!legacyEntry.flags.camera : null;
@@ -70,7 +73,7 @@ for (let i = 0; i < info.n; i++) {
       } finally { P.dropMesh(m); }
     }, { i, L, shots });
     if (r.shots) for (const [v, url] of Object.entries(r.shots)) fs.writeFileSync(path.join(SHOTS, `bld-stage${i}-L${L}-${v}.jpg`), Buffer.from(url.split(',')[1], 'base64'));
-    rows.push({ i, L, arch: info.arch[i], house, shop, logi, ...r.meas });
+    rows.push({ i, L, arch: info.arch[i], house, shop, logi, fac, ...r.meas });
   }
 }
 // the old house for the draw-call comparison (same builder chain with the new house switched off)
@@ -95,6 +98,13 @@ const oldLogi = await ev(() => {
   LogisticsV161.enabled = true;
   return out;
 });
+const oldFac = await ev(() => {
+  const P = __BLD_PROBE__, out = {};
+  FactoryV161.enabled = false;
+  for (const i of [4, 5, 13]) for (const L of [1, 5, 10]) { const m = P.stageMesh(i, L); const bb = new THREE.Box3().setFromObject(m); out[`${i}:${L}`] = { meshes: P.measure(m, P.ownEntries(m), { sweep: false }).meshes, height: +(bb.max.y - bb.min.y).toFixed(2) }; P.dropMesh(m); }
+  FactoryV161.enabled = true;
+  return out;
+});
 const minis = [];
 for (const v of [0, 1, 2]) {
   const mini = await ev((v) => {
@@ -107,7 +117,7 @@ for (const v of [0, 1, 2]) {
 const mini = minis[0];
 
 const label = (r) => (r.i < 0 ? 'mini house' : `stage ${r.i} (${r.arch}) L${r.L}`);
-const hard = rows.filter((r) => r.house || r.shop || r.logi);
+const hard = rows.filter((r) => r.house || r.shop || r.logi || r.fac);
 console.log(`measured ${rows.length} building meshes: ${hard.length} in the house / shop family (hard checks), ${rows.length - hard.length} others (KNOWN ISSUE lines)`);
 check(rows.length >= 16 * 3 + 14 + 10, `every stage x level measured (${rows.length})`);
 
@@ -166,6 +176,25 @@ for (const si of [3, 10]) {
   check(gt.every((r) => r.gold === r.L && r.goldMesh) && gt.every((r, k) => k === 0 || r.goldTris >= gt[k - 1].goldTris) && gt[4].goldTris > gt[3].goldTris, `${nm}: gold tiers 6..10 carry the tier and more gold with every level, the crown comes at 10 (gold triangles ${gt.map((r) => r.goldTris)})`);
   check(Object.entries(oldLogi).filter(([k]) => k.startsWith(si + ':')).every(([k, v]) => ls.find((r) => r.L === +k.split(':')[1]).meshes * 5 < v), `${nm}: <= 1/5 of the old meshes at levels 1/5/10`);
 }
+// ---- the three factories (stage 4 mini factory, 5 factory, 13 tech park), levels 1..10, assets/factory-v161.js (2026-10-06 (10), backlog #7)
+for (const si of [4, 5, 13]) {
+  const ls = rows.filter((r) => r.fac && r.i === si).sort((p, q) => p.L - q.L), nm = { 4: 'mini factory', 5: 'factory', 13: 'tech park' }[si];
+  const oldS = Object.fromEntries(Object.entries(oldFac).filter(([k]) => k.startsWith(si + ':')));
+  b = ls.filter((r) => !(r.walls >= 1 && r.legacyPlayer === false && r.legacyPlacement === true && r.legacyCamera === true && r.front)).map(label);
+  check(ls.length === 10 && b.length === 0, `${nm}: wall boxes are the player/agent colliders, the whole-mesh box keeps placement + camera only (${ls.length} levels, ${b.length} bad ${J(b.slice(0, 3))}; before: one whole-mesh box, an invisible wall up to ~1.2 m)`);
+  b = ls.filter((r) => Math.abs((r.wallYaw ?? 0) - r.meshYaw) > 1e-6).map(label);
+  check(b.length === 0, `${nm} wall boxes are rotated with the mesh (yaw ${J(ls.slice(0, 1).map((r) => [r.wallYaw, r.meshYaw]))})`);
+  b = ls.filter((r) => !(r.outsideMax <= 0.3 && r.outside <= 0.8)).map(label);
+  check(b.length === 0, `${nm}: the collider is at most 0.3 m (and 0.8 m2) outside the walls at every level (worst ${Math.max(...ls.map((r) => r.outsideMax))} m / ${Math.max(...ls.map((r) => r.outside))} m2)`);
+  const t = ls.map((r) => r.tris);
+  check(t.slice(0, 5).every((v, k) => k === 0 || v > t[k - 1]), `${nm}: the SAME building grows - every level 1..5 ADDS parts (triangles ${t.slice(0, 5)})`);
+  check(ls.every((r, k) => k === 0 || r.meshes >= ls[k - 1].meshes) && ls.every((r) => r.meshes <= 16), `${nm}: mesh counts never decrease and stay <= 16 (${ls.map((r) => r.meshes)}; the old builder ${J(Object.fromEntries(Object.entries(oldS).map(([k, v]) => [k, v.meshes])))})`);
+  const H = ls.slice(0, 5).map((r) => r.maxY - r.minY);
+  check(H.every((h, k) => k === 0 || (h >= H[k - 1] - 1e-6 && h - H[k - 1] <= 0.6)) && H[4] <= H[0] * 1.4, `${nm}: no 18 % height stretch - height ${J(H.map((h) => +h.toFixed(2)))} m for levels 1..5 (old builder ${J(Object.fromEntries(Object.entries(oldS).map(([k, v]) => [k, v.height])))})`);
+  const gt = ls.filter((r) => r.L >= 6);
+  check(gt.every((r) => r.gold === r.L && r.goldMesh) && gt.every((r, k) => k === 0 || r.goldTris >= gt[k - 1].goldTris) && gt[4].goldTris > gt[3].goldTris, `${nm}: gold tiers 6..10 carry the tier and more gold with every level, the crown comes at 10 (gold triangles ${gt.map((r) => r.goldTris)})`);
+  check(Object.entries(oldS).every(([k, v]) => ls.find((r) => r.L === +k.split(':')[1]).meshes * 5 < v.meshes), `${nm}: <= 1/5 of the old meshes at levels 1/5/10`);
+}
 const newMax = Math.max(...houses.map((r) => r.meshes)), oldMin = Math.min(...Object.values(old));
 check(newMax <= 20 && newMax <= oldMin, `house draw calls: <= ${newMax} meshes per house at any level (old builder ${J(old)})`);
 check(minis.every((m) => m.meshes <= 5), `mini houses: <= 5 meshes each (${J(minis.map((m) => m.meshes))}; old 5)`);
@@ -173,14 +202,14 @@ check(minis.every((m) => m.minY >= -0.05 && m.minY <= 0.05 && m.overlap >= 0.9 &
 check(new Set(minis.map((m) => m.tris)).size === 3 && new Set(minis.map((m) => m.variant)).size === 3, `mini houses: three distinct variants (triangles ${J(minis.map((m) => m.tris))})`);
 
 // --- known issues, everything else
-for (const r of rows.filter((x) => !x.house && !x.shop && !x.logi)) {
+for (const r of rows.filter((x) => !x.house && !x.shop && !x.logi && !x.fac)) {
   if (r.minY < -0.05 || r.minY > 0.05) issue(`${label(r)}: floating or sunk, min y ${r.minY}`);
   if (r.overlap !== null && r.overlap < 0.9) issue(`${label(r)}: collider covers only ${Math.round(r.overlap * 100)} % of the wall footprint`);
   if (r.outsideMax > 1.0 && (r.L === 1 || r.L === 5)) issue(`${label(r)}: collider (whole-mesh box) extends ${r.outsideMax} m beyond the walls (${r.outside} m2 of invisible wall)`);
   if (r.sweepReached > 0) issue(`${label(r)}: the player can walk into the building from ${r.sweepReached} of 8 directions`);
 }
 const kinds = {};
-for (const r of rows.filter((x) => !x.house && !x.shop && !x.logi)) { (kinds[r.i] = kinds[r.i] || []).push(r); }
+for (const r of rows.filter((x) => !x.house && !x.shop && !x.logi && !x.fac)) { (kinds[r.i] = kinds[r.i] || []).push(r); }
 check(Object.values(kinds).every((rs) => rs.every((r) => r.sweepReached === 0)), 'other stage buildings: the player cannot walk into any of them (whole-mesh boxes cover the walls)');
 
 // ------------------------------------------------------------------------------------------------ B. live world
@@ -191,7 +220,7 @@ await ev(() => __BLD_PROBE__.finishGrowth());
 await page.waitForTimeout(2500);
 const live = await ev(() => {
   const P = __BLD_PROBE__, reg = __TYCOON_V83_COLLISIONS__.registry, out = { houses: [] };
-  for (const idx of [0, 1, 2, 3, 10]) {
+  for (const idx of [0, 1, 2, 3, 4, 5, 10, 13]) {
     const e = buildings.find((x) => x.index === idx), m = e.mesh, own = [...reg.values()].filter((x) => x.owner === m);
     let door = null; m.traverse((o) => { if (o.userData?.v161Door) door = o; });
     const w = new THREE.Vector3(); door.getWorldPosition(w);
@@ -213,6 +242,7 @@ for (const h of live.houses) {
 console.log(`work points checked: ${live.points.length} (${live.points.map((p) => p.id).join(', ')})`);
 const houseBad = live.points.filter((p) => p.family === 'house' && p.b.moved > 0.25);
 check(houseBad.length === 0 && live.points.some((p) => p.id === 'upgrade-pad:stage2'), `house and shop upgrade pads are reachable: not deeper than 25 cm inside a collider (${J(houseBad)}; the shop pad stood 0.07 m inside its 1.43 m invisible wall)`);
+check(live.points.filter((p) => ['upgrade-pad:stage4', 'upgrade-pad:stage5', 'upgrade-pad:stage13'].includes(p.id)).length === 3 && live.points.filter((p) => ['upgrade-pad:stage4', 'upgrade-pad:stage5', 'upgrade-pad:stage13'].includes(p.id)).every((p) => !p.b.hit && p.b.moved === 0), `the mini factory, factory and tech park upgrade pads stand OUTSIDE every collider (before: inside by 0.68-0.72 m for stages 4 / 5) ${J(live.points.filter((p) => ['upgrade-pad:stage4', 'upgrade-pad:stage5', 'upgrade-pad:stage13'].includes(p.id)).map((p) => [p.id, p.b.moved]))}`);
 check(live.points.filter((p) => ['upgrade-pad:stage2', 'upgrade-pad:stage3', 'upgrade-pad:stage10'].includes(p.id)).length === 3 && live.points.filter((p) => ['upgrade-pad:stage3', 'upgrade-pad:stage10'].includes(p.id)).every((p) => !p.b.hit && p.b.moved === 0), `the warehouse and terminal upgrade pads stand OUTSIDE every collider (before: the warehouse pad was inside the wall) ${J(live.points.filter((p) => ['upgrade-pad:stage3', 'upgrade-pad:stage10'].includes(p.id)))}`);
 check(live.points.filter((p) => p.id === 'upgrade-pad:stage2').every((p) => !p.b.hit), `the shop upgrade pad stands OUTSIDE every collider (${J(live.points.filter((p) => p.id === 'upgrade-pad:stage2'))})`);
 const padsInside = live.points.filter((x) => x.family !== 'house' && x.b.hit);
@@ -221,27 +251,51 @@ for (const p of padsInside) issue(`${p.id} @${p.x},${p.z} is inside a collider (
 const industrialPads = live.points.filter((x) => x.family === 'industrial');
 check(industrialPads.length >= 8 && industrialPads.every((p) => !p.b.hit), `industrial pads / pickups / mines stand outside every collider: ${industrialPads.length} checked (${industrialPads.map((p) => p.id).join(', ')}); inside: ${J(industrialPads.filter((p) => p.b.hit).map((p) => [p.id, p.b.by, p.b.moved]))}`);
 
-// live groups (named by the owning code; positions from the late-game survey)
-const targets = [
-  { id: 'fleet-yard', name: 'v116FleetYard' },
-]; // the plants (sawmill, concrete plant, metal yard, frame workshop, their mines) are HARD checks in section B2 below, the market (plaza + 7 stalls) in section B3
-const liveRows = await ev((targets) => {
-  const P = __BLD_PROBE__, out = [];
-  for (const t of targets) {
-    const root = t.name ? P.liveByName(t.name) : P.liveByExpr(t.expr);
-    if (!root || !root.isObject3D) { out.push({ id: t.id, missing: true }); continue; }
-    out.push({ id: t.id, ...P.measureLive(root) });
+// ------------------------------------------------------------------------------------------------ B6. fleet yard (backlog #8, 2026-10-06 (10)): HARD
+// The late world has the depot built, so rebuildParkingV65 made the yard group `v116FleetYard` (assets/factory-v161.js FleetYardV161.build): lot slab + road throat + <= 10 merged meshes. Measured with the colliders it OWNS in the
+// registry (fence runs west / east / rear, pillars, garage, booth, pump, wash stand, gate leaf; player + agent only) and walked by the game's own resolver from 8 directions.
+const fyRow = await ev(() => {
+  const P = __BLD_PROBE__, yard = P.liveByName('v116FleetYard');
+  if (!yard) return null;
+  yard.updateMatrixWorld(true);
+  const own = P.ownEntries(yard), meas = P.measure(yard, own, { sweep: false });
+  delete meas.colliders;
+  // a fence is a thin line, not an enclosed footprint, so the probe's raster cover (flood fill of closed outlines) does not apply: instead every drawn solid vertex between 0.3 and 1.2 m (opaque, non-soft meshes: fence
+  // rails / pickets / posts, pillars, garage + booth walls, doors, gate leaf) must lie within 0.1 m of an own box, and every own box must have drawn geometry within 0.35 m (no invisible wall)
+  const dist = (e, x, z) => { const sy = Math.sin(e.yaw), cy = Math.cos(e.yaw), dx = x - e.pos.x, dz = z - e.pos.z, lx = dx * cy - dz * sy, lz = dx * sy + dz * cy; return Math.hypot(Math.max(0, Math.abs(lx) - e.hx), Math.max(0, Math.abs(lz) - e.hz)); };
+  let tot = 0, near = 0, worst = 0; const closest = own.map(() => 1e9), v = new THREE.Vector3();
+  yard.traverse((o) => {
+    if (!o.isMesh || o.userData.v161Soft || (o.material && o.material.transparent)) return;
+    o.updateMatrixWorld(true); const pa = o.geometry.attributes.position;
+    for (let i = 0; i < pa.count; i++) {
+      v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld);
+      if (v.y < 0.3 || v.y > 1.2) continue;
+      let d = 1e9; own.forEach((e, k) => { const dd = dist(e, v.x, v.z); d = Math.min(d, dd); closest[k] = Math.min(closest[k], dd); });
+      tot++; if (d <= 0.1) near++; else worst = Math.max(worst, d);
+    }
+  });
+  meas.cover = +(near / Math.max(1, tot)).toFixed(3); meas.coverN = tot; meas.worst = +worst.toFixed(2); meas.boxGap = +Math.max(...closest).toFixed(2);
+  const cx = -8.70 + INDUSTRIAL_ZONE_OFFSET_X, cz = 6.72;
+  const entries = gatherPhysicsCircles().filter((e) => e.category !== 'vehicle' && !String(e.label || '').startsWith('vehicle') && e.kind !== 'vehicle');
+  const saved = playerVelocity.clone(), walk = [];
+  for (let k = 0; k < 8; k++) {
+    const a = k * Math.PI / 4, dx = Math.sin(a), dz = Math.cos(a);
+    let x = cx + dx * 9, z = cz + dz * 9, reached = false, inLot = false;
+    for (let s = 0; s < 130; s++) { playerVelocity.set(-dx * 4, 0, -dz * 4); const r = resolvePlayerCircleCollisions(x - dx * 0.1, z - dz * 0.1, entries); x = r.x; z = r.z; if (Math.hypot(x - cx, z - cz) < 0.6) reached = true; if (Math.abs(x - cx) < 5.4 && z > 5.2 && z < 7.6) inLot = true; }
+    walk.push({ a: Math.round(a * 180 / Math.PI), reached, inLot });
   }
-  return out;
-}, targets);
-console.log('live groups:', liveRows.map((r) => (r.missing ? `${r.id}: missing` : `${r.id}: meshes ${r.meshes}, min y ${r.minY}, footprint ${r.footprintArea} m2, collider ${r.colliderArea} m2, overlap ${r.overlap}, outside max ${r.outsideMax} m, walk-in ${r.sweepReached ?? '-'}/8`)).join('\n  '));
-check(liveRows.filter((r) => !r.missing).length >= 1, `live groups found and measured (${liveRows.filter((r) => !r.missing).length} of ${liveRows.length})`);
-for (const r of liveRows.filter((x) => !x.missing)) {
-  if (r.minY < -0.05 || r.minY > 0.05) issue(`${r.id}: floating or sunk, min y ${r.minY}`);
-  if (r.footprintArea > 1 && r.overlap !== null && r.overlap < 0.9) issue(`${r.id}: collider covers only ${Math.round(r.overlap * 100)} % of the wall footprint (${r.uncovered} m2 uncovered)`);
-  if (r.outsideMax > 1.0) issue(`${r.id}: collider extends ${r.outsideMax} m beyond the walls (${r.outside} m2 of invisible wall)`);
-  if (r.sweepReached > 0) issue(`${r.id}: the player can walk into it from ${r.sweepReached} of 8 directions`);
-}
+  playerVelocity.copy(saved);
+  const homes = Object.values(__TYCOON_V65_TRAFFIC__.homes).map((v) => P.blockedAt(v.x, v.z));
+  return { meas, own: own.length, flags: own.every((e) => e.flags.player && e.flags.agent && !e.flags.placement && !e.flags.camera), walk, homes: homes.map((h) => h.hit) };
+});
+check(!!fyRow, 'fleet yard: the live group v116FleetYard exists in the late world');
+console.log('fleet yard:', J({ meshes: fyRow.meas.meshes, minY: fyRow.meas.minY, cover: fyRow.meas.cover, of: fyRow.meas.coverN, worst: fyRow.meas.worst, boxGap: fyRow.meas.boxGap, boxes: fyRow.own, walk: fyRow.walk.map((w) => [w.a, w.reached]) }));
+check(fyRow.meas.meshes <= 16, `fleet yard: <= 16 meshes (${fyRow.meas.meshes}; before 47: 40 loose fence / post / bay meshes)`);
+check(fyRow.meas.minY >= -0.05 && fyRow.meas.minY <= 0.05, `fleet yard: nothing floating or sunk, min y ${fyRow.meas.minY}`);
+check(fyRow.own >= 8 && fyRow.flags, `fleet yard: ${fyRow.own} real boxes (fence runs, pillars, garage, booth, pump, wash stand, gate leaf) in the registry, player + agent only (before: the fence was not solid - a player walked through it from every side)`);
+check(fyRow.meas.cover >= 0.9 && fyRow.meas.boxGap <= 0.35, `fleet yard: the boxes cover >= 90 % of the drawn solid fence / walls (${fyRow.meas.cover} of ${fyRow.meas.coverN} vertices within 10 cm, the farthest uncovered one ${fyRow.meas.worst} m) and no box stands where nothing is drawn (every box has geometry within ${fyRow.meas.boxGap} m <= 0.35 m)`);
+check(fyRow.walk.filter((w) => !w.reached).map((w) => w.a).sort((p, q) => p - q).join() === '0,45,90,270,315' && fyRow.walk.filter((w) => !w.reached).every((w) => !w.inLot) && fyRow.walk.filter((w) => w.reached).map((w) => w.a).sort((p, q) => p - q).join() === '135,180,225', `fleet yard: the fence blocks the walk-in from N / NE / E / W / NW and lets the player in only through the open mouth along the service lane (SE / S / SW): ${J(fyRow.walk.map((w) => [w.a, w.reached]))}`);
+check(fyRow.homes.length === 6 && fyRow.homes.every((h) => !h), 'fleet yard: the six parking points (truck homes) stand outside every collider');
 
 // ------------------------------------------------------------------------------------------------ B2. industrial plants (family #2, 2026-10-05 (6)): HARD
 // Each plant is rebuilt by the game's own path at production level 1/2/3 and measured with the colliders it OWNS in the real registry (owner === root): the oriented boxes

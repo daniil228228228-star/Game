@@ -10,7 +10,7 @@
 //   B. STOCK (HARD): the plank stack on the pickup pad draws floor(planks) boards (cap 24) for 0/1/7.9/24/60; boards shown on the belt for ONE saw cut == the planks the game
 //        credits for that cut, measured through the real animate loop for sawmill level 1/2/3 and prestige 0/3/6 (levels change the speed, not the yield).
 //   C. TARGETS: every pad marker / compass / guidance target resolves to an existing scene object (HARD for pads and markers).
-//   D. PHYSICS (KNOWN ISSUE lines, exit 0, unless resolved and listed in HARD_ALL: houses + sawmill + concrete plant + metal yard since 2026-10-05 (6); industrial pads hard): nothing floating (min y > +5 cm) or sunk (< -5 cm) among the buildings, colliders cover the real
+//   D. PHYSICS (KNOWN ISSUE lines, exit 0, unless resolved and listed in HARD_ALL: houses + sawmill + concrete plant + metal yard since 2026-10-05 (6), the factories stage 4 / 5 / 13 and the fleet yard (min y; boxes: buildings-physics B6) since 2026-10-06 (10); industrial pads hard): nothing floating (min y > +5 cm) or sunk (< -5 cm) among the buildings, colliders cover the real
 //        footprint (rotated), no pad / pickup inside a collider.
 // SHOTS_DIR=<dir> writes roads-after-fresh-sawmill-top.jpg (same camera as the "before" picture of the changelog) and sawmill-cut-boards.jpg.
 import fs from 'node:fs';
@@ -315,19 +315,20 @@ const phys = await ev(() => {
     const root = get();
     if (!root || !root.isObject3D) { out.groups.push({ id, missing: true }); continue; }
     // the plants (2026-10-05 (6)) are measured with the colliders they OWN (their wall / machine boxes), not with every neighbour collider near them
-    out.groups.push({ id, ...(['sawmill', 'concrete-plant', 'metal-yard'].includes(id) ? P.measure(root, P.ownEntries(root)) : P.measureLive(root)) });
+    out.groups.push({ id, ...(['sawmill', 'concrete-plant', 'metal-yard', 'stage4', 'stage5', 'stage13', 'fleet-yard'].includes(id) ? P.measure(root, P.ownEntries(root), id === 'fleet-yard' ? { sweep: false } : {}) : P.measureLive(root)), thin: id === 'fleet-yard' }); // 2026-10-06 (10): the factories and the fleet yard own their colliders too (the yard's fence is a thin line: only min y is measured here, tests/buildings-physics.test.mjs B6 checks the boxes)
   }
   out.points = P.workPoints().map((p) => ({ ...p, b: P.blockedAt(p.x, p.z) }));
   return out;
 });
 // measured clean on 2026-10-05 (4)/(5): floating / sunk for every group, everything for the houses (the hard family of buildings-physics); 2026-10-05 (6): and for the sawmill,
 // the concrete plant and the metal yard. The rest of the colliders are the backlog of docs/BUILDINGS_V161.md.
-const HARD_ALL = ['stage0', 'stage1', 'sawmill', 'concrete-plant', 'metal-yard']; // 2026-10-05 (6): the industrial plants moved from the backlog to the hard checks (rotated wall boxes, tests/buildings-physics.test.mjs B2)
+const HARD_ALL = ['stage0', 'stage1', 'sawmill', 'concrete-plant', 'metal-yard', 'stage4', 'stage5', 'stage13', 'fleet-yard']; // 2026-10-05 (6): the industrial plants moved from the backlog to the hard checks (rotated wall boxes, tests/buildings-physics.test.mjs B2)
 for (const r of phys.groups) {
   if (r.missing) { issue(`${r.id}: not found in the scene`); continue; }
   const hardAll = HARD_ALL.includes(r.id);
   const rep = (ok, msg, hard = hardAll) => (hard ? check(ok, `${r.id}: ${msg}`) : soft(ok, `${r.id}: ${msg}`));
   rep(r.minY >= -0.05 && r.minY <= 0.05, `nothing floating or sunk, min y ${r.minY} (|y| <= 5 cm)`, true);
+  if (r.thin) continue;
   if (r.footprintArea > 1 && r.overlap !== null) rep(r.overlap >= 0.9, `colliders cover >= 90 % of the real (rotated) footprint (${Math.round(r.overlap * 100)} %, ${r.uncovered} m2 uncovered)`);
   if (r.footprintArea > 1) rep(r.outsideMax <= 1.0, `no invisible wall wider than 1 m beyond the walls (${r.outsideMax} m)`);
   if (r.footprintArea > 1) rep(r.sweepReached === 0, `the player cannot walk into the building (${r.sweepReached} of 8 directions got in)`);

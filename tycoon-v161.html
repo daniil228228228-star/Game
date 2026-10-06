@@ -927,6 +927,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="assets/market-v161.js"></script>
 <script src="assets/shop-v161.js"></script>
 <script src="assets/warehouse-v161.js"></script>
+<script src="assets/factory-v161.js"></script>
 <script src="assets/foliage-v154.js"></script>
 <script src="assets/work-session-v158.js"></script>
 <script src="assets/development-core-v160.js"></script>
@@ -6467,7 +6468,9 @@ function createBuildingMesh(stage, level = 1) {
   const shopV161 = stage.archetype === 'shop' && STAGES.indexOf(stage) >= 0 && typeof buildShopV161 === 'function' && window.ShopV161?.enabled !== false;
   // v161 warehouse + logistics terminal (assets/warehouse-v161.js, 2026-10-06 (9)): the two main-line `warehouse` stages (3 and 10) have their own merged-geometry builder with real wall colliders.
   const logisticsV161 = stage.archetype === 'warehouse' && STAGES.indexOf(stage) >= 0 && typeof buildLogisticsV161 === 'function' && window.LogisticsV161?.enabled !== false;
-  const group = houseV161 ? buildHouseV161(stage, height, baseSize, level) : shopV161 ? buildShopV161(stage, height, baseSize, level) : logisticsV161 ? buildLogisticsV161(stage, height, baseSize, level) : builder(stage, height, baseSize);
+  // v161 factories (assets/factory-v161.js, 2026-10-06 (10)): the three main-line `factory` stages (4 mini factory, 5 factory, 13 tech park) have their own merged-geometry builder (levels ADD parts, no 18 % height stretch) with real wall colliders.
+  const factoryV161 = stage.archetype === 'factory' && STAGES.indexOf(stage) >= 0 && typeof buildFactoryV161 === 'function' && window.FactoryV161?.enabled !== false;
+  const group = houseV161 ? buildHouseV161(stage, height, baseSize, level) : shopV161 ? buildShopV161(stage, height, baseSize, level) : logisticsV161 ? buildLogisticsV161(stage, height, baseSize, level) : factoryV161 ? buildFactoryV161(stage, height, baseSize, level) : builder(stage, height, baseSize);
   if (!group.userData.v161Complete) {
     enhanceBuildingGeometry(group, stage, height, baseSize, level);
     addBuildingVisualPolish(group, stage, height, baseSize, level);
@@ -6740,6 +6743,8 @@ function spawnSmokePuff(pos) {
 function updateSmoke(dt) {
   for (const b of buildings) {
     if (!b.smokeTops) continue;
+    // v161 (2026-10-06 (10)): a chimney smokes only while the building really works = is built (income runs for completed buildings only, totalIncomePerSec): no smoke over a construction site / an invisible upgrade mesh
+    if (b.underConstruction || b.mesh?.visible === false) continue;
     b.smokeTimer += dt;
     if (b.smokeTimer >= SMOKE_INTERVAL) {
       b.smokeTimer = Math.random() * 0.4;
@@ -30580,6 +30585,11 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
     const throat=new THREE.Mesh(new THREE.BoxGeometry(2.18,.034,.78),roadMat);
     throat.position.set(-8.70+OX,.057,4.62); /* v161: was .054 = 2 mm under the lot top (.069) and a different grey -> z-fighting patch at the gate; top is now .074 */throat.receiveShadow=true;throat.userData.v116FleetEntrance=true;g.add(throat);
 
+    // v161 fleet yard (assets/factory-v161.js, 2026-10-06 (10), backlog #8): FleetYardV161.build adds the solid fence (west / east / rear), front pillars with floodlights, the service garage with 3 roller doors, the guard booth,
+    // pump + wash stand, the entrance sign, painted bays / arrows / hazard chevrons and the wheel stops as ~10 merged meshes; the lot slab, the road throat, the lot position and the label sprite below are unchanged.
+    // `FleetYardV161.enabled = false` brings the old 40 loose fence / post / bay meshes back.
+    const fyV161=!!(window.FleetYardV161&&window.FleetYardV161.enabled!==false);
+    if(!fyV161){
     // Gate posts and rear/side fence define the lot without crossing driving space.
     const fenceRail=(x,z,w,d)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,.055,d),fenceMat);m.position.set(x,.62,z);m.userData.v116FleetFence=true;g.add(m);return m;};
     const post=(x,z)=>{const p=new THREE.Mesh(new THREE.BoxGeometry(.07,1.08,.07),fenceMat);p.position.set(x,.54,z);p.userData.v116FleetFence=true;g.add(p);};
@@ -30591,6 +30601,7 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
 
     const gateHead=new THREE.Mesh(new THREE.BoxGeometry(2.48,.14,.10),fenceMat);
     gateHead.position.set(-8.70+OX,1.35,4.96);g.add(gateHead);
+    }
     const yardLabel=makeLabelSprite([lang==='ru'?'АВТОПАРК':'FLEET YARD',lang==='ru'?'служебная стоянка':'company parking']);
     yardLabel.position.set(-8.70+OX,1.58,4.92);yardLabel.scale.set(.80,.28,1);g.add(yardLabel);
 
@@ -30603,6 +30614,10 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
       {p:FLEET_HOME_V65.universal2,key:'universal2'}
     ];
 
+    if(fyV161){
+      const info=window.FleetYardV161.build(g,{OX,homes:homes.map(h=>({x:h.p.x,z:h.p.z}))});
+      if(info&&info.sign){yardLabel.position.set(info.sign.x,info.sign.y,info.sign.z);yardLabel.scale.set(1.2,.42,1);}
+    }else{
     // Bays are paint on the single parking surface. No grey slabs and no road connectors.
     homes.forEach((item)=>{
       const p=item.p;
@@ -30615,6 +30630,7 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
       const wheelStop=new THREE.Mesh(new THREE.BoxGeometry(.88,.09,.13),curbMat);
       wheelStop.position.set(p.x,.102,p.z+.92);wheelStop.receiveShadow=true;wheelStop.userData.v116WheelStop=true;g.add(wheelStop);
     });
+    }
 
     scene.add(g);parkingGroupV65=g;
   }
@@ -32620,6 +32636,10 @@ window.__TYCOON_V74_BUILD__={
     for(const o of (window.PlantsV161?window.PlantsV161.obstacles():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
     // v161 market (assets/market-v161.js): the sealed stall bodies + big props, the fountain, benches, planters, gate posts as real oriented boxes / circles (the customer side in front of a counter stays open); placement off on purpose
     for(const o of (window.MarketV161&&window.MarketV161.enabled?window.MarketV161.obstacles():[]))register({owner:o.owner,category:'market',label:o.label,shape:o.shape,pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,radius:o.radius,flags:{player:true,agent:true,placement:false,camera:false}});
+
+    // v161 fleet yard (assets/factory-v161.js, 2026-10-06 (10)): the fence runs (west / east / rear), front pillars, service garage, booth, pump, wash stand and the sliding-gate leaf as oriented boxes; the mouth along the
+    // service lane stays open (trucks drive straight from the lane into their bays), placement / camera off so the road planners keep the old fleet-yard keep-out parcel (v116:fleet-yard-keepout) exactly as before
+    for(const o of (window.FleetYardV161&&window.FleetYardV161.enabled?window.FleetYardV161.obstacles():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{player:true,agent:true,placement:false,camera:false}});
 
     // Real company-base modules and special-project landmarks use their actual visible bounds.
     for(const [key,g] of (baseRuntime?.groups||new Map()))registerRoot(g,'base',`base:${key}`,{shrink:.93});

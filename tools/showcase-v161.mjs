@@ -13,6 +13,12 @@
 //     --shop: the main-line shop (STAGES[2]) built by the real chain at every listed level, old builder (ShopV161.enabled = false) and new, numbers (meshes, draw calls, triangles, min y, collider cover /
 //     outside / walk-in from 8 directions, door vs driveway) and DIR/<tag>-shop-L<n>-<view>.jpg (+ -old-). --suburb: the late-game world is built out, the suburb district identity group (lawn, trees,
 //     planters, ring of mini houses) is rebuilt with the old and the new builders (BuildingsV161.enabled) and shot from above / low / one house of every variant: DIR/<tag>-suburb-*.jpg.
+//   node tools/showcase-v161.mjs --factory [--factory-levels 1,3,5,6,10] [--factory-stages 4,5,13] [--factory-views front,iso,side] [--factory-no-old]   (2026-10-06 (10), backlog #7)
+//     the three main-line factories (STAGES 4 / 5 / 13) built by the real chain, old builder (FactoryV161.enabled = false) and new: meshes, draw calls, triangles, height, min y, collider cover / outside / walk-in,
+//     door vs driveway, pad distance; DIR/<tag>-factory<stage>-L<n>-<view>.jpg (+ -old-).
+//   node tools/showcase-v161.mjs --fleet [--fleet-views front,iso,top,low]   (2026-10-06 (10), backlog #8)
+//     the late-game world is built out, the fleet yard (v116FleetYard + the parked trucks) is rebuilt through the game's own rebuildParkingV65 with the old / the new builder (FleetYardV161.enabled) and shot from the lane side
+//     (front, iso, low) and from above: meshes, draw calls in one frame, triangles, min y, DIR/<tag>-fleet-<view>.jpg (+ -old-).
 // ONE browser launch per run. Stage buildings (all 16 STAGES) are built by the game's real builder chain (createBuildingMesh: BUILDERS + polish layers +
 // v44 + v157 + late-game gold tiers), put alone on the grass (everything else in the scene is hidden for the shot), registered in the real v83 collision
 // registry with the call rebuildStatic uses, and shot from four fixed cameras at the phone viewport 390x664: DIR/bld-<id>-L<n>-<view>.jpg.
@@ -37,6 +43,7 @@ const WANT_MARKET = !!opt('market', false);
 const WANT_SHOP = !!opt('shop', false);
 const WANT_SUBURB = !!opt('suburb', false);
 const WANT_WH = !!opt('warehouse', false), WANT_TERM = !!opt('terminal', false);
+const WANT_FACTORY = !!opt('factory', false), WANT_FLEET = !!opt('fleet', false);
 fs.mkdirSync(OUT, { recursive: true });
 
 const LATE = { saveVersion: 20, stageIndex: 16, money: 5e8, planks: 5000, concrete: 500, metal: 500, buildings: Array.from({ length: 16 }, (_, i) => ({ index: i, level: 5 })) };
@@ -44,7 +51,7 @@ const g = await openGame({ save: LATE, waitMs: 8000 });
 const { page } = g;
 await page.evaluate(installProbe);
 const info = await page.evaluate(() => __BLD_PROBE__.stageInfo());
-const stages = (WANT_PLANTS || WANT_MARKET || WANT_SHOP || WANT_SUBURB || WANT_WH || WANT_TERM) && !opt('stages', false) ? [] : parseList(opt('stages', 'all'), Array.from({ length: info.n }, (_, i) => i));
+const stages = (WANT_PLANTS || WANT_MARKET || WANT_SHOP || WANT_SUBURB || WANT_WH || WANT_TERM || WANT_FACTORY || WANT_FLEET) && !opt('stages', false) ? [] : parseList(opt('stages', 'all'), Array.from({ length: info.n }, (_, i) => i));
 const levels = parseList(opt('levels', '1,5,10'), [1, 5, 10]);
 const houseLevels = parseList(opt('house-levels', '1-10'), Array.from({ length: 10 }, (_, i) => i + 1));
 const save = (name, dataUrl) => fs.writeFileSync(path.join(OUT, name), Buffer.from(dataUrl.split(',')[1], 'base64'));
@@ -275,6 +282,76 @@ for (const [want, stageIdx, tag] of [[WANT_WH, 3, 'warehouse'], [WANT_TERM, 10, 
 }
 report.push(...logiRows);
 
+// ------------------------------------------------------------------------------------------------ 2g. factories (stage 4 / 5 / 13), backlog #7: old builder and new at every listed level
+const factoryRows = [];
+if (WANT_FACTORY) {
+  const fl = parseList(opt('factory-levels', '1,3,5,6,10'), [1, 3, 5, 6, 10]);
+  const fviews = String(opt('factory-views', 'front,iso,side')).split(',');
+  for (const stageIdx of parseList(opt('factory-stages', '4,5,13'), [4, 5, 13])) {
+    for (const old of opt('factory-no-old', false) ? [false] : [true, false]) {
+      for (const L of fl) {
+        const r = await page.evaluate(({ L, old, views, stageIdx }) => {
+          const P = __BLD_PROBE__;
+          window.FactoryV161.enabled = !old;
+          const m = P.stageMesh(stageIdx, L);
+          try {
+            P.registerStage(m, stageIdx);
+            const meas = P.measure(m, P.ownEntries(m));
+            meas.door = P.doorInfo(m, stageIdx);
+            meas.gold = m.userData.goldTierV161 || 0;
+            const bp0 = buildingPosition(stageIdx), pp0 = upgradePadPosition(bp0, stageIdx), pp = { x: pp0.x - bp0.x + m.position.x, z: pp0.z - bp0.z + m.position.z }; let dmin = 1e9;
+            for (const e of P.ownEntries(m)) { const dx = pp.x - e.pos.x, dz = pp.z - e.pos.z, c = Math.cos(e.yaw || 0), s = Math.sin(e.yaw || 0), lx = dx * c - dz * s, lz = dx * s + dz * c; if (e.shape === 'obb') dmin = Math.min(dmin, Math.hypot(lx - Math.max(-e.hx, Math.min(e.hx, lx)), lz - Math.max(-e.hz, Math.min(e.hz, lz)))); else dmin = Math.min(dmin, Math.max(0, Math.hypot(pp.x - e.pos.x, pp.z - e.pos.z) - e.radius)); }
+            meas.padDist = +dmin.toFixed(2);
+            meas.height = meas.size[1];
+            const sh = P.shoot(m, views);
+            meas.draw = sh.calls.draw; meas.drawTris = sh.calls.tris;
+            return { meas, shots: sh.shots };
+          } finally { P.dropMesh(m); window.FactoryV161.enabled = true; }
+        }, { L, old, views: old ? ['iso'] : fviews, stageIdx });
+        for (const [v, url] of Object.entries(r.shots)) save(`${TAG}-factory${stageIdx}-L${L}-${old ? 'old-' : ''}${v}.jpg`, url);
+        factoryRows.push({ id: `factory${stageIdx}${old ? '-old' : ''}`, arch: 'factory', level: L, ...r.meas });
+        console.log(`  factory ${stageIdx}${old ? ' OLD' : ''} L${L}: meshes ${r.meas.meshes}, draw ${r.meas.draw}, height ${r.meas.height} m, pad distance ${r.meas.padDist} m, walk-in ${r.meas.sweepReached}/8`);
+      }
+    }
+  }
+}
+report.push(...factoryRows);
+
+// ------------------------------------------------------------------------------------------------ 2h. fleet yard (backlog #8): rebuilt through the game's own rebuildParkingV65 with the old / the new builder
+const fleetRows = [];
+if (WANT_FLEET) {
+  const built = await page.evaluate(() => __BLD_PROBE__.buildOut());
+  console.log('BUILD-OUT', built.join(' | '));
+  await page.waitForTimeout(4000);
+  await page.evaluate(() => __BLD_PROBE__.finishGrowth());
+  await page.waitForTimeout(2500);
+  const fviews = String(opt('fleet-views', 'front,iso,top,low')).split(',');
+  for (const old of opt('fleet-no-old', false) ? [false] : [true, false]) {
+    const r = await page.evaluate(({ old, fviews }) => {
+      const P = __BLD_PROBE__;
+      window.FleetYardV161.enabled = !old;
+      { const o = window.__TYCOON_V119__.state.owned; o.planks = o.concrete = o.metal = true; }
+      try { syncDeliveryFleet(); } catch (e) { /* no fleet yet */ }
+      __TYCOON_V65_TRAFFIC__.refresh();
+      P.forceScan();
+      const yard = scene.getObjectByName('v116FleetYard');
+      const own = [...__TYCOON_V83_COLLISIONS__.registry.values()].filter((e) => e.owner === yard && e.flags.player);
+      const meas = P.measureLive(yard);
+      const tgt = new THREE.Vector3(-40.7, 0.5, 6.7), trucks = serviceVehicles.filter((v) => v.visible !== false);
+      const views = { front: { az: Math.PI, el: 0.3, dist: 25 }, iso: { az: 2.5, el: 0.55, dist: 25 }, low: { az: 3.5, el: 0.25, dist: 20 }, top: { az: 0, el: 1.5, dist: 26 } };
+      const shots = {}; let draw = 0, tris = 0;
+      for (const v of fviews) { const o = P.overview([yard, ...trucks], { target: tgt, ...views[v] }); shots[v] = o.url; draw = Math.max(draw, o.draw); tris = Math.max(tris, o.tris); }
+      let meshes = 0; yard.traverse((m) => { if (m.isMesh) meshes++; });
+      return { meas: { ...meas, meshes, draw, drawTris: tris, solid: own.length }, shots, trucks: trucks.length };
+    }, { old, fviews });
+    for (const [v, url] of Object.entries(r.shots)) save(`${TAG}-fleet-${old ? 'old-' : ''}${v}.jpg`, url);
+    fleetRows.push({ id: `fleet-yard${old ? '-old' : ''}`, arch: 'special', level: 1, ...r.meas });
+    console.log(`  fleet yard${old ? ' OLD' : ''}: meshes ${r.meas.meshes}, draw calls ${r.meas.draw} (with ${r.trucks} trucks in the frame), ${r.meas.solid} solid boxes, min y ${r.meas.minY}`);
+  }
+  await page.evaluate(() => { window.FleetYardV161.enabled = true; __TYCOON_V65_TRAFFIC__.refresh(); });
+}
+report.push(...fleetRows);
+
 // ------------------------------------------------------------------------------------------------ 2e. suburb district (backlog #4): the identity group with the old and the new builders
 const suburbRows = [];
 if (WANT_SUBURB) {
@@ -367,7 +444,7 @@ for (const pass of passes) for (const i of stages) {
 }
 
 // neighbourhood mini houses (district housing ring): the three variants, old (circle collider) and new
-for (const legacy of WANT_PLANTS || WANT_SUBURB || WANT_SHOP || WANT_MARKET || WANT_WH || WANT_TERM ? [] : opt('also-legacy', false) ? [false, true] : [false]) {
+for (const legacy of WANT_PLANTS || WANT_SUBURB || WANT_SHOP || WANT_MARKET || WANT_WH || WANT_TERM || WANT_FACTORY || WANT_FLEET ? [] : opt('also-legacy', false) ? [false, true] : [false]) {
   for (const v of legacy ? [0] : [0, 1, 2]) {
     const r = await page.evaluate(({ legacy, views, v }) => {
       const P = __BLD_PROBE__; if (window.BuildingsV161) BuildingsV161.enabled = !legacy;
