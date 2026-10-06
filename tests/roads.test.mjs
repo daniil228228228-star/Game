@@ -8,6 +8,8 @@
 //      that reaches it, stage-road CORNER and T/X junction pieces exist, still no overlaps,
 //   3. an unrelated base upgrade and idle ticks must not rebuild the road network (same mesh uuids,
 //      same unified-surface layer),
+//   3b. (2026-10-06 (9)) the upgrades 1 -> 5 of EVERY main-line stage (0..15) re-lay no road mesh: all 16 stages stand at level 1, then four rounds upgrade all of them (the real
+//      upgradeBuilding: the old mesh goes, the invisible upgrade site stands, the new mesh comes back); the uuid set of the road meshes is identical after every round.
 //   4. "[road union]" never shows up in the console during the whole run.
 import { openGame, check, OLD_SAVE } from './lib/harness.mjs';
 
@@ -204,6 +206,42 @@ console.log('idle churn:', JSON.stringify(churn));
 check(snap0.stage.length > 0, `stage-road meshes exist before the idle ticks (${snap0.stage.length})`);
 check(churn.every((c) => c.meshes.destroyed === 0 && c.meshes.created === 0 && c.stage.destroyed === 0 && c.stage.created === 0), 'idle ticks: road meshes not destroyed or created');
 check(churn.every((c) => c.unionSame), 'idle ticks: unified road surface layer not rebuilt');
+
+// ---- 3b. upgrades 1 -> 5 of every main-line stage re-lay 0 road meshes (2026-10-06 (9): the road planners read a level-independent box per stage building, see planBoxV161 in rebuildStatic)
+{
+  const fin = () => ev(() => { for (const b of buildings) if (b.underConstruction) { b.underConstruction = false; b.progress = 1; } for (let k = growingMeshes.length - 1; k >= 0; k--) { growingMeshes[k].mesh.visible = true; growingMeshes[k].mesh.scale.set(1, 1, 1); growingMeshes.splice(k, 1); } });
+  const uu = () => ev(() => { const tags = ['v59RoadDeck', 'v86StageRoad', 'v66ServiceRoad', 'v116PersistentRoad'], o = []; scene.traverse((m) => { if (m.isMesh && m.userData && tags.some((t) => m.userData[t])) o.push(m.uuid); }); return o; });
+  const same = (a, b) => { const A = new Set(a), B = new Set(b); return a.length === b.length && a.every((x) => B.has(x)) && b.every((x) => A.has(x)); };
+  const settleU = async (min = 3, max = 45) => { let prevU = await uu(), n = 0; for (let k = 0; k < max; k++) { await page.waitForTimeout(900); const now = await uu(); if (same(prevU, now)) { if (++n >= min) return now; } else n = 0; prevU = now; } return prevU; };
+  await ev(() => { stageIndex = 16; money = 1e12; planks = 1e7; concrete = 1e6; metal = 1e6; });
+  // the rest of the stages one by one (spawning 16 at once makes the planner re-lay the whole map and logs "[road union]", see tests/house-door.test.mjs): each new stage paves its own road, then the planner settles
+  for (let i = 0; i < 16; i++) {
+    const had = await ev((i) => buildings.some((b) => b.index === i), i);
+    if (had) continue;
+    await ev((i) => { spawnBuilding(i, 1, { grow: false }); }, i);
+    await fin();
+    await settleU(2, 25);
+  }
+  await ev(() => { for (const b of buildings) b.level = 1; });
+  const lv1 = await ev(() => buildings.map((b) => `${b.index}:${b.level}`).join(','));
+  let beforeU = await settleU(6, 90);
+  const rounds = [];
+  for (let L = 2; L <= 5; L++) {
+    // the game has two construction slots: upgrade two buildings, let the planner see the upgrade sites stand (the new meshes are invisible), finish them, next pair
+    for (let k = 0; k < 16; k += 2) {
+      await ev((k) => { money = 1e12; planks = 1e7; concrete = 1e6; metal = 1e6; for (const i of [k, k + 1]) { const b = buildings.find((x) => x.index === i); if (b) upgradeBuilding(b, { fromQueue: true }); } }, k);
+      await page.waitForTimeout(1400);
+      await fin();
+    }
+    const afterU = await settleU(3, 45);
+    rounds.push({ L, before: beforeU.length, after: afterU.length, same: same(beforeU, afterU), destroyed: beforeU.filter((x) => !new Set(afterU).has(x)).length });
+    beforeU = afterU;
+  }
+  const lvs = await ev(() => buildings.map((b) => b.level));
+  console.log('3b: stages at level 1:', lv1, '| after the rounds:', JSON.stringify(lvs), '| rounds', JSON.stringify(rounds));
+  check(lvs.length >= 16 && lvs.every((l) => l === 5), `3b: all ${lvs.length} main-line stages went 1 -> 5 through upgradeBuilding`);
+  check(rounds.length === 4 && rounds.every((r) => r.same), `3b: upgrades 1 -> 5 of all 16 main-line stages re-lay 0 road meshes (uuid sets identical after every round: ${rounds.map((r) => r.before + '>' + r.after + ' (' + r.destroyed + ' re-laid)').join(', ')}; before the fix the shop alone re-laid 27 of 41 on every step)`);
+}
 
 // ---- 4. console
 const union = g.errors.filter((e) => e.includes('[road union]'));

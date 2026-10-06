@@ -926,6 +926,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="assets/plants-v161.js"></script>
 <script src="assets/market-v161.js"></script>
 <script src="assets/shop-v161.js"></script>
+<script src="assets/warehouse-v161.js"></script>
 <script src="assets/foliage-v154.js"></script>
 <script src="assets/work-session-v158.js"></script>
 <script src="assets/development-core-v160.js"></script>
@@ -6464,7 +6465,9 @@ function createBuildingMesh(stage, level = 1) {
   const houseV161 = stage.archetype === 'house' && typeof buildHouseV161 === 'function' && window.BuildingsV161?.enabled !== false;
   // v161 shop (assets/shop-v161.js, 2026-10-05 (8)): the main-line shop (STAGES entry, not the city / base / project shops that share the archetype) has its own merged-geometry builder with real wall colliders.
   const shopV161 = stage.archetype === 'shop' && STAGES.indexOf(stage) >= 0 && typeof buildShopV161 === 'function' && window.ShopV161?.enabled !== false;
-  const group = houseV161 ? buildHouseV161(stage, height, baseSize, level) : shopV161 ? buildShopV161(stage, height, baseSize, level) : builder(stage, height, baseSize);
+  // v161 warehouse + logistics terminal (assets/warehouse-v161.js, 2026-10-06 (9)): the two main-line `warehouse` stages (3 and 10) have their own merged-geometry builder with real wall colliders.
+  const logisticsV161 = stage.archetype === 'warehouse' && STAGES.indexOf(stage) >= 0 && typeof buildLogisticsV161 === 'function' && window.LogisticsV161?.enabled !== false;
+  const group = houseV161 ? buildHouseV161(stage, height, baseSize, level) : shopV161 ? buildShopV161(stage, height, baseSize, level) : logisticsV161 ? buildLogisticsV161(stage, height, baseSize, level) : builder(stage, height, baseSize);
   if (!group.userData.v161Complete) {
     enhanceBuildingGeometry(group, stage, height, baseSize, level);
     addBuildingVisualPolish(group, stage, height, baseSize, level);
@@ -32572,18 +32575,34 @@ window.__TYCOON_V74_BUILD__={
     const set=new Set();for(const t of sourceTrees||[])if(t?.mesh)set.add(t.mesh);return set;
   }
 
+  const planBoxV161=new Map(); // stage index -> {x,z,hx,hz}: the level-independent box the road planners read (see rebuildStatic)
   function rebuildStatic(){
     clearStatic();
     const sourceSet=sourceTreeSet();
 
     // Stage buildings — derive footprint from the actual rendered mesh, not baseSize*0.64.
+    // v161 (2026-10-06 (9), "an upgrade must not re-lay roads"): the road planners (v86 obstacles() / sigNow()) read the whole-mesh box of a stage building. That box grew with the level
+    // (a shop's awning, stand and annex: +2..+60 cm) and the entry vanished while the upgrade site stood (the mesh is invisible), so every upgrade 1->5 changed the planner input and
+    // re-laid 27 of 41 road meshes (measured on the shop; the warehouse / factory / office grow only in y and did not). Now the planner sees ONE box per stage building: the box of the
+    // first registration in this session (`planBoxV161`, dropped when the building is gone, e.g. a prestige), also while the upgrade site stands. Placement / camera still use the exact box.
     for(const b of buildings||[]){
-      if(!b?.mesh||b.mesh.visible===false)continue;
-      registerRoot(b.mesh,b.underConstruction?'construction':'building',`stage:${b.index}`,{
+      if(!b?.mesh)continue;
+      if(b.mesh.visible===false){
+        const keep=planBoxV161.get(b.index);
+        if(keep&&b.underConstruction&&(b.level||1)>1){ register({owner:b.mesh,category:'building',label:`stage:${b.index}`,shape:'obb',pos:new THREE.Vector3(keep.x,0,keep.z),hx:keep.hx,hz:keep.hz,yaw:0,plan:keep,flags:{player:false,agent:false,camera:false,placement:true}}); }
+        continue;
+      }
+      const legacy=registerRoot(b.mesh,b.underConstruction?'construction':'building',`stage:${b.index}`,{
         shrink:b.underConstruction?.88:.93,
         flags:b.underConstruction?{player:false,agent:false,camera:false,placement:true}:{}
       });
+      if(legacy&&!b.underConstruction){
+        let keep=planBoxV161.get(b.index);
+        if(!keep){keep={x:legacy.pos.x,z:legacy.pos.z,hx:legacy.hx,hz:legacy.hz};planBoxV161.set(b.index,keep);}
+        legacy.plan=keep;
+      }
     }
+    for(const k of [...planBoxV161.keys()])if(!(buildings||[]).some(b=>b?.index===k))planBoxV161.delete(k);
 
     // Industrial/static legacy assets remain as circle fallbacks. Their true model roots are not
     // stored in one common collection in the legacy code, so keeping them here is safer than
@@ -33433,7 +33452,8 @@ function obstacles(i,width){
     if(!e?.pos)continue;
     if(e.label===targetLabel(i))continue;
     if(!['building','base','special','industrial','construction'].includes(e.category))continue;
-    out.push({...e,_pad:pad});
+    if(e.category==='building'&&e.flags&&e.flags.placement===false)continue; // v161: wall boxes (player/agent only) are inside the whole-mesh box the planner reads; they change with the level
+    out.push(e.plan?{...e,pos:new THREE.Vector3(e.plan.x,0,e.plan.z),hx:e.plan.hx,hz:e.plan.hz,yaw:0,_pad:pad}:{...e,_pad:pad});
   }
 
   // Manual no-road envelopes around the starter industrial cluster.
@@ -33464,7 +33484,7 @@ function obstacles(i,width){
   function clearSeg(a,b,obs){for(const e of obs){const pad=e.category==='future-stage'?0:(e._pad||0);if(segHits(a,b,e,pad-.015))return false;}return true;}
   function sigNow(){
     const lv=Math.max(1,typeof maxRoadLevelV37==='function'?maxRoadLevelV37():1);
-    const entries=regValues().filter(e=>['building','base','special','industrial','construction'].includes(e.category)).map(e=>`${e.category}:${e.label||''}:${e.pos.x.toFixed(2)},${e.pos.z.toFixed(2)}:${(e.hx||e.radius||0).toFixed(2)},${(e.hz||e.radius||0).toFixed(2)}:${(e.yaw||0).toFixed(2)}`).sort();
+    const entries=regValues().filter(e=>['building','base','special','industrial','construction'].includes(e.category)&&!(e.category==='building'&&e.flags&&e.flags.placement===false)).map(e=>{const q=e.plan?{pos:{x:e.plan.x,z:e.plan.z},hx:e.plan.hx,hz:e.plan.hz,yaw:0}:e;return `${e.category}:${e.label||''}:${q.pos.x.toFixed(2)},${q.pos.z.toFixed(2)}:${(q.hx||e.radius||0).toFixed(2)},${(q.hz||e.radius||0).toFixed(2)}:${(q.yaw||0).toFixed(2)}`;}).sort();
     return `${lv}|${STAGES.length}|${entries.join('|')}`;
   }
   function ensureSig(){const s=sigNow();if(s!==signature){signature=s;routeCache.clear();centerlineCache.clear();generation++;}}

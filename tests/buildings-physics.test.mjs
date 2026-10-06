@@ -18,7 +18,9 @@
 //   B4 (2026-10-05 (8), backlog #4): the SUBURB district identity group (lawn, trees, planters, ring of mini houses): real wall boxes for every house (+ shed), tree trunks standing on the ground and
 //   clear of the houses, nothing floating or sunk, <= 8 meshes (was ~116), the player walked at every house from 8 directions never gets inside; the three mini-house variants are HARD in section A
 //   (walls cover the footprint, no walk-in, min y 0), and the SHOP (stage 2, levels 1..10, backlog #5) joins the house family in sections A / B (walls, door, step, pad outside the collider).
-// IN SCOPE (hard checks): the house family = stage 0/1 at every level + the shop (stage 2) at every level, the three neighbourhood / suburb mini houses, the suburb district, the four industrial plants, the market. Everything else in the catalogue is measured and
+//   B5 (2026-10-06 (9), backlog #6): the WAREHOUSE (stage 3) and the LOGISTICS TERMINAL (stage 10) join the hard family in sections A / B at every level 1..10 (walls, <= 0.3 m outside, growth, gold,
+//   crown, <= 1/5 of the old meshes, door vs driveway, min y, no walk-in) and their upgrade pads must stand outside every collider (the pad stood 0.54 m inside the old warehouse wall).
+// IN SCOPE (hard checks): the house family = stage 0/1 at every level + the shop (stage 2) + the warehouse (3) and the terminal (10) at every level, the three neighbourhood / suburb mini houses, the suburb district, the four industrial plants, the market. Everything else in the catalogue is measured and
 //   printed as `KNOWN ISSUE:` (exit 0) - those lines are the backlog of the next building families. SHOTS_DIR=<dir> writes front + iso pictures of house levels 1/3/5/10
 //   and of the plants at levels 1/3, the shop at levels 1/3/5/10.
 import fs from 'node:fs';
@@ -41,10 +43,10 @@ const info = await ev(() => __BLD_PROBE__.stageInfo());
 // ------------------------------------------------------------------------------------------------ A. stage buildings, isolated
 const rows = [];
 for (let i = 0; i < info.n; i++) {
-  const house = info.arch[i] === 'house', shop = info.arch[i] === 'shop';
-  const levels = house || shop ? Array.from({ length: info.maxLevel }, (_, k) => k + 1) : [1, 5, 10];
+  const house = info.arch[i] === 'house', shop = info.arch[i] === 'shop', logi = info.arch[i] === 'warehouse';
+  const levels = house || shop || logi ? Array.from({ length: info.maxLevel }, (_, k) => k + 1) : [1, 5, 10];
   for (const L of levels) {
-    const shots = SHOTS && (house || shop) && [1, 3, 5, 10].includes(L) ? ['front', 'iso'] : [];
+    const shots = SHOTS && (house || shop || logi) && [1, 3, 5, 10].includes(L) ? ['front', 'iso'] : [];
     const r = await ev(({ i, L, shots }) => {
       const P = __BLD_PROBE__, m = P.stageMesh(i, L);
       try {
@@ -53,8 +55,8 @@ for (let i = 0; i < info.n; i++) {
         const meas = P.measure(m, P.ownEntries(m));
         meas.door = P.doorInfo(m, i);
         meas.gold = m.userData.goldTierV161 || 0;
-        meas.goldMesh = m.children.some((c) => c.name === 'houseGoldV161' || c.name === 'shopGoldV161');
-        meas.goldTris = (() => { const c = m.children.find((x) => x.name === 'houseGoldV161' || x.name === 'shopGoldV161'); return c ? c.geometry.index.count / 3 : 0; })();
+        meas.goldMesh = m.children.some((c) => c.name === 'houseGoldV161' || c.name === 'shopGoldV161' || c.name === 'logisticsGoldV161');
+        meas.goldTris = (() => { const c = m.children.find((x) => x.name === 'houseGoldV161' || x.name === 'shopGoldV161' || x.name === 'logisticsGoldV161'); return c ? c.geometry.index.count / 3 : 0; })();
         meas.legacyPlayer = legacyEntry ? !!legacyEntry.flags.player : null;
         meas.legacyPlacement = legacyEntry ? !!legacyEntry.flags.placement : null;
         meas.legacyCamera = legacyEntry ? !!legacyEntry.flags.camera : null;
@@ -68,7 +70,7 @@ for (let i = 0; i < info.n; i++) {
       } finally { P.dropMesh(m); }
     }, { i, L, shots });
     if (r.shots) for (const [v, url] of Object.entries(r.shots)) fs.writeFileSync(path.join(SHOTS, `bld-stage${i}-L${L}-${v}.jpg`), Buffer.from(url.split(',')[1], 'base64'));
-    rows.push({ i, L, arch: info.arch[i], house, shop, ...r.meas });
+    rows.push({ i, L, arch: info.arch[i], house, shop, logi, ...r.meas });
   }
 }
 // the old house for the draw-call comparison (same builder chain with the new house switched off)
@@ -86,6 +88,13 @@ const oldShop = await ev(() => {
   ShopV161.enabled = true;
   return out;
 });
+const oldLogi = await ev(() => {
+  const P = __BLD_PROBE__, out = {};
+  LogisticsV161.enabled = false;
+  for (const i of [3, 10]) for (const L of [1, 5, 10]) { const m = P.stageMesh(i, L); out[`${i}:${L}`] = P.measure(m, P.ownEntries(m), { sweep: false }).meshes; P.dropMesh(m); }
+  LogisticsV161.enabled = true;
+  return out;
+});
 const minis = [];
 for (const v of [0, 1, 2]) {
   const mini = await ev((v) => {
@@ -98,7 +107,7 @@ for (const v of [0, 1, 2]) {
 const mini = minis[0];
 
 const label = (r) => (r.i < 0 ? 'mini house' : `stage ${r.i} (${r.arch}) L${r.L}`);
-const hard = rows.filter((r) => r.house || r.shop);
+const hard = rows.filter((r) => r.house || r.shop || r.logi);
 console.log(`measured ${rows.length} building meshes: ${hard.length} in the house / shop family (hard checks), ${rows.length - hard.length} others (KNOWN ISSUE lines)`);
 check(rows.length >= 16 * 3 + 14 + 10, `every stage x level measured (${rows.length})`);
 
@@ -140,6 +149,23 @@ check(b.length === 0, `shop: the collider is at most 0.3 m (and 0.8 m2) outside 
   check(gt.every((r) => r.gold === r.L && r.goldMesh) && gt.every((r, k) => k === 0 || r.goldTris >= gt[k - 1].goldTris) && gt[4].goldTris > gt[3].goldTris, `shop: gold tiers 6..10 carry the tier and more gold with every level, the crown comes at 10 (gold triangles ${gt.map((r) => r.goldTris)})`); }
 { const mx = Math.max(...shops.map((r) => r.meshes));
   check(mx <= 14 && shops.every((r) => oldShop[r.L] === undefined || r.meshes < oldShop[r.L]), `shop draw calls: <= ${mx} meshes at any level (old builder ${J(oldShop)} for levels 1/3/5/10)`); }
+
+// ---- the warehouse (stage 3) and the logistics terminal (stage 10), levels 1..10, assets/warehouse-v161.js (2026-10-06 (9), backlog #6)
+for (const si of [3, 10]) {
+  const ls = rows.filter((r) => r.logi && r.i === si).sort((p, q) => p.L - q.L), nm = si === 3 ? 'warehouse' : 'terminal';
+  b = ls.filter((r) => !(r.walls >= 1 && r.legacyPlayer === false && r.legacyPlacement === true && r.legacyCamera === true && r.front)).map(label);
+  check(ls.length === 10 && b.length === 0, `${nm}: wall boxes are the player/agent colliders, the whole-mesh box keeps placement + camera only (${ls.length} levels, ${b.length} bad ${J(b.slice(0, 3))}; before: one whole-mesh box ${si === 3 ? '2.37 x 2.58' : '2.75 x 3.05'} m, ${si === 3 ? '10.6' : '14'} m2 invisible wall up to ${si === 3 ? '1.53' : '1.67'} m)`);
+  b = ls.filter((r) => Math.abs((r.wallYaw ?? 0) - r.meshYaw) > 1e-6).map(label);
+  check(b.length === 0, `${nm} wall boxes are rotated with the mesh (yaw ${J(ls.slice(0, 1).map((r) => [r.wallYaw, r.meshYaw]))})`);
+  b = ls.filter((r) => !(r.outsideMax <= 0.3 && r.outside <= 0.8)).map(label);
+  check(b.length === 0, `${nm}: the collider is at most 0.3 m (and 0.8 m2) outside the walls at every level (worst ${Math.max(...ls.map((r) => r.outsideMax))} m / ${Math.max(...ls.map((r) => r.outside))} m2)`);
+  const t = ls.map((r) => r.tris);
+  check(t.slice(0, 5).every((v, k) => k === 0 || v > t[k - 1]), `${nm}: the SAME building grows - every level 1..5 ADDS parts (triangles ${t.slice(0, 5)})`);
+  check(ls.every((r, k) => k === 0 || r.meshes >= ls[k - 1].meshes) && ls.every((r) => r.meshes <= 16), `${nm}: mesh counts never decrease and stay <= 16 (${ls.map((r) => r.meshes)}; the old builder ${J(Object.fromEntries(Object.entries(oldLogi).filter(([k]) => k.startsWith(si + ':'))))})`);
+  const gt = ls.filter((r) => r.L >= 6);
+  check(gt.every((r) => r.gold === r.L && r.goldMesh) && gt.every((r, k) => k === 0 || r.goldTris >= gt[k - 1].goldTris) && gt[4].goldTris > gt[3].goldTris, `${nm}: gold tiers 6..10 carry the tier and more gold with every level, the crown comes at 10 (gold triangles ${gt.map((r) => r.goldTris)})`);
+  check(Object.entries(oldLogi).filter(([k]) => k.startsWith(si + ':')).every(([k, v]) => ls.find((r) => r.L === +k.split(':')[1]).meshes * 5 < v), `${nm}: <= 1/5 of the old meshes at levels 1/5/10`);
+}
 const newMax = Math.max(...houses.map((r) => r.meshes)), oldMin = Math.min(...Object.values(old));
 check(newMax <= 20 && newMax <= oldMin, `house draw calls: <= ${newMax} meshes per house at any level (old builder ${J(old)})`);
 check(minis.every((m) => m.meshes <= 5), `mini houses: <= 5 meshes each (${J(minis.map((m) => m.meshes))}; old 5)`);
@@ -147,14 +173,14 @@ check(minis.every((m) => m.minY >= -0.05 && m.minY <= 0.05 && m.overlap >= 0.9 &
 check(new Set(minis.map((m) => m.tris)).size === 3 && new Set(minis.map((m) => m.variant)).size === 3, `mini houses: three distinct variants (triangles ${J(minis.map((m) => m.tris))})`);
 
 // --- known issues, everything else
-for (const r of rows.filter((x) => !x.house && !x.shop)) {
+for (const r of rows.filter((x) => !x.house && !x.shop && !x.logi)) {
   if (r.minY < -0.05 || r.minY > 0.05) issue(`${label(r)}: floating or sunk, min y ${r.minY}`);
   if (r.overlap !== null && r.overlap < 0.9) issue(`${label(r)}: collider covers only ${Math.round(r.overlap * 100)} % of the wall footprint`);
   if (r.outsideMax > 1.0 && (r.L === 1 || r.L === 5)) issue(`${label(r)}: collider (whole-mesh box) extends ${r.outsideMax} m beyond the walls (${r.outside} m2 of invisible wall)`);
   if (r.sweepReached > 0) issue(`${label(r)}: the player can walk into the building from ${r.sweepReached} of 8 directions`);
 }
 const kinds = {};
-for (const r of rows.filter((x) => !x.house && !x.shop)) { (kinds[r.i] = kinds[r.i] || []).push(r); }
+for (const r of rows.filter((x) => !x.house && !x.shop && !x.logi)) { (kinds[r.i] = kinds[r.i] || []).push(r); }
 check(Object.values(kinds).every((rs) => rs.every((r) => r.sweepReached === 0)), 'other stage buildings: the player cannot walk into any of them (whole-mesh boxes cover the walls)');
 
 // ------------------------------------------------------------------------------------------------ B. live world
@@ -165,7 +191,7 @@ await ev(() => __BLD_PROBE__.finishGrowth());
 await page.waitForTimeout(2500);
 const live = await ev(() => {
   const P = __BLD_PROBE__, reg = __TYCOON_V83_COLLISIONS__.registry, out = { houses: [] };
-  for (const idx of [0, 1, 2]) {
+  for (const idx of [0, 1, 2, 3, 10]) {
     const e = buildings.find((x) => x.index === idx), m = e.mesh, own = [...reg.values()].filter((x) => x.owner === m);
     let door = null; m.traverse((o) => { if (o.userData?.v161Door) door = o; });
     const w = new THREE.Vector3(); door.getWorldPosition(w);
@@ -187,6 +213,7 @@ for (const h of live.houses) {
 console.log(`work points checked: ${live.points.length} (${live.points.map((p) => p.id).join(', ')})`);
 const houseBad = live.points.filter((p) => p.family === 'house' && p.b.moved > 0.25);
 check(houseBad.length === 0 && live.points.some((p) => p.id === 'upgrade-pad:stage2'), `house and shop upgrade pads are reachable: not deeper than 25 cm inside a collider (${J(houseBad)}; the shop pad stood 0.07 m inside its 1.43 m invisible wall)`);
+check(live.points.filter((p) => ['upgrade-pad:stage2', 'upgrade-pad:stage3', 'upgrade-pad:stage10'].includes(p.id)).length === 3 && live.points.filter((p) => ['upgrade-pad:stage3', 'upgrade-pad:stage10'].includes(p.id)).every((p) => !p.b.hit && p.b.moved === 0), `the warehouse and terminal upgrade pads stand OUTSIDE every collider (before: the warehouse pad was inside the wall) ${J(live.points.filter((p) => ['upgrade-pad:stage3', 'upgrade-pad:stage10'].includes(p.id)))}`);
 check(live.points.filter((p) => p.id === 'upgrade-pad:stage2').every((p) => !p.b.hit), `the shop upgrade pad stands OUTSIDE every collider (${J(live.points.filter((p) => p.id === 'upgrade-pad:stage2'))})`);
 const padsInside = live.points.filter((x) => x.family !== 'house' && x.b.hit);
 for (const p of padsInside) issue(`${p.id} @${p.x},${p.z} is inside a collider (${p.b.by.join(', ')}; the player circle would be pushed ${p.b.moved} m)`);

@@ -36,6 +36,7 @@ const WANT_PLANTS = !!opt('plants', false);
 const WANT_MARKET = !!opt('market', false);
 const WANT_SHOP = !!opt('shop', false);
 const WANT_SUBURB = !!opt('suburb', false);
+const WANT_WH = !!opt('warehouse', false), WANT_TERM = !!opt('terminal', false);
 fs.mkdirSync(OUT, { recursive: true });
 
 const LATE = { saveVersion: 20, stageIndex: 16, money: 5e8, planks: 5000, concrete: 500, metal: 500, buildings: Array.from({ length: 16 }, (_, i) => ({ index: i, level: 5 })) };
@@ -43,7 +44,7 @@ const g = await openGame({ save: LATE, waitMs: 8000 });
 const { page } = g;
 await page.evaluate(installProbe);
 const info = await page.evaluate(() => __BLD_PROBE__.stageInfo());
-const stages = (WANT_PLANTS || WANT_MARKET || WANT_SHOP || WANT_SUBURB) && !opt('stages', false) ? [] : parseList(opt('stages', 'all'), Array.from({ length: info.n }, (_, i) => i));
+const stages = (WANT_PLANTS || WANT_MARKET || WANT_SHOP || WANT_SUBURB || WANT_WH || WANT_TERM) && !opt('stages', false) ? [] : parseList(opt('stages', 'all'), Array.from({ length: info.n }, (_, i) => i));
 const levels = parseList(opt('levels', '1,5,10'), [1, 5, 10]);
 const houseLevels = parseList(opt('house-levels', '1-10'), Array.from({ length: 10 }, (_, i) => i + 1));
 const save = (name, dataUrl) => fs.writeFileSync(path.join(OUT, name), Buffer.from(dataUrl.split(',')[1], 'base64'));
@@ -240,6 +241,40 @@ if (WANT_SHOP) {
   report.push(...shopRows);
 }
 
+// ------------------------------------------------------------------------------------------------ 2f. warehouse (stage 3) + logistics terminal (stage 10), backlog #6: old builder and new at every listed level
+const logiRows = [];
+for (const [want, stageIdx, tag] of [[WANT_WH, 3, 'warehouse'], [WANT_TERM, 10, 'terminal']]) {
+  if (!want) continue;
+  const lv = parseList(opt(tag + '-levels', '1,3,5,6,10'), [1, 3, 5, 6, 10]);
+  const lviews = String(opt(tag + '-views', 'front,iso,side')).split(',');
+  for (const old of opt('logistics-no-old', false) ? [false] : [true, false]) {
+    for (const L of lv) {
+      const r = await page.evaluate(({ L, old, views, stageIdx }) => {
+        const P = __BLD_PROBE__;
+        window.LogisticsV161.enabled = !old;
+        const m = P.stageMesh(stageIdx, L);
+        try {
+          P.registerStage(m, stageIdx);
+          const meas = P.measure(m, P.ownEntries(m));
+          meas.door = P.doorInfo(m, stageIdx);
+          meas.gold = m.userData.goldTierV161 || 0;
+          meas.yaw = +m.rotation.y.toFixed(3);
+          const bp0 = buildingPosition(stageIdx), pp0 = upgradePadPosition(bp0, stageIdx), pp = { x: pp0.x - bp0.x + m.position.x, z: pp0.z - bp0.z + m.position.z }; let dmin = 1e9;
+          for (const e of P.ownEntries(m)) { const dx = pp.x - e.pos.x, dz = pp.z - e.pos.z, c = Math.cos(e.yaw || 0), s = Math.sin(e.yaw || 0), lx = dx * c - dz * s, lz = dx * s + dz * c; if (e.shape === 'obb') dmin = Math.min(dmin, Math.hypot(lx - Math.max(-e.hx, Math.min(e.hx, lx)), lz - Math.max(-e.hz, Math.min(e.hz, lz)))); else dmin = Math.min(dmin, Math.hypot(dx, dz) - e.radius); }
+          meas.padDist = +dmin.toFixed(2);
+          const sh = P.shoot(m, views);
+          meas.draw = sh.calls.draw; meas.drawTris = sh.calls.tris;
+          return { meas, shots: sh.shots };
+        } finally { P.dropMesh(m); window.LogisticsV161.enabled = true; }
+      }, { L, old, views: old ? ['iso'] : lviews, stageIdx });
+      for (const [v, url] of Object.entries(r.shots)) save(`${TAG}-${tag}-L${L}-${old ? 'old-' : ''}${v}.jpg`, url);
+      logiRows.push({ id: `${tag}${old ? '-old' : ''}`, arch: 'warehouse', level: L, ...r.meas });
+      console.log(`  ${tag}${old ? ' OLD' : ''} L${L}: pad distance to the nearest collider ${r.meas.padDist} m`);
+    }
+  }
+}
+report.push(...logiRows);
+
 // ------------------------------------------------------------------------------------------------ 2e. suburb district (backlog #4): the identity group with the old and the new builders
 const suburbRows = [];
 if (WANT_SUBURB) {
@@ -332,7 +367,7 @@ for (const pass of passes) for (const i of stages) {
 }
 
 // neighbourhood mini houses (district housing ring): the three variants, old (circle collider) and new
-for (const legacy of WANT_PLANTS || WANT_SUBURB || WANT_SHOP || WANT_MARKET ? [] : opt('also-legacy', false) ? [false, true] : [false]) {
+for (const legacy of WANT_PLANTS || WANT_SUBURB || WANT_SHOP || WANT_MARKET || WANT_WH || WANT_TERM ? [] : opt('also-legacy', false) ? [false, true] : [false]) {
   for (const v of legacy ? [0] : [0, 1, 2]) {
     const r = await page.evaluate(({ legacy, views, v }) => {
       const P = __BLD_PROBE__; if (window.BuildingsV161) BuildingsV161.enabled = !legacy;

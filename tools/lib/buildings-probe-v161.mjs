@@ -379,7 +379,7 @@ export function installProbe() {
     for (const k of Object.keys(LOGISTICS_ZONES)) add('pickup:' + k, LOGISTICS_ZONES[k].pos, 'industrial');
     add('sawmill-dropoff', SAWMILL_DROPOFF_POS, 'industrial');
     for (const k of ['concrete', 'metal']) { const g = scene.getObjectByName('manualMineV119_' + k); if (g) add('mine:' + k, g.position, 'industrial'); } // the manual gathering pads next to the plants
-    for (const b of buildings) if (b.upgradePad?.pos) add('upgrade-pad:stage' + b.index, b.upgradePad.pos, ['house', 'shop'].includes(STAGES[b.index].archetype) ? 'house' : 'stage'); // 'house' = the family with hard pad checks (houses, shop)
+    for (const b of buildings) if (b.upgradePad?.pos) add('upgrade-pad:stage' + b.index, b.upgradePad.pos, ['house', 'shop'].includes(STAGES[b.index].archetype) || (STAGES[b.index].archetype === 'warehouse' && window.LogisticsV161?.enabled) ? 'house' : 'stage'); // 'house' = the family with hard pad checks (houses, shop)
     for (const s of (typeof INDUSTRIAL_BUILD_STEPS_V118 !== 'undefined' ? INDUSTRIAL_BUILD_STEPS_V118 : [])) if (s.pos && industrialPadMarkersV118?.has?.(s.id)) add('industrial-pad:' + s.id, s.pos, 'industrial');
     for (const f of (typeof FIELD_UPGRADE_CONFIGS !== 'undefined' ? FIELD_UPGRADE_CONFIGS : [])) add('field-pad:' + (f.key || f.id || ''), f.pos, 'industrial');
     return pts;

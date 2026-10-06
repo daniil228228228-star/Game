@@ -105,6 +105,7 @@
       try {
         // houses (assets/buildings-v161.js) and the shop (assets/shop-v161.js) carry their own gold trim that fits their silhouette; every other archetype keeps addGoldTiers
         if (g.userData.v161House && window.BuildingsV161?.addHouseGold) window.BuildingsV161.addHouseGold(g, stage, level);
+        else if (g.userData.v161Logistics && window.LogisticsV161?.addGold) window.LogisticsV161.addGold(g, stage, level); // warehouse + terminal (assets/warehouse-v161.js)
         else if (g.userData.v161Shop && window.ShopV161?.addGold) window.ShopV161.addGold(g, stage, level); // the shop (assets/shop-v161.js) has gold trim that fits its facade
         else addGoldTiers(g, stage, level);
       } catch (err) { console.warn('[v161 gold tiers]', err); }
