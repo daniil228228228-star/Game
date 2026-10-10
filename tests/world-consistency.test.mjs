@@ -175,7 +175,8 @@ const PAGE = () => {
       const near = Math.min(1e9, ...segs.map((p) => dseg(v.x, v.z, p.ends[0], p.ends[1])));
       const inPiece = W._pieces.some((p) => v.x >= p.bb[0] - 0.4 && v.x <= p.bb[2] + 0.4 && v.z >= p.bb[1] - 0.4 && v.z <= p.bb[3] + 0.4);
       const inYard = yard.some((a) => v.x >= a.bb[0] && v.x <= a.bb[2] && v.z >= a.bb[1] && v.z <= a.bb[3]);
-      if (!(near <= 1.0 || inPiece || inYard)) bad.push([r2(v.x), r2(v.z), r2(near)]);
+      const inLoadingYard = !!(window.YardsV161 && window.YardsV161.yardAt(v, 0.3));   // the truck bay + lead-in of a loading yard (paved slab outside the road groups, 2026-10-10 (12))
+      if (!(near <= 1.0 || inPiece || inYard || inLoadingYard)) bad.push([r2(v.x), r2(v.z), r2(near)]);
     }
     return { n: route.length, checked: route.filter((v) => v.x < xMax).length, bad };
   };

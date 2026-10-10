@@ -23,6 +23,9 @@
 //   node tools/showcase-v161.mjs --tower  [--tower-levels 1,3,5,6,10]  [--tower-stages 8,9,12,15]  [--tower-views front,iso,side]  [--tower-no-old]  [--night]   (2026-10-06 (11), backlog #11)
 //     the main-line offices / towers built by the real chain, old builder (OfficeTowerV161.enabled = false) and new: meshes, draw calls, triangles, height, min y, collider cover / outside / walk-in, door vs driveway, pad distance;
 //     DIR/<tag>-office<stage>-L<n>-<view>.jpg / -tower<stage>-... (+ -old-); --night also writes -night-iso (the shared window material set to its night value for one shot).
+//   node tools/showcase-v161.mjs --yards [--out DIR]   (2026-10-10 (12), loading yards)
+//     runs tests/loading-yards.test.mjs with SHOTS_DIR=DIR (one launch of its own: the numbers AND the pictures): each loading yard (planks / concrete / metal) with stock 12 and a truck in its bay,
+//     from above and from an angle, plus the whole industrial zone: DIR/yards-<zone|planks|concrete|metal>_<top|iso|side>.jpg. Nothing else of this tool runs.
 // ONE browser launch per run. Stage buildings (all 16 STAGES) are built by the game's real builder chain (createBuildingMesh: BUILDERS + polish layers +
 // v44 + v157 + late-game gold tiers), put alone on the grass (everything else in the scene is hidden for the shot), registered in the real v83 collision
 // registry with the call rebuildStatic uses, and shot from four fixed cameras at the phone viewport 390x664: DIR/bld-<id>-L<n>-<view>.jpg.
@@ -35,6 +38,12 @@ import { openGame, REPO_ROOT } from '../tests/lib/harness.mjs';
 import { installProbe } from './lib/buildings-probe-v161.mjs';
 
 const args = process.argv.slice(2);
+if (args.includes('--yards')) {   // the yard pictures come from the yards test (same launch as its numbers); no second browser here
+  const { spawnSync } = await import('node:child_process');
+  const oi = args.indexOf('--out'); const out = path.resolve(oi >= 0 ? args[oi + 1] : path.join(REPO_ROOT, '..', 'shots'));
+  const r = spawnSync(process.execPath, [path.join(REPO_ROOT, 'tests', 'loading-yards.test.mjs')], { env: { ...process.env, SHOTS_DIR: out }, stdio: 'inherit' });
+  process.exit(r.status === null ? 1 : r.status);
+}
 const opt = (name, def) => { const i = args.indexOf('--' + name); return i < 0 ? def : (args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : true); };
 const parseList = (s, all) => (s === 'all' || s === undefined ? all : String(s).split(',').flatMap((x) => { const m = /^(\d+)-(\d+)$/.exec(x); return m ? Array.from({ length: +m[2] - +m[1] + 1 }, (_, k) => +m[1] + k) : [+x]; }));
 const OUT = path.resolve(opt('out', path.join(REPO_ROOT, '..', 'shots')));
