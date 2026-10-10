@@ -286,7 +286,7 @@
     for (const s of sites || []) {
       if (!s || !s.v161 || !s.group || !s.group.parent || !s.craneParts || !s.craneParts[0]) continue;
       const w = new THREE.Vector3(); s.craneRig.getWorldPosition(w);
-      out.push({ owner: s.group, category: 'construction', label: 'site-crane-v161', shape: 'obb', pos: new THREE.Vector3(w.x, 0, w.z), hx: 0.27, hz: 0.27, yaw: 0, active: () => !!(s.group.parent && s.craneParts[0].visible) });
+      out.push({ owner: s.group, category: 'decor', label: 'site-crane-v161', shape: 'obb', pos: new THREE.Vector3(w.x, 0, w.z), hx: 0.27, hz: 0.27, yaw: 0, active: () => !!(s.group.parent && s.craneParts[0].visible) });
     }
     return out;
   }
