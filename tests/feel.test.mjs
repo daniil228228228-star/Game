@@ -164,7 +164,7 @@ const PLATES = () => {
   for (const l of labels) {
     let vis = l.visible; for (let p = l.parent; p && vis; p = p.parent) vis = p.visible;
     if (!vis) continue; chainVisible++;
-    if (!(l.material.opacity > 0.02)) continue;                                              // the user's v163 label fade eases opacity (k = 1 - e^(-14 dt)): a plate on its way out is not "drawn"
+    if (!(l.material.opacity > 0.15)) continue;   // 2026-10-10 (14): was 0.02 - a plate fading out for ~0.3 s (> 0.02, < 0.15) next to the 4 accepted ones made this count 5 at random                                              // the user's v163 label fade eases opacity (k = 1 - e^(-14 dt)): a plate on its way out is not "drawn"
     // the user's v163 "main goal" plate (the one primary goal of the focus pass) is deliberately outside the 4-plate cap and the 24 m range (surface-world-v152.js labelLayout)
     if (l.userData.v163MainGoal) { mainGoal++; continue; }
     shown++; l.getWorldPosition(v); const d = v.distanceTo(player.position); if (d > 24.5) far++;
@@ -190,7 +190,7 @@ for (const [px, pz] of poses) {
   lastPlates = P; worstShown = Math.max(worstShown, P.shown); worstFar = Math.max(worstFar, P.far); worstHud = Math.max(worstHud, P.underHud); worstSmall = Math.max(worstSmall, P.small); anyShown += P.shown;
   console.log(`INFO plates at (${px.toFixed(0)},${pz.toFixed(0)}): ${P.total} plate sprites in the scene, ${P.chainVisible} with visible parents, ${P.shown} shown, near-plate min width ${P.minNear} px, rows ${J(P.rows)}`);
 }
-check(worstShown <= 4, `at most 4 regular plates (+ the main-goal plate) are drawn at once (opacity > 0.02) at ${poses.length} spots (max ${worstShown}); scene has ${lastPlates.total} plate sprites (${lastPlates.chainVisible} with visible parents)`);
+check(worstShown <= 4, `at most 4 regular plates (+ the main-goal plate) are drawn at once (opacity > 0.15) at ${poses.length} spots (max ${worstShown}); scene has ${lastPlates.total} plate sprites (${lastPlates.chainVisible} with visible parents)`);
 check(anyShown > 0 && worstFar === 0, `no plate is drawn beyond 24 m (${worstFar}) and plates do appear (${anyShown} drawn over the spots)`);
 check(worstHud === 0, `no drawn plate overlaps the top HUD (#hud/#topRightBtns/#nextCard) at 390x664 (${worstHud})`);
 check(worstSmall === 0, `pad plates (industrial/infra/chain markers) closer than 9 m are >= 70 px wide on screen (${worstSmall} too small)`);

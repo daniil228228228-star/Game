@@ -189,8 +189,10 @@ const M4 = await cycleChecks('metal', 'metal (prestige 4)', { seconds: 40, dt: 0
 // ---- frame workshop: the recipe timer of production-chain-v161.js
 const FEXTRA = 'planks = 99999; metal = 99999; frameWorkshopBuiltV161 = true;';
 const F0 = await cycleChecks('frame', 'frame workshop', { seconds: 70, dt: 0.1, extra: FEXTRA }, 1);
-const interF = INTER.f;
-check(F0.rows.some((r) => r.credited > 0 && Math.abs(r.t - interF) < 0.35), `frames: the first frame is crafted at the real interval ${interF.toFixed(1)} s (recipe 14 s / productionSpeedMultiplier()): ${F0.rows.find((r) => r.credited > 0).t} s`);
+const interF = await ev(() => PRODUCTION_CHAIN_V161.table.recipe.interval / productionSpeedMultiplier()); // 2026-10-10 (14): read NOW - INTER.f was taken 100 s of test earlier, before the base / city multipliers of this run settled (18.9 s then, 16.9 s in the cycle)
+// 2026-10-10 (14): the interval is measured between two consecutive credits (and the first must not come later than one interval).
+const crT = F0.rows.filter((r) => r.credited > 0).map((r) => r.t);
+check(crT.length >= 2 && crT[0] <= interF + 0.35 && Math.abs(crT[1] - crT[0] - interF) < 0.35, `frames: frames are crafted at the real interval ${interF.toFixed(1)} s (recipe 14 s / productionSpeedMultiplier()): credits at ${crT.join(' / ')} s`);
 check(Math.max(...F0.rows.map((r) => r.parts || 0)) === 6 && F0.rows.filter((r) => r.parts > 0).every((r) => r.p >= 0.37), `frames: the six members of the frame appear one after the other on the jig after the planks were sawn (parts ${Math.max(...F0.rows.map((r) => r.parts || 0))})`);
 check(F0.rows.some((r) => r.planks) && F0.rows.filter((r) => r.planks).every((r) => r.p < 0.39) && F0.rows.some((r) => r.cutting && r.spin > 20) && Math.max(...F0.rows.map((r) => r.live)) <= 12 && Math.max(...F0.rows.map((r) => r.live)) > 0, `frames: the three planks ride into the saw only while it saws (sawdust max live ${Math.max(...F0.rows.map((r) => r.live))} of 12)`);
 {

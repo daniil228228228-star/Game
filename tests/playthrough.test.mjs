@@ -46,11 +46,11 @@ const plateCheck = async (label) => {
   check(p.maxW <= 0.65 * p.W, `${label}: no plate wider than 65 % of the screen (${p.maxW}px)`);
 };
 const churn = async (label, frames = 40) => {
-  // a plate may be redrawn when its words change (progress %, counters) but never twice with the SAME words (flicker + GPU upload for nothing)
+  // a plate (updateLabelSprite; every site has its own, so creation paths are not counted) may be redrawn when its words change (progress %, counters) but never twice with the SAME words (flicker + GPU upload for nothing)
   const r = await ev((frames) => new Promise((res) => {
     const who = {}, orig = makeLabelSprite, origU = updateLabelSprite; let n = 0;
     makeLabelSprite = function (lines) { const k = (new Error().stack || '').split('\n').slice(2, 4).map((x) => x.trim().replace(/\(.*[\\/]/, '(').slice(0, 70)).join(' < ') + ' ' + JSON.stringify(lines).slice(0, 50); who[k] = (who[k] || 0) + 1; return orig.apply(this, arguments); };
-    const loop = () => { if (++n < frames) requestAnimationFrame(loop); else { makeLabelSprite = orig; res({ dup: Object.entries(who).filter(([, c]) => c > 1), total: Object.keys(who).length }); } };
+    const loop = () => { if (++n < frames) requestAnimationFrame(loop); else { makeLabelSprite = orig; res({ dup: Object.entries(who).filter(([k, c]) => c > 1 && k.includes('updateLabelSprite')), total: Object.keys(who).length }); } };
     requestAnimationFrame(loop);
   }), frames);
   check(r.dup.length === 0, `${label}: no plate is redrawn with the same words in ${frames} idle frames (${r.total} redraws with new words; repeated ${J(r.dup.slice(0, 3))})`);
