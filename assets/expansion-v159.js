@@ -70,7 +70,7 @@
    }).join('')}</div>`;
    panel.querySelectorAll('[data-v159-index]').forEach(b=>b.addEventListener('click',()=>locate(Number(b.dataset.v159Index),b.dataset.v159Kind)));
  }
- function tick(now){if(document.hidden||now-last<750)return;last=now;if(document.getElementById('systemsOverlay')?.classList.contains('v158-work-mode')||document.getElementById('fleetOverlay')?.classList.contains('show'))render();}
+ function tick(now){if(document.hidden||now-last<750)return;if(typeof panelBusyV161==='function'&&panelBusyV161(performance.now()))return;last=now;if(document.getElementById('systemsOverlay')?.classList.contains('v158-work-mode')||document.getElementById('fleetOverlay')?.classList.contains('show'))render();}
  window.__TYCOON_VISUAL_TICKS__.push(tick);
  const workday=window.__TYCOON_V158__;if(workday){const openBefore=workday.open;workday.open=function(){const r=openBefore.apply(this,arguments);render(true);return r;};}
  // The menu listener was bound before this extension, so add the board after that handler.

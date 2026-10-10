@@ -8193,6 +8193,11 @@ function makeLabelSprite(lines) {
 
 function updateLabelSprite(sprite, lines) {
   if (!sprite) return;
+  // v161 QA (2026-10-10 (14)): identical text = keep the texture. The guide plate was re-drawn on every HUD tick (updateGuideWorldMarker(true), ~5 x/s) and the road pad plates
+  // every cadence, i.e. a canvas + GPU upload + dispose several times a second for the same words.
+  const keyV161 = JSON.stringify(lines);
+  if (sprite.userData && sprite.userData.v161LinesKey === keyV161 && sprite.material && sprite.material.map) return;
+  if (sprite.userData) sprite.userData.v161LinesKey = keyV161;
   const replacement = makeLabelSprite(lines);
   const keepOpacity = sprite.material ? sprite.material.opacity : undefined; // v161 feel: the new material takes over the layout's current opacity (it used to restart at 1 = a flash of every far plate on each text update)
   if (sprite.material) {
@@ -10028,7 +10033,7 @@ const _updateHUDV301=updateHUD;
    are reused from many other places — see click handlers below that still call them directly and
    immediately after a real purchase/upgrade/dispatch, unaffected by this throttle). */
 const _panelRenderThrottleV55={fleet:0,base:0,tenders:0};
-const PANEL_RENDER_THROTTLE_MS_V55=350;
+const PANEL_RENDER_THROTTLE_MS_V55=600; // v161 QA: was 350 (the fleet sheet rebuilt ~3 x/s, 4 grids each)
 /* v161 QA (2026-10-10 (14)): a finger that is on a panel button (or scrolling the panel) must not lose it to a rebuild: the throttled
    re-render below replaced EVERY button of the fleet / base / tenders sheet every ~350 ms, so a press that spanned a rebuild never produced
    its click (2 of 15 holds of 150 ms lost under software GL; on a phone a 100-150 ms press crosses a rebuild far more often) and each rebuild
@@ -10287,7 +10292,11 @@ function marketExchangeExecute(offer){
 // presses (skips items already at max automatically); Bonus/Exchange rotate through their fixed
 // list of kinds/offers on every press since none of them "max out".
 function marketNextStaffCfg(){ return STAFF_CONFIG.find(c=>stageIndex>=c.unlock && staffLevel(c.key)<3) || null; }
-function marketNextFleetCfg(){ return FLEET_CONFIG.find(c=>stageIndex>=c.unlock && fleetLevel(c.key)<3) || null; }
+// v161 QA: the dedicated trucks (planks / concrete / metal) are upgradable only once BOUGHT (the panel disables their upgrade button until then): the stall plate used to offer
+// the flatbed upgrade ("Лесовоз · 875") from stage 1 although the panel refused it - a plate that promised something the stall could not do.
+function marketFleetOwnedV161(key){ const o=window.__TYCOON_V119__?.state?.owned; return !o || !Object.prototype.hasOwnProperty.call(o,key) || !!o[key]; }
+function marketNextFleetCfg(){ return FLEET_CONFIG.find(c=>stageIndex>=c.unlock && fleetLevel(c.key)<3 && marketFleetOwnedV161(c.key)) || null; }
+function marketFleetBuyHintV161(){ const o=window.__TYCOON_V119__?.state?.owned; return !!o && FLEET_CONFIG.some(c=>stageIndex>=c.unlock && Object.prototype.hasOwnProperty.call(o,c.key) && !o[c.key]); }
 // Fleet also exposes "service" (repair condition, fleetServiceCost/serviceFleetKey) as a second
 // distinct purchasable line-item alongside "upgrade" -- once every vehicle is maxed, the stall
 // falls back to offering a service on whichever one needs it most, so that action stays reachable
@@ -10318,6 +10327,7 @@ function marketStallInfo(stallId){
     if(cfg){ const cost=fleetUpgradeCost(cfg.key); return { name:`${cfg.emoji} ${lang==='ru'?cfg.ru:cfg.en}`, sub:opsCostText(cost), ready:canPayResources(cost), cfg }; }
     const serviceKey=marketNextFleetServiceKey();
     if(serviceKey){ const cost=fleetServiceCost(serviceKey); const vcfg=fleetConfig(serviceKey); const vname=vcfg?(lang==='ru'?vcfg.ru:vcfg.en):(lang==='ru'?'Универсальный грузовик':'Utility truck'); return { name:`🔧 ${lang==='ru'?'Обслужить':'Service'}: ${vname}`, sub:`${fmt(cost)} 💰`, ready:money>=cost, serviceKey }; }
+    if(marketFleetBuyHintV161()) return { name:lang==='ru'?'🚚 Купить технику':'🚚 Buy vehicles', sub:'', ready:false };
     return { name:lang==='ru'?'Автопарк':'Fleet', maxed:true };
   }
   if(stallId==='tenders'){
@@ -32118,12 +32128,14 @@ window.__TYCOON_V74_BUILD__={
   function syncCrewLabelsV80(){
     for(const build of (typeof growingMeshes!=='undefined'?growingMeshes:[])){
       if(!build?.site)continue;
-      let label=build.site.userData?.v80CrewLabel;
+      // v161 QA: the label is remembered on the build, not on site.userData (which the site layer replaces): a new canvas + texture was made on every call (11 in 40 frames)
+      let label=build._v80CrewLabelV161||build.site.userData?.v80CrewLabel;
+      if(label&&label.parent!==build.site&&build._v80CrewWaiting){build.site.add(label);}
       if(build._v80CrewWaiting){
         if(!label){
           label=makeLabelSprite([lang==='ru'?'👷 БРИГАДА В ПУТИ':'👷 CREW EN ROUTE']);
           label.position.set(0,2.38,0);label.scale.set(.82,.25,1);build.site.add(label);
-          build.site.userData.v80CrewLabel=label;
+          build.site.userData.v80CrewLabel=label;build._v80CrewLabelV161=label;
         }
         label.visible=true;
       }else if(label)label.visible=false;
