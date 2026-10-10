@@ -177,7 +177,6 @@ await ev(() => { for (let i = 0; i < 12; i++) __TYCOON_V42__.refresh(); });
 await page.waitForTimeout(2500);
 const leak = await ev(() => ({ geo1: renderer.info.memory.geometries, live1: InfraV161.live.length, groups: scene.children.filter((o) => o.name === 'v161PowerPlant' || o.name === 'v161WaterWorks').length }));
 check(leak.geo1 <= geo0 + 2 && leak.live1 <= 3 && leak.groups === 2, `12 rebuilds: no geometry leak (${geo0} -> ${leak.geo1}), live animation list ${live0} -> ${leak.live1} (<= 3), still exactly one group per plant (${leak.groups})`);
-}
 
 // ------------------------------------------------------------------------------------------------ 3. district identities
 const dist = {};
@@ -227,7 +226,6 @@ const pondMoved = await page.waitForFunction((s0) => { const m = cityWorldRuntim
 check(pondMoved && pond.n <= 500 && pond.blue, `waterfront: the pond surface is animated and blue (${pond.n} vertices)`);
 const live = await ev(() => { for (let i = 0; i < 10; i++) { refreshDistrictIdentityWorldV363(); } InfraV161.animate(0.016); return { live: InfraV161.live.length, groups: [...cityWorldRuntime.districtIdentity.values()].length }; });
 check(live.live <= 3 && live.groups === 4, `10 district refreshes leave the animation list bounded (${live.live} <= 3 entries: two plants + the pond)`);
-}
 
 // ------------------------------------------------------------------------------------------------ 4. construction site rigs
 const kinds = [['house', 0], ['shop', 2], ['warehouse', 3], ['factory', 5], ['office', 6], ['tower', 8]];
