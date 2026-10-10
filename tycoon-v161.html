@@ -933,6 +933,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="assets/infra-plants-v161.js"></script>
 <script src="assets/districts-v161.js"></script>
 <script src="assets/site-v161.js"></script>
+<script src="assets/props-v161.js"></script>
 <script src="assets/foliage-v154.js"></script>
 <script src="assets/work-session-v158.js"></script>
 <script src="assets/development-core-v160.js"></script>
@@ -2533,6 +2534,7 @@ function makeBench() {
     const legB = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.42, 0.06), metalMat);
     legB.position.set(sx, 0.2, -0.08); group.add(legB);
   }
+  group.userData.v161Prop = 'bench'; // v161 props (assets/props-v161.js): solid prop, collider in the v83 registry
   return group;
 }
 
@@ -2544,6 +2546,7 @@ function makeSignPost(textColor = 0x1c2430) {
   board.position.set(0, 1.18, 0); group.add(board);
   const face = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.18, 0.01), new THREE.MeshBasicMaterial({ color: textColor }));
   face.position.set(0, 1.18, 0.036); group.add(face);
+  group.userData.v161Prop = 'sign'; // v161 props (assets/props-v161.js): solid prop, collider in the v83 registry
   return group;
 }
 
@@ -2617,6 +2620,7 @@ function makeFireHydrant() {
     nozzle.position.set(side * 0.13, 0.3, 0);
     group.add(nozzle);
   }
+  group.userData.v161Prop = 'hydrant'; // v161 props (assets/props-v161.js): solid prop, collider in the v83 registry
   return group;
 }
 
@@ -16718,6 +16722,7 @@ function makeSimplePlanterV363(color=0x7dbb72){
   const fill=new THREE.Mesh(new THREE.CylinderGeometry(.36,.4,.12,16),new THREE.MeshStandardMaterial({color,roughness:.96}));
   fill.position.y=.25;g.add(fill);
   const bush=makeBush();bush.position.y=.18;bush.scale.setScalar(.42);g.add(bush);
+  g.userData.v161Prop='planter';
   return g;
 }
 function makeGlassTowerV363(height=4.8,color=0x84abd8,accent=0x2e4f70){
@@ -16894,6 +16899,7 @@ function addCrosswalkV364(group,angle,r=3.70){
 function createTransitStopGroupV364(cfg){
   const g=new THREE.Group();const lv=districtLevel(cfg.id);if(lv<=0)return g;
   const stop=districtStopWorldPointV364(cfg.id),a=stop.angle,base=stop.ring,curb=stop.curb;
+  if(window.PropsV161?.enabled)return PropsV161.buildTransitStop(cfg,lv,stop); // v161 props (assets/props-v161.js): the same stop as 4-5 merged meshes with colliders (old 28-mesh stop below)
   const tangent=new THREE.Vector3(-Math.sin(a),0,Math.cos(a));
   const normal=new THREE.Vector3(Math.cos(a),0,Math.sin(a));
   const walkMat=new THREE.MeshStandardMaterial({color:0xd6d0c5,roughness:.96});
@@ -18019,7 +18025,7 @@ function districtMaturityV39(id){
 function simpleWoodMatV39(){return new THREE.MeshStandardMaterial({color:0x8d704c,roughness:.92});}
 function makeSurveyStakeV39(){const g=new THREE.Group(),wood=simpleWoodMatV39(),white=new THREE.MeshStandardMaterial({color:0xe8e2d5,roughness:.82});const p=new THREE.Mesh(new THREE.BoxGeometry(.07,.72,.07),wood);p.position.y=.36;g.add(p);const cap=new THREE.Mesh(new THREE.BoxGeometry(.28,.13,.035),white);cap.position.set(0,.58,.04);g.add(cap);return g;}
 function makeYoungTreeV39(scale=1){const g=new THREE.Group(),tr=new THREE.Mesh(new THREE.CylinderGeometry(.075,.105,.72,7),new THREE.MeshStandardMaterial({color:0x75563c,roughness:.96}));tr.position.y=.36;g.add(tr);const crown=new THREE.Mesh(new THREE.IcosahedronGeometry(.43,1),new THREE.MeshStandardMaterial({color:0x5f8f61,roughness:.92}));crown.position.y=.95;crown.scale.set(1,.92,1);g.add(crown);g.scale.setScalar(scale);return g;}
-function makeBenchV39(){const g=new THREE.Group(),wood=new THREE.MeshStandardMaterial({color:0x8a6345,roughness:.86}),metal=new THREE.MeshStandardMaterial({color:0x343a40,roughness:.72,metalness:.18});const seat=new THREE.Mesh(new THREE.BoxGeometry(.82,.08,.25),wood);seat.position.y=.34;g.add(seat);const back=new THREE.Mesh(new THREE.BoxGeometry(.82,.28,.07),wood);back.position.set(0,.49,.11);g.add(back);for(const x of [-.31,.31]){const leg=new THREE.Mesh(new THREE.BoxGeometry(.07,.32,.07),metal);leg.position.set(x,.16,0);g.add(leg);}return g;}
+function makeBenchV39(){const g=new THREE.Group(),wood=new THREE.MeshStandardMaterial({color:0x8a6345,roughness:.86}),metal=new THREE.MeshStandardMaterial({color:0x343a40,roughness:.72,metalness:.18});const seat=new THREE.Mesh(new THREE.BoxGeometry(.82,.08,.25),wood);seat.position.y=.34;g.add(seat);const back=new THREE.Mesh(new THREE.BoxGeometry(.82,.28,.07),wood);back.position.set(0,.49,.11);g.add(back);for(const x of [-.31,.31]){const leg=new THREE.Mesh(new THREE.BoxGeometry(.07,.32,.07),metal);leg.position.set(x,.16,0);g.add(leg);}g.userData.v161Prop='benchSmall';return g;}
 function makeBinV39(){const g=new THREE.Group(),m=new THREE.MeshStandardMaterial({color:0x45515a,roughness:.72,metalness:.12});const b=new THREE.Mesh(new THREE.CylinderGeometry(.15,.17,.42,10),m);b.position.y=.21;g.add(b);const top=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,.045,10),m);top.position.y=.44;g.add(top);return g;}
 function makePlanBoardV39(id){const g=new THREE.Group(),post=simpleWoodMatV39(),board=new THREE.MeshStandardMaterial({color:0xc9b58b,roughness:.84});for(const x of [-.38,.38]){const p=new THREE.Mesh(new THREE.BoxGeometry(.07,1.0,.07),post);p.position.set(x,.5,0);g.add(p);}const b=new THREE.Mesh(new THREE.BoxGeometry(.92,.46,.06),board);b.position.y=.78;g.add(b);const strip=new THREE.Mesh(new THREE.BoxGeometry(.67,.035,.068),new THREE.MeshStandardMaterial({color:CITY_DISTRICTS.find(d=>d.id===id)?.color||0x8ba0b5,roughness:.7}));strip.position.set(0,.82,.035);g.add(strip);return g;}
 function makeBusStopV39(){const g=new THREE.Group(),metal=new THREE.MeshStandardMaterial({color:0x434b54,roughness:.65,metalness:.18}),glass=new THREE.MeshStandardMaterial({color:0x9db7c5,roughness:.18,metalness:.05,transparent:true,opacity:.34});for(const x of [-.62,.62]){const p=new THREE.Mesh(new THREE.BoxGeometry(.06,1.35,.06),metal);p.position.set(x,.675,0);g.add(p);}const roof=new THREE.Mesh(new THREE.BoxGeometry(1.42,.07,.58),metal);roof.position.set(0,1.34,0);g.add(roof);const back=new THREE.Mesh(new THREE.BoxGeometry(1.26,.82,.04),glass);back.position.set(0,.78,.24);g.add(back);const bench=makeBenchV39();bench.scale.setScalar(.76);bench.position.set(0,0,-.02);g.add(bench);return g;}
@@ -18598,7 +18604,7 @@ function makeBusStopV40(color=0x7fa6c9){
   for(const x of [-.65,.65]){const p=new THREE.Mesh(new THREE.BoxGeometry(.055,1.35,.055),steel);p.position.set(x,.68,0);g.add(p);}const roof=new THREE.Mesh(new THREE.BoxGeometry(1.5,.08,.72),materialV40(color,{roughness:.55}));roof.position.set(0,1.34,0);g.add(roof);const back=new THREE.Mesh(new THREE.BoxGeometry(1.32,.72,.035),glass);back.position.set(0,.78,.30);g.add(back);const bench=makeBenchV39();bench.position.set(0,0,.03);bench.scale.setScalar(.58);g.add(bench);return g;
 }
 function makeRoadDefectV40(seed=0){const g=new THREE.Group(),mat=new THREE.MeshBasicMaterial({color:0x222529,transparent:true,opacity:.72,depthWrite:false});for(let i=0;i<3;i++){const c=new THREE.Mesh(new THREE.CircleGeometry(.18+(i%2)*.07,9),mat);c.rotation.x=-Math.PI/2;c.position.set((i-1)*.34,.011,(i%2?.13:-.12));c.scale.x=1.5;c.rotation.z=seed+i*.7;g.add(c);}return g;}
-function makeHydrantV40(){const g=new THREE.Group(),m=materialV40(0xc4473d,{metalness:.22,roughness:.62});const b=new THREE.Mesh(new THREE.CylinderGeometry(.10,.12,.42,12),m);b.position.y=.21;g.add(b);const cap=new THREE.Mesh(new THREE.SphereGeometry(.13,10,7),m);cap.position.y=.44;g.add(cap);return g;}
+function makeHydrantV40(){const g=new THREE.Group(),m=materialV40(0xc4473d,{metalness:.22,roughness:.62});const b=new THREE.Mesh(new THREE.CylinderGeometry(.10,.12,.42,12),m);b.position.y=.21;g.add(b);const cap=new THREE.Mesh(new THREE.SphereGeometry(.13,10,7),m);cap.position.y=.44;g.add(cap);g.userData.v161Prop='hydrant';return g;}
 function makePlanterV40(color=0x7fa06b){const g=new THREE.Group();const pot=new THREE.Mesh(new THREE.CylinderGeometry(.24,.29,.28,12),materialV40(0x756554,{roughness:.92}));pot.position.y=.14;g.add(pot);const bush=makeBush();bush.scale.setScalar(.52);bush.position.y=.27;g.add(bush);return g;}
 function makeCargoStackV40(){const g=new THREE.Group(),pallet=materialV40(0x946a3d,{roughness:.94}),box=materialV40(0xb88a52,{roughness:.88});for(let z=0;z<2;z++){const p=new THREE.Mesh(new THREE.BoxGeometry(.9,.09,.52),pallet);p.position.set(0,.05,z*.60);g.add(p);for(let i=0;i<3;i++){const b=new THREE.Mesh(new THREE.BoxGeometry(.25,.30,.42),box);b.position.set((i-1)*.28,.24,z*.60);g.add(b);}}return g;}
 function makeBikeRackV40(){const g=new THREE.Group(),m=materialV40(0x68727c,{metalness:.42,roughness:.48});for(let i=-1;i<=1;i++){const a=new THREE.Mesh(new THREE.TorusGeometry(.25,.025,6,12,Math.PI),m);a.rotation.z=Math.PI/2;a.position.set(i*.38,.02,0);g.add(a);}return g;}
@@ -27130,6 +27136,7 @@ body{
     const halo=new THREE.Mesh(new THREE.SphereGeometry(.16,10,7),haloMat);
     halo.position.set(.35,2.21,0);halo.scale.set(1.35,.78,1.15);halo.userData.v45LampHalo=true;g.add(halo);
     R.lampParts.push(lens,halo);
+    g.userData.v161Prop='lamp'; // v161 props: solid pole
     return g;
   }
   function installLampFactoryV45(){
@@ -32792,6 +32799,8 @@ window.__TYCOON_V74_BUILD__={
     for(const o of (window.YardsV161&&window.YardsV161.enabled?window.YardsV161.obstacles():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
     // v161 construction site (assets/site-v161.js): the crane tower base is the only solid part of a site (active only while the crane stands); the yard and machines stay walkable
     for(const o of (window.SiteV161&&window.SiteV161.enabled?window.SiteV161.obstacles():[]))register({owner:o.owner,category:'construction',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,active:o.active,flags:{player:true,agent:true,placement:false,camera:false}});
+    // v161 props (assets/props-v161.js): street lamps, benches, signs, hydrants, planters and the transit stops as small colliders of their real size; player only (pedestrians keep their routes)
+    for(const o of (window.PropsV161&&window.PropsV161.enabled!==false?window.PropsV161.obstacles():[]))register({owner:o.owner,category:'decor',label:o.label,shape:o.shape,pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,radius:o.radius,flags:{player:true,agent:false,placement:false,camera:false}});
     // v161 districts (assets/districts-v161.js): industrial warehouses / containers / tanks, business towers / annex / pool, waterfront pond / benches / palms as oriented boxes / circles; player + agent only
     for(const o of (window.DistrictsV161&&window.DistrictsV161.enabled?window.DistrictsV161.obstacles():[]))register({owner:o.owner,category:o.category,label:o.label,shape:o.shape,pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,radius:o.radius,flags:{player:true,agent:true,placement:false,camera:false}});
     // v161 plants (assets/infra-plants-v161.js): the power plant / water works yard fence, halls, transformers, stacks, basins, tanks as oriented boxes / circles; placement + camera off
