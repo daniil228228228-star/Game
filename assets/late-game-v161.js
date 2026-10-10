@@ -107,6 +107,7 @@
         if (g.userData.v161House && window.BuildingsV161?.addHouseGold) window.BuildingsV161.addHouseGold(g, stage, level);
         else if (g.userData.v161Logistics && window.LogisticsV161?.addGold) window.LogisticsV161.addGold(g, stage, level); // warehouse + terminal (assets/warehouse-v161.js)
         else if (g.userData.v161Factory && window.FactoryV161?.addGold) window.FactoryV161.addGold(g, stage, level); // the three main-line factories (assets/factory-v161.js)
+        else if ((g.userData.v161Office || g.userData.v161Tower) && window.OfficeTowerV161?.addGold) window.OfficeTowerV161.addGold(g, stage, level); // the four offices and four towers (assets/towers-v161.js)
         else if (g.userData.v161Shop && window.ShopV161?.addGold) window.ShopV161.addGold(g, stage, level); // the shop (assets/shop-v161.js) has gold trim that fits its facade
         else addGoldTiers(g, stage, level);
       } catch (err) { console.warn('[v161 gold tiers]', err); }

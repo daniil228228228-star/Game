@@ -928,6 +928,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="assets/shop-v161.js"></script>
 <script src="assets/warehouse-v161.js"></script>
 <script src="assets/factory-v161.js"></script>
+<script src="assets/towers-v161.js"></script>
 <script src="assets/foliage-v154.js"></script>
 <script src="assets/work-session-v158.js"></script>
 <script src="assets/development-core-v160.js"></script>
@@ -6470,7 +6471,11 @@ function createBuildingMesh(stage, level = 1) {
   const logisticsV161 = stage.archetype === 'warehouse' && STAGES.indexOf(stage) >= 0 && typeof buildLogisticsV161 === 'function' && window.LogisticsV161?.enabled !== false;
   // v161 factories (assets/factory-v161.js, 2026-10-06 (10)): the three main-line `factory` stages (4 mini factory, 5 factory, 13 tech park) have their own merged-geometry builder (levels ADD parts, no 18 % height stretch) with real wall colliders.
   const factoryV161 = stage.archetype === 'factory' && STAGES.indexOf(stage) >= 0 && typeof buildFactoryV161 === 'function' && window.FactoryV161?.enabled !== false;
-  const group = houseV161 ? buildHouseV161(stage, height, baseSize, level) : shopV161 ? buildShopV161(stage, height, baseSize, level) : logisticsV161 ? buildLogisticsV161(stage, height, baseSize, level) : factoryV161 ? buildFactoryV161(stage, height, baseSize, level) : builder(stage, height, baseSize);
+  // v161 offices + towers (assets/towers-v161.js, 2026-10-06 (11)): the four main-line `office` stages (6, 7, 11, 14) and the four `tower` stages (8, 9, 12, 15) have their own merged-geometry builders (levels ADD floors / wings / setbacks to the same building,
+  // no 18 % stretch, the golden crown only at level 10 from the gold tiers) with real wall colliders.
+  const officeV161 = stage.archetype === 'office' && STAGES.indexOf(stage) >= 0 && typeof buildOfficeV161 === 'function' && window.OfficeTowerV161?.enabled !== false;
+  const towerV161 = stage.archetype === 'tower' && STAGES.indexOf(stage) >= 0 && typeof buildTowerV161 === 'function' && window.OfficeTowerV161?.enabled !== false;
+  const group = houseV161 ? buildHouseV161(stage, height, baseSize, level) : shopV161 ? buildShopV161(stage, height, baseSize, level) : logisticsV161 ? buildLogisticsV161(stage, height, baseSize, level) : factoryV161 ? buildFactoryV161(stage, height, baseSize, level) : officeV161 ? buildOfficeV161(stage, height, baseSize, level) : towerV161 ? buildTowerV161(stage, height, baseSize, level) : builder(stage, height, baseSize);
   if (!group.userData.v161Complete) {
     enhanceBuildingGeometry(group, stage, height, baseSize, level);
     addBuildingVisualPolish(group, stage, height, baseSize, level);
@@ -9762,7 +9767,7 @@ function createFleetGarageV72(cfg,lv,pos){
       const header=new THREE.Mesh(new THREE.BoxGeometry(bayW-.09,.15,.13),accent);
       header.position.set(cx,1.96,-depth*.5+.15);header.castShadow=true;g.add(header);
       const raisedDoor=new THREE.Mesh(new THREE.BoxGeometry(bayW-.24,.30,.05),dark);
-      raisedDoor.position.set(cx,1.71,-depth*.5+.20);raisedDoor.rotation.x=-.16;g.add(raisedDoor);
+      raisedDoor.position.set(cx,1.78,-depth*.5+.20);raisedDoor.rotation.x=-.16;g.add(raisedDoor); // v161 (2026-10-06 (11)): rolled-up door panel stays >= 1.6 m above the floor (truck 1.28 m + 0.3 m)
       const light=new THREE.Mesh(new THREE.BoxGeometry(.58,.025,.11),glow);
       light.position.set(cx,1.75,.35);g.add(light);
       const bayNo=makeLabelSprite([`${i+1}`]);bayNo.position.set(cx,2.00,-depth*.5-.025);bayNo.scale.set(.21,.11,1);g.add(bayNo);
@@ -9795,16 +9800,16 @@ function createFleetGarageV72(cfg,lv,pos){
   if(lv>=2){
     const serviceW=Math.min(2.10,bayW*1.08);
     const serviceX=width*.5-serviceW*.52;
-    const locker=new THREE.Mesh(new THREE.BoxGeometry(.50,1.18,.42),steel);locker.position.set(serviceX+.48,.72,depth*.5-.40);g.add(locker);
-    const bench=new THREE.Mesh(new THREE.BoxGeometry(1.22,.12,.44),accent);bench.position.set(serviceX-.10,.68,depth*.5-.38);g.add(bench);
-    const shelf=new THREE.Mesh(new THREE.BoxGeometry(1.20,.08,.32),steel);shelf.position.set(serviceX-.10,1.26,depth*.5-.36);g.add(shelf);
-    for(let i=0;i<3;i++){const box=new THREE.Mesh(new THREE.BoxGeometry(.22,.18,.22),dark);box.position.set(serviceX-.42+i*.34,1.38,depth*.5-.36);g.add(box);}
+    const locker=new THREE.Mesh(new THREE.BoxGeometry(.50,1.18,.40),steel);locker.position.set(serviceX+.48,.72,depth*.5-.40-.04+.02);g.add(locker); // v161: service corner <= 0.44 m deep (the 6th bay must stay free for a truck)
+    const bench=new THREE.Mesh(new THREE.BoxGeometry(1.22,.12,.40),accent);bench.position.set(serviceX-.10,.68,depth*.5-.40-.04+.02);g.add(bench);
+    const shelf=new THREE.Mesh(new THREE.BoxGeometry(1.20,.08,.32),steel);shelf.position.set(serviceX-.10,1.26,depth*.5-.40);g.add(shelf);
+    for(let i=0;i<3;i++){const box=new THREE.Mesh(new THREE.BoxGeometry(.22,.18,.22),dark);box.position.set(serviceX-.42+i*.34,1.38,depth*.5-.40);g.add(box);}
   }
   if(lv>=3){
-    const serviceRoom=new THREE.Mesh(new THREE.BoxGeometry(1.55,1.48,.92),wallLight);
-    serviceRoom.position.set(width*.5-.86,.83,depth*.5-.56);serviceRoom.castShadow=true;g.add(serviceRoom);
+    const serviceRoom=new THREE.Mesh(new THREE.BoxGeometry(1.36,1.48,.44),wallLight); // v161: a compact service cabinet 0.44 m deep (it was 0.92 m and stood IN the 6th bay: a truck could not park there)
+    serviceRoom.position.set(width*.5-.86,.83,depth*.5-.06-.04-.22);serviceRoom.castShadow=true;g.add(serviceRoom);
     const serviceDoor=new THREE.Mesh(new THREE.BoxGeometry(.58,1.10,.04),dark);
-    serviceDoor.position.set(width*.5-.86,.72,depth*.5-.09);g.add(serviceDoor);
+    serviceDoor.position.set(width*.5-.86,.72,depth*.5-.06-.04-.44-.02);g.add(serviceDoor);
     const signPlate=new THREE.Mesh(new THREE.BoxGeometry(2.46,.30,.055),dark);
     signPlate.position.set(0,2.34,-depth*.5+.01);g.add(signPlate);
     const signText=makeLabelSprite([lang==='ru'?'СЕРВИС · АВТОПАРК':'FLEET SERVICE']);
@@ -9821,6 +9826,13 @@ function createFleetGarageV72(cfg,lv,pos){
 
   const label=makeLabelSprite([lang==='ru'?'ГАРАЖ АВТОПАРКА':'FLEET GARAGE',`${lang==='ru'?'ур.':'lv.'} ${lv}/3 · ${count} ${lang==='ru'?'боксов':'bays'}`]);
   label.position.set(0,2.62,.20);label.scale.set(1.08,.36,1);g.add(label);
+  // v161 (2026-10-06 (11), user: "Гаражи тонкие, 5 нет? В них даже не залезет машина"): the walls are the REAL colliders (before: one whole-mesh box = the player could not enter a bay at all; the 6th bay was also filled by the
+  // 0.92 m deep service room). Bay clear width 1.90 - 0.10 (post) = 1.8 m (truck 1.15 m), depth front post -> rear wall 3.07 m (truck 2.11 m), clear height >= 1.6 m (truck 1.28 m). Local x / z of the group.
+  { const rz=depth*.5-.055, fp=[{x:0,z:rz,hx:width*.5+.02,hz:.08},{x:-(width*.5-.055),z:.54,hx:.08,hz:(depth-1.02)/2+.02},{x:(width*.5-.055),z:.54,hx:.08,hz:(depth-1.02)/2+.02}];
+    if(lv>=2){const serviceW=Math.min(2.10,bayW*1.08),serviceX=width*.5-serviceW*.52;fp.push({x:serviceX+.48,z:depth*.5-.40-.04+.02,hx:.27,hz:.22});}
+    if(lv>=3)fp.push({x:width*.5-.86,z:depth*.5-.06-.04-.22,hx:.70,hz:.24});
+    g.userData.v161Footprint=fp;
+    g.userData.v161Garage={bays:count,bayW,depth,width,front:-depth*.5+.15,rear:rz-.06-(lv>=3?.44:lv>=2?.40:0),clearH:1.6,lv}; }
   g.position.copy(pos);scene.add(g);return g;
 }
 
@@ -32573,11 +32585,11 @@ window.__TYCOON_V74_BUILD__={
     // v161 buildings (assets/buildings-v161.js): a mesh that lists its real wall boxes (userData.v161Footprint, houses first) is solid only there - the
     // porch, steps, fence, hedges and mailbox are walkable and the building is no longer a yawed whole-mesh AABB. The whole-mesh box above stays for
     // placement/camera (road and decor planners and camera occlusion read it exactly as before) and loses its player/agent flags.
-    if(legacy&&category==='building'&&root.userData?.v161Footprint&&window.BuildingsV161?.footprintWorld){
+    if(legacy&&(category==='building'||category==='base')&&root.userData?.v161Footprint&&window.BuildingsV161?.footprintWorld){
       const boxes=window.BuildingsV161.footprintWorld(root);
       if(boxes&&boxes.length){
         legacy.flags.player=false;legacy.flags.agent=false;
-        for(let i=0;i<boxes.length;i++)register({owner:root,category:'building',label:`${label||category}:wall${i}`,shape:'obb',pos:boxes[i].pos,hx:boxes[i].hx,hz:boxes[i].hz,yaw:boxes[i].yaw,flags:{player:true,agent:true,camera:false,placement:false}});
+        for(let i=0;i<boxes.length;i++)register({owner:root,category,label:`${label||category}:wall${i}`,shape:'obb',pos:boxes[i].pos,hx:boxes[i].hx,hz:boxes[i].hz,yaw:boxes[i].yaw,flags:{player:true,agent:true,camera:false,placement:false}});
       }
     }
     return legacy;

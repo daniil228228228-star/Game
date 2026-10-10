@@ -19,6 +19,10 @@
 //   node tools/showcase-v161.mjs --fleet [--fleet-views front,iso,top,low]   (2026-10-06 (10), backlog #8)
 //     the late-game world is built out, the fleet yard (v116FleetYard + the parked trucks) is rebuilt through the game's own rebuildParkingV65 with the old / the new builder (FleetYardV161.enabled) and shot from the lane side
 //     (front, iso, low) and from above: meshes, draw calls in one frame, triangles, min y, DIR/<tag>-fleet-<view>.jpg (+ -old-).
+//   node tools/showcase-v161.mjs --office [--office-levels 1,3,5,6,10] [--office-stages 6,7,11,14] [--office-views front,iso,side] [--office-no-old] [--night]   (2026-10-06 (11), backlog #10)
+//   node tools/showcase-v161.mjs --tower  [--tower-levels 1,3,5,6,10]  [--tower-stages 8,9,12,15]  [--tower-views front,iso,side]  [--tower-no-old]  [--night]   (2026-10-06 (11), backlog #11)
+//     the main-line offices / towers built by the real chain, old builder (OfficeTowerV161.enabled = false) and new: meshes, draw calls, triangles, height, min y, collider cover / outside / walk-in, door vs driveway, pad distance;
+//     DIR/<tag>-office<stage>-L<n>-<view>.jpg / -tower<stage>-... (+ -old-); --night also writes -night-iso (the shared window material set to its night value for one shot).
 // ONE browser launch per run. Stage buildings (all 16 STAGES) are built by the game's real builder chain (createBuildingMesh: BUILDERS + polish layers +
 // v44 + v157 + late-game gold tiers), put alone on the grass (everything else in the scene is hidden for the shot), registered in the real v83 collision
 // registry with the call rebuildStatic uses, and shot from four fixed cameras at the phone viewport 390x664: DIR/bld-<id>-L<n>-<view>.jpg.
@@ -44,6 +48,7 @@ const WANT_SHOP = !!opt('shop', false);
 const WANT_SUBURB = !!opt('suburb', false);
 const WANT_WH = !!opt('warehouse', false), WANT_TERM = !!opt('terminal', false);
 const WANT_FACTORY = !!opt('factory', false), WANT_FLEET = !!opt('fleet', false);
+const WANT_OFFICE = !!opt('office', false), WANT_TOWER = !!opt('tower', false);
 fs.mkdirSync(OUT, { recursive: true });
 
 const LATE = { saveVersion: 20, stageIndex: 16, money: 5e8, planks: 5000, concrete: 500, metal: 500, buildings: Array.from({ length: 16 }, (_, i) => ({ index: i, level: 5 })) };
@@ -51,7 +56,7 @@ const g = await openGame({ save: LATE, waitMs: 8000 });
 const { page } = g;
 await page.evaluate(installProbe);
 const info = await page.evaluate(() => __BLD_PROBE__.stageInfo());
-const stages = (WANT_PLANTS || WANT_MARKET || WANT_SHOP || WANT_SUBURB || WANT_WH || WANT_TERM || WANT_FACTORY || WANT_FLEET) && !opt('stages', false) ? [] : parseList(opt('stages', 'all'), Array.from({ length: info.n }, (_, i) => i));
+const stages = (WANT_PLANTS || WANT_MARKET || WANT_SHOP || WANT_SUBURB || WANT_WH || WANT_TERM || WANT_FACTORY || WANT_FLEET || WANT_OFFICE || WANT_TOWER) && !opt('stages', false) ? [] : parseList(opt('stages', 'all'), Array.from({ length: info.n }, (_, i) => i));
 const levels = parseList(opt('levels', '1,5,10'), [1, 5, 10]);
 const houseLevels = parseList(opt('house-levels', '1-10'), Array.from({ length: 10 }, (_, i) => i + 1));
 const save = (name, dataUrl) => fs.writeFileSync(path.join(OUT, name), Buffer.from(dataUrl.split(',')[1], 'base64'));
@@ -317,6 +322,47 @@ if (WANT_FACTORY) {
 }
 report.push(...factoryRows);
 
+
+// ------------------------------------------------------------------------------------------------ 2g2. offices (6 / 7 / 11 / 14) and towers (8 / 9 / 12 / 15), backlog #10 + #11: old builder and new at every listed level
+const otRows = [];
+for (const [want, tag, defStages] of [[WANT_OFFICE, 'office', '6,7,11,14'], [WANT_TOWER, 'tower', '8,9,12,15']]) {
+  if (!want) continue;
+  const ol = parseList(opt(tag + '-levels', '1,3,5,6,10'), [1, 3, 5, 6, 10]);
+  const oviews = String(opt(tag + '-views', 'front,iso,side')).split(',');
+  for (const stageIdx of parseList(opt(tag + '-stages', defStages), defStages.split(',').map(Number))) {
+    for (const old of opt(tag + '-no-old', false) ? [false] : [true, false]) {
+      for (const L of ol) {
+        const night = !old && !!opt('night', false) && [1, 5, 10].includes(L);
+        const r = await page.evaluate(({ L, old, views, stageIdx, night }) => {
+          const P = __BLD_PROBE__;
+          window.OfficeTowerV161.enabled = !old;
+          const m = P.stageMesh(stageIdx, L);
+          try {
+            P.registerStage(m, stageIdx);
+            const meas = P.measure(m, P.ownEntries(m));
+            meas.door = P.doorInfo(m, stageIdx);
+            meas.gold = m.userData.goldTierV161 || 0;
+            const bp0 = buildingPosition(stageIdx), pp0 = upgradePadPosition(bp0, stageIdx), pp = { x: pp0.x - bp0.x + m.position.x, z: pp0.z - bp0.z + m.position.z }; let dmin = 1e9;
+            for (const e of P.ownEntries(m)) { const dx = pp.x - e.pos.x, dz = pp.z - e.pos.z, c = Math.cos(e.yaw || 0), s = Math.sin(e.yaw || 0), lx = dx * c - dz * s, lz = dx * s + dz * c; if (e.shape === 'obb') dmin = Math.min(dmin, Math.hypot(lx - Math.max(-e.hx, Math.min(e.hx, lx)), lz - Math.max(-e.hz, Math.min(e.hz, lz)))); else dmin = Math.min(dmin, Math.max(0, Math.hypot(dx, dz) - e.radius)); }
+            meas.padDist = +dmin.toFixed(2);
+            meas.height = meas.size[1];
+            const sh = P.shoot(m, views);
+            meas.draw = sh.calls.draw; meas.drawTris = sh.calls.tris;
+            let nightShot = null;
+            if (night) { const w = window.OfficeTowerV161.smats().win, b = window.OfficeTowerV161.smats().beacon, was = w.emissiveIntensity; w.emissiveIntensity = 0.95; b.emissiveIntensity = 1.9; nightShot = P.shoot(m, ['iso']).shots.iso; w.emissiveIntensity = was; }
+            return { meas, shots: sh.shots, nightShot };
+          } finally { P.dropMesh(m); window.OfficeTowerV161.enabled = true; }
+        }, { L, old, views: old ? ['iso'] : oviews, stageIdx, night });
+        for (const [v, url] of Object.entries(r.shots)) save(`${TAG}-${tag}${stageIdx}-L${L}-${old ? 'old-' : ''}${v}.jpg`, url);
+        if (r.nightShot) save(`${TAG}-${tag}${stageIdx}-L${L}-night-iso.jpg`, r.nightShot);
+        otRows.push({ id: `${tag}${stageIdx}${old ? '-old' : ''}`, arch: tag, level: L, ...r.meas });
+        console.log(`  ${tag} ${stageIdx}${old ? ' OLD' : ''} L${L}: meshes ${r.meas.meshes}, draw ${r.meas.draw}, tris ${r.meas.tris}, height ${r.meas.height} m, pad distance ${r.meas.padDist} m, walk-in ${r.meas.sweepReached}/8`);
+      }
+    }
+  }
+}
+report.push(...otRows);
+
 // ------------------------------------------------------------------------------------------------ 2h. fleet yard (backlog #8): rebuilt through the game's own rebuildParkingV65 with the old / the new builder
 const fleetRows = [];
 if (WANT_FLEET) {
@@ -444,7 +490,7 @@ for (const pass of passes) for (const i of stages) {
 }
 
 // neighbourhood mini houses (district housing ring): the three variants, old (circle collider) and new
-for (const legacy of WANT_PLANTS || WANT_SUBURB || WANT_SHOP || WANT_MARKET || WANT_WH || WANT_TERM || WANT_FACTORY || WANT_FLEET ? [] : opt('also-legacy', false) ? [false, true] : [false]) {
+for (const legacy of WANT_PLANTS || WANT_SUBURB || WANT_SHOP || WANT_MARKET || WANT_WH || WANT_TERM || WANT_FACTORY || WANT_FLEET || WANT_OFFICE || WANT_TOWER ? [] : opt('also-legacy', false) ? [false, true] : [false]) {
   for (const v of legacy ? [0] : [0, 1, 2]) {
     const r = await page.evaluate(({ legacy, views, v }) => {
       const P = __BLD_PROBE__; if (window.BuildingsV161) BuildingsV161.enabled = !legacy;

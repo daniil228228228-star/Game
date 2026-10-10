@@ -610,7 +610,7 @@
     const M = smats(), FMat = fleetMats(), o = kit(1, 1), { B, ctx, bu, bx } = o;
     const { lotTop, hw, zFront, zRear, gz0, gz1 } = FLEET;
     const cx = -8.70 + p.OX, xW = cx - hw, xE = cx + hw, obs = [];
-    const Bn = batch(), Lf = batch();
+    const Lf = batch(), A = { Pn: batch(), Wl: batch(), Tr: batch(), Dt: batch(true), Gl: batch(), Bn: batch() };    // A = the rear amenities (booth, fuel pump, wash stand): their own meshes, hidden while the base garage stands there
     const ob = (label, x0, x1, z0, z1) => obs.push({ label, pos: new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2), hx: Math.abs(x1 - x0) / 2, hz: Math.abs(z1 - z0) / 2, yaw: 0 });
     const post = (x, z, h = 1.12) => { bx(B.St, x, h / 2, z, 0.07, h, 0.07); bx(B.Dt, x, h + 0.015, z, 0.1, 0.03, 0.1, { color: 0x3a4048 }); };
     // welded-mesh fence run: ax 'x' = along x at z = c, 'z' = along z at x = c; rails top / middle / bottom, pickets every 0.16 m, posts every <= 1.25 m
@@ -621,11 +621,12 @@
       for (let i = 0; i <= n; i++) { const t = a0 + len * i / n; if (ax === 'x') post(t, c); else post(c, t); }
       if (ax === 'x') ob(label, a0, a1, c - 0.08, c + 0.08); else ob(label, c - 0.08, c + 0.08, a0, a1);
     };
-    // ---- sides + rear fence (solid)
-    fence('z', xW, zFront + 0.12, gz0, 'fleet:fenceW');
-    fence('z', xE, zFront + 0.12, zRear, 'fleet:fenceE');
     const boothX0 = cx + 0.65, boothX1 = cx + 2.25;
+    // ---- sides + rear fence (solid)
+    fence('z', xW, zFront + 0.12, zRear, 'fleet:fenceW');
+    fence('z', xE, zFront + 0.12, zRear, 'fleet:fenceE');
     fence('x', zRear, boothX1, xE, 'fleet:fenceR');
+    fence('x', zRear, xW, boothX0, 'fleet:fenceRW');                                                   // (2026-10-06 (11): the 3-door "garage" strip that closed this corner is gone, see below)
     // ---- front corner pillars = floodlight masts (concrete base with hazard stripes, steel pole, lamp bar)
     for (const [x, sgn] of [[xW, 1], [xE, -1]]) {
       bx(B.Pn, x, 0.5, zFront, 0.34, 1.0, 0.34); bx(B.Pn, x, 1.03, zFront, 0.42, 0.06, 0.42);
@@ -635,78 +636,60 @@
       for (const q of [0, 1, 2]) { bx(B.Dt, x + sgn * (0.02 + q * 0.12), 2.62, zFront, 0.1, 0.07, 0.07, { color: 0x2b2f36 }); bx(Lf, x + sgn * (0.02 + q * 0.12), 2.62, zFront + 0.04, 0.08, 0.05, 0.02); }
       ob('fleet:pillar', x - 0.19, x + 0.19, zFront - 0.19, zFront + 0.19);
     }
-    // ---- rear strip: service garage (3 roller doors aligned with the first three bays), flat roof with a canopy, lamps
-    {
-      const gx0 = xW - 0.03, gx1 = cx + 0.5, h = 1.5, oz = 0.22;
-      bx(B.Pn, (gx0 + gx1) / 2, 0.05, (gz0 + gz1) / 2, gx1 - gx0 + 0.08, 0.1, gz1 - gz0 + 0.06);
-      bu(B.Wl, gx0, gx1, 0.1, h, gz0, gz1);
-      bu(B.Dt, gx0, gx1, 0.1, 0.3, gz0 - 0.012, gz0 + 0.0, { color: 0x4a525b });
-      bu(B.Tr, gx0 - 0.04, gx1 + 0.04, h - 0.1, h + 0.04, gz0 - 0.04, gz1 + 0.04);
-      o.pq(B.Rf, [gx0 - 0.04, h + 0.04, gz0 - oz], [gx1 + 0.04, h + 0.04, gz0 - oz], [gx1 + 0.04, h + 0.1, gz1], [gx0 - 0.04, h + 0.1, gz1], [0, 1, -0.1]);
-      bu(B.Dt, gx0 - 0.04, gx1 + 0.04, h - 0.02, h + 0.06, gz0 - oz - 0.012, gz0 - oz + 0.012, { color: BLUE });
-      bu(B.Dt, gx0 - 0.04, gx1 + 0.04, h + 0.06, h + 0.075, gz0 - oz - 0.012, gz0 - oz + 0.012, { color: ORANGE });
-      const doors = [p.homes[0].x, p.homes[1].x, p.homes[2].x];
-      doors.forEach((dx, i) => {
-        bx(B.Dr, dx, 0.1 + 0.65, gz0 - 0.02, 1.5, 1.3, 0.04);
-        for (let r = 1; r < 7; r++) bx(B.Tr, dx, 0.1 + r * 1.3 / 7, gz0 - 0.045, 1.5, 0.012, 0.012);
-        for (const s of [-1, 1]) bx(B.Dt, dx + s * 0.795, 0.1 + 0.68, gz0 - 0.035, 0.09, 1.36, 0.07, { color: ORANGE });
-        bx(B.Dt, dx, 1.46, gz0 - 0.035, 1.68, 0.08, 0.07, { color: ORANGE });
-        for (let k2 = 0; k2 <= i; k2++) bx(B.Dt, dx - i * 0.045 + k2 * 0.09, 1.34, gz0 - 0.06, 0.055, 0.055, 0.012, { color: YELLOW });
-        bx(Lf, dx, 1.38, gz0 - 0.1, 0.16, 0.04, 0.1);
-      });
-      ob('fleet:garage', gx0, gx1, gz0, gz1);
-      // tyre racks + a rolling cabinet on the west end wall (props on the garage side wall, neutral)
-      p.garage = { x0: gx0, x1: gx1, h };
-    }
+    // ---- rear strip: 2026-10-06 (11) (user: "Гаражи тонкие, 5 нет? В них даже не залезет машина"): the old 0.74 m deep strip with THREE closed roller doors (1.5 x 1.3 m) was a pretend garage - no truck (1.15 x 1.28 x 2.11 m) fits
+    // into it and the yard has SIX trucks. The garage of the fleet is the purchasable base module "Гараж автопарка" (createFleetGarageV72: 3 / 5 / 6 bays at levels 1 / 2 / 3, built over the six parking homes),
+    // so the yard no longer draws a second, fake one; the rear west corner is closed by a fence run and the entrance sign hangs on a gate gantry (below).
+    p.garage = null;
     // ---- guard / dispatcher booth: windows all round on the front, door on the left, flat roof with an overhang and a beacon
     {
       const bz0 = 7.88, bz1 = 8.66, h = 1.5, x0 = boothX0, x1 = boothX1;
-      bx(B.Pn, (x0 + x1) / 2, 0.05, (bz0 + bz1) / 2, x1 - x0 + 0.08, 0.1, bz1 - bz0 + 0.06);
-      bu(B.Wl, x0, x1, 0.1, h, bz0, bz1);
-      bu(B.Tr, x0 - 0.1, x1 + 0.04, h, h + 0.07, bz0 - 0.16, bz1 + 0.05);
-      bu(B.Dt, x0 - 0.1, x1 + 0.04, h + 0.0, h + 0.07, bz0 - 0.16 - 0.012, bz0 - 0.16 + 0.012, { color: BLUE });
+      bx(A.Pn, (x0 + x1) / 2, 0.05, (bz0 + bz1) / 2, x1 - x0 + 0.08, 0.1, bz1 - bz0 + 0.06);
+      bu(A.Wl, x0, x1, 0.1, h, bz0, bz1);
+      bu(A.Tr, x0 - 0.1, x1 + 0.04, h, h + 0.07, bz0 - 0.16, bz1 + 0.05);
+      bu(A.Dt, x0 - 0.1, x1 + 0.04, h + 0.0, h + 0.07, bz0 - 0.16 - 0.012, bz0 - 0.16 + 0.012, { color: BLUE });
       // front: window band (glass over a dark interior so the box is solid + readable) and the door
-      bu(B.Dt, x0 + 0.05, x1 - 0.05, 0.62, 1.38, bz0 - 0.016, bz0 + 0.0, { color: 0x2f4352 });
-      bu(B.Gl, x0 + 0.05, x1 - 0.05, 0.62, 1.38, bz0 - 0.03, bz0 - 0.016);
-      for (let i = 0; i <= 4; i++) { const x = x0 + 0.05 + (x1 - x0 - 0.1) * i / 4; bu(B.Tr, x - 0.015, x + 0.015, 0.6, 1.4, bz0 - 0.05, bz0 - 0.03); }
-      bu(B.Tr, x0 + 0.03, x1 - 0.03, 0.58, 0.64, bz0 - 0.08, bz0 - 0.03); bu(B.Tr, x0 + 0.03, x1 - 0.03, 1.38, 1.42, bz0 - 0.05, bz0 - 0.03);
-      bx(B.Dt, x0 + 0.38, 0.1 + 0.4, bz0 - 0.03, 0.4, 0.8, 0.04, { color: 0x3d5f86 });               // door (left), steel blue
-      bx(B.Dt, x0 + 0.38, 0.52, bz0 - 0.055, 0.26, 0.4, 0.012, { color: 0x9fd0e8 });
-      bu(B.Pn, x0 + 0.1, x0 + 0.66, 0, 0.1, bz0 - 0.3, bz0 - 0.03);                                     // step
-      for (const [sx, face] of [[x1, 1], [x0, -1]]) { bu(B.Dt, sx + (face > 0 ? 0.0 : -0.016), sx + (face > 0 ? 0.016 : 0.0), 0.62, 1.2, bz0 + 0.12, bz1 - 0.12, { color: 0x2f4352 }); }
+      bu(A.Dt, x0 + 0.05, x1 - 0.05, 0.62, 1.38, bz0 - 0.016, bz0 + 0.0, { color: 0x2f4352 });
+      bu(A.Gl, x0 + 0.05, x1 - 0.05, 0.62, 1.38, bz0 - 0.03, bz0 - 0.016);
+      for (let i = 0; i <= 4; i++) { const x = x0 + 0.05 + (x1 - x0 - 0.1) * i / 4; bu(A.Tr, x - 0.015, x + 0.015, 0.6, 1.4, bz0 - 0.05, bz0 - 0.03); }
+      bu(A.Tr, x0 + 0.03, x1 - 0.03, 0.58, 0.64, bz0 - 0.08, bz0 - 0.03); bu(A.Tr, x0 + 0.03, x1 - 0.03, 1.38, 1.42, bz0 - 0.05, bz0 - 0.03);
+      bx(A.Dt, x0 + 0.38, 0.1 + 0.4, bz0 - 0.03, 0.4, 0.8, 0.04, { color: 0x3d5f86 });               // door (left), steel blue
+      bx(A.Dt, x0 + 0.38, 0.52, bz0 - 0.055, 0.26, 0.4, 0.012, { color: 0x9fd0e8 });
+      bu(A.Pn, x0 + 0.1, x0 + 0.66, 0, 0.1, bz0 - 0.3, bz0 - 0.03);                                     // step
+      for (const [sx, face] of [[x1, 1], [x0, -1]]) { bu(A.Dt, sx + (face > 0 ? 0.0 : -0.016), sx + (face > 0 ? 0.016 : 0.0), 0.62, 1.2, bz0 + 0.12, bz1 - 0.12, { color: 0x2f4352 }); }
       // beacon + antenna on the roof
-      cyl(Bn, ctx, x1 - 0.2, h + 0.07, bz1 - 0.2, 0.06, 0.05, 0.12, 8); bx(B.St, x0 + 0.3, h + 0.35, bz1 - 0.2, 0.02, 0.56, 0.02);
+      cyl(A.Bn, ctx, x1 - 0.2, h + 0.07, bz1 - 0.2, 0.06, 0.05, 0.12, 8); bx(A.Dt, x0 + 0.3, h + 0.35, bz1 - 0.2, 0.02, 0.56, 0.02, { color: 0x6f7780 });
       ob('fleet:booth', x0, x1, bz0, bz1);
     }
     // ---- fuel pump island + wash stand along the rear fence (solid props, neutral)
     {
       const px = cx + 3.4, pz = 8.2;
-      bx(B.Pn, px, 0.06, pz, 0.8, 0.12, 0.5);
-      bx(B.Dt, px, 0.66, pz, 0.34, 1.08, 0.26, { color: 0xd9433a });
-      bx(B.Dt, px, 1.0, pz - 0.14, 0.24, 0.16, 0.01, { color: 0x1e262d });                      // display (south face is -z: front of the pump looks at the lane)
-      bx(B.Dt, px, 0.6, pz - 0.14, 0.26, 0.05, 0.012, { color: WHITE });
-      bx(B.Dt, px, 1.23, pz, 0.38, 0.06, 0.3, { color: 0x3a4048 });
-      bx(B.Dt, px + 0.2, 0.64, pz - 0.1, 0.05, 0.3, 0.05, { color: 0x20242a });                   // nozzle holster
-      for (const sx of [-0.34, 0.34]) bx(B.Dt, px + sx, 0.28, pz - 0.2, 0.07, 0.34, 0.07, { color: YELLOW });  // bollards
+      bx(A.Pn, px, 0.06, pz, 0.8, 0.12, 0.5);
+      bx(A.Dt, px, 0.66, pz, 0.34, 1.08, 0.26, { color: 0xd9433a });
+      bx(A.Dt, px, 1.0, pz - 0.14, 0.24, 0.16, 0.01, { color: 0x1e262d });                      // display (south face is -z: front of the pump looks at the lane)
+      bx(A.Dt, px, 0.6, pz - 0.14, 0.26, 0.05, 0.012, { color: WHITE });
+      bx(A.Dt, px, 1.23, pz, 0.38, 0.06, 0.3, { color: 0x3a4048 });
+      bx(A.Dt, px + 0.2, 0.64, pz - 0.1, 0.05, 0.3, 0.05, { color: 0x20242a });                   // nozzle holster
+      for (const sx of [-0.34, 0.34]) bx(A.Dt, px + sx, 0.28, pz - 0.2, 0.07, 0.34, 0.07, { color: YELLOW });  // bollards
       ob('fleet:pump', px - 0.4, px + 0.4, pz - 0.25, pz + 0.25);
       const wx = cx + 4.75, wz = 8.3;
-      bx(B.Pn, wx, 0.05, wz, 0.5, 0.1, 0.4);
-      bx(B.Dt, wx, 0.5, wz, 0.26, 0.8, 0.22, { color: 0x2f6fb0 });
-      cyl(B.Dt, ctx, wx - 0.0, 0.9, wz - 0.13, 0.12, 0.12, 0.06, 10, { color: 0x20242a });         // hose reel
-      bx(B.Dt, wx + 0.18, 0.6, wz - 0.12, 0.03, 0.5, 0.03, { color: 0x20242a });                  // lance
+      bx(A.Pn, wx, 0.05, wz, 0.5, 0.1, 0.4);
+      bx(A.Dt, wx, 0.5, wz, 0.26, 0.8, 0.22, { color: 0x2f6fb0 });
+      cyl(A.Dt, ctx, wx - 0.0, 0.9, wz - 0.13, 0.12, 0.12, 0.06, 10, { color: 0x20242a });         // hose reel
+      bx(A.Dt, wx + 0.18, 0.6, wz - 0.12, 0.03, 0.5, 0.03, { color: 0x20242a });                  // lance
       ob('fleet:wash', wx - 0.25, wx + 0.25, wz - 0.2, wz + 0.2);
     }
-    // ---- entrance sign on the garage roof (faces the lane, nothing stands on a truck line): navy board on two posts with an orange frame, two spot lamps; the game's label sprite stands in front of it
+    // ---- entrance sign on a GATE GANTRY (2026-10-06 (11): it used to stand on the garage roof): a steel beam between the two floodlight pillars 2.12 m above the slab (trucks are 1.28 m high), navy board with an
+    // orange frame on two short posts above the beam, two spot lamps; the board faces the lane, the game's label sprite stands on its right half
     {
-      const gx0 = xW - 0.03, gx1 = cx + 0.5, sx = (gx0 + gx1) / 2 + 0.6, sz = gz0 + 0.12, by = 1.62 + 0.3 + 0.12;
-      for (const q of [-1, 1]) bx(B.St, sx + q * 1.05, 1.6 + 0.2, sz, 0.06, 0.4, 0.06);
+      const sx = cx, sz = zFront, by = 2.12 + 0.34 + 0.12;
+      bx(B.St, cx, 2.12, sz, (xE - xW) - 0.3, 0.07, 0.07);
+      for (const q of [-1, 1]) bx(B.St, sx + q * 1.05, 2.12 + 0.2, sz, 0.06, 0.4, 0.06);
       bx(B.Dt, sx, by, sz, 2.5, 0.62, 0.06, { color: NAVY });
       bx(B.Dt, sx, by + 0.34, sz - 0.02, 2.6, 0.05, 0.09, { color: ORANGE }); bx(B.Dt, sx, by - 0.34, sz - 0.02, 2.6, 0.05, 0.09, { color: ORANGE });
-      // truck pictogram (cab + trailer + wheels) on the left half, white / orange, so the board is never blank (the game's label sprite stands on the right half)
       { const tx = sx - 0.85, ty = by - 0.05, tz = sz - 0.04;
         bx(B.Dt, tx - 0.07, ty + 0.04, tz, 0.5, 0.26, 0.02, { color: WHITE }); bx(B.Dt, tx + 0.27, ty, tz, 0.2, 0.2, 0.02, { color: ORANGE }); bx(B.Dt, tx + 0.29, ty + 0.04, tz - 0.012, 0.09, 0.07, 0.012, { color: 0x9fd0e8 });
         for (const wx of [-0.22, 0.05, 0.27]) bx(B.Dt, tx + wx, ty - 0.12, tz, 0.09, 0.09, 0.02, { color: 0x20242a }); }
-      for (const q of [-1, 1]) { bx(B.Dt, sx + q * 0.7, by + 0.5, sz - 0.2, 0.12, 0.07, 0.07, { color: 0x2b2f36 }); bx(Lf, sx + q * 0.7, by + 0.47, sz - 0.24, 0.09, 0.05, 0.02); bx(B.St, sx + q * 0.7, by + 0.4, sz - 0.1, 0.03, 0.03, 0.22); bx(B.St, sx + q * 0.7, by + 0.35, sz, 0.03, 0.2, 0.03); }
+      for (const q of [-1, 1]) { bx(B.Dt, sx + q * 0.7, by + 0.5, sz - 0.2, 0.12, 0.07, 0.07, { color: 0x2b2f36 }); bx(Lf, sx + q * 0.7, by + 0.47, sz - 0.24, 0.09, 0.05, 0.02); bx(B.St, sx + q * 0.7, by + 0.4, sz - 0.1, 0.03, 0.03, 0.22); }
       p.sign = { x: sx + 0.45, y: by, z: sz - 0.07 };
     }
     // ---- painted decals on the lot slab: bay separators (white), stop bars (yellow), arrows, hazard chevrons in front of the throat, edge line
@@ -751,25 +734,32 @@
     add(toMesh(B.Dr, M.roller, {}));
     add(toMesh(B.Dt, M.detail, { soft: true, cast: false }));
     add(toMesh(Lf, FMat.lamp, { soft: true, receive: false, name: 'fleetLampV161' }));
-    add(toMesh(Bn, FMat.beacon, { soft: true, receive: false, name: 'fleetBeaconV161' }));
     add(toMesh(B.Gl, M.glass, { receive: false }));
+    const am = new THREE.Group(); am.name = 'yardAmenitiesV161';
+    for (const m of [toMesh(A.Pn, M.plinth, { cast: false }), toMesh(A.Wl, M.panel, { cast: true }), toMesh(A.Tr, M.trim, { cast: false }), toMesh(A.Dt, M.detail, { soft: true, cast: false }),
+      toMesh(A.Gl, M.glass, { receive: false }), toMesh(A.Bn, FMat.beacon, { soft: true, receive: false, name: 'fleetBeaconV161' })]) if (m) am.add(m);
+    g.add(am); g.userData.v161Amenities = am;
     g.userData.v161Fleet = true;
     g.userData.v161Obstacles = obs;
     return p;
   }
   // world-space oriented boxes for the v83 registry (rebuildStatic): the fence runs, pillars, garage, booth, pump, wash stand and the sign post of the live yard; player + agent only (placement / camera off:
   // the road planners keep the old fleet-yard keep-out parcel exactly as before)
+  // the base garage (level >= 2: 5 or 6 bays, back wall at z 8.23) stands where the booth / pump / wash stand: while it does, those three are not drawn and not solid
+  function amenitiesHidden() { try { return Number(baseLevel('garage')) >= 2; } catch (e) { return false; } }
   function fleetObstacles() {
     try {
       const g = scene.getObjectByName('v116FleetYard');
       if (!g || !g.userData.v161Obstacles) return [];
-      return g.userData.v161Obstacles.map((b) => ({ owner: g, label: b.label, pos: b.pos, hx: b.hx, hz: b.hz, yaw: b.yaw }));
+      const hide = amenitiesHidden();
+      return g.userData.v161Obstacles.filter((b) => !(hide && /^fleet:(booth|pump|wash)/.test(b.label))).map((b) => ({ owner: g, label: b.label, pos: b.pos, hx: b.hx, hz: b.hz, yaw: b.yaw }));
     } catch (e) { return []; }
   }
   // live: floodlights glow at night, the beacon on the booth blinks (shared materials, 90 ms tick, no per-frame allocation)
   let fleetT = 0;
   function fleetTick(now) {
     if (now - fleetT < 90) return; fleetT = now;
+    try { const y = scene.getObjectByName('v116FleetYard'), am = y && y.userData.v161Amenities, hide = amenitiesHidden(); if (am && am.visible === hide) { am.visible = !hide; try { __TYCOON_V83_COLLISIONS__.rebuild(); } catch (e) { /* registry not ready */ } } } catch (e) { /* no yard yet */ }
     if (!FM) return;
     let night = false; try { night = isNightV40(); } catch (e) { /* layer not ready */ }
     FM.lamp.emissiveIntensity += ((night ? 1.3 : 0.35) - FM.lamp.emissiveIntensity) * 0.08;

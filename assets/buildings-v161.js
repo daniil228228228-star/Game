@@ -254,7 +254,7 @@ const lin = (hex) => new THREE.Color(hex).convertSRGBToLinear();
     const wy = y0 + 0.82, wy2 = y0 + st + 0.82, wh = 0.46, ww = 0.34, wx = W / 2 - 0.46;
     win(-wx, wy, zf, 0, ww, wh, { shutters: shut, flowers: flw });
     win(wx, wy, zf, 0, ww, wh, { shutters: shut, flowers: flw });
-    for (const sx of [-1, 1]) win(sx * (hw0 - 0.03), wy, 0, sx > 0 ? Math.PI / 2 : -Math.PI / 2, ww, wh, { shutters: shut });
+    for (const sx of [-1, 1]) { if (L >= 4 && sx === gs) continue; win(sx * (hw0 - 0.03), wy, 0, sx > 0 ? Math.PI / 2 : -Math.PI / 2, ww, wh, { shutters: shut }); }   // (no window into the garage)
     win(0, wy, -zf, Math.PI, ww, wh);
     if (n > 1) {
       win(-wx, wy2, zf, 0, ww, wh, { shutters: shut });
@@ -279,24 +279,37 @@ const lin = (hex) => new THREE.Color(hex).convertSRGBToLinear();
     // ---- level pips next to the door (1..5) so the level reads at a glance
     for (let i = 0; i < L; i++) box(bDet, ctx, 0.52 + i * 0.075, y0 + 0.2, zf + 0.012, 0.05, 0.05, 0.02, { color: 0xe9b64a });
 
-    // ---- garage wing (level 4+) on the side away from the upgrade pad, with a sectional door and a concrete apron
+    // ---- garage wing (level 4+) on the side away from the upgrade pad (2026-10-06 (11), user: "Гаражи тонкие ... В них даже не залезет машина"): a real hollow single bay. Inside: 1.9 x 2.75 m, clear height
+    // ~1.3 m, door opening 1.8 x 1.15 m (the game's car is 1.4 x 2.14 x 0.66 m: opening >= car + 0.4 m, depth >= car + 0.5 m, height >= car + 0.3 m); thin walls (0.1 m), the sectional door is rolled up under the
+    // header so the empty bay shows; walls are separate footprint boxes (back wall, outer wall, inner wall, two front pillars), the interior and the doorway are walkable.
     if (L >= 4) {
-      const gw = 1.05, gd = 1.45, gcx = gs * (hw0 + gw / 2 - 0.05), gcz = -0.22, gyw = y0 + 1.25, gzf = gcz + gd / 2;
+      const gw = 2.2, gd = 2.85, gwt = 0.1, gyw = y0 + 1.4, gzf = zf + 0.25, gz1 = gzf, gz0 = gzf - gd, gcz = (gz0 + gz1) / 2, gx0 = hw0, gx1 = hw0 + gw, gcx = gs * (gx0 + gx1) / 2;
+      const gxo = gs * (gx1 - gwt / 2), gxi = gs * (gx0 + gwt / 2 + 0.02), wy1 = y0 - 0.02, wh = gyw - wy1, wyc = (wy1 + gyw) / 2, pw = 0.2, doorH = 1.15;
       box(bPlin, ctx, gcx, 0.11, gcz, gw + 0.1, 0.22, gd + 0.1);
-      box(bSid, ctx, gcx, y0 - 0.02 + (1.25 + 0.02) / 2, gcz, gw, 1.27, gd);
-      const gh = gw / 2, gtn = 0.62;
+      box(bSid, ctx, gcx, wyc, gz0 + gwt / 2, gw, wh, gwt);                                       // back wall
+      box(bSid, ctx, gxo, wyc, gcz, gwt, wh, gd);                                                 // outer side wall
+      box(bSid, ctx, gxi, wyc, gcz, gwt, wh, gd);                                                 // inner side wall (shared with the house where they meet)
+      for (const sx of [0, 1]) { const px = gs * (sx ? gx1 - pw / 2 : gx0 + pw / 2); box(bSid, ctx, px, wyc, gz1 - 0.06, pw, wh, 0.12); box(bTrim, ctx, px, wyc, gz1 + 0.005, pw + 0.04, wh, 0.03); }   // front pillars + trim
+      box(bSid, ctx, gcx, y0 + doorH + (gyw - y0 - doorH) / 2, gz1 - 0.06, gw - 2 * pw, gyw - y0 - doorH, 0.12);   // header over the opening
+      box(bTrim, ctx, gcx, y0 + doorH + 0.05, gz1 + 0.005, gw - 2 * pw + 0.04, 0.08, 0.03);
+      box(bCorr, ctx, gcx, y0 + doorH - 0.07, gz1 - 0.12, gw - 2 * pw - 0.1, 0.12, 0.12);        // the rolled-up sectional door (a coil under the header): the bay is shown open and empty
+      for (let q = 0; q < 3; q++) box(bTrim, ctx, gcx, y0 + 0.22 + q * 0.18, gz0 + gwt + 0.01, gw - 2 * gwt - 0.2, 0.025, 0.02);   // inner back wall: three wainscot rails (the bay reads as a room)
+      const gh = gw / 2, gtn = 0.55;
       ctx.at(gcx, 0, gcz, 0, () => {
         roofPlanes(bRoof, ctx, gh, 0.2, gyw, gtn, gd / 2 + 0.2, {});
         tri(bSid, ctx, [-gh, gyw - 0.012, gd / 2], [gh, gyw - 0.012, gd / 2], [0, gyw + gh * gtn - 0.012, gd / 2]);
         tri(bSid, ctx, [gh, gyw - 0.012, -gd / 2], [-gh, gyw - 0.012, -gd / 2], [0, gyw + gh * gtn - 0.012, -gd / 2]);
       });
-      box(bCorr, ctx, gcx, y0 + 0.5, gzf + 0.02, 0.8, 0.98, 0.04);
-      box(bTrim, ctx, gcx, y0 + 1.02, gzf + 0.03, 0.9, 0.07, 0.05);
-      for (const sx of [-1, 1]) box(bTrim, ctx, gcx + sx * 0.44, y0 + 0.5, gzf + 0.03, 0.06, 1.0, 0.05);
-      box(bPlin, ctx, gcx, 0.02, gzf + 0.42, 0.95, 0.04, 0.8);                                                // apron
-      win(gcx, y0 + 0.85, gcz - gd / 2, Math.PI, 0.3, 0.3);
-      footprint.push({ x: gcx, z: gcz, hx: gw / 2 + 0.05, hz: gd / 2 + 0.05 });
-      dims.garage = { x: gcx, z: gcz, w: gw, d: gd, yw: gyw };
+      box(bLamp, ctx, gcx, gyw - 0.17, gcz, 0.3, 0.04, 0.1);                                      // ceiling light inside
+      box(bPlin, ctx, gcx, 0.055, gz1 + 0.12, gw - 0.3, 0.11, 0.24);                              // threshold step
+      box(bPlin, ctx, gcx, 0.02, gz1 + 0.6, gw - 0.3, 0.04, 0.8);                                 // concrete apron
+      win(gcx, y0 + 0.85, gz0, Math.PI, 0.3, 0.3);
+      footprint.push({ x: gcx, z: gz0 + gwt / 2, hx: gw / 2 + 0.05, hz: gwt / 2 + 0.06 });
+      footprint.push({ x: gxo, z: gcz, hx: gwt / 2 + 0.06, hz: gd / 2 + 0.05 });
+      footprint.push({ x: gxi, z: gcz, hx: gwt / 2 + 0.03, hz: gd / 2 + 0.05 });
+      for (const sx of [0, 1]) footprint.push({ x: gs * (sx ? gx1 - pw / 2 : gx0 + pw / 2), z: gz1 - 0.05, hx: pw / 2 + 0.03, hz: 0.1 });
+      const ix0 = gs > 0 ? gx0 + gwt : -(gx1 - gwt), ix1 = gs > 0 ? gx1 - gwt : -(gx0 + gwt);
+      dims.garage = { x: gcx, z: gcz, w: gw, d: gd, yw: gyw, inner: { x0: ix0, x1: ix1, z0: gz0 + gwt, z1: gz1, h: gyw - 0.17 - 0.22 }, door: { w: gw - 2 * pw, h: doorH }, k };
     }
 
     // ---- bay window (level 5) on the front, opposite to the garage
