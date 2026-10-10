@@ -23,6 +23,8 @@ const ev = (fn, arg) => page.evaluate(fn, arg);
 await ev(installProbe);
 
 // ------------------------------------------------------------------------------------------------ helpers
+const saveShots = (shots, prefix) => { if (!SHOTS || !shots) return; for (const [v, u] of Object.entries(shots)) fs.writeFileSync(path.join(SHOTS, `${prefix}-${v}.jpg`), Buffer.from(u.split(',')[1], 'base64')); };
+const shootPlant = async (k, prefix) => { if (SHOTS) saveShots(await ev((k) => __BLD_PROBE__.shootLive(__TYCOON_V42__.world[k], ['iso', 'front']).shots, k), prefix); };
 const plantInfo = (k) => ev((k) => {
   const P = __BLD_PROBE__, w = __TYCOON_V42__.world[k];
   w.updateMatrixWorld(true);
@@ -81,12 +83,14 @@ check(stillNothing.power === 0 && stillNothing.water === 0, `a visible pad is no
 // ---- 2a. buy the POWER plant through the pad function: the yard appears at once as a construction
 const bp = await buyPad('infra-plant-power'); check(bp.ok && bp.vis, 'power plant pad bought through the real pad function');
 const pend = await plantInfo('power');
+await shootPlant('power', 'plant-power-pending');
 check(pend.ud.pending === true && pend.ud.level === 0 && pend.meshes >= 5 && pend.names.v161InfraCrane === 1 && pend.names.v161InfraConcrete === 1 && !pend.names.v161InfraRotor, `power plant, pad bought: the yard stands at once as a construction (pending ${pend.ud.pending}, level ${pend.ud.level}, ${pend.meshes} meshes ${J(pend.names)})`);
 check(pend.own >= 8, `the construction yard has its colliders already: fence runs with the gate gap, gate posts, flood lights, crane base (${pend.own})`);
 const water0 = await plantInfo('water');
 check(water0.meshes === 0, 'the water works site is still empty (its own pad was not bought)');
 check(await waitLevel('infra-plant-power', bp.lvl), 'power plant level 1 reached after its pending timer');
 const p1 = await plantInfo('power'), m1 = await plantMeasure('power');
+await shootPlant('power', 'plant-power-L1');
 check(p1.ud.level === 1 && !p1.ud.pending && p1.groups === 1 && p1.inScene && p1.names.v161InfraRotor === 1 && !p1.names.v161InfraCrane && p1.meshes >= 6 && p1.meshes <= 12, `power L1: one group, hall + transformer + pylon, ventilator, no crane (${p1.meshes} meshes ${J(p1.names)})`);
 check(p1.sprites === 1, 'power L1: the label (real demand / capacity) is the only sprite');
 check(m1.minY >= -0.05 && m1.minY <= 0.05, `power L1: nothing floating or sunk (min y ${m1.minY})`);
@@ -127,6 +131,7 @@ check(pr.ud.level === 1 && pr.groups === 1 && pr.meshes === p1.meshes && pr.tris
 check(pr.own >= 10 && pr.own === p1.own, `colliders are back after the reload (${pr.own} vs ${p1.own})`);
 check(await waitLevel('infra-plant-water', bw.lvl), 'water works level 1 completed (after the reload)');
 const w1 = await plantInfo('water'), wm1 = await plantMeasure('water');
+await shootPlant('water', 'plant-water-L1');
 check(w1.ud.level === 1 && w1.groups === 1 && w1.names.v161InfraRotor === 1 && !w1.names.v161InfraWater && w1.meshes <= 12, `water L1: pump house + round tank + pipes, no basin yet (${w1.meshes} meshes ${J(w1.names)})`);
 check(wm1.minY >= -0.05 && wm1.minY <= 0.05 && wm1.overlap >= 0.9 && wm1.outsideMax <= 1.0 && wm1.reach === 0, `water L1: min y ${wm1.minY}, cover ${wm1.overlap}, outside ${wm1.outsideMax} m, walk-in ${wm1.reach}/8`);
 
@@ -134,6 +139,7 @@ check(wm1.minY >= -0.05 && wm1.minY <= 0.05 && wm1.overlap >= 0.9 && wm1.outside
 const lv = {};
 for (const L of [2, 3]) {
   await ev((L) => { const st = __TYCOON_V42__.state; st.powerPlantLevel = L; st.waterPlantLevel = L; st.powerPendingUntil = 0; st.waterPendingUntil = 0; __TYCOON_V42__.refresh(); }, L);
+  await shootPlant('power', `plant-power-L${L}`); await shootPlant('water', `plant-water-L${L}`);
   lv['p' + L] = await plantInfo('power'); lv['w' + L] = await plantInfo('water'); lv['pm' + L] = await plantMeasure('power'); lv['wm' + L] = await plantMeasure('water');
 }
 check(lv.p2.groups === 1 && lv.p3.groups === 1 && lv.w2.groups === 1 && lv.w3.groups === 1, 'levels 2 / 3 rebuild the SAME single group per plant (no duplicates)');
@@ -171,8 +177,6 @@ await ev(() => { for (let i = 0; i < 12; i++) __TYCOON_V42__.refresh(); });
 await page.waitForTimeout(2500);
 const leak = await ev(() => ({ geo1: renderer.info.memory.geometries, live1: InfraV161.live.length, groups: scene.children.filter((o) => o.name === 'v161PowerPlant' || o.name === 'v161WaterWorks').length }));
 check(leak.geo1 <= geo0 + 2 && leak.live1 <= 3 && leak.groups === 2, `12 rebuilds: no geometry leak (${geo0} -> ${leak.geo1}), live animation list ${live0} -> ${leak.live1} (<= 3), still exactly one group per plant (${leak.groups})`);
-if (SHOTS) {
-  for (const k of ['power', 'water']) { const sh = await ev((k) => __BLD_PROBE__.shootLive(__TYCOON_V42__.world[k], ['iso', 'top']).shots, k); for (const [v, u] of Object.entries(sh)) fs.writeFileSync(path.join(SHOTS, `plant-${k}-L3-${v}.jpg`), Buffer.from(u.split(',')[1], 'base64')); }
 }
 
 // ------------------------------------------------------------------------------------------------ 3. district identities
@@ -192,6 +196,7 @@ for (const id of ['industrial', 'business', 'waterfront']) {
         dup: scene.children.filter((o) => o.name === grp.name).length, flags: own.every((e) => e.flags.player && e.flags.agent && !e.flags.placement && !e.flags.camera), hub: [grp.position.x, grp.position.z] };
     }, { id, L });
     dist[id].push(r);
+    if (SHOTS && L !== 2) saveShots(await ev((id) => __BLD_PROBE__.shootLive(cityWorldRuntime.districtIdentity.get(id), ['iso', 'top']).shots, id), `district-${id}-L${L}`);
   }
 }
 const D = Object.values(dist).flat();
@@ -222,13 +227,11 @@ const pondMoved = await page.waitForFunction((s0) => { const m = cityWorldRuntim
 check(pondMoved && pond.n <= 500 && pond.blue, `waterfront: the pond surface is animated and blue (${pond.n} vertices)`);
 const live = await ev(() => { for (let i = 0; i < 10; i++) { refreshDistrictIdentityWorldV363(); } InfraV161.animate(0.016); return { live: InfraV161.live.length, groups: [...cityWorldRuntime.districtIdentity.values()].length }; });
 check(live.live <= 3 && live.groups === 4, `10 district refreshes leave the animation list bounded (${live.live} <= 3 entries: two plants + the pond)`);
-if (SHOTS) {
-  for (const id of ['industrial', 'business', 'waterfront']) { const sh = await ev((id) => __BLD_PROBE__.shootLive(cityWorldRuntime.districtIdentity.get(id), ['iso', 'top']).shots, id); for (const [v, u] of Object.entries(sh)) fs.writeFileSync(path.join(SHOTS, `district-${id}-L3-${v}.jpg`), Buffer.from(u.split(',')[1], 'base64')); }
 }
 
 // ------------------------------------------------------------------------------------------------ 4. construction site rigs
 const kinds = [['house', 0], ['shop', 2], ['warehouse', 3], ['factory', 5], ['office', 6], ['tower', 8]];
-const siteRows = await ev((kinds) => {
+const siteRows = await ev(({ kinds, shots }) => {
   const P = __BLD_PROBE__, out = [], geo0 = renderer.info.memory.geometries;
   const T = [0.05, 0.2, 0.4, 0.6, 0.8, 1.0];
   for (const [kind, si] of kinds) {
@@ -240,6 +243,7 @@ const siteRows = await ev((kinds) => {
       const r = P.measure(site.group, [], { sweep: false });
       let nonUniform = 0; site.group.traverse((o) => { if (o !== site.group && !o.isSprite && o.scale && Math.abs(o.scale.y - 1) > 1e-6) nonUniform++; });
       rows.push({ ph, meshes: r.meshes, minY: r.minY, tris: r.tris, nonUniform, crane: !!site.craneParts[0].visible });
+      if (shots && [0, 2, 4].includes(ph) && ['house', 'factory', 'tower'].includes(kind)) { P.forceScan(); (window.__siteShots = window.__siteShots || {})[`site-${kind}-p${ph}`] = P.shootLive(site.group, ['iso']).shots.iso; }
     }
     let all = 0; site.group.traverse((o) => { if (o.isMesh) all++; });
     const walls = site.wallVisual.children[0], wh = walls.geometry.boundingBox.max.y - walls.geometry.boundingBox.min.y;
@@ -248,8 +252,9 @@ const siteRows = await ev((kinds) => {
     const i = constructionSites.indexOf(site); if (i >= 0) constructionSites.splice(i, 1); scene.remove(site.group); disposeObject3D(site.group);
   }
   return { out, geo0, geo1: renderer.info.memory.geometries };
-}, kinds);
+}, { kinds, shots: !!SHOTS });
 console.log('site rows:\n  ' + siteRows.out.map((s) => `${s.kind}: visible meshes per phase ${s.rows.map((r) => r.meshes).join('/')}, total ${s.all}, min y ${Math.min(...s.rows.map((r) => r.minY))}, wall height ${s.wallH} (true env ${s.trueEnvH.toFixed(2)})`).join('\n  '));
+if (SHOTS) { const ss = await ev(() => window.__siteShots || {}); for (const [k, u] of Object.entries(ss)) saveShots({ iso: u }, k); }
 check(siteRows.out.every((s) => s.rows.every((r) => r.meshes <= 16)), `site: <= 16 visible meshes at every phase for all 6 archetypes (max ${Math.max(...siteRows.out.flatMap((s) => s.rows.map((r) => r.meshes)))}; before 62-103 of 141)`);
 check(siteRows.out.every((s) => s.all <= 34), `site: <= 34 meshes in the whole rig (${J(siteRows.out.map((s) => s.all))}; before 141)`);
 check(siteRows.out.every((s) => s.rows.every((r) => r.minY >= -0.05 && r.minY <= 0.05)), `site: nothing floating or sunk (min y ${J(siteRows.out.map((s) => Math.min(...s.rows.map((r) => r.minY))))})`);
@@ -322,6 +327,19 @@ const live2 = await ev(() => {
 });
 check(live2.entries >= live2.tagged, `props: every visible tagged prop in the live world has a collider (${live2.tagged} tagged, ${live2.entries} entries)`);
 check(live2.stops.length === 4 && live2.stops.every((s) => s.meshes <= 6 && s.minY >= -0.05 && s.minY <= 0.05 && s.own >= 1), `props: the 4 transit stops are merged (<= 6 meshes, was 28) with colliders, nothing sunk (${J(live2.stops)})`);
+
+if (SHOTS) {
+  const sh = await ev(() => {
+    const P = __BLD_PROBE__, cl = new THREE.Group(); cl.position.set(75, 0, 75); scene.add(cl);
+    const put = (m, x, z, ry) => { m.position.set(x, 0, z); if (ry) m.rotation.y = ry; cl.add(m); };
+    put(makeLamp(), 0, 0); put(makeBench(), 1.2, 0, 0.4); put(makeSignPost(), 2.2, 0); put(makeFireHydrant(), 3.0, 0); put(makeSimplePlanterV363(), 4.0, 0); put(makeBenchV39(), 5.0, 0);
+    cl.updateMatrixWorld(true); const out = { cluster: P.shootLive(cl, ['iso']).shots.iso };
+    scene.remove(cl); disposeObject3D(cl);
+    cityWorldRuntime.transitStops.forEach((s, id) => { out['stop-' + id] = P.shootLive(s, ['iso']).shots.iso; });
+    return out;
+  });
+  for (const [k, u] of Object.entries(sh)) saveShots({ iso: u }, 'props-' + k);
+}
 
 // ------------------------------------------------------------------------------------------------ 6. no errors
 await ev(() => { save(); });
