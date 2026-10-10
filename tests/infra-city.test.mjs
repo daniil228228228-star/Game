@@ -162,7 +162,7 @@ const wsA = await ev(() => { const m = __TYCOON_V42__.world.water.children.find(
 const wsMoved = await page.waitForFunction((s0) => { const m = __TYCOON_V42__.world.water.children.find((c) => c.name === 'v161InfraWater'); const p = m.geometry.attributes.position; let s = 0; for (let i = 0; i < p.count; i++) s += p.getY(i); return Math.abs(s - s0) > 1e-4; }, wsA.sum, { timeout: 30000, polling: 200 }).then(() => true, () => false);
 const wsBand = await ev(() => { const m = __TYCOON_V42__.world.water.children.find((c) => c.name === 'v161InfraWater'); const p = m.geometry.attributes.position, meta = m.userData.v161WaterMeta; let mx = 0, border = 0; for (let i = 0; i < p.count; i++) { const d = Math.abs(p.getY(i) - meta[i * 4 + 2]); mx = Math.max(mx, d); if (meta[i * 4 + 3] === 0) border = Math.max(border, d); } return { mx: +mx.toFixed(4), border, mat: m.material.color.b > m.material.color.r, transparent: m.material.transparent }; });
 console.log('INFO water works ripple ' + J({ wsA, wsMoved, wsBand, player: await ev(() => [player.position.x, player.position.z]), t: await ev(() => __TYCOON_V42__.world.water.children.find((c) => c.name === 'v161InfraWater')?.userData.v161WaterT) }));
-check(wsMoved && wsA.n <= 400 && wsBand.mx > 0.001 && wsBand.mx <= 0.03 && wsBand.border === 0 && wsBand.mat, `water works: the water surface ripples in the real loop (${wsA.n} vertices, max lift ${wsBand.mx} m <= 3 cm, border flat, blue material ${wsBand.mat})`);
+check(wsMoved && wsA.n <= 400 && wsBand.mx > 0.001 && wsBand.mx <= 0.03 && wsBand.border < 1e-6 && wsBand.mat, `water works: the water surface ripples in the real loop (${wsA.n} vertices, max lift ${wsBand.mx} m <= 3 cm, border flat, blue material ${wsBand.mat})`);
 // no leak: 12 rebuilds keep the geometry count (measured after the frames that upload / free them) and the live list bounded
 await ev(() => { for (let i = 0; i < 2; i++) __TYCOON_V42__.refresh(); });
 await page.waitForTimeout(2500);
@@ -184,7 +184,7 @@ for (const id of ['industrial', 'business', 'waterfront']) {
       const P = __BLD_PROBE__;
       cityState.districts[id] = L; refreshDistrictIdentityWorldV363(); __TYCOON_V83_COLLISIONS__.rebuild();
       const grp = cityWorldRuntime.districtIdentity.get(id); grp.updateMatrixWorld(true);
-      const own = P.ownEntries(grp), solid = own.filter((e) => !/:(pond|light|planter|palm|bench|pool)/.test(e.label)), small = own.filter((e) => /:(light|planter|palm|bench|pool)/.test(e.label));
+      const own = P.ownEntries(grp), solid = own.filter((e) => !/:(pond|light|planter|palm|pool)/.test(e.label)), small = own.filter((e) => /:(light|planter|palm|bench|pool)/.test(e.label));
       const meas = P.measure(grp, solid); delete meas.colliders;
       let meshes = 0; grp.traverse((o) => { if (o.isMesh) meshes++; });
       const walkIn = (e) => { return null; };

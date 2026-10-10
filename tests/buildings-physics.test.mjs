@@ -25,6 +25,8 @@
 //   B6 (2026-10-06 (10), backlog #7 + #8): the three FACTORIES (stage 4 mini factory, 5 factory, 13 tech park) join the hard family at every level 1..10 (walls, <= 0.3 m outside, no height stretch, gold, crown, <= 1/5 of the old
 //   meshes, door vs driveway, min y, no walk-in) and their upgrade pads must stand outside every collider; the FLEET YARD (v116FleetYard) is measured with the boxes it owns (<= 16 meshes, min y, fence / walls covered, no walk-in
 //   from N / NE / E / W / NW, open only through the mouth along the service lane, truck homes free).
+//   B8 (2026-10-10 (13), backlog #9 + city / site / props): the POWER PLANT + WATER WORKS (nothing at level 0, real facility L1..3), the three DISTRICT IDENTITIES (industrial / business / waterfront), the transit stops, the
+//   CONSTRUCTION SITE rig and the solid props join the hard family (<= 12 / 8 / 6 / 16 meshes, min y, cover >= 90 %, walk-in 0, colliders for lamps / benches / signs / hydrants); tests/infra-city.test.mjs has the flows.
 // IN SCOPE (hard checks): the house family = stage 0/1 at every level + the shop (stage 2) + the warehouse (3), the terminal (10) and the factories (4, 5, 13) at every level, the fleet yard, the three neighbourhood / suburb mini houses, the suburb district, the four industrial plants, the market. Everything else in the catalogue is measured and
 //   printed as `KNOWN ISSUE:` (exit 0) - those lines are the backlog of the next building families. SHOTS_DIR=<dir> writes front + iso pictures of house levels 1/3/5/10
 //   and of the plants at levels 1/3, the shop at levels 1/3/5/10.
@@ -486,6 +488,40 @@ check(sub.now.overlap !== null && sub.now.overlap >= 0.9 && sub.now.outsideMax <
 check(sub.trunkSolid && sub.treeGap >= 0.9, `suburb: tree trunks are solid and every trunk is >= 0.9 m from every house wall (closest ${sub.treeGap} m: no crown inside a house)`);
 check(sub.now.meshes <= 8 && sub.old && sub.now.meshes < sub.old.meshes / 5, `suburb: ${sub.now.meshes} meshes per district (before ${sub.old && sub.old.meshes}; goal well under 60)`);
 check(new Set(sub.variants).size === Math.min(3, sub.nHouses), `suburb: the houses use ${new Set(sub.variants).size} distinct variants (${J(sub.variants)}) so the ring does not look cloned`);
+
+// ------------------------------------------------------------------------------------------------ B8. city backbone, district identities, construction site, props (2026-10-10 (13), backlog #9 + city / site / props): HARD
+// Measured in the late world with the colliders each group OWNS in the registry (the detailed flows - pads, reload, animation, leaks - live in tests/infra-city.test.mjs).
+const b8 = await ev(() => {
+  const P = __BLD_PROBE__, out = { plants: [], districts: [], site: [], stops: [], props: null };
+  const meas = (grp, filter) => { grp.updateMatrixWorld(true); const own = P.ownEntries(grp), use = filter ? own.filter(filter) : own, m = P.measure(grp, use); let n = 0; grp.traverse((o) => { if (o.isMesh) n++; }); return { meshes: n, minY: m.minY, overlap: m.overlap, outsideMax: m.outsideMax, reach: m.sweepReached, own: own.length, tris: m.tris }; };
+  const st = __TYCOON_V42__.state;
+  for (const L of [0, 1, 2, 3]) {
+    st.powerPlantLevel = L; st.waterPlantLevel = L; st.powerPendingUntil = 0; st.waterPendingUntil = 0; __TYCOON_V42__.refresh(); __TYCOON_V83_COLLISIONS__.rebuild();
+    for (const k of ['power', 'water']) out.plants.push({ k, L, ...meas(__TYCOON_V42__.world[k], (e) => !/:(fence|light|crane)/.test(e.label)) });
+  }
+  st.powerPlantLevel = 3; st.waterPlantLevel = 3; __TYCOON_V42__.refresh();
+  for (const id of ['industrial', 'business', 'waterfront']) {
+    const grp = cityWorldRuntime.districtIdentity.get(id);
+    if (grp) out.districts.push({ id, ...meas(grp, (e) => !/:(pond|light|planter|palm|pool)/.test(e.label)) });
+  }
+  for (const s of cityWorldRuntime.transitStops.values()) { const m = meas(s); out.stops.push({ meshes: m.meshes, minY: m.minY, own: m.own }); }
+  for (const [kind, si] of [['house', 0], ['tower', 8]]) {
+    const site = spawnConstructionSite(new THREE.Vector3(30, 0, -58), STAGES[si], 30);
+    site.group.updateMatrixWorld(true); const m = P.measure(site.group, [], { sweep: false });
+    out.site.push({ kind, meshes: m.meshes, minY: m.minY });
+    const i = constructionSites.indexOf(site); if (i >= 0) constructionSites.splice(i, 1); scene.remove(site.group); disposeObject3D(site.group);
+  }
+  let tagged = 0; scene.traverse((o) => { if (o.userData && o.userData.v161Prop && o.userData.v161Prop !== 'group') { let vis = true; for (let p = o; p; p = p.parent) if (p.visible === false) vis = false; if (vis) tagged++; } });
+  out.props = { tagged, entries: [...__TYCOON_V83_COLLISIONS__.registry.values()].filter((e) => /^prop-/.test(e.label)).length };
+  return out;
+});
+console.log('B8 rows: plants ' + b8.plants.map((r) => `${r.k}${r.L}:${r.meshes}m/${r.minY}/${r.overlap}/${r.reach}`).join(' ') + ' | districts ' + b8.districts.map((r) => `${r.id}:${r.meshes}m/${r.minY}/${r.overlap}/${r.reach}`).join(' ') + ' | site ' + J(b8.site) + ' | stops ' + J(b8.stops) + ' | props ' + J(b8.props));
+check(b8.plants.filter((r) => r.L === 0).every((r) => r.meshes === 0 && r.own === 0), 'power plant / water works at level 0: nothing stands there (no slab, no collider)');
+check(b8.plants.filter((r) => r.L > 0).every((r) => r.meshes <= 12 && r.minY >= -0.05 && r.minY <= 0.05 && r.overlap >= 0.9 && r.outsideMax <= 1.0 && r.reach === 0), `power plant / water works L1..3: <= 12 meshes, min y within 5 cm, the boxes cover >= 90 % of the walls, <= 1 m outside, walk-in 0 (${J(b8.plants.filter((r) => r.L > 0).map((r) => [r.k, r.L, r.meshes, r.overlap, r.reach]))})`);
+check(b8.districts.length === 3 && b8.districts.every((r) => r.meshes <= 8 && r.minY >= -0.05 && r.minY <= 0.05 && (r.overlap === null || r.overlap >= 0.9) && r.reach === 0 && r.own >= 8), `district identities (industrial / business / waterfront): <= 8 meshes (was 21 / 61 / 113), min y within 5 cm, real colliders, walk-in 0 (${J(b8.districts.map((r) => [r.id, r.meshes, r.minY, r.overlap, r.reach, r.own]))})`);
+check(b8.stops.length === 4 && b8.stops.every((s) => s.meshes <= 6 && s.minY >= -0.05 && s.minY <= 0.05 && s.own >= 1), `transit stops: <= 6 meshes (was 28), min y within 5 cm, solid pole / posts / bench (${J(b8.stops)})`);
+check(b8.site.every((s) => s.meshes <= 16 && s.minY >= -0.05 && s.minY <= 0.05), `construction site rig: <= 16 visible meshes (was 62-103), min y within 5 cm (${J(b8.site)})`);
+check(b8.props.tagged >= 1 && b8.props.entries >= b8.props.tagged, `props: every visible lamp / bench / sign / hydrant / planter has a collider (${J(b8.props)})`);
 
 // ------------------------------------------------------------------------------------------------ C. a real upgrade keeps colliders, re-lays no road
 // house 0 is level 5 in the late save: the next real upgrade is the first gold tier (6). The road signature uses min(level, 5), so no road may be re-laid.
