@@ -144,13 +144,13 @@
       if (horizontal) { S.box(len, 0.2, 0.1, cx, 0.2, cz, { c: C.plinth }); S.box(len, 0.045, 0.045, cx, 0.74, cz, { c: C.rail }); S.box(len, 0.035, 0.035, cx, 0.5, cz, { c: C.rail }); }
       else { S.box(0.1, 0.2, len, cx, 0.2, cz, { c: C.plinth }); S.box(0.045, 0.045, len, cx, 0.74, cz, { c: C.rail }); S.box(0.035, 0.035, len, cx, 0.5, cz, { c: C.rail }); }
       for (let i = 0; i <= n; i++) { const pp = P(a + i * step); S.box(0.07, 0.72, 0.07, pp[0], 0.46, pp[1], { c: C.steelDark }); }
-      fp.push(horizontal ? { x: cx, z: cz, hx: len / 2, hz: 0.07 } : { x: cx, z: cz, hx: 0.07, hz: len / 2 });
+      fp.push(horizontal ? { x: cx, z: cz, hx: len / 2, hz: 0.07, kind: 'fence' } : { x: cx, z: cz, hx: 0.07, hz: len / 2, kind: 'fence' });
     }
   }
   // gate gantry over the opening: two brick posts, a beam, the plate (drawn on the pad side = -z face)
   function gateGantry(P, S, L, fp, gx0, gx1, zf, plate, Cn) {
     const mid = (gx0 + gx1) / 2;
-    for (const gx of [gx0, gx1]) { P.ext(gx - 0.11, gx + 0.11, 0.1, 2.05, zf - 0.11, zf + 0.11, C.brick); P.ext(gx - 0.15, gx + 0.15, 2.05, 2.12, zf - 0.15, zf + 0.15, C.plinth); fp.push({ x: gx, z: zf, hx: 0.12, hz: 0.12 }); }
+    for (const gx of [gx0, gx1]) { P.ext(gx - 0.11, gx + 0.11, 0.1, 2.05, zf - 0.11, zf + 0.11, C.brick); P.ext(gx - 0.15, gx + 0.15, 2.05, 2.12, zf - 0.15, zf + 0.15, C.plinth); fp.push({ x: gx, z: zf, hx: 0.12, hz: 0.12, kind: 'gate' }); }
     P.ext(gx0 - 0.15, gx1 + 0.15, 1.78, 1.86, zf - 0.07, zf + 0.07, C.steelDark);
     plate(P, S, L, mid, 1.86, zf - 0.075, gx1 - gx0 + 0.3);
     // hazard stripes across the threshold
@@ -163,7 +163,7 @@
     P.cyl(0.04, 0.05, h, 6, x, y0 + h / 2, z, { c: C.pole });
     P.ext(x - 0.17, x + 0.17, y0 + h, y0 + h + 0.07, z - 0.09, z + 0.09, C.dark);
     L.ext(x - 0.15, x + 0.15, y0 + h - 0.03, y0 + h + 0.0, z - 0.1, z + 0.1, undefined);
-    fp.push({ x, z, r: 0.1 });
+    fp.push({ x, z, r: 0.1, kind: 'light' });
   }
   // construction of ONE module: formwork slab, 4 corner posts + top frame, 3 cones, a few boards. (x0..x1, z0..z1) = the future module's footprint
   function formwork(S, P, fp, x0, x1, z0, z1) {
@@ -447,7 +447,7 @@
       formwork(S, P, fp, f[0], f[1], f[2], f[3]);
       if (next === 1) formwork(S, P, fp, TR[0].x - 0.62, TR[0].x + 0.62, TR[0].z - 0.52, TR[0].z + 0.52);
       if (next === 2) formwork(S, P, fp, TR[1].x - 0.62, TR[1].x + 0.62, TR[1].z - 0.52, TR[1].z + 0.52);
-      crane = [0.15, 0.9]; fp.push({ x: 0.15, z: 0.9, hx: 0.27, hz: 0.27 });
+      crane = [0.15, 0.9]; fp.push({ x: 0.15, z: 0.9, hx: 0.27, hz: 0.27, kind: 'crane' });
     }
     const ratio = info.ratio == null ? 1 : info.ratio;
     return assemble(g, { Cn, R, P, S, L, G, fp }, { kind: 'power', level, pending, rotors: rotors.map((r) => Object.assign(r, { k: 1 })), crane, mode: info.mode || 'normal', modules: level,
@@ -551,7 +551,7 @@
       if (next === 1) formwork(S, P, fp, TANKS[0].x - TANKS[0].r, TANKS[0].x + TANKS[0].r, TANKS[0].z - TANKS[0].r, TANKS[0].z + TANKS[0].r);
       if (next === 2) formwork(S, P, fp, TANKS[1].x - TANKS[1].r, TANKS[1].x + TANKS[1].r, TANKS[1].z - TANKS[1].r, TANKS[1].z + TANKS[1].r);
       if (next === 3) formwork(S, P, fp, TOWER.x - 0.55, TOWER.x + 0.55, TOWER.z - 0.55, TOWER.z + 0.55);
-      crane = [0.1, 0.55]; fp.push({ x: 0.1, z: 0.55, hx: 0.27, hz: 0.27 });
+      crane = [0.1, 0.55]; fp.push({ x: 0.1, z: 0.55, hx: 0.27, hz: 0.27, kind: 'crane' });
     }
     const ratio = info.ratio == null ? 1 : info.ratio;
     return assemble(g, { Cn, R, P, S, L, G, fp }, { kind: 'water', level, pending, rotors: rotors.map((r) => Object.assign(r, { k: 1 })), crane, water, mode: info.mode || 'normal', modules: level,
@@ -569,7 +569,7 @@
       g.updateMatrixWorld(true);
       fp.forEach((f, i) => {
         const w = new THREE.Vector3(f.x, 0, f.z).applyMatrix4(g.matrixWorld), pos = new THREE.Vector3(w.x, 0, w.z);
-        const label = `${g.userData.v161Plant.kind}-plant-v161:${i}`;
+        const label = `${g.userData.v161Plant.kind}-plant-v161:${f.kind || ''}${i}`;
         if (f.r) out.push({ owner: g, label, shape: 'circle', pos, radius: f.r });
         else out.push({ owner: g, label, shape: 'obb', pos, hx: f.hx, hz: f.hz, yaw: g.rotation.y });
       });

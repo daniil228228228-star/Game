@@ -167,8 +167,8 @@
     }
     // pond solid except the two pier corridors
     const left = [-X - 0.12, pierX[0] - pierW - 0.05], mid = [pierX[0] + pierW + 0.05, pierX[1] - pierW - 0.05], right = [pierX[1] + pierW + 0.05, X + 0.12];
-    for (const [a, b] of [left, mid, right]) fp.push({ x: (a + b) / 2, z: (WF.quayZ1 - 0.04 + WF.pondZ1 + 0.12) / 2, hx: (b - a) / 2, hz: (WF.pondZ1 + 0.12 - WF.quayZ1 + 0.04) / 2 });
-    for (const px of pierX) { const z0 = WF.quayZ1 + plen + 0.02, z1 = WF.pondZ1 + 0.12; if (z1 - z0 > 0.1) fp.push({ x: px, z: (z0 + z1) / 2, hx: pierW + 0.05, hz: (z1 - z0) / 2 }); }
+    for (const [a, b] of [left, mid, right]) fp.push({ x: (a + b) / 2, z: (WF.quayZ1 - 0.04 + WF.pondZ1 + 0.12) / 2, hx: (b - a) / 2, hz: (WF.pondZ1 + 0.12 - WF.quayZ1 + 0.04) / 2, kind: 'pond' });
+    for (const px of pierX) { const z0 = WF.quayZ1 + plen + 0.02, z1 = WF.pondZ1 + 0.12; if (z1 - z0 > 0.1) fp.push({ x: px, z: (z0 + z1) / 2, hx: pierW + 0.05, hz: (z1 - z0) / 2, kind: 'pond' }); }
     // benches facing the water
     for (const bx of [-1.65, 1.65]) local(M, fp, bx, 1.35, 0, (T, f) => {
       T.P.ext(-0.45, 0.45, 0.4, 0.48, -0.14, 0.14, 0x8f6c46); T.P.ext(-0.45, 0.45, 0.5, 0.78, -0.17, -0.1, 0x8f6c46);
@@ -207,7 +207,7 @@
       if (!g || !g.userData || !g.userData.v161District || g.visible === false || !g.parent) continue;
       g.updateMatrixWorld(true);
       (g.userData.v161Footprint || []).forEach((f, i) => {
-        const w = new THREE.Vector3(f.x, 0, f.z).applyMatrix4(g.matrixWorld), pos = new THREE.Vector3(w.x, 0, w.z), label = `district-${id}-v161:${i}`;
+        const w = new THREE.Vector3(f.x, 0, f.z).applyMatrix4(g.matrixWorld), pos = new THREE.Vector3(w.x, 0, w.z), label = `district-${id}-v161:${f.kind || ''}${i}`;
         if (f.r) out.push({ owner: g, category: f.tree ? 'tree' : 'cityBuilding', label, shape: 'circle', pos, radius: f.r });
         else out.push({ owner: g, category: 'cityBuilding', label, shape: 'obb', pos, hx: f.hx, hz: f.hz, yaw: g.rotation.y + (f.yaw || 0) });
       });

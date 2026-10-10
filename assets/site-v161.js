@@ -102,6 +102,7 @@
       const label = makeLabelSprite([lang === 'ru' ? '🚚 РАЗГРУЗКА' : '🚚 UNLOAD']);
       label.position.set(0, 0.82, 0); label.scale.set(0.78, 0.31, 1); unloadZone.add(label);
       unloadZone.position.set(-1.78 * envW, 0.11, 1.16 * envW);
+      unloadZone.visible = false;   // shown by refreshSiteUnloadZone only while a delivery ticket exists (no marker for cargo that is not coming)
       unloadZone.userData.base = base; unloadZone.userData.label = label;
       group.add(unloadZone);
     }
