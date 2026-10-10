@@ -105,7 +105,7 @@
       const back = at(0.20, 0.30); back.x += Math.sin(by) * -0.12; back.z += Math.cos(by) * -0.12;
       P.box(0.9, 0.08, 0.28, back.x, 0.7, back.z, { ry: by, rx: -0.35, c: 0x8f6c46 });
       for (const sx of [-0.3, 0.3]) for (const sz of [-0.08, 0.08]) { const lp = new V3(bp.x + Math.cos(by) * sx + Math.sin(by) * sz, 0, bp.z - Math.sin(by) * sx + Math.cos(by) * sz); P.box(0.06, 0.42, 0.06, lp.x, 0.23, lp.z, { c: 0x555d68 }); }
-      fp.push({ x: bp.x, z: bp.z, hx: 0.47, hz: 0.17, yaw: by });
+      // the shelter bench has no collider: the Empire tower's upgrade pad (stage 9) stands 0.4 m from it, a pad must never be inside a collider
     }
     // zebra crossing in front of the bay
     const zs = new V3(curb.x - n.x * 0.04, 0, curb.z - n.z * 0.04);
