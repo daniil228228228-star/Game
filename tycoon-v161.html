@@ -931,6 +931,8 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="assets/factory-v161.js"></script>
 <script src="assets/towers-v161.js"></script>
 <script src="assets/infra-plants-v161.js"></script>
+<script src="assets/districts-v161.js"></script>
+<script src="assets/site-v161.js"></script>
 <script src="assets/foliage-v154.js"></script>
 <script src="assets/work-session-v158.js"></script>
 <script src="assets/development-core-v160.js"></script>
@@ -5888,6 +5890,15 @@ function setConstructionPhaseVisual(site, phase, t) {
 }
 
 function spawnConstructionSite(pos, stage, buildDuration = 1.2) {
+  // v161 (assets/site-v161.js, 2026-10-10 (13)): the same rig as merged meshes at its real size (28 meshes instead of 141, nothing stretched, nothing floating); SiteV161.enabled = false gives the old rig back
+  if (window.SiteV161?.enabled) {
+    const site = window.SiteV161.build(pos, stage, buildDuration);
+    scene.add(site.group);
+    setConstructionPhaseVisual(site, 0, 0);
+    constructionSites.push(site);
+    Promise.resolve().then(() => { try { window.__TYCOON_V83_COLLISIONS__?.rebuild?.(); } catch (_) { /* registry not up yet */ } });
+    return site;
+  }
   const group = new THREE.Group();
   const accent = stage?.color || 0xffb84d;
 
@@ -16743,6 +16754,8 @@ function makePromenadePierV363(len=2.8){
 function makeDistrictIdentityGroupV363(cfg){
   const lv=districtLevel(cfg.id),g=new THREE.Group();
   if(lv<=0)return g;
+  // v161 districts (assets/districts-v161.js, 2026-10-10 (13)): industrial / business / waterfront identities as merged meshes with real colliders (old ~21 / 61 / 113-mesh groups below with DistrictsV161.enabled = false)
+  if(cfg.id!=='suburb'&&window.DistrictsV161?.enabled){const b=DistrictsV161.build(cfg.id,lv);if(b){Promise.resolve().then(()=>{try{window.__TYCOON_V83_COLLISIONS__?.rebuild?.();}catch(_){}});return b;}}
   if(cfg.id==='suburb'){
     // v161 buildings (assets/buildings-v161.js, 2026-10-05 (8)): the whole suburb identity (lawn, trees, planters, ring of 3-variant mini houses) as 6 merged meshes with real wall colliders; BuildingsV161.enabled = false brings back the old ~96-mesh group below
     if(typeof buildSuburbV161==='function'&&window.BuildingsV161?.enabled!==false){Promise.resolve().then(()=>{try{window.__TYCOON_V83_COLLISIONS__?.rebuild?.();}catch(_){}});return buildSuburbV161(lv);}
@@ -32777,6 +32790,10 @@ window.__TYCOON_V74_BUILD__={
     for(const o of (window.PlantsV161?window.PlantsV161.obstacles():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
     // v161 loading yards (assets/yards-v161.js): bollards, lamp post and sign post of the three yards as small oriented boxes; the slab / kerb are walkable, placement / camera off like the plants'
     for(const o of (window.YardsV161&&window.YardsV161.enabled?window.YardsV161.obstacles():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
+    // v161 construction site (assets/site-v161.js): the crane tower base is the only solid part of a site (active only while the crane stands); the yard and machines stay walkable
+    for(const o of (window.SiteV161&&window.SiteV161.enabled?window.SiteV161.obstacles():[]))register({owner:o.owner,category:'construction',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,active:o.active,flags:{player:true,agent:true,placement:false,camera:false}});
+    // v161 districts (assets/districts-v161.js): industrial warehouses / containers / tanks, business towers / annex / pool, waterfront pond / benches / palms as oriented boxes / circles; player + agent only
+    for(const o of (window.DistrictsV161&&window.DistrictsV161.enabled?window.DistrictsV161.obstacles():[]))register({owner:o.owner,category:o.category,label:o.label,shape:o.shape,pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,radius:o.radius,flags:{player:true,agent:true,placement:false,camera:false}});
     // v161 plants (assets/infra-plants-v161.js): the power plant / water works yard fence, halls, transformers, stacks, basins, tanks as oriented boxes / circles; placement + camera off
     for(const o of (window.InfraV161&&window.InfraV161.enabled?window.InfraV161.obstacles():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:o.shape,pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,radius:o.radius,flags:{placement:false,camera:false}});
     // v161 market (assets/market-v161.js): the sealed stall bodies + big props, the fountain, benches, planters, gate posts as real oriented boxes / circles (the customer side in front of a counter stays open); placement off on purpose

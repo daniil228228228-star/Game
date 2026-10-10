@@ -78,6 +78,15 @@
           if (o.inner) quad(P(r0, c0, s0, y0), P(r0, c1, s1, y0), P(r0, c1, s1, y1), P(r0, c0, s0, y1), [-(c0 + c1) / 2, 0, -(s0 + s1) / 2], c);
         }
       },
+      // copy another batch into this one, rotated by yaw about y and moved by (ox, oy, oz); `src.raw` is its flat arrays (both must be vertex coloured or both not)
+      append(src, ox, oy, oz, yaw) {
+        const R = src.raw, c = Math.cos(yaw || 0), sn = Math.sin(yaw || 0), base = pos.length / 3;
+        for (let i = 0; i < R.pos.length; i += 3) { pos.push(R.pos[i] * c + R.pos[i + 2] * sn + ox, R.pos[i + 1] + oy, -R.pos[i] * sn + R.pos[i + 2] * c + oz); nor.push(R.nor[i] * c + R.nor[i + 2] * sn, R.nor[i + 1], -R.nor[i] * sn + R.nor[i + 2] * c); }
+        for (let i = 0; i < R.uv.length; i++) uv.push(R.uv[i]);
+        if (vc) for (let i = 0; i < R.col.length; i++) col.push(R.col[i]);
+        for (let i = 0; i < R.idx.length; i++) idx.push(base + R.idx[i]);
+      },
+      get raw() { return { pos, nor, uv, col, idx }; },
       get count() { return idx.length / 3; },
       toMesh(material, { cast = true, receive = true, name = '', soft = false } = {}) {
         if (!idx.length) return null;
@@ -149,10 +158,11 @@
     Cn.ext(gx0, gx1, 0, 0.05, zf - 0.3, zf + 0.0, C.kerb);   // apron step in front of the gate (the slab is 0.1 high)
   }
   // flood light on a pole at (x, z), head facing the yard
-  function floodLight(P, L, fp, x, z, h) {
-    P.cyl(0.04, 0.05, h, 6, x, 0.1 + h / 2, z, { c: C.pole });
-    P.ext(x - 0.17, x + 0.17, 0.1 + h, 0.1 + h + 0.07, z - 0.09, z + 0.09, C.dark);
-    L.ext(x - 0.15, x + 0.15, 0.1 + h - 0.03, 0.1 + h + 0.0, z - 0.1, z + 0.1, undefined);
+  function floodLight(P, L, fp, x, z, h, y0) {
+    y0 = y0 === undefined ? 0.1 : y0;
+    P.cyl(0.04, 0.05, h, 6, x, y0 + h / 2, z, { c: C.pole });
+    P.ext(x - 0.17, x + 0.17, y0 + h, y0 + h + 0.07, z - 0.09, z + 0.09, C.dark);
+    L.ext(x - 0.15, x + 0.15, y0 + h - 0.03, y0 + h + 0.0, z - 0.1, z + 0.1, undefined);
     fp.push({ x, z, r: 0.1 });
   }
   // construction of ONE module: formwork slab, 4 corner posts + top frame, 3 cones, a few boards. (x0..x1, z0..z1) = the future module's footprint
@@ -183,7 +193,7 @@
   // ---------------------------------------------------------------------------------------------- gabled hall (walls into the concrete batch, roof into the roof batch)
   // centred (cx, cz), size w (x) x d (z), wall height h above the slab (0.1), roof ridge along x. Door and windows on the -z face. Returns {top}.
   function hall(K, cfg) {
-    const { Cn, R, P, G, fp, cx, cz, w, d, h, wallC, roofC, doorX, trim, windows, ridge } = cfg;
+    const { Cn, R, P, G, fp, cx, cz, w, d, h, wallC, roofC, doorX, trim, windows, ridge } = cfg, dw = cfg.doorW || 0.3, dh = cfg.doorH || 0.98, doorC = cfg.doorC || 0x4a5560;
     const y0 = 0.1, y1 = y0 + h, hw = d / 2, ovh = 0.14, tn = ridge || 0.42;
     Cn.ext(cx - w / 2 - 0.05, cx + w / 2 + 0.05, y0, y0 + 0.14, cz - hw - 0.05, cz + hw + 0.05, C.plinth);
     Cn.ext(cx - w / 2, cx + w / 2, y0, y1, cz - hw, cz + hw, wallC);
@@ -201,10 +211,10 @@
     P.ext(xa, xb, yr - 0.02, yr + 0.05, cz - 0.05, cz + 0.05, C.dark);
     // door + frame + step on the -z face
     const zf = cz - hw;
-    P.ext(doorX - 0.3, doorX + 0.3, y0, y0 + 0.98, zf - 0.04, zf, trim);
-    P.ext(doorX - 0.25, doorX + 0.25, y0, y0 + 0.92, zf - 0.07, zf - 0.04, 0x4a5560);
-    P.ext(doorX - 0.32, doorX + 0.32, y0, y0 + 0.04, zf - 0.34, zf - 0.07, C.plinth);
-    P.ext(doorX - 0.34, doorX + 0.34, y0 + 1.0, y0 + 1.05, zf - 0.24, zf, C.dark);
+    P.ext(doorX - dw, doorX + dw, y0, y0 + dh, zf - 0.04, zf, trim);
+    P.ext(doorX - dw + 0.05, doorX + dw - 0.05, y0, y0 + dh - 0.06, zf - 0.07, zf - 0.04, doorC);
+    P.ext(doorX - dw - 0.02, doorX + dw + 0.02, y0, y0 + 0.04, zf - 0.34, zf - 0.07, C.plinth);
+    P.ext(doorX - dw - 0.04, doorX + dw + 0.04, y0 + dh + 0.02, y0 + dh + 0.07, zf - 0.24, zf, C.dark);
     for (const wx of windows) {
       P.ext(wx - 0.27, wx + 0.27, y0 + 0.5, y0 + 0.98, zf - 0.04, zf, trim);
       G.ext(wx - 0.22, wx + 0.22, y0 + 0.55, y0 + 0.93, zf - 0.055, zf - 0.04, undefined);
@@ -567,5 +577,8 @@
     return out;
   }
 
-  window.InfraV161 = { enabled: true, version: 'v161-infra-plants', buildPower, buildWater, obstacles, animate, mats, live: LIVE, SPEC: { PW, WW, HALL, SHED, TR, STACKS, PYLON, PUMP, TANKS, TOWER, BASINS } };
+  // generic animated water for other layers (assets/districts-v161.js waterfront): a mesh made by waterMesh(rects) of a group is rippled by animate() while the group stays in the scene
+  function addWater(group, rects, mode) { const m = waterMesh(rects); group.add(m); LIVE.push({ group, kind: 'water', rotors: [], crane: null, water: m, mode: mode || 'normal' }); return m; }
+  const kit = { batch, mats, C, castOk, hall, lattice, floodLight, fenceRun, addWater, waterMesh, lin, TAU };
+  window.InfraV161 = { enabled: true, version: 'v161-infra-plants', buildPower, buildWater, obstacles, animate, mats, kit, live: LIVE, SPEC: { PW, WW, HALL, SHED, TR, STACKS, PYLON, PUMP, TANKS, TOWER, BASINS } };
 })();

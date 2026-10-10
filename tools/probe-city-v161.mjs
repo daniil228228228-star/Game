@@ -84,5 +84,61 @@ const city = await page.evaluate(({ shots }) => {
 console.log(`CITY rows ${city.rows.length}`);
 for (const r of city.rows) console.log(r.missing ? `  ${r.kind}: MISSING` : `  ${r.kind} @${r.x},${r.z} meshes ${r.meshes}/${r.allMeshes} tris ${r.tris} size ${JSON.stringify(r.size)} minY ${r.minY} maxY ${r.maxY} F ${r.F} C ${r.C} overlap ${r.overlap} outMax ${r.outsideMax} reach ${r.reach}/8 own ${r.own} ${r.name}`);
 if (opt('json', false)) fs.writeFileSync(path.resolve(opt('json')), JSON.stringify(city, null, 1));
+
+// ------------------------------------------------------------------------------------------------ props one by one + the live ones, construction site rigs per phase
+const props = await page.evaluate((shots) => {
+  const P = __BLD_PROBE__, out = { single: [], live: [], site: [] };
+  const fns = [['makeBench', () => makeBench()], ['makeSignPost', () => makeSignPost()], ['makeTrafficCone', () => makeTrafficCone()], ['makeFireHydrant', () => makeFireHydrant()], ['makeBush', () => makeBush()], ['makeRock', () => makeRock()],
+    ['makeLamp', () => makeLamp()], ['makeTree', () => makeTree({})], ['makeBenchV39', () => makeBenchV39()], ['makeBusStopV39', () => makeBusStopV39()], ['makeBusStopV40', () => makeBusStopV40()], ['makeHydrantV40', () => makeHydrantV40()],
+    ['makePlanterV40', () => makePlanterV40()], ['makeSimplePlanterV363', () => makeSimplePlanterV363()], ['makePromenadePierV363', () => makePromenadePierV363()], ['makeWarehousePropV363', () => makeWarehousePropV363(0xb4b0a8, 0xd67f41)],
+    ['makeGlassTowerV363', () => makeGlassTowerV363(4, 0x88add7, 0x2e4c6d)], ['makeMiniHouse', () => makeMiniHouse(0xe2c8a4, 0x915947, 0)], ['transitStop', () => createTransitStopGroupV364(CITY_DISTRICTS[0])], ['streetlights', () => createStreetlightsMesh('suburb')]];
+  for (const [name, f] of fns) {
+    let m = null; try { m = f(); } catch (e) { out.single.push({ name, err: e.message }); continue; }
+    if (!m || !m.isObject3D) { out.single.push({ name, none: true }); continue; }
+    m.position.set(0, 0, 0); scene.add(m); m.updateMatrixWorld(true);
+    const r = P.measure(m, [], { sweep: false });
+    out.single.push({ name, meshes: r.meshes, tris: r.tris, size: r.size, minY: r.minY });
+    scene.remove(m); disposeObject3D(m);
+  }
+  // live: small groups in the scene, grouped by signature
+  const sig = new Map();
+  for (const o of scene.children) {
+    if (o.isLight || o === ground || o.isSprite || o.userData?.harvestableTree || o.userData?.v64RandomScenery) continue;
+    let meshes = 0; o.traverse((q) => { if (q.isMesh) meshes++; }); if (!meshes) continue;
+    const b = new THREE.Box3().setFromObject(o); if (b.isEmpty()) continue; const sz = b.getSize(new THREE.Vector3());
+    if (sz.x > 4 || sz.z > 4 || sz.y > 4) continue;
+    const key = `${Object.keys(o.userData || {}).sort().join(',')}|m${meshes}|${sz.x.toFixed(1)}x${sz.y.toFixed(1)}x${sz.z.toFixed(1)}|y${b.min.y.toFixed(2)}`;
+    const e = sig.get(key) || { key, n: 0, vis: 0, at: [o.position.x.toFixed(0), o.position.z.toFixed(0)] }; e.n++; if (o.visible) e.vis++; sig.set(key, e);
+  }
+  out.live = [...sig.values()].sort((a, b) => b.n - a.n).slice(0, 40);
+  // registry: what the player collides with among props/decor
+  const cat = {}; for (const e of __TYCOON_V83_COLLISIONS__.registry.values()) { const k = e.category + (e.flags.player ? '+p' : '') + (e.flags.camera ? '+c' : ''); cat[k] = (cat[k] || 0) + 1; }
+  out.registry = cat;
+  // construction site rigs
+  const kinds = [['house', 0], ['shop', 2], ['warehouse', 3], ['factory', 5], ['office', 6], ['tower', 8]];
+  const T = [0.05, 0.2, 0.4, 0.6, 0.8, 0.95];
+  for (const [kind, si] of kinds) {
+    const st = STAGES[si], pos = new THREE.Vector3(30, 0, -58);
+    const site = spawnConstructionSite(pos, st, 30);
+    site.group.updateMatrixWorld(true);
+    const rows = [];
+    for (let ph = 0; ph < 6; ph++) {
+      site.buildRef = null; site.timer = T[ph] * site.duration;
+      setConstructionPhaseVisual(site, ph, T[ph]);
+      site.group.updateMatrixWorld(true);
+      P.forceScan();
+      const r = P.measure(site.group, [], { sweep: false });
+      rows.push({ ph, meshes: r.meshes, all: r.allMeshes, tris: r.tris, size: r.size, minY: r.minY, maxY: r.maxY });
+    }
+    out.site.push({ kind, stage: si, envH: site.envH, rows, shot: shots ? P.shootLive(site.group, ['iso']).shots.iso : null });
+    const i = constructionSites.indexOf(site); if (i >= 0) constructionSites.splice(i, 1);
+    scene.remove(site.group); disposeObject3D(site.group);
+  }
+  return out;
+}, SHOTS);
+console.log('PROPS single:'); for (const r of props.single) console.log('  ' + JSON.stringify(r));
+console.log('PROPS live groups (<=4 m):'); for (const r of props.live) console.log('  ' + JSON.stringify(r));
+console.log('REGISTRY categories ' + JSON.stringify(props.registry));
+console.log('SITE:'); for (const r of props.site) { console.log(`  ${r.kind} (stage ${r.stage}, envH ${r.envH.toFixed(2)})`); for (const x of r.rows) console.log(`    phase ${x.ph}: visible meshes ${x.meshes}/${x.all}, tris ${x.tris}, size ${JSON.stringify(x.size)}, minY ${x.minY}, maxY ${x.maxY}`); if (r.shot) fs.writeFileSync(path.join(OUT, `site-${r.kind}.jpg`), Buffer.from(r.shot.split(',')[1], 'base64')); }
 console.log('errors', JSON.stringify(g.errors.slice(0, 5)));
 await g.close();

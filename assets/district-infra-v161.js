@@ -63,6 +63,7 @@
       if (STATIC_COLLIDERS.some((c) => Math.hypot(x - c.pos.x, z - c.pos.z) - c.radius < 1.2)) return false;
       if (typeof distToNearestRoadNetworkV369 === 'function' && distToNearestRoadNetworkV369(x, z) < 1.4) return false;
       if (taken.some((p) => Math.hypot(x - p.x, z - p.z) < 2.6)) return false;
+      if (window.DistrictsV161 && window.DistrictsV161.enabled && window.DistrictsV161.blocks(x, z, 1.2)) return false; // v161 districts: the identity's solid parts (warehouses, towers, pond ...)
     } catch (_) { /* a missing helper must not hide the pad */ }
     return true;
   }
