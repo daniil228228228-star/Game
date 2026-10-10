@@ -186,14 +186,19 @@
   // ---------------------------------------------------------------------------------------------- piles on the loading plates (equal the real stock)
   // slot geometry callbacks: add one item at slot i into batch b, `at(i)` gives the slot centre (pile frame) for the item that lands there
   const STACK_CAP = 24;
+  // 2026-10-10 (12) loading yards (assets/yards-v161.js): the piles stand in the plant's loading YARD beside the service lane (plant-local pose from YardsV161.pilePose), no longer on the
+  // lane itself (old pose z 3.1 / 3.4 = the lane centre). YardsV161.enabled = false brings the old poses back (showcase before/after numbers).
+  const yardsOn = () => !!(window.YardsV161 && window.YardsV161.enabled);
+  const OLD_POSE = { concrete: { x: 0, y: 0.075, z: 3.1, rot: -0.18 }, metal: { x: 0, y: 0.075, z: 3.4, rot: -0.12 } };
+  const poseOf = (kind) => (yardsOn() ? (window.YardsV161.pilePose(kind) || OLD_POSE[kind]) : OLD_POSE[kind]);
   const PILES = {
     concrete: {
-      cap: STACK_CAP, per: 36, pose: { x: 0, y: 0.075, z: 3.1, rot: -0.18 },
+      cap: STACK_CAP, per: 36, get pose() { return poseOf('concrete'); },
       at: (i) => { const layer = Math.floor(i / 8), k = i % 8; return [((k % 4) - 1.5) * 0.45, 0.1 + layer * 0.205, (Math.floor(k / 4) - 0.5) * 0.3]; },
       item: (b, x, y, z, i) => b.box(0.42, 0.19, 0.27, x + ((i * 37) % 7 - 3) * 0.004, y, z, { c: [C.block1, C.block2, C.block3][i % 3], ry: ((i * 13) % 5 - 2) * 0.012 }),
     },
     metal: {
-      cap: STACK_CAP, per: 108, pose: { x: 0, y: 0.075, z: 3.4, rot: -0.12 },
+      cap: STACK_CAP, per: 108, get pose() { return poseOf('metal'); },
       at: (i) => { const layer = Math.floor(i / 4), k = i % 4; return [((i * 29) % 5 - 2) * 0.012, 0.075 + layer * 0.125, (k - 1.5) * 0.19]; },
       item: (b, x, y, z, i) => beamBoxes(b, x, y, z, i % 3 === 1 ? C.rust : C.beamSteel, 1.1),
     },
@@ -247,10 +252,10 @@
     SILO_X: [-1.3, -0.4, 0.5, 1.4], SILO_Z: -1.2, SILO_R: 0.4,
     MIX_X: 0.55, MIX_Z: 0.65, MIX_Y: 1.28,
     PIT: [-0.38, 0.42, 0.25], HEAD: [0.55, 2.3, 0.25],
-    TABLE_A: [0.55, 0.69, 1.45], TABLE_B: [0.1, 0.69, 2.5],
+    TABLE_A: [0.55, 0.69, 1.45], TABLE_B: [0.1, 0.69, 2.5], TABLE_B_YARD: [0.3, 0.69, 2.05],   // with the loading yards the table ends 0.2 m short of the service lane (was 0.24 m INTO the carriageway)
     DUST_MAX: 12, BLOCKS_MAX: 3,
   });
-  const CONCRETE_PH = Object.freeze({ LOAD0: 0.02, LOAD1: 0.12, RISE1: 0.40, DUMP1: 0.50, DESC1: 0.78, MIX0: 0.42, MIX1: 0.86, POUR0: 0.80, SLIDE0: 0.88, DROP0: 0.95 });
+  const CONCRETE_PH = Object.freeze({ LOAD0: 0.02, LOAD1: 0.12, RISE1: 0.40, DUMP1: 0.50, DESC1: 0.78, MIX0: 0.42, MIX1: 0.86, POUR0: 0.80, SLIDE0: 0.86, DROP0: 0.91 });
 
   function buildConcrete(level) {
     level = clamp(Math.floor(Number(level)) || 1, 1, 3);
@@ -262,7 +267,7 @@
 
     // ---- slab + apron toward the loading plate + yellow edge stripes
     SL.box(4.0, 0.18, 3.7, 0.1, 0.09, 0);
-    SL.box(1.9, 0.12, 0.62, 0, 0.06, 2.16);
+    if (!yardsOn()) SL.box(1.9, 0.12, 0.62, 0, 0.06, 2.16);   // the apron tab reached into the service lane; with the loading yard the slab ends at the plant
     for (let i = 0; i < 13; i++) P.box(0.3, 0.012, 0.1, -1.75 + i * 0.3, FL + 0.006, 1.74, { c: C.yellow, ry: 0.7 });
 
     // ---- cement silos: steel legs + braces, conical bottom, ribbed body, hazard band, blue roof cone, filter vent, front ladder
@@ -324,7 +329,7 @@
     for (const sx of [-0.3, 0.3]) P.box(0.05, 0.4, 0.05, mx + sx, 1.9, -0.1, { c: C.steelDark });
     P.cyl(0.17, 0.12, 0.3, 12, mx, 0.8, 1.38, { c: C.steelLight });                              // chute under the discharge cone
     // ---- output roller table (mixer chute -> loading plate): slope-free table with side rails, rollers, legs
-    const A = CP.TABLE_A, B = CP.TABLE_B, dx = B[0] - A[0], dz = B[2] - A[2], len = Math.hypot(dx, dz), ux = dx / len, uz = dz / len, px = uz, pz = -ux;
+    const A = CP.TABLE_A, B = yardsOn() ? CP.TABLE_B_YARD : CP.TABLE_B, dx = B[0] - A[0], dz = B[2] - A[2], len = Math.hypot(dx, dz), ux = dx / len, uz = dz / len, px = uz, pz = -ux;
     P.bar(A[0], A[1] - 0.04, A[2], B[0], B[1] - 0.04, B[2], 0.5, 0.05, C.black);
     for (const s of [-1, 1]) P.bar(A[0] + px * 0.27 * s, A[1] + 0.02, A[2] + pz * 0.27 * s, B[0] + px * 0.27 * s, B[1] + 0.02, B[2] + pz * 0.27 * s, 0.04, 0.3, C.steel);   // side guards (0.3 m: a wall for the physics probe and the player)
     for (let k = 0; k < 9; k++) { const t = (k + 0.5) / 9; P.cyl(0.03, 0.03, 0.46, 8, lerp(A[0], B[0], t), A[1] - 0.005, lerp(A[2], B[2], t), { c: C.steelLight, rz: Math.PI / 2, ry: Math.atan2(ux, uz) }); }
@@ -421,7 +426,7 @@
     const label = addLabel(root, [lang === 'ru' ? 'БЕТОННЫЙ ЗАВОД' : 'CONCRETE PLANT'], yTop + 0.95, 1.45, 0.597);
 
     root.userData.parts = { drumSpin, bucket, dust, blocks, beacon, beaconMat, pile };
-    root.userData.anim = { p: 0, t: 0, spin: 0, running: false, k: 0, seed: 9137, dirty: true, shownPile: -1, pileAdded: 0, pileRemoved: 0 };
+    root.userData.anim = { yardV161: yardsOn(), p: 0, t: 0, spin: 0, running: false, k: 0, seed: 9137, dirty: true, shownPile: -1, pileAdded: 0, pileRemoved: 0 };
     // real obstacles (local x, z, hx, hz): silos (legs), bins + feed belt, skip rails, mixer, cabin, tank, output table, + canopy posts / mast
     const fp = [
       { x: (-1.75 + lastX + 0.45) / 2, z: -1.1, hx: (lastX + 0.45 + 1.75) / 2, hz: 0.55 },
@@ -457,7 +462,7 @@
     Pt.bucket.rotation.set(0, 0, alpha - tilt * 1.7);
     // in-flight blocks (the credited number, latched at the start of the cycle)
     if (running && (p < 0.03 || A.k < 1)) A.k = concreteCreditV161();
-    const Tm = CP.TABLE_A, Te = CP.TABLE_B, n = A.pileN || 0;
+    const Tm = CP.TABLE_A, Te = A.yardV161 ? CP.TABLE_B_YARD : CP.TABLE_B, n = A.pileN || 0;
     const dxT = Te[0] - Tm[0], dzT = Te[2] - Tm[2], lenT = Math.hypot(dxT, dzT), perpX = dzT / lenT, perpZ = -dxT / lenT, yawT = Math.atan2(-dzT, dxT);
     for (let j = 0; j < Pt.blocks.length; j++) {
       const b = Pt.blocks[j];
@@ -471,7 +476,7 @@
       else if (p < PH.DROP0) { const u = S((p - PH.SLIDE0) / (PH.DROP0 - PH.SLIDE0)); x = lerp(Tm[0], Te[0], u) + perpX * off; z = lerp(Tm[2], Te[2], u) + perpZ * off; y = y0; yaw = Math.PI / 2; }
       else {
         const u = S((p - PH.DROP0) / (1 - PH.DROP0)), ex0 = Te[0] + perpX * off, ez0 = Te[2] + perpZ * off;
-        x = lerp(ex0, slot[0], u); z = lerp(ez0, slot[2], u); y = lerp(y0, slot[1], u) + 0.18 * Math.sin(Math.PI * u); yaw = lerp(Math.PI / 2, PILES.concrete.pose.rot, u);
+        x = lerp(ex0, slot[0], u); z = lerp(ez0, slot[2], u); y = lerp(y0, slot[1], u) + (0.18 + 0.2 * Math.hypot(slot[0] - ex0, slot[2] - ez0)) * Math.sin(Math.PI * u);   // a longer hop (over the service lane to the yard) gets a higher arc yaw = lerp(Math.PI / 2, PILES.concrete.pose.rot, u);
       }
       b.position.set(x, y, z); b.rotation.set(0, yaw, 0); b.scale.setScalar(sc);
     }
@@ -541,7 +546,7 @@
 
     // ---- slab + apron toward the loading plate + edge stripes
     SL.box(4.0, 0.18, 3.4, 0, 0.09, 0);
-    SL.box(2.0, 0.12, 0.9, 0, 0.06, 2.15);
+    if (!yardsOn()) SL.box(2.0, 0.12, 0.9, 0, 0.06, 2.15);
     for (let i = 0; i < 13; i++) P.box(0.3, 0.012, 0.1, -1.8 + i * 0.3, FL + 0.006, 1.64, { c: C.yellow, ry: 0.7 });
 
     // ---- corrugated shed (open to the front): back + west wall, posts, plates, gabled roof on the long axis, gable infill
@@ -619,7 +624,7 @@
     // ---- animated parts: jib (rotating group with trolley, cable, hook), cut-off head, kicker, in-flight beams, sparks, pile
     const jib = new THREE.Group();
     jib.position.set(mxm, MY.JIB_Y, mzm);
-    const reach = 2.7;
+    const reach = yardsOn() ? 3.6 : 2.7;   // the jib sets the beams onto the pile in the loading yard east of the shed (see YardsV161)
     {
       const J = batch(true);
       J.box(reach + 0.6, 0.14, 0.16, (reach - 0.6) / 2 + 0.0, 0, 0, { c: C.yellow });
@@ -1057,6 +1062,7 @@
   window.PlantsV161 = {
     enabled: true, version: 'v161-plants', FLOOR, PILES, CP, MY, FW, CONCRETE_PH, METAL_PH, FRAME_PH,
     buildConcrete, buildMetal, buildWorkshop, updateConcrete, updateMetal, updateWorkshop, refresh: refreshPlants, obstacles, ownsCollider, snap,
+    kit: { batch, mats, C, lin },   // geometry kit for assets/yards-v161.js (merged vertex-coloured batches, shared materials)
     pileSlotWorld: (kind, i) => (kind === 'frame' ? frameSlotV161(i) : pileToGroup(PILES[kind], PILES[kind].at(i))),   // group-frame position of slot i of the pile (the item lands there)
   };
 })();

@@ -924,6 +924,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="assets/sawmill-v161.js"></script>
 <script src="assets/buildings-v161.js"></script>
 <script src="assets/plants-v161.js"></script>
+<script src="assets/yards-v161.js"></script>
 <script src="assets/market-v161.js"></script>
 <script src="assets/shop-v161.js"></script>
 <script src="assets/warehouse-v161.js"></script>
@@ -3655,9 +3656,11 @@ function createLoadingZone(key, pos, emoji, ru, en, color, rotation = 0) {
   zone.group.position.y = pk.y;
   zone.label.position.y = 2.45;
 }
-const PLANK_TRUCK_BAY_POS_V161 = SAWMILL_POS.clone().add(new THREE.Vector3(3.75, 0, 4.50)); // road node plankBay (-15.25+OX, -3.2): trucks keep loading on the road, the player's pickup moved to the mill outlet
-createLoadingZone('concrete', CONCRETE_PLANT_POS.clone().add(new THREE.Vector3(0.00, 0, 3.10)), '🧱', 'БЕТОН', 'CONCRETE', 0xbcb8ad, -0.18); // v112: loading zone integrated into clear north service corridor
-createLoadingZone('metal', METAL_YARD_POS.clone().add(new THREE.Vector3(0.00, 0, 3.40)), '🔩', 'МЕТАЛЛ', 'STEEL', 0x91a0af, -0.12); // v112: loading zone integrated into clear north service corridor
+// v161 loading yards (assets/yards-v161.js, 2026-10-10 (12)): the plank truck stops in the bay of the plank yard beside the spur end (its lane node is still plankBay (-15.25+OX, -3.2), the route leaves the spur through the yard gate);
+// it used to stop ON the spur at SAWMILL_POS + (3.75, 0, 4.50). The player's pickup stays at the mill outlet.
+const PLANK_TRUCK_BAY_POS_V161 = window.YardsV161 && window.YardsV161.enabled ? window.YardsV161.stop('planks') : SAWMILL_POS.clone().add(new THREE.Vector3(3.75, 0, 4.50));
+createLoadingZone('concrete', window.YardsV161 && window.YardsV161.enabled ? window.YardsV161.pad('concrete') : CONCRETE_PLANT_POS.clone().add(new THREE.Vector3(0.00, 0, 3.10)), '🧱', 'БЕТОН', 'CONCRETE', 0xbcb8ad, window.YardsV161 && window.YardsV161.enabled ? 0 : -0.18); // v161 yards: the pad stands on the pile in the concrete loading yard, no longer on the lane (z -7.2) // v112: loading zone integrated into clear north service corridor
+createLoadingZone('metal', window.YardsV161 && window.YardsV161.enabled ? window.YardsV161.pad('metal') : METAL_YARD_POS.clone().add(new THREE.Vector3(0.00, 0, 3.40)), '🔩', 'МЕТАЛЛ', 'STEEL', 0x91a0af, window.YardsV161 && window.YardsV161.enabled ? 0 : -0.12); // v112: loading zone integrated into clear north service corridor
 
 function updateMetalPlant(dt) {
   updateMetalPlantProduction(dt);
@@ -7314,8 +7317,8 @@ function setVehicleStatus(vehicle, primary, secondary = '') {
 function cargoInfo(cargo) {
   const table = {
     planks: { emoji: '🪵', ru: 'ДОСКИ', en: 'PLANKS', source: PLANK_TRUCK_BAY_POS_V161.clone(), bonus: 0.06 }, // v161: the road bay, not the player's pickup pad at the mill outlet
-    concrete: { emoji: '🧱', ru: 'БЕТОН', en: 'CONCRETE', source: (LOGISTICS_ZONES.concrete?.pos || CONCRETE_PLANT_POS).clone(), bonus: 0.09 },
-    metal: { emoji: '🔩', ru: 'МЕТАЛЛ', en: 'STEEL', source: (LOGISTICS_ZONES.metal?.pos || METAL_YARD_POS).clone(), bonus: 0.12 },
+    concrete: { emoji: '🧱', ru: 'БЕТОН', en: 'CONCRETE', source: (window.YardsV161?.enabled ? window.YardsV161.stop('concrete') : (LOGISTICS_ZONES.concrete?.pos || CONCRETE_PLANT_POS)).clone(), bonus: 0.09 }, // v161 yards: the truck bay of the yard, not the pad
+    metal: { emoji: '🔩', ru: 'МЕТАЛЛ', en: 'STEEL', source: (window.YardsV161?.enabled ? window.YardsV161.stop('metal') : (LOGISTICS_ZONES.metal?.pos || METAL_YARD_POS)).clone(), bonus: 0.12 },
   };
   return table[cargo] || table.planks;
 }
@@ -7813,6 +7816,7 @@ function syncDeliveryFleet() {
   // this, a construction site's plank delivery ticket (createBuildDeliveryPlan()) would gate its
   // progress bar forever on a truck that can never spawn. Once each build*V118() flips its flag,
   // the very next syncDeliveryFleet() tick (updateAmbientLife runs it every .3-.55s) picks it up.
+  try { window.YardsV161?.sync(); } catch (e) { window.__TYCOON_CAPTURE_ERROR__?.(e, 'yards'); } // v161 loading yards: built once, visible with their plant
   if (LOGISTICS_ZONES.planks) LOGISTICS_ZONES.planks.group.visible = sawmillBuiltV118;
   if (LOGISTICS_ZONES.concrete) LOGISTICS_ZONES.concrete.group.visible = concretePlantBuiltV118 && stageIndex >= CONCRETE_UNLOCK_STAGE;
   if (LOGISTICS_ZONES.metal) LOGISTICS_ZONES.metal.group.visible = metalYardBuiltV118 && stageIndex >= METAL_UNLOCK_STAGE;
@@ -32763,6 +32767,8 @@ window.__TYCOON_V74_BUILD__={
     for(const o of (typeof sawmillObstaclesV161==='function'?sawmillObstaclesV161():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
     // v161 plants: the concrete plant, metal yard and frame workshop as oriented boxes of their real machines/walls (userData.v161Footprint), same flags as the sawmill's
     for(const o of (window.PlantsV161?window.PlantsV161.obstacles():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
+    // v161 loading yards (assets/yards-v161.js): bollards, lamp post and sign post of the three yards as small oriented boxes; the slab / kerb are walkable, placement / camera off like the plants'
+    for(const o of (window.YardsV161&&window.YardsV161.enabled?window.YardsV161.obstacles():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
     // v161 market (assets/market-v161.js): the sealed stall bodies + big props, the fountain, benches, planters, gate posts as real oriented boxes / circles (the customer side in front of a counter stays open); placement off on purpose
     for(const o of (window.MarketV161&&window.MarketV161.enabled?window.MarketV161.obstacles():[]))register({owner:o.owner,category:'market',label:o.label,shape:o.shape,pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,radius:o.radius,flags:{player:true,agent:true,placement:false,camera:false}});
 
@@ -34037,6 +34043,8 @@ function makeGroup(){ensureSig();const g=new THREE.Group();g.name='v86CanonicalS
   spokeProjectV367=publicApi.project;
   projectToRoad=publicApi.project;
   buildRoadRoute=publicApi.buildRoute;
+  { const baseRouteV161=buildRoadRoute; // v161 loading yards: a route to / from a truck bay runs through the yard gate (YardsV161.route), everything else is the game's own route
+    buildRoadRoute=function(fromPos,toPos){const Y=window.YardsV161;if(Y&&Y.enabled&&fromPos&&toPos){const r=Y.route(fromPos,toPos,baseRouteV161);if(r&&r.length)return r;}return baseRouteV161.apply(this,arguments);}; }
   distToNearestRoadSegment=function(x,z){let best=Infinity;for(let i=0;i<Math.min(STAGES.length,Math.max(stageIndex,1));i++){const p=centerline(i);for(let j=0;j<p.length-1;j++)best=Math.min(best,pointSegDist(x,z,p[j],p[j+1]));}return best;};
 
   // Keep the old V61 diagnostics useful but stop them from being a second road owner.
@@ -36854,6 +36862,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
     }
   }
   syncDeliveryFleet=function(){
+    try{window.YardsV161?.sync();}catch(e){window.__TYCOON_CAPTURE_ERROR__?.(e,'yards');}
     if(LOGISTICS_ZONES.planks)LOGISTICS_ZONES.planks.group.visible=sawmillBuiltV118;
     if(LOGISTICS_ZONES.concrete)LOGISTICS_ZONES.concrete.group.visible=concretePlantBuiltV118&&stageIndex>=CONCRETE_UNLOCK_STAGE;
     if(LOGISTICS_ZONES.metal)LOGISTICS_ZONES.metal.group.visible=metalYardBuiltV118&&stageIndex>=METAL_UNLOCK_STAGE;

@@ -614,6 +614,7 @@ function syncPlankStackV161() {
     S.mesh.geometry.setDrawRange(0, n * 36);   // 36 indices per box
     S.mesh.visible = n > 0;
   }
+  if (window.YardsV161 && window.YardsV161.enabled) window.YardsV161.tick(n);   // the dispatch stack in the plank loading yard shows the same floor(planks), same frame
   return n;
 }
 
