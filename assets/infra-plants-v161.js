@@ -209,7 +209,7 @@
       P.ext(wx - 0.27, wx + 0.27, y0 + 0.5, y0 + 0.98, zf - 0.04, zf, trim);
       G.ext(wx - 0.22, wx + 0.22, y0 + 0.55, y0 + 0.93, zf - 0.055, zf - 0.04, undefined);
     }
-    fp.push({ x: cx, z: cz, hx: w / 2, hz: hw });
+    fp.push({ x: cx, z: cz, hx: w / 2 + 0.05, hz: hw + 0.05 });   // walls + plinth rim
     return { top: yr, zf };
   }
 
@@ -250,7 +250,7 @@
     for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) P.ext(x + sx * 0.5 - 0.035, x + sx * 0.5 + 0.035, 0.26, 0.9, z - 0.3 + i * 0.2, z - 0.3 + i * 0.2 + 0.05, 0x93a79c);
     P.cyl(0.11, 0.11, 0.62, 10, x - 0.2, 1.1, z + 0.0, { rz: Math.PI / 2, c: 0x6a7a72 });   // conservator
     for (let i = -1; i <= 1; i++) { P.cyl(0.04, 0.06, 0.3, 8, x + 0.22, 1.13, z + i * 0.2, { c: 0xb4724a }); P.cyl(0.03, 0.035, 0.05, 6, x + 0.22, 1.31, z + i * 0.2, { c: C.dark }); }
-    fp.push({ x, z, hx: 0.5, hz: 0.4 });
+    fp.push({ x, z, hx: 0.55, hz: 0.42 });
   }
   function lattice(P, S, fp, x, z, H) {
     const b = 0.3, t = 0.1;   // half base / half top
@@ -552,7 +552,7 @@
   function obstacles() {
     const out = [];
     let groups = [];
-    try { groups = [v42World.power, v42World.water]; } catch (e) { return out; }
+    try { const w = window.__TYCOON_V42__.world; groups = [w.power, w.water]; } catch (e) { return out; }
     for (const g of groups) {
       const fp = g && g.userData && g.userData.v161Footprint;
       if (!fp || !fp.length || g.visible === false || !g.parent) continue;

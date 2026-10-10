@@ -19586,7 +19586,7 @@ ACHIEVEMENTS.push(
   {id:'v42_credit',name:'Чистый баланс',nameEn:'Clean Balance Sheet',desc:'Возьми кредит и полностью погаси долг',descEn:'Borrow money and fully repay the debt',reward:1200,emoji:'🏦',check:()=>v42State.totalBorrowed>=1500&&v42State.debt<1}
 );
 window.__TYCOON_V42__={
-  state:v42State,
+  state:v42State,world:v42World, // v161: the live plant groups (assets/infra-plants-v161.js obstacles, tests)
   capacity:type=>utilityCapacityV42(type),demand:type=>utilityDemandV42(type),supply:type=>utilitySupplyRatioV42(type),
   plant:(type)=>startPlantUpgradeV42(type),plantCost:plantCostV42,canPlant:canUpgradePlantV42, // v161 district infra pads
   mode:setPlantModeV42,equipment:upgradeEquipmentV42,
