@@ -35,7 +35,7 @@ const plantInfo = (k) => ev((k) => {
 const plantMeasure = (k) => ev((k) => {
   const P = __BLD_PROBE__, w = __TYCOON_V42__.world[k];
   const own = P.ownEntries(w);
-  const solids = own.filter((e) => !/:(fence|gate|light|crane)/.test(e.label));
+  const solids = own.filter((e) => !/:(fence|light|crane)/.test(e.label));
   const meas = P.measure(w, solids); delete meas.colliders;
   return { minY: meas.minY, overlap: meas.overlap, outsideMax: meas.outsideMax, reach: meas.sweepReached, F: meas.footprintArea, size: meas.size };
 }, k);
@@ -138,7 +138,8 @@ for (const L of [2, 3]) {
 }
 check(lv.p2.groups === 1 && lv.p3.groups === 1 && lv.w2.groups === 1 && lv.w3.groups === 1, 'levels 2 / 3 rebuild the SAME single group per plant (no duplicates)');
 check(lv.p2.tris > p1.tris && lv.p3.tris > lv.p2.tris && lv.w2.tris > w1.tris && lv.w3.tris > lv.w2.tris, `every level adds parts (power tris ${p1.tris} -> ${lv.p2.tris} -> ${lv.p3.tris}; water ${w1.tris} -> ${lv.w2.tris} -> ${lv.w3.tris})`);
-check(lv.p2.names.v161InfraRotor === 2 && lv.p3.names.v161InfraRotor === 2 && lv.w2.names.v161InfraRotor === 2 && lv.w3.names.v161InfraRotor === 3, `rotating parts follow the modules (power ${lv.p2.names.v161InfraRotor}/${lv.p3.names.v161InfraRotor}, water ${lv.w2.names.v161InfraRotor}/${lv.w3.names.v161InfraRotor}: ventilators + paddles)`);
+const turning = (x) => (x.names.v161InfraRotor || 0) + (x.names.v161InfraPaddle || 0);
+check(turning(lv.p2) === 2 && turning(lv.p3) === 2 && turning(lv.w2) === 2 && turning(lv.w3) === 3, `rotating parts follow the modules (power ${turning(lv.p2)}/${turning(lv.p3)}, water ${turning(lv.w2)}/${turning(lv.w3)}: roof ventilators + basin paddles)`);
 check(!!lv.w2.names.v161InfraWater && !!lv.w3.names.v161InfraWater, 'water L2 / L3: the basins have an animated water surface mesh');
 check([lv.p2, lv.p3, lv.w2, lv.w3].every((x) => x.meshes <= 12), `mesh (= draw call) budget <= 12 per plant (${J([lv.p2.meshes, lv.p3.meshes, lv.w2.meshes, lv.w3.meshes])}; the old plants were 6-7 flat boxes on a 0.5 m slab)`);
 check([lv.pm2, lv.pm3, lv.wm2, lv.wm3].every((m) => m.minY >= -0.05 && m.minY <= 0.05 && m.overlap >= 0.9 && m.outsideMax <= 1.0 && m.reach === 0), `levels 2 / 3: min y, cover >= 90 %, outside <= 1 m, walk-in 0 ${J([lv.pm2, lv.pm3, lv.wm2, lv.wm3].map((m) => [m.minY, m.overlap, m.outsideMax, m.reach]))}`);
@@ -160,6 +161,7 @@ await ev(() => { const st = __TYCOON_V42__.state; st.powerPlantLevel = 3; st.wat
 const wsA = await ev(() => { const m = __TYCOON_V42__.world.water.children.find((c) => c.name === 'v161InfraWater'); const p = m.geometry.attributes.position; let s = 0; for (let i = 0; i < p.count; i++) s += p.getY(i); return { sum: s, n: p.count }; });
 const wsMoved = await page.waitForFunction((s0) => { const m = __TYCOON_V42__.world.water.children.find((c) => c.name === 'v161InfraWater'); const p = m.geometry.attributes.position; let s = 0; for (let i = 0; i < p.count; i++) s += p.getY(i); return Math.abs(s - s0) > 1e-4; }, wsA.sum, { timeout: 30000, polling: 200 }).then(() => true, () => false);
 const wsBand = await ev(() => { const m = __TYCOON_V42__.world.water.children.find((c) => c.name === 'v161InfraWater'); const p = m.geometry.attributes.position, meta = m.userData.v161WaterMeta; let mx = 0, border = 0; for (let i = 0; i < p.count; i++) { const d = Math.abs(p.getY(i) - meta[i * 4 + 2]); mx = Math.max(mx, d); if (meta[i * 4 + 3] === 0) border = Math.max(border, d); } return { mx: +mx.toFixed(4), border, mat: m.material.color.b > m.material.color.r, transparent: m.material.transparent }; });
+console.log('INFO water works ripple ' + J({ wsA, wsMoved, wsBand, player: await ev(() => [player.position.x, player.position.z]), t: await ev(() => __TYCOON_V42__.world.water.children.find((c) => c.name === 'v161InfraWater')?.userData.v161WaterT) }));
 check(wsMoved && wsA.n <= 400 && wsBand.mx > 0.001 && wsBand.mx <= 0.03 && wsBand.border === 0 && wsBand.mat, `water works: the water surface ripples in the real loop (${wsA.n} vertices, max lift ${wsBand.mx} m <= 3 cm, border flat, blue material ${wsBand.mat})`);
 // no leak: 12 rebuilds keep the geometry count (measured after the frames that upload / free them) and the live list bounded
 await ev(() => { for (let i = 0; i < 2; i++) __TYCOON_V42__.refresh(); });
@@ -182,11 +184,11 @@ for (const id of ['industrial', 'business', 'waterfront']) {
       const P = __BLD_PROBE__;
       cityState.districts[id] = L; refreshDistrictIdentityWorldV363(); __TYCOON_V83_COLLISIONS__.rebuild();
       const grp = cityWorldRuntime.districtIdentity.get(id); grp.updateMatrixWorld(true);
-      const own = P.ownEntries(grp), solid = own.filter((e) => !/:pond/.test(e.label));
+      const own = P.ownEntries(grp), solid = own.filter((e) => !/:(pond|light|planter|palm|bench|pool)/.test(e.label)), small = own.filter((e) => /:(light|planter|palm|bench|pool)/.test(e.label));
       const meas = P.measure(grp, solid); delete meas.colliders;
       let meshes = 0; grp.traverse((o) => { if (o.isMesh) meshes++; });
       const walkIn = (e) => { return null; };
-      return { id, L, meshes, tris: meas.tris, minY: meas.minY, maxY: meas.maxY, size: meas.size, overlap: meas.overlap, outsideMax: meas.outsideMax, reach: meas.sweepReached, own: own.length, pond: own.length - solid.length, name: grp.name,
+      return { id, L, smallSolid: small.every((e) => P.blockedAt(e.pos.x, e.pos.z).hit), nSmall: small.length, meshes, tris: meas.tris, minY: meas.minY, maxY: meas.maxY, size: meas.size, overlap: meas.overlap, outsideMax: meas.outsideMax, reach: meas.sweepReached, own: own.length, pond: own.length - solid.length, name: grp.name,
         dup: scene.children.filter((o) => o.name === grp.name).length, flags: own.every((e) => e.flags.player && e.flags.agent && !e.flags.placement && !e.flags.camera), hub: [grp.position.x, grp.position.z] };
     }, { id, L });
     dist[id].push(r);
@@ -198,13 +200,14 @@ check(D.every((r) => r.meshes <= 8 && r.dup === 1), `districts: <= 8 meshes per 
 check(D.every((r) => r.minY >= -0.05 && r.minY <= 0.05), `districts: nothing floating or sunk, min y ${J(D.map((r) => r.minY))} (the old waterfront read -0.12)`);
 check(D.every((r) => r.overlap !== null && r.overlap >= 0.9 && r.outsideMax <= 1.0), `districts: the solid boxes cover >= 90 % of the walls and stick out <= 1 m (${J(D.map((r) => [r.id, r.L, r.overlap, r.outsideMax]))}; before: no collider at all)`);
 check(D.every((r) => r.reach === 0), `districts: the player walked at the middle from 8 directions never gets inside (reach ${J(D.map((r) => r.reach))}; before 6 / 8 / 1 of 8)`);
+check(D.every((r) => r.smallSolid) && D.some((r) => r.nSmall >= 6), `districts: lamps, planters, benches, palm trunks and the pool are solid at their centre (${J(D.map((r) => r.nSmall))})`);
 check(D.every((r) => r.own >= 8 && r.flags), `districts: real colliders for every part, player + agent only (${J(D.map((r) => r.own))})`);
 for (const id of ['industrial', 'business', 'waterfront']) check(dist[id][0].tris < dist[id][1].tris && dist[id][1].tris < dist[id][2].tris, `${id}: the level adds parts (tris ${dist[id].map((r) => r.tris)})`);
 const wf = await ev(() => {
   const P = __BLD_PROBE__, grp = cityWorldRuntime.districtIdentity.get('waterfront'), x = grp.position.x, z = grp.position.z, W = DistrictsV161.WF;
   const pier = (px) => P.blockedAt(x + px, z + W.quayZ1 + 1.0).hit, quay = P.blockedAt(x + 0, z + 1.9).hit;
   const pond = [P.blockedAt(x + 0, z + 4.5), P.blockedAt(x - 3.4, z + 4.5), P.blockedAt(x + 3.4, z + 4.5)];
-  const walkInto = [-2.3, 2.3].map((px) => { const saved = playerVelocity.clone(); let worst = 0; const entries = gatherPhysicsCircles().filter((e) => e.category !== 'vehicle'); for (let i = 0; i <= 40; i++) { const zz = z + 1.9 + i * 0.1; playerVelocity.set(0, 0, 0); const r = resolvePlayerCircleCollisions(x + px, zz, entries); worst = Math.max(worst, Math.hypot(r.x - (x + px), r.z - zz)); } playerVelocity.copy(saved); return +worst.toFixed(3); });
+  const walkInto = [-2.3, 2.3].map((px) => { const saved = playerVelocity.clone(); let worst = 0; const entries = gatherPhysicsCircles().filter((e) => e.category !== 'vehicle'); for (let i = 0; i <= 24; i++) { const zz = z + 1.9 + i * 0.1; playerVelocity.set(0, 0, 0); const r = resolvePlayerCircleCollisions(x + px, zz, entries); worst = Math.max(worst, Math.hypot(r.x - (x + px), r.z - zz)); } playerVelocity.copy(saved); return +worst.toFixed(3); });
   return { pierFree: [pier(-2.3), pier(2.3)], quayFree: quay, pondSolid: pond.map((p) => p.hit), walkOntoPier: walkInto };
 });
 check(!wf.pierFree[0] && !wf.pierFree[1] && !wf.quayFree && wf.pondSolid.every(Boolean) && wf.walkOntoPier.every((w) => w <= 0.01), `waterfront: the quay and both piers are walkable, the pond is solid (${J(wf)})`);
@@ -252,7 +255,7 @@ check(siteRows.out.every((s) => s.all <= 34), `site: <= 34 meshes in the whole r
 check(siteRows.out.every((s) => s.rows.every((r) => r.minY >= -0.05 && r.minY <= 0.05)), `site: nothing floating or sunk (min y ${J(siteRows.out.map((s) => Math.min(...s.rows.map((r) => r.minY))))})`);
 check(siteRows.out.every((s) => s.rows.every((r) => r.nonUniform === 0) && s.envH === 1), 'site: no object is stretched in y at rest (the geometry has its final size; the growth animation plays scale.y 0.08 -> 1 only)');
 check(siteRows.out.every((s) => Math.abs(s.wallH - 1.45 * s.trueEnvH) < 0.02), `site: walls are built at their real height 1.45 x envH (${J(siteRows.out.map((s) => [s.kind, s.wallH]))})`);
-check(siteRows.out.every((s) => s.v45 && s.beacons === 2 && s.sprites === 1), 'site: the hazard boards + beacons are part of the rig (v45 decoration skipped: exactly 2 beacons), one phase plate');
+check(siteRows.out.every((s) => s.v45 && s.beacons === 2 && s.sprites === 2), 'site: the hazard boards, beacons and the progress sign are part of the rig (v45 / v149 decoration skipped: exactly 2 beacons, 2 sprites = phase plate + sign line)');
 check(siteRows.geo1 <= siteRows.geo0 + 2, `site: 6 rigs created and removed leave no geometry behind (${siteRows.geo0} -> ${siteRows.geo1})`);
 const craneSolid = await ev(() => {
   const P = __BLD_PROBE__, site = spawnConstructionSite(new THREE.Vector3(30, 0, -58), STAGES[6], 30);

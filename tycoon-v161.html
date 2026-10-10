@@ -8060,6 +8060,7 @@ function updateConstructionSites(dt) {
     const phase = constructionPhaseIndex(t);
     const workActive = !site.buildRef?.waitingForDelivery;
     setConstructionPhaseVisual(site, phase, t);
+    if (site.v161 && window.SiteV161) window.SiteV161.tick(site, performance.now()); // v161 site: the sign line follows the timer
 
     // PREP: excavator genuinely digs -- turret sweeps, boom/stick/bucket move as a linked
     // mechanism and a small dust puff appears at the bucket instead of the whole machine

@@ -30,7 +30,7 @@
     const c = Math.cos(yaw), s = Math.sin(yaw);
     for (const f of fp) {
       const wx = x + f.x * c + f.z * s, wz = z - f.x * s + f.z * c;
-      fps.push(f.r ? { x: wx, z: wz, r: f.r, tree: f.tree } : { x: wx, z: wz, hx: f.hx, hz: f.hz, yaw });
+      fps.push(f.r ? { x: wx, z: wz, r: f.r, tree: f.tree, kind: f.kind } : { x: wx, z: wz, hx: f.hx, hz: f.hz, yaw, kind: f.kind });
     }
   }
   function finish(g, M, fp, extra) {
@@ -114,7 +114,7 @@
     T.Cn.cyl(0.46, 0.5, 0.24, 14, x, 0.12, z, { c: 0xc9beb0 });
     T.P.cyl(0.38, 0.4, 0.04, 14, x, 0.26, z, { c: 0x6fb974 });
     T.P.ell(0.3, 0.2, 0.3, x, 0.42, z, { c: 0x5e9a52 }); T.P.ell(0.17, 0.12, 0.17, x + 0.12, 0.54, z - 0.05, { c: 0xf08ab0 });
-    fp.push({ x, z, r: 0.5 });
+    fp.push({ x, z, r: 0.5, kind: 'planter' });
   }
   function buildBusiness(lv) {
     const g = new THREE.Group(); g.name = 'v161DistrictBusiness';
@@ -137,7 +137,7 @@
       f.push({ x: 0, z: 0, hx: 1.12, hz: 0.82 });
     });
     for (let i = 0; i < 4; i++) { const a = Math.PI / 4 + i / 4 * TAU; local(M, fp, Math.cos(a) * 3.0, Math.sin(a) * 3.0, 0, (T, f) => planter(T, f, 0, 0)); floodLight(M.P, M.L, fp, Math.cos(a) * 4.1, Math.sin(a) * 4.1, 1.9, 0); }
-    fp.push({ x: 0, z: 0, r: 0.68 });
+    fp.push({ x: 0, z: 0, r: 0.68, kind: 'pool' });
     return finish(g, M, fp);
   }
 
@@ -173,7 +173,7 @@
     for (const bx of [-1.65, 1.65]) local(M, fp, bx, 1.35, 0, (T, f) => {
       T.P.ext(-0.45, 0.45, 0.4, 0.48, -0.14, 0.14, 0x8f6c46); T.P.ext(-0.45, 0.45, 0.5, 0.78, -0.17, -0.1, 0x8f6c46);
       for (const sx of [-0.34, 0.34]) { T.P.ext(sx - 0.03, sx + 0.03, 0.1, 0.42, -0.12, -0.06, 0x555d68); T.P.ext(sx - 0.03, sx + 0.03, 0.1, 0.42, 0.06, 0.12, 0x555d68); }
-      f.push({ x: 0, z: 0, hx: 0.47, hz: 0.17 });
+      f.push({ x: 0, z: 0, hx: 0.47, hz: 0.17, kind: 'bench' });
     });
     for (const lx of [-3.2, -1.1, 1.1, 3.2]) floodLight(M.P, M.L, fp, lx, 1.5, 2.1);
     // palms spread over the quay
@@ -183,7 +183,7 @@
       M.P.cyl(0.07 * k, 0.1 * k, 1.5 * k, 7, x, 0.75 * k, z, { c: 0x8a6a45, rz: 0.08 * (i % 2 ? 1 : -1) });
       for (let j = 0; j < 6; j++) { const a = j / 6 * TAU; M.P.ell(0.5 * k, 0.045, 0.14 * k, x + Math.cos(a) * 0.4 * k, 1.62 * k, z + Math.sin(a) * 0.4 * k, { ry: -a, rz: -0.25, c: j % 2 ? 0x65ae77 : 0x57a06a }); }
       M.P.ell(0.12, 0.11, 0.12, x, 1.58 * k, z, { c: 0x6b4a2f });
-      fp.push({ x, z, r: 0.13, tree: true });
+      fp.push({ x, z, r: 0.13, tree: true, kind: 'palm' });
     }
     return finish(g, M, fp);
   }

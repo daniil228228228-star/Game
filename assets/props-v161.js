@@ -118,7 +118,7 @@
       fp.push({ x: pp.x, z: pp.z, r: 0.1 });
     } else if (cfg.id === 'suburb') {
       const pp = at(1.05, 0.78);
-      P.ell(0.5, 0.36, 0.5, pp.x, 0.28, pp.z, { c: 0x5e9a52 }); P.ell(0.3, 0.2, 0.3, pp.x + 0.2, 0.46, pp.z, { c: 0x6fb974 });
+      P.ell(0.5, 0.36, 0.5, pp.x, 0.36, pp.z, { c: 0x5e9a52 }); P.ell(0.3, 0.2, 0.3, pp.x + 0.2, 0.54, pp.z, { c: 0x6fb974 });
       fp.push({ x: pp.x, z: pp.z, r: 0.45 });
     } else if (cfg.id === 'business') {
       const lp = at(1.05, 0.36);

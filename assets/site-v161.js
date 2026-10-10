@@ -10,7 +10,7 @@
  *   - everything stands on y 0 (min y 0.0, nothing floats), the yard fence is a low barrier (walkable by design: the game's `construction` category has no player collision)
  *   - the v45 hazard boards + pulsing beacons are part of the yard (v45Site is set so the wrapper skips its own copy), the v149 sign board with the progress line stays the sign
  *   - only the crane tower base is solid (a 0.5 m box while the crane stands, `SiteV161.obstacles()`); the yard, cabin, machines and piles are walkable like the whole site
- * Visible meshes per phase: 9 .. 15 (was 62 .. 103), 28 in total (was 141).
+ * Visible meshes per phase: 10 .. 14 (was 62 .. 103), 28 in total (was 141). The v149 progress sign is part of the rig too (one plate, a label sprite refreshed by SiteV161.tick).
  * `SiteV161.enabled = false` brings the old rig back.
  */
 'use strict';
@@ -83,13 +83,19 @@
       for (const sx of [-1, 1]) for (let i = 0; i < 5; i++) {
         H.box(0.32, 0.09, 0.055, sx * 1.52 * envW + (i - 2) * 0.26, 0.42, -1.64 * envW, { rz: i % 2 ? 0.16 : -0.16, c: i % 2 ? 0x24292f : 0xf0b348 });
       }
+      // the progress sign (v149's board, now one mesh with the hazard boards): plate on two posts at the unload spot, hazard stripes along its lower edge, a rail
+      const ux = -1.78 * envW, uz = 1.16 * envW;
+      H.box(0.93, 0.48, 0.07, ux, 1.48, uz, { c: 0x39434d });
+      for (const x of [-0.36, 0.36]) H.box(0.045, 1.32, 0.045, ux + x, 0.66, uz, { c: 0x39434d });
+      for (let i = 0; i < 5; i++) H.box(0.12, 0.04, 0.012, ux + (i - 2) * 0.15, 1.28, uz + 0.042, { rz: -0.25, c: i % 2 ? 0x252c34 : 0xd7a343 });
+      H.box(0.90, 0.022, 0.022, ux, 1.18, uz + 0.06, { c: 0xd7a343 });
       add(group, mesh(H, MT.paint, 'v161SiteBoards', false, true));
       const bm = new THREE.MeshStandardMaterial({ color: 0xffa84d, emissive: 0xff6a22, emissiveIntensity: 0.7, roughness: 0.25 });
       const bg = new THREE.SphereGeometry(0.055, 8, 8);
       for (const sx of [-1, 1]) { const b = new THREE.Mesh(bg, bm); b.position.set(sx * (1.62 * envW + 0.0), 0.61, -1.61 * envW); b.userData.v45SiteBeacon = true; b.name = 'v161SiteBeacon'; group.add(b); }
       bg.userData.sharedSurfaceV153 = false;
     }
-    group.userData.v45Site = true;
+    group.userData.v45Site = true; group.userData.v149Site = true;   // both wrappers decorate a site once: this rig already has their boards, beacons and the sign
 
     // ---- unload zone (a marker for the trucks; material per site: the game changes its colour / emissive)
     const unloadZone = grp('unloadZone');
@@ -245,14 +251,32 @@
     group.position.copy(pos);
     const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 5.4 * envH, 8, 1, true), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }));
     beacon.renderOrder = 2; beacon.position.y = 2.8 * envH; beacon.name = 'v161SiteBeam'; beacon.userData.v161Soft = true; group.add(beacon);
+    const signLabel = makeLabelSprite(['', '']);
+    signLabel.position.set(-1.78 * envW, 1.50, 1.16 * envW + 0.049); signLabel.scale.set(0.87, 0.36, 1); group.add(signLabel);
     group.userData.v161Site = { envW, envH, craneH, kind };
     return {
       v161: true, group, jibPivot, hook, drumPivot, armBase, arm2Pivot, bucketPivot, excavatorTurret, beacon,
       mixer, mixerStream, excavator, craneLoad, beamStack, rebarCage, scaffolding, unloadZone,
       foundationVisual, frameVisual: skeleton, wallVisual, roofVisual, finishVisual,
-      craneParts: [craneBody, jibPivot], phaseLabel, envH: 1, trueEnvH: envH, craneRig,
+      craneParts: [craneBody, jibPivot], phaseLabel, signLabel, signSig: '', signAt: 0, envH: 1, trueEnvH: envH, craneRig,
       phase: -1, lastPctBucket: -1, dustTimer: 0.25, timer: 0, duration: buildDuration, buildRef: null,
     };
+  }
+
+  // the sign's two lines: the same text as the v149 board (title, then phase + percent or "awaiting delivery")
+  function boardLines(site) {
+    const b = site.buildRef, pct = Math.min(99, Math.max(0, Math.floor((b && b.timer != null ? b.timer : site.timer) / Math.max(0.001, site.duration) * 100)));
+    const waiting = !!(b && b.waitingForDelivery);
+    const phase = constructionPhaseName(constructionPhaseIndex(pct / 100));
+    return [lang === 'ru' ? 'СТРОИТЕЛЬНАЯ ПЛОЩАДКА' : 'CONSTRUCTION SITE', waiting ? (lang === 'ru' ? 'ОЖИДАЕТ ДОСТАВКУ' : 'AWAITING DELIVERY') : `${phase} · ${pct}%`];
+  }
+  // called by updateConstructionSites every frame: the sign text follows the real timer (rewritten only when it changes, at most twice a second)
+  function tick(site, now) {
+    if (!site || !site.signLabel || now - site.signAt < 500) return;
+    site.signAt = now;
+    const lines = boardLines(site), sig = lines.join('|');
+    if (sig !== site.signSig) { site.signSig = sig; updateLabelSprite(site.signLabel, lines); }
+    try { const c = camera.position, g = site.group.position; site.signLabel.visible = (c.x - g.x) * (c.x - g.x) + (c.z - g.z) * (c.z - g.z) < 1600; } catch (e) { /* no camera yet */ }
   }
 
   // the crane tower base is the only solid part: a 0.5 m box while the crane stands (phases 2 .. 4, hidden otherwise)
@@ -260,11 +284,11 @@
     const out = [];
     let sites = null; try { sites = constructionSites; } catch (e) { return out; }
     for (const s of sites || []) {
-      if (!s || !s.v161 || !s.group || !s.group.parent || !s.craneParts || !s.craneParts[0] || !s.craneParts[0].visible) continue;
+      if (!s || !s.v161 || !s.group || !s.group.parent || !s.craneParts || !s.craneParts[0]) continue;
       const w = new THREE.Vector3(); s.craneRig.getWorldPosition(w);
       out.push({ owner: s.group, category: 'construction', label: 'site-crane-v161', shape: 'obb', pos: new THREE.Vector3(w.x, 0, w.z), hx: 0.27, hz: 0.27, yaw: 0, active: () => !!(s.group.parent && s.craneParts[0].visible) });
     }
     return out;
   }
-  window.SiteV161 = { enabled: true, version: 'v161-site', build, obstacles };
+  window.SiteV161 = { enabled: true, version: 'v161-site', build, obstacles, tick, boardLines };
 })();
