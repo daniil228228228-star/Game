@@ -39,6 +39,8 @@ const PAGE = () => {
   window.__campLeft = (r) => {
     const skip = new Set();
     for (const t of sourceTrees) skip.add(t.mesh);
+    for (const k of Object.keys(LOGISTICS_ZONES)) skip.add(LOGISTICS_ZONES[k].group);   // 2026-10-10 (12): the concrete pad now stands in its loading yard (-43.1, -5.5), 1.15 m from the old camp anchor
+    if (window.YardsV161?.group()) skip.add(window.YardsV161.group());
     for (const w of (typeof npcWorkers !== 'undefined' ? npcWorkers : [])) if (w.group) skip.add(w.group);
     const hits = [];
     const wp = new THREE.Vector3();
@@ -152,7 +154,7 @@ async function runFresh() {
   check(C.others.every(([, d]) => d >= 2.6), `>= 2.6 m (interact radius 2.55) from every other pad ${J(C.others)}`);
   check(C.nearestTree > 4, `no choppable tree within 4 m of the pickup (${C.nearestTree} m); the pickup is inside the mill footprint, the keep-out distance is ${C.keepDist}`);
   check(C.labelY > 2.2 && C.kids.includes('v161PlankStack'), `name plate above the roof (y ${C.labelY}), the stack is a child of the zone (${J(C.kids.slice(-3))})`);
-  check(C.truck.toBay < 0.08 && C.truck.fromPickup > 5 && C.oldSlab === 0, `trucks keep loading on the road node plankBay (${C.truck.toBay} m off it, ${C.truck.fromPickup} m from the pickup); nothing named/plated left at the old bay (${C.oldSlab})`);
+  check(C.truck.toBay > 1.5 && C.truck.toBay < 3 && C.truck.fromPickup > 3 && C.oldSlab === 0, `since 2026-10-10 (12) trucks load in the plank yard bay beside the spur end, off the lane node plankBay (${C.truck.toBay} m from it, ${C.truck.fromPickup} m from the pickup); nothing named/plated left at the old bay (${C.oldSlab})`);
 
   // ---------------------------------------------------------------- E. screenshots (taken BEFORE the simulated production below: updateSawmill() called in a loop leaves burst particles in the air)
   await ev(() => { planks = 0; syncPlankStackV161(); });

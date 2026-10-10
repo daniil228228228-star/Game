@@ -204,6 +204,17 @@
     return moved;
   }
 
+  // a truck that stands in its bay (state 'loading') eases its heading to the bay's yaw (the lead-in is short, the truck arrives a few degrees off)
+  function settle(v, dt) {
+    const ud = v && v.userData; if (!ud || ud.state !== 'loading' || !api.enabled) return;
+    const S = spec();
+    for (const k of KEYS) {
+      const s = S[k]; if (Math.hypot(v.position.x - s.stop.x, v.position.z - s.stop.z) > 0.3) continue;
+      let d = s.yaw - v.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
+      v.rotation.y += d * Math.min(1, (dt || 0.05) * 5);
+      return;
+    }
+  }
   function sync() {   // builds on first use, then follows the building flags
     if (!api.enabled) { if (GROUP) GROUP.visible = false; return; }
     let S; try { S = spec(); } catch (e) { return; }
@@ -246,6 +257,6 @@
     const st = yards.planks_stack; out.plankStack = st ? { shown: st.userData.shown, visible: st.visible, range: st.geometry.drawRange.count, boards: st.userData.drawPer ? st.geometry.drawRange.count / st.userData.drawPer : 0 } : null;
     return out;
   }
-  const api = { enabled: true, version: 'v161-yards', KEYS, STACK_CAP, spec, pad, stop, pilePose, yardAt, route, sync, tick, obstacles, snap, nudgeTrees, group: () => GROUP, yardGroup: (k) => (yards[k] ? yards[k].group : null), padPos: pad, stopPos: stop };
+  const api = { enabled: true, version: 'v161-yards', KEYS, STACK_CAP, spec, pad, stop, pilePose, yardAt, route, settle, sync, tick, obstacles, snap, nudgeTrees, group: () => GROUP, yardGroup: (k) => (yards[k] ? yards[k].group : null), padPos: pad, stopPos: stop };
   window.YardsV161 = api;
 })();

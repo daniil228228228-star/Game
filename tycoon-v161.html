@@ -34045,6 +34045,8 @@ function makeGroup(){ensureSig();const g=new THREE.Group();g.name='v86CanonicalS
   buildRoadRoute=publicApi.buildRoute;
   { const baseRouteV161=buildRoadRoute; // v161 loading yards: a route to / from a truck bay runs through the yard gate (YardsV161.route), everything else is the game's own route
     buildRoadRoute=function(fromPos,toPos){const Y=window.YardsV161;if(Y&&Y.enabled&&fromPos&&toPos){const r=Y.route(fromPos,toPos,baseRouteV161);if(r&&r.length)return r;}return baseRouteV161.apply(this,arguments);}; }
+  { const baseMoveV161=moveWorkVehicle; // v161 loading yards: a truck standing in its bay eases its heading along the bay (the short lead-in leaves it a few degrees off)
+    moveWorkVehicle=function(vehicle,dt){baseMoveV161.apply(this,arguments);try{window.YardsV161?.settle(vehicle,dt);}catch(e){}}; }
   distToNearestRoadSegment=function(x,z){let best=Infinity;for(let i=0;i<Math.min(STAGES.length,Math.max(stageIndex,1));i++){const p=centerline(i);for(let j=0;j<p.length-1;j++)best=Math.min(best,pointSegDist(x,z,p[j],p[j+1]));}return best;};
 
   // Keep the old V61 diagnostics useful but stop them from being a second road owner.
