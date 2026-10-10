@@ -25,9 +25,9 @@
       gate: { edge: 'x1', c: -3.2, len: 2.5 }, lamp: [-20.0, -2.2], sign: [-20.0, -4.3], accent: 0xd0ab68,
     },
     concrete: {
-      flag: () => concretePlantBuiltV118 && stageIndex >= CONCRETE_UNLOCK_STAGE, entry: 'depotWest', slab: [-15.0, -6.3, -9.6, -4.85], stop: [-13.5, -5.5], yaw: Math.PI / 2,
-      leadIn: [[-14.3, -6.65], [-14.35, -5.95], [-14.0, -5.5]], pile: [-11.1, -5.5],
-      gate: { edge: 'z0', c: -14.1, len: 1.8 }, lamp: [-9.85, -5.05], sign: [-9.95, -6.1], accent: 0xc8c3ac,
+      flag: () => concretePlantBuiltV118 && stageIndex >= CONCRETE_UNLOCK_STAGE, entry: 'depotWest', slab: [-15.0, -6.3, -9.6, -4.85], stop: [-13.4, -5.5], yaw: Math.PI / 2,
+      leadIn: [[-14.2, -6.7], [-14.4, -6.0], [-14.35, -5.5]], pile: [-11.1, -5.5],
+      gate: { edge: 'z0', c: -14.15, len: 1.8 }, lamp: [-9.85, -5.05], sign: [-9.95, -6.1], accent: 0xc8c3ac,
     },
     metal: {
       flag: () => metalYardBuiltV118 && stageIndex >= METAL_UNLOCK_STAGE, entry: 'metalBay', slab: [-5.1, -8.6, -0.4, -5.5], stop: [-3.6, -6.3], yaw: Math.PI / 2,
