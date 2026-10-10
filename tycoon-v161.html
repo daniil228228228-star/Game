@@ -32662,6 +32662,8 @@ window.__TYCOON_V74_BUILD__={
       entry.radius=Math.max(.03,Number(entry.radius)||.03);
       entry.pos=entry.pos||new THREE.Vector3(Number(entry.x)||0,0,Number(entry.z)||0);
     }
+    // v161 (2026-10-10 (13)): land-plot / district colliders carry plain {x,z} positions; every consumer (e.pos.distanceTo in the agent / route queries) needs a Vector3 -> "e.pos.distanceTo is not a function" page errors once a plot is owned
+    if(entry.pos&&!entry.pos.isVector3)entry.pos=new THREE.Vector3(Number(entry.pos.x)||0,0,Number(entry.pos.z)||0);
     registry.set(id,entry);
     if(entry.owner && typeof entry.owner==='object'){
       let ids=ownerIds.get(entry.owner);if(!ids){ids=new Set();ownerIds.set(entry.owner,ids);}ids.add(id);
