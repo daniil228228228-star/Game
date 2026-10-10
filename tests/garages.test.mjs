@@ -6,12 +6,12 @@
 //   B. FLEET GARAGE (base module, createFleetGarageV72, levels 1 / 2 / 3 = 3 / 5 / 6 bays): the bay count equals fleetGarageBayCountV72 and, at level 3, the number of fleet parking homes (six = six trucks); a real universal truck
 //      (1.15 x 1.28 x 2.11 m) parked at every covered home (yaw pi, as parked in the game) lies inside its own bay (>= 0.25 m to the posts on each side, front post -> rear obstacles), under the roof by >= 0.3 m, no solid box touches it,
 //      the lane from the service lane (z 4.45) into every bay is free of wall boxes, the player can stand in every bay (registry rebuilt), the garage's walls are real boxes in the registry (the whole-mesh box does not block the player).
-//   C. FLEET YARD (assets/factory-v161.js): no pretend 3-door garage in the rear strip any more, six homes, rear amenities (booth / pump / wash) are hidden + not solid while the base garage is level >= 2, the entrance sign hangs
-//      on a gantry, mesh budget.
+//   C. FLEET YARD (assets/factory-v161.js): the user's deeper service garage (z 7.92..10.62) made HOLLOW: three real door openings (1.6 x 1.52 m), 2.5 m deep, thin wall boxes, a real truck Box3 inside every bay;
+//      six homes, rear amenities (booth / pump / wash) hidden + not solid while the base garage is level >= 2, the entrance sign hangs on a gantry, mesh budget.
 // SHOTS_DIR=<dir> also writes pictures: the house garage with a car inside (iso / front), the fleet garage levels 1 / 2 / 3 with trucks in the bays.
 import fs from 'node:fs';
 import path from 'node:path';
-import { openGame, check } from './lib/harness.mjs';
+import { openGame, check, waitForState } from './lib/harness.mjs';
 import { installProbe } from '../tools/lib/buildings-probe-v161.mjs';
 
 const LATE = { saveVersion: 20, stageIndex: 16, money: 5e8, planks: 5000, concrete: 500, metal: 500, buildings: Array.from({ length: 16 }, (_, i) => ({ index: i, level: 5 })) };
@@ -91,6 +91,8 @@ for (const lv of [1, 2, 3]) {
     const info = gg.userData.v161Garage, homes = Object.entries(window.__TYCOON_V65_TRAFFIC__.homes).map(([key, p]) => ({ key, x: p.x, z: p.z })).sort((a, b) => a.x - b.x);
     const boxes = (gg.userData.v161Footprint || []).map((f) => ({ x0: gg.position.x + f.x - f.hx, x1: gg.position.x + f.x + f.hx, z0: gg.position.z + f.z - f.hz, z1: gg.position.z + f.z + f.hz }));
     const reg = [...__TYCOON_V83_COLLISIONS__.registry.values()].filter((e) => e.owner === gg);
+    // the yard's service garage (assets/factory-v161.js) stands behind the first three bays: its walls count as obstacles too
+    for (const e of __TYCOON_V83_COLLISIONS__.registry.values()) if (/^fleet:garage/.test(String(e.label))) boxes.push({ x0: e.pos.x - e.hx, x1: e.pos.x + e.hx, z0: e.pos.z - e.hz, z1: e.pos.z + e.hz });
     const out = { lv, bays: info.bays, expected: fleetGarageBayCountV72(lv), homes: homes.length, boxes: boxes.length, regWalls: reg.filter((e) => String(e.label).includes(':wall') && e.flags.player).length, regWhole: reg.filter((e) => !String(e.label).includes(':wall') && e.flags.player).length, perBay: [] };
     const trucks = [];
     for (let b = 0; b < info.bays; b++) {
@@ -128,27 +130,59 @@ check(fleetRows.every((r) => r.perBay.every((p) => p.headroom >= 0.3)), `every t
 check(fleetRows.every((r) => r.perBay.every((p) => p.touch === 0 && p.laneHit === 0 && !p.standHit && !p.mouthHit)), `no solid box touches a parked truck, the lane from z 4.2 into every bay is free of wall boxes, the player can stand in every bay and in its mouth`);
 check(fleetRows.every((r) => r.regWalls >= 3 && r.regWhole === 0 && r.playerInBay), `the garage's walls are real boxes in the registry (${J(fleetRows.map((r) => r.regWalls))}); the whole-mesh box no longer blocks the player (${J(fleetRows.map((r) => r.regWhole))})`);
 
-// ------------------------------------------------------------------------------------------------ C. fleet yard
+// ------------------------------------------------------------------------------------------------ C. fleet yard + its service garage (the user's deeper block, made hollow)
 await ev(() => { baseState.garage = 0; refreshBaseWorld(true); __TYCOON_V83_COLLISIONS__.rebuild(); });
 await page.waitForTimeout(700);                                                                                              // the visual tick brings the amenities back
-const yard = await ev(() => {
-  const y = scene.getObjectByName('v116FleetYard'), count = () => [...__TYCOON_V83_COLLISIONS__.registry.values()].filter((e) => e.owner === y).map((e) => e.label);
+const yard = await ev(({ shots }) => {
+  const P = __BLD_PROBE__, y = scene.getObjectByName('v116FleetYard'), reg = () => [...__TYCOON_V83_COLLISIONS__.registry.values()].filter((e) => e.owner === y);
   const out = { meshes: 0 };
   y.traverse((o) => { if (o.isMesh) out.meshes++; });
-  out.labels0 = count();
+  const all = reg(), gar = all.filter((e) => /^fleet:garage/.test(String(e.label)));
+  out.labels0 = all.map((e) => e.label);
   out.am0 = y.userData.v161Amenities.visible;
-  baseState.garage = 2; refreshBaseWorld(true); __TYCOON_V83_COLLISIONS__.rebuild();
-  out.labels2 = count();
-  return out;
-});
-await page.waitForTimeout(600);                                                                                             // the visual tick applies the visibility
-const yard2 = await ev(() => { const y = scene.getObjectByName('v116FleetYard'); const v2 = y.userData.v161Amenities.visible; baseState.garage = 0; refreshBaseWorld(true); __TYCOON_V83_COLLISIONS__.rebuild(); return { am2: v2 }; });
-await page.waitForTimeout(600);
-const yard3 = await ev(() => ({ am0: scene.getObjectByName('v116FleetYard').userData.v161Amenities.visible }));
-console.log('yard', J({ ...yard, ...yard2, ...yard3 }));
-check(yard.meshes <= 16 && !yard.labels0.some((l) => /garage/.test(l)), `fleet yard: ${yard.meshes} meshes (<= 16), no pretend rear garage any more (colliders ${J(yard.labels0.filter((l) => /fleet:/.test(l)))})`);
+  const G = y.userData.v161Garage, B = window.__TYCOON_FLEET_BOUNDS_V161__;
+  const boxes = gar.map((e) => ({ x0: e.pos.x - e.hx, x1: e.pos.x + e.hx, z0: e.pos.z - e.hz, z1: e.pos.z + e.hz, label: e.label, thin: Math.min(e.hx, e.hz) * 2 }));
+  out.garage = { bays: G.bays.length, doorW: G.doorW, openH: +(G.hOpen - 0.1).toFixed(2), interior: G.interior.map((v) => +v.toFixed(2)), roof: G.h, walls: boxes.length, maxThin: Math.max(...boxes.map((b) => b.thin)), rearZ: Math.max(...boxes.map((b) => b.z1)), boundsZ: B.garageMaxZ, whole: boxes.filter((b) => b.x1 - b.x0 > 3 && b.z1 - b.z0 > 1).length };
+  const homes = Object.values(window.__TYCOON_V65_TRAFFIC__.homes).sort((a, b) => a.x - b.x);
+  out.trucks = [];
+  const tr = [];
+  G.bays.forEach((dx, i) => {
+    const truck = createUniversalDeliveryTruck(i);
+    const zc = (G.interior[0] + G.interior[1]) / 2;
+    truck.position.set(dx, 0.1, zc); truck.rotation.y = Math.PI; scene.add(truck); truck.updateMatrixWorld(true); tr.push(truck);
+    const bb = new THREE.Box3(), tv = new THREE.Vector3();
+    const measure = () => { bb.makeEmpty(); truck.updateMatrixWorld(true); truck.traverse((o) => { if (!o.isMesh || !o.geometry) return; const pa = o.geometry.attributes.position; for (let k = 0; k < pa.count; k++) bb.expandByPoint(tv.fromBufferAttribute(pa, k).applyMatrix4(o.matrixWorld)); }); };
+    measure(); truck.position.z += zc - (bb.min.z + bb.max.z) / 2; truck.position.x += dx - (bb.min.x + bb.max.x) / 2; measure();            // the model origin is not its centre: centre the Box3 in the bay
+    const t = { x0: bb.min.x, x1: bb.max.x, z0: bb.min.z, z1: bb.max.z };
+    const hit = (a, q) => a.x0 < q.x1 && a.x1 > q.x0 && a.z0 < q.z1 && a.z1 > q.z0;
+    const lane = { x0: t.x0, x1: t.x1, z0: homes[i].z - 0.01, z1: t.z1 };                                                   // from the parked spot (the home) straight into the bay
+    const open = boxes.filter((q) => q.label.startsWith('fleet:garage pier'));
+    const left = Math.max(...open.map((q) => q.x1).filter((v) => v <= dx)), right = Math.min(...open.map((q) => q.x0).filter((v) => v >= dx));
+    out.trucks.push({ i, touch: boxes.filter((q) => hit(t, q)).length, lane: boxes.filter((q) => hit(lane, q)).length, side: [+(t.x0 - left).toFixed(2), +(right - t.x1).toFixed(2)], front: +(t.z0 - G.interior[0]).toFixed(2), back: +(G.interior[1] - t.z1).toFixed(2), under: +(G.hOpen - bb.max.y).toFixed(2), size: [+(bb.max.x - bb.min.x).toFixed(2), +(bb.max.y - bb.min.y).toFixed(2), +(bb.max.z - bb.min.z).toFixed(2)],
+      doorway: P.blockedAt(dx, G.interior[0] - 0.4).by.some((l) => /^fleet:/.test(l)), bay: P.blockedAt(dx, zc).by.some((l) => /^fleet:/.test(l)),   // only the yard's own boxes count (a moving worker / agent may pass the spot)
+      by: [...P.blockedAt(dx, G.interior[0] - 0.4).by, ...P.blockedAt(dx, zc).by] });
+  });
+  let pics = null;
+  if (shots) { const c = new THREE.Vector3(G.bays[1], 0.9, 9.3); pics = {}; for (const [v, az, el, dist] of [['front', Math.PI, 0.25, 9], ['iso', Math.PI + 0.7, 0.55, 12]]) pics[v] = P.overview([y, ...tr], { target: c, az, el, dist }).url; }
+  for (const t of tr) scene.remove(t);
+  out.homeTrucks = homes.length;
+  return { ...out, pics };
+}, { shots: !!SHOTS });
+if (yard.pics) for (const [v, url] of Object.entries(yard.pics)) savePic(`garage-yard-${v}.jpg`, url);
+delete yard.pics;
+console.log('yard', J(yard));
+check(yard.meshes <= 16 && yard.garage.whole === 0, `fleet yard: ${yard.meshes} meshes (<= 16); the service garage is made of ${yard.garage.walls} real wall boxes, no whole-block collider (${J(yard.garage)})`);
+check(yard.garage.bays === 3 && yard.garage.doorW >= veh.truck.w + 0.4 && yard.garage.openH >= veh.truck.h + 0.2, `service garage: 3 doors (the other 3 of the 6 trucks use the base garage module's 5 / 6 bays), opening ${yard.garage.doorW} x ${yard.garage.openH} m >= truck ${veh.truck.w} x ${veh.truck.h} + 0.4 / + 0.2`);
+check(yard.garage.interior[1] - yard.garage.interior[0] >= veh.truck.l + 0.3 && Math.abs(yard.garage.rearZ - yard.garage.boundsZ) < 0.01 && yard.garage.maxThin <= 0.7, `service garage interior is ${(yard.garage.interior[1] - yard.garage.interior[0]).toFixed(2)} m deep (truck ${veh.truck.l} m + 0.3), its back wall stands at the user's FLEET bounds z ${yard.garage.boundsZ}`);
+check(yard.trucks.length === 3 && yard.trucks.every((t) => t.touch === 0 && t.lane === 0 && t.side[0] >= 0.2 && t.side[1] >= 0.2 && t.front >= 0.15 && t.back >= 0.15 && t.under >= 0.2), `a real truck stands inside every service-garage bay (the Box3 touches no wall, the lane from its parking spot is free): ${J(yard.trucks.map((t) => ({ side: t.side, front: t.front, back: t.back, under: t.under })))}`);
+check(yard.trucks.every((t) => !t.doorway && !t.bay) && yard.homeTrucks === 6, `the player can stand in every garage doorway and bay (${J(yard.trucks.map((t) => [t.doorway, t.bay, t.by]))}); six trucks have six parking homes`);
 check(yard.labels0.some((l) => /booth/.test(l)) && yard.labels0.some((l) => /pump/.test(l)) && yard.am0 === true, 'without a base garage the booth, fuel pump and wash stand stand (visible + solid)');
-check(!yard.labels2.some((l) => /booth|pump|wash/.test(l)) && yard2.am2 === false && yard3.am0 === true, 'with the base garage at level 2 (5 bays over the rear strip) the booth / pump / wash are hidden and not solid, and they come back when it is gone');
+// base garage level 2 / 3 stands over the rear strip: the booth / pump / wash are hidden + not solid (the visual tick applies it), and come back when it is gone
+await ev(() => { baseState.garage = 2; refreshBaseWorld(true); __TYCOON_V83_COLLISIONS__.rebuild(); });
+const yard2 = await waitForState(page, () => { const y = scene.getObjectByName('v116FleetYard'); return y.userData.v161Amenities.visible === false ? { am2: false, labels2: [...__TYCOON_V83_COLLISIONS__.registry.values()].filter((e) => e.owner === y).map((e) => e.label) } : false; }, null, { timeout: 15000, fallback: { am2: true, labels2: [] } });
+await ev(() => { baseState.garage = 0; refreshBaseWorld(true); __TYCOON_V83_COLLISIONS__.rebuild(); });
+const yard3 = await waitForState(page, () => scene.getObjectByName('v116FleetYard').userData.v161Amenities.visible === true ? { am0: true } : false, null, { timeout: 15000, fallback: { am0: false } });
+check(!yard2.labels2.some((l) => /booth|pump|wash/.test(l)) && yard2.am2 === false && yard3.am0 === true, 'with the base garage at level 2 (5 bays over the rear strip) the booth / pump / wash are hidden and not solid, and they come back when it is gone');
 
 console.log(`\nconsole errors ${g.errors.length} ${J(g.errors.slice(0, 3))}; bad responses ${g.badResponses.length} ${J(g.badResponses.slice(0, 3))}`);
 check(g.errors.length === 0 && g.badResponses.length === 0, '0 console errors and 0 4xx');

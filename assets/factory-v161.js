@@ -638,7 +638,7 @@
     fence('z', xW, zFront + 0.12, zRear, 'fleet:fenceW');
     fence('z', xE, zFront + 0.12, zRear, 'fleet:fenceE');
     fence('x', zRear, boothX1, xE, 'fleet:fenceR');
-    fence('x', zRear, xW, boothX0, 'fleet:fenceRW');                                                   // (2026-10-06 (11): the 3-door "garage" strip that closed this corner is gone, see below)
+    // (the rear run west of the booth is the service garage's back wall now: a fence at z 8.68 would cross its bays)
     // ---- front corner pillars = floodlight masts (concrete base with hazard stripes, steel pole, lamp bar)
     for (const [x, sgn] of [[xW, 1], [xE, -1]]) {
       bx(B.Pn, x, 0.5, zFront, 0.34, 1.0, 0.34); bx(B.Pn, x, 1.03, zFront, 0.42, 0.06, 0.42);
@@ -648,29 +648,38 @@
       for (const q of [0, 1, 2]) { bx(B.Dt, x + sgn * (0.02 + q * 0.12), 2.62, zFront, 0.1, 0.07, 0.07, { color: 0x2b2f36 }); bx(Lf, x + sgn * (0.02 + q * 0.12), 2.62, zFront + 0.04, 0.08, 0.05, 0.02); }
       ob('fleet:pillar', x - 0.19, x + 0.19, zFront - 0.19, zFront + 0.19);
     }
-    // ---- rear strip: service garage (3 roller doors aligned with the first three bays), flat roof with a canopy, lamps
+    // ---- rear strip: service garage (3 roller-door bays aligned with the first three homes), flat roof with a canopy, lamps
+    // 2026-10-06 (11) v2: the user deepened it to z 10.62 (FLEET.gz1) so a truck fits - but the block was SOLID (painted doors on a full wall box): nothing could stand inside. Now the three bays are hollow:
+    // opening 1.60 x 1.52 m (truck 1.15 x 1.28 x 2.11 + 0.22 m under the lintel), 2.5 m deep (0.19 m spare at the door and at the back wall), walls 0.10 m; the colliders are the real walls
+    // (back, both ends, four piers between the openings). The lot's rear fence run that used to cross this corner is gone - the garage closes it.
     {
-      const gx0 = xW - 0.03, gx1 = cx + 0.5, h = 1.5, oz = 0.22;
-      const doorW = 1.60; // 1.08u truck body + comfortable clearance on both sides
-      bx(B.Pn, (gx0 + gx1) / 2, 0.05, (gz0 + gz1) / 2, gx1 - gx0 + 0.08, 0.1, gz1 - gz0 + 0.06);
-      bu(B.Wl, gx0, gx1, 0.1, h, gz0, gz1);
-      bu(B.Dt, gx0, gx1, 0.1, 0.3, gz0 - 0.012, gz0 + 0.0, { color: 0x4a525b });
+      const gx0 = xW - 0.03, gx1 = cx + 0.5, h = 1.8, oz = 0.22, t = 0.10, hOpen = 1.62, fl = 0.1;
+      const doorW = 1.60; // 1.15 m truck body + 0.22 m on each side
+      const doors = [p.homes[0].x, p.homes[1].x, p.homes[2].x];
+      bx(B.Pn, (gx0 + gx1) / 2, 0.05, (gz0 + gz1) / 2, gx1 - gx0 + 0.08, 0.1, gz1 - gz0 + 0.06);                       // floor slab
+      for (const dx of doors) bu(B.Dt, dx - doorW / 2, dx + doorW / 2, fl, fl + 0.004, gz0 + t, gz1 - t, { color: 0x4a525b });  // darker bay floors
+      // walls: back, west + east end, piers between the openings, lintel band over all of them
+      bu(B.Wl, gx0, gx1, fl, h, gz1 - t, gz1);
+      bu(B.Wl, gx0, gx0 + t, fl, h, gz0, gz1); bu(B.Wl, gx1 - t, gx1, fl, h, gz0, gz1);
+      const edges = [gx0]; for (const dx of doors) edges.push(dx - doorW / 2, dx + doorW / 2); edges.push(gx1);
+      const piers = []; for (let i = 0; i < edges.length; i += 2) piers.push([edges[i], edges[i + 1]]);
+      for (const [x0, x1] of piers) bu(B.Wl, x0, x1, fl, hOpen, gz0, gz0 + t);
+      bu(B.Wl, gx0, gx1, hOpen, h, gz0, gz0 + t);
+      bu(B.Dt, gx0, gx1, fl, 0.3, gz0 - 0.012, gz0 + 0.0, { color: 0x4a525b });
       bu(B.Tr, gx0 - 0.04, gx1 + 0.04, h - 0.1, h + 0.04, gz0 - 0.04, gz1 + 0.04);
       o.pq(B.Rf, [gx0 - 0.04, h + 0.04, gz0 - oz], [gx1 + 0.04, h + 0.04, gz0 - oz], [gx1 + 0.04, h + 0.1, gz1], [gx0 - 0.04, h + 0.1, gz1], [0, 1, -0.1]);
       bu(B.Dt, gx0 - 0.04, gx1 + 0.04, h - 0.02, h + 0.06, gz0 - oz - 0.012, gz0 - oz + 0.012, { color: BLUE });
       bu(B.Dt, gx0 - 0.04, gx1 + 0.04, h + 0.06, h + 0.075, gz0 - oz - 0.012, gz0 - oz + 0.012, { color: ORANGE });
-      const doors = [p.homes[0].x, p.homes[1].x, p.homes[2].x];
       doors.forEach((dx, i) => {
-        bx(B.Dr, dx, 0.1 + 0.65, gz0 - 0.02, doorW, 1.3, 0.04);
-        for (let r = 1; r < 7; r++) bx(B.Tr, dx, 0.1 + r * 1.3 / 7, gz0 - 0.045, doorW, 0.012, 0.012);
-        for (const s of [-1, 1]) bx(B.Dt, dx + s * (doorW / 2 + 0.045), 0.1 + 0.68, gz0 - 0.035, 0.09, 1.36, 0.07, { color: ORANGE });
-        bx(B.Dt, dx, 1.46, gz0 - 0.035, doorW + 0.18, 0.08, 0.07, { color: ORANGE });
-        for (let k2 = 0; k2 <= i; k2++) bx(B.Dt, dx - i * 0.045 + k2 * 0.09, 1.34, gz0 - 0.06, 0.055, 0.055, 0.012, { color: YELLOW });
-        bx(Lf, dx, 1.38, gz0 - 0.1, 0.16, 0.04, 0.1);
+        for (let r = 0; r < 3; r++) bx(B.Tr, dx, hOpen - 0.05 - r * 0.045, gz0 + t / 2, doorW - 0.04, 0.025, t + 0.02);               // the rolled-up shutter drum under the lintel
+        for (const sg of [-1, 1]) bx(B.Dt, dx + sg * (doorW / 2 + 0.03), fl + (hOpen - fl) / 2, gz0 - 0.02, 0.06, hOpen - fl, 0.05, { color: ORANGE });
+        bx(B.Dt, dx, hOpen + 0.03, gz0 - 0.02, doorW + 0.12, 0.06, 0.05, { color: ORANGE });
+        for (let k2 = 0; k2 <= i; k2++) bx(B.Dt, dx - i * 0.045 + k2 * 0.09, (hOpen + h) / 2, gz0 - 0.06, 0.055, 0.055, 0.012, { color: YELLOW });
+        bx(Lf, dx, h - 0.16, (gz0 + gz1) / 2, 0.16, 0.04, 1.4);                                                                       // ceiling lamp bar over each bay
       });
-      ob('fleet:garage', gx0, gx1, gz0, gz1);
-      // tyre racks + a rolling cabinet on the west end wall (props on the garage side wall, neutral)
-      p.garage = { x0: gx0, x1: gx1, h };
+      ob('fleet:garage back', gx0, gx1, gz1 - t, gz1); ob('fleet:garage west', gx0, gx0 + t, gz0, gz1); ob('fleet:garage east', gx1 - t, gx1, gz0, gz1);
+      piers.forEach(([x0, x1], i) => ob('fleet:garage pier' + i, x0, x1, gz0, gz0 + t));
+      p.garage = { x0: gx0, x1: gx1, h, doorW, hOpen, bays: doors.slice(), interior: [gz0 + t, gz1 - t] };
     }
     // ---- guard / dispatcher booth: windows all round on the front, door on the left, flat roof with an overhang and a beacon
     {
@@ -773,6 +782,7 @@
     g.add(am); g.userData.v161Amenities = am;
     g.userData.v161Fleet = true;
     g.userData.v161Obstacles = obs;
+    g.userData.v161Garage = p.garage || null;                                                                 // the service garage's real dimensions (tests / probes)
     return p;
   }
   // world-space oriented boxes for the v83 registry (rebuildStatic): the fence runs, pillars, garage, booth, pump, wash stand and the sign post of the live yard; player + agent only (placement / camera off:
