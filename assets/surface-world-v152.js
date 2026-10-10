@@ -80,10 +80,14 @@
       const cameraDistance=world.distanceTo(camera.position);
       const pixels=innerHeight/(2*Math.tan(camera.fov*Math.PI/360)*Math.max(.1,cameraDistance));
       const base=label.userData.v157LabelScale||(label.userData.v157LabelScale=label.scale.clone());
-      const zoom=mainGoal||distance<9?THREE.MathUtils.clamp(104/(base.x*pixels),1,mainGoal?5:label.userData.padPlateV161?3.2:2):1;
+      let zoom=mainGoal||distance<9?THREE.MathUtils.clamp(104/(base.x*pixels),1,mainGoal?5:label.userData.padPlateV161?3.2:2):1;
+      // v161 QA: a zoomed plate is at most 60 % of the screen wide (the x3.2 / x5 near zoom made plates wider than the phone) and never zooms past its natural size
+      if(label.userData.noZoomV161)zoom=1;else zoom=Math.max(1,Math.min(zoom,.6*innerWidth/(base.x*pixels)));
       label.scale.copy(base).multiplyScalar(zoom);label.getWorldScale(labelScale);
       const priority=mainGoal?-1:label.userData.padPlateV161||(target&&Math.hypot(world.x-target.x,world.z-target.z)<2.6)?0:1;
       const cx=(point.x+1)*innerWidth/2,cy=(1-point.y)*innerHeight/2,cw=labelScale.x*pixels+12,ch=labelScale.y*pixels+10;
+      // v161 QA: a plate is drawn whole or not at all: its screen rectangle must lie inside the viewport (it used to be cut by the screen edge: only the centre was tested)
+      if(cx-cw/2<2||cx+cw/2>innerWidth-2||cy-ch/2<2||cy+ch/2>innerHeight-2)continue;
       if(hudBlocked(cx,cy,cw,ch))continue;
       candidates.push({label,distance,priority,score:distance-(wasSelected?2.5:0),mainGoal,x:cx,y:cy,w:cw,h:ch});
     }

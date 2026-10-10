@@ -10029,14 +10029,27 @@ const _updateHUDV301=updateHUD;
    immediately after a real purchase/upgrade/dispatch, unaffected by this throttle). */
 const _panelRenderThrottleV55={fleet:0,base:0,tenders:0};
 const PANEL_RENDER_THROTTLE_MS_V55=350;
+/* v161 QA (2026-10-10 (14)): a finger that is on a panel button (or scrolling the panel) must not lose it to a rebuild: the throttled
+   re-render below replaced EVERY button of the fleet / base / tenders sheet every ~350 ms, so a press that spanned a rebuild never produced
+   its click (2 of 15 holds of 150 ms lost under software GL; on a phone a 100-150 ms press crosses a rebuild far more often) and each rebuild
+   re-ran the v45 decorator over ~90 new nodes. While a pointer is down inside an overlay (+ 350 ms after it, + 300 ms after a scroll) the periodic rebuild waits. */
+const panelTouchV161={down:false,until:0};
+(function(){
+  const inOverlay=e=>!!(e.target&&e.target.closest&&e.target.closest('#fleetOverlay,#baseOverlay,#tendersOverlay'));
+  document.addEventListener('pointerdown',e=>{if(inOverlay(e))panelTouchV161.down=true;},true);
+  const up=e=>{if(panelTouchV161.down){panelTouchV161.down=false;panelTouchV161.until=performance.now()+350;}};
+  document.addEventListener('pointerup',up,true);document.addEventListener('pointercancel',up,true);
+  document.addEventListener('scroll',e=>{if(inOverlay(e))panelTouchV161.until=performance.now()+300;},true);
+})();
+function panelBusyV161(now){return panelTouchV161.down||now<panelTouchV161.until;}
 updateHUD=function(){
   _updateHUDV301();
   refreshBaseWorld();
   checkMajorTenderProgress();
   const _nowV55=performance.now();
-  if(fleetOverlay?.classList.contains('show')&&_nowV55-_panelRenderThrottleV55.fleet>=PANEL_RENDER_THROTTLE_MS_V55){_panelRenderThrottleV55.fleet=_nowV55;renderFleetPanel();}
-  if(baseOverlay?.classList.contains('show')&&_nowV55-_panelRenderThrottleV55.base>=PANEL_RENDER_THROTTLE_MS_V55){_panelRenderThrottleV55.base=_nowV55;renderBasePanel();}
-  if(tendersOverlay?.classList.contains('show')&&_nowV55-_panelRenderThrottleV55.tenders>=PANEL_RENDER_THROTTLE_MS_V55){_panelRenderThrottleV55.tenders=_nowV55;renderTendersPanel();}
+  if(fleetOverlay?.classList.contains('show')&&_nowV55-_panelRenderThrottleV55.fleet>=PANEL_RENDER_THROTTLE_MS_V55&&!panelBusyV161(_nowV55)){_panelRenderThrottleV55.fleet=_nowV55;renderFleetPanel();}
+  if(baseOverlay?.classList.contains('show')&&_nowV55-_panelRenderThrottleV55.base>=PANEL_RENDER_THROTTLE_MS_V55&&!panelBusyV161(_nowV55)){_panelRenderThrottleV55.base=_nowV55;renderBasePanel();}
+  if(tendersOverlay?.classList.contains('show')&&_nowV55-_panelRenderThrottleV55.tenders>=PANEL_RENDER_THROTTLE_MS_V55&&!panelBusyV161(_nowV55)){_panelRenderThrottleV55.tenders=_nowV55;renderTendersPanel();}
 };
 
 /* ---------------------------------------------------------------------- */
@@ -10381,6 +10394,21 @@ function marketStallBuy(stallId){
 // Polling remains for compatibility with the historical layers, but sprite textures are rebuilt
 // only when the visible text actually changes. The old version allocated/disposed every sign and
 // canvas texture every 700 ms for the whole session.
+let marketPanelStallV161=null;
+const MARKET_PANEL_OVERLAYS_V161='#systemsOverlay.show,#metaOverlay.show,#staffOverlay.show,#bonusOverlay.show,#fleetOverlay.show,#tendersOverlay.show,#operationsOverlay.show';
+// v161 QA: a stall panel is a full-screen sheet that covers the joystick; opened by walking up to a stall it used to stay open after the player left (keyboard / pad walk-away).
+// It closes once the player is farther than twice the interaction radius, only for panels opened by the stall press (not for the company menu).
+function closeMarketPanelOnLeaveV161(){
+  if(!marketPanelStallV161)return false;
+  const open=document.querySelectorAll(MARKET_PANEL_OVERLAYS_V161);
+  if(!open.length){marketPanelStallV161=null;return false;}
+  const c=marketPanelStallV161;
+  if(Math.hypot(player.position.x-c.pos.x,player.position.z-c.pos.z)<=PAD_TRIGGER_RADIUS*2.2)return false;
+  open.forEach(el=>el.classList.remove('show','v119-exchange-mode'));
+  document.getElementById('systemsOverlay')?.classList.remove('v119-exchange-mode');
+  marketPanelStallV161=null;try{window.requestLayoutV46?.();}catch(_){}
+  return true;
+}
 let marketSignSignatureV161='';
 function refreshMarketSignsV161(){
   const signature=`${lang}|${marketRuntimeV116.stalls.size}|${MARKET_STALLS_V116.map(cfg=>{
@@ -10402,6 +10430,7 @@ setInterval(()=>{
   try{refreshMarketStallsV118();}catch(e){console.warn('v118 market stall marker sync',e);}
   try{refreshIndustrialPadMarkersV118();}catch(e){console.warn('v161 industrial level pad sync',e);}
   try{refreshMarketSignsV161();}catch(e){console.warn('v161 market sign sync',e);}
+  try{closeMarketPanelOnLeaveV161();}catch(e){console.warn('v161 market panel leave',e);}
 },700);
 
 // v116: ping the compass toward the market instead of opening a panel -- see #pingMarketBtn in
@@ -14324,6 +14353,7 @@ function updatePlayer(dt) {
       consumed = true;
       const stallId = nearestManual.stall.id;
       window.openMarketTraderV119?.(stallId);
+      marketPanelStallV161 = nearestManual.stall; // v161 QA: the panel belongs to this stall; leaving its radius closes it (see the market cadence)
     }
     if (consumed) {
       interactRequested = false;
@@ -30775,7 +30805,7 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
 
     if(fyV161){
       const info=window.FleetYardV161.build(g,{OX,homes:homes.map(h=>({x:h.p.x,z:h.p.z}))});
-      if(info&&info.sign){yardLabel.position.set(info.sign.x,info.sign.y,info.sign.z);yardLabel.scale.set(1.2,.42,1);}
+      if(info&&info.sign){yardLabel.position.set(info.sign.x,info.sign.y,info.sign.z);yardLabel.scale.set(1.2,.42,1);yardLabel.userData.noZoomV161=true;}
     }else{
     // Bays are paint on the single parking surface. No grey slabs and no road connectors.
     homes.forEach((item)=>{

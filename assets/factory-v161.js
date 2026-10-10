@@ -731,7 +731,7 @@
         bx(B.Dt, tx - 0.07, ty + 0.04, tz, 0.5, 0.26, 0.02, { color: WHITE }); bx(B.Dt, tx + 0.27, ty, tz, 0.2, 0.2, 0.02, { color: ORANGE }); bx(B.Dt, tx + 0.29, ty + 0.04, tz - 0.012, 0.09, 0.07, 0.012, { color: 0x9fd0e8 });
         for (const wx of [-0.22, 0.05, 0.27]) bx(B.Dt, tx + wx, ty - 0.12, tz, 0.09, 0.09, 0.02, { color: 0x20242a }); }
       for (const q of [-1, 1]) { bx(B.Dt, sx + q * 0.7, by + 0.5, sz - 0.2, 0.12, 0.07, 0.07, { color: 0x2b2f36 }); bx(Lf, sx + q * 0.7, by + 0.47, sz - 0.24, 0.09, 0.05, 0.02); bx(B.St, sx + q * 0.7, by + 0.4, sz - 0.1, 0.03, 0.03, 0.22); }
-      p.sign = { x: sx + 0.45, y: by, z: sz - 0.07 };
+      p.sign = { x: sx + 0.45, y: by, z: sz - 0.12 }; // 2026-10-10 (14): 5 cm further off the board face (the plate is a billboard, an oblique view cut its edge into the frame)
     }
     // ---- painted decals on the lot slab: bay separators (white), stop bars (yellow), arrows, hazard chevrons in front of the throat, edge line
     {
