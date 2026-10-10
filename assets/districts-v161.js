@@ -173,7 +173,7 @@
     for (const bx of [-1.65, 1.65]) local(M, fp, bx, 1.35, 0, (T, f) => {
       T.P.ext(-0.45, 0.45, 0.4, 0.48, -0.14, 0.14, 0x8f6c46); T.P.ext(-0.45, 0.45, 0.5, 0.78, -0.17, -0.1, 0x8f6c46);
       for (const sx of [-0.34, 0.34]) { T.P.ext(sx - 0.03, sx + 0.03, 0.1, 0.42, -0.12, -0.06, 0x555d68); T.P.ext(sx - 0.03, sx + 0.03, 0.1, 0.42, 0.06, 0.12, 0x555d68); }
-      f.push({ x: 0, z: 0, hx: 0.47, hz: 0.17, kind: 'bench' });
+      f.push({ x: 0, z: -0.02, hx: 0.5, hz: 0.2, kind: 'bench' });
     });
     for (const lx of [-3.2, -1.1, 1.1, 3.2]) floodLight(M.P, M.L, fp, lx, 1.5, 2.1);
     // palms spread over the quay
