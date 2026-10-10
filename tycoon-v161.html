@@ -930,6 +930,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="assets/warehouse-v161.js"></script>
 <script src="assets/factory-v161.js"></script>
 <script src="assets/towers-v161.js"></script>
+<script src="assets/infra-plants-v161.js"></script>
 <script src="assets/foliage-v154.js"></script>
 <script src="assets/work-session-v158.js"></script>
 <script src="assets/development-core-v160.js"></script>
@@ -19467,6 +19468,8 @@ function addBoxV42(g,w,h,d,color,x,y,z,opts={}){const m=new THREE.Mesh(new THREE
 function addCylV42(g,r1,r2,h,color,x,y,z,segments=14,opts={}){const m=new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,h,segments),matV42(color,opts));m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;g.add(m);return m;}
 function makeFacilityLabelV42(lines){try{return makeLabelSprite(lines);}catch(e){return null;}}
 function makePowerPlantV42(level,pending){
+  // v161 (assets/infra-plants-v161.js): a real small facility that stands only while the pad is bought (level 0 and nothing pending = nothing); the label shows the real numbers
+  if(window.InfraV161?.enabled){const g=InfraV161.buildPower(level,pending,{mode:plantModeV42('power').id,ratio:utilitySupplyRatioV42('power')});if(level>0){const label=makeFacilityLabelV42([lang==='ru'?'ЭЛЕКТРОСТАНЦИЯ':'POWER PLANT',`L${level} · ${utilityDemandV42('power').toFixed(1)}/${utilityCapacityV42('power').toFixed(1)}`]);if(label){label.position.set(0,level>=2?4.5:4.1,0);label.scale.set(3.0,.86,1);g.add(label);}}return g;}
   const g=new THREE.Group();
   if(level===0&&!pending){addBoxV42(g,7.6,.07,5.8,0x735f45,0,.035,0,{roughness:.99});for(let i=0;i<6;i++){const a=i/6*Math.PI*2;addBoxV42(g,.08,.55,.08,0x8b6b48,Math.cos(a)*3.1,.28,Math.sin(a)*2.2); }const label=makeFacilityLabelV42([lang==='ru'?'ПЛОЩАДКА ЭЛЕКТРОСТАНЦИИ':'POWER PLANT SITE',lang==='ru'?'НЕ ПОСТРОЕНО':'NOT BUILT']);if(label){label.position.set(0,2.1,0);label.scale.set(3.0,.84,1);g.add(label);}return g;}
   addBoxV42(g,7.6,.16,5.8,0x666b70,0,.08,0,{roughness:.96});addBoxV42(g,4.3,1.7,2.9,0x4b5660,-.5,.93,.1,{metalness:.28});
@@ -19478,6 +19481,7 @@ function makePowerPlantV42(level,pending){
   const label=makeFacilityLabelV42([lang==='ru'?'ЭЛЕКТРОСТАНЦИЯ':'POWER PLANT',`L${level} · ${utilityDemandV42('power').toFixed(1)}/${utilityCapacityV42('power').toFixed(1)}`]);if(label){label.position.set(0,4.2,0);label.scale.set(3.0,.86,1);g.add(label);}return g;
 }
 function makeWaterWorksV42(level,pending){
+  if(window.InfraV161?.enabled){const g=InfraV161.buildWater(level,pending,{mode:plantModeV42('water').id,ratio:utilitySupplyRatioV42('water')});if(level>0){const label=makeFacilityLabelV42([lang==='ru'?'ВОДОКАНАЛ':'WATER WORKS',`L${level} · ${utilityDemandV42('water').toFixed(1)}/${utilityCapacityV42('water').toFixed(1)}`]);if(label){label.position.set(0,level>=3?5.3:3.6,0);label.scale.set(2.9,.84,1);g.add(label);}}return g;}
   const g=new THREE.Group();
   if(level===0&&!pending){addBoxV42(g,7.1,.07,5.6,0x6f604a,0,.035,0,{roughness:.99});for(let i=0;i<5;i++){addBoxV42(g,.08,.48,.08,0x806b52,-2.4+i*1.2,.25,-2.1);}const label=makeFacilityLabelV42([lang==='ru'?'ПЛОЩАДКА ВОДОКАНАЛА':'WATER WORKS SITE',lang==='ru'?'НЕ ПОСТРОЕНО':'NOT BUILT']);if(label){label.position.set(0,2.1,0);label.scale.set(2.9,.84,1);g.add(label);}return g;}
   addBoxV42(g,7.1,.16,5.6,0x697075,0,.08,0,{roughness:.96});addBoxV42(g,3.3,1.25,2.1,0x6d8792,-1.25,.72,.5,{metalness:.18});
@@ -19507,8 +19511,10 @@ function refreshV42World(force=false){
   const p=makePowerPlantV42(v42State.powerPlantLevel,v42State.powerPendingUntil>Date.now());p.position.set(-12,0,52);scene.add(p);v42World.power=p;
   const w=makeWaterWorksV42(v42State.waterPlantLevel,v42State.waterPendingUntil>Date.now());w.position.set(0,0,52);scene.add(w);v42World.water=w;
   const y=makeEquipmentYardV42(v42State.equipmentLevel,v42State.equipmentPendingUntil>Date.now());y.position.set(13,0,52);scene.add(y);v42World.yard=y;
+  // v161 plants: the new facility brings / drops its colliders (rebuildStatic reads InfraV161.obstacles())
+  if(window.InfraV161?.enabled){ try{ window.__TYCOON_V83_COLLISIONS__?.rebuild?.(); }catch(_){ /* registry not up yet */ } }
 }
-function animateV42World(dt){const t=performance.now()*.001;for(const a of v42World.anim){if(!a.obj)continue;if(a.type==='spin')a.obj.rotation.z+=dt*a.speed;else if(a.type==='sway')a.obj.rotation.y=Math.sin(t*(a.speed||.6))*.15;else if(a.type==='pulse'&&a.obj.material)a.obj.material.emissiveIntensity=1.1+Math.sin(t*6)*.55;}}
+function animateV42World(dt){if(window.InfraV161?.enabled)InfraV161.animate(dt);const t=performance.now()*.001;for(const a of v42World.anim){if(!a.obj)continue;if(a.type==='spin')a.obj.rotation.z+=dt*a.speed;else if(a.type==='sway')a.obj.rotation.y=Math.sin(t*(a.speed||.6))*.15;else if(a.type==='pulse'&&a.obj.material)a.obj.material.emissiveIntensity=1.1+Math.sin(t*6)*.55;}}
 
 /* ------------------------------- UI ---------------------------------- */
 const styleV42=document.createElement('style');styleV42.textContent=`
@@ -32769,6 +32775,8 @@ window.__TYCOON_V74_BUILD__={
     for(const o of (window.PlantsV161?window.PlantsV161.obstacles():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
     // v161 loading yards (assets/yards-v161.js): bollards, lamp post and sign post of the three yards as small oriented boxes; the slab / kerb are walkable, placement / camera off like the plants'
     for(const o of (window.YardsV161&&window.YardsV161.enabled?window.YardsV161.obstacles():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:'obb',pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,flags:{placement:false,camera:false}});
+    // v161 plants (assets/infra-plants-v161.js): the power plant / water works yard fence, halls, transformers, stacks, basins, tanks as oriented boxes / circles; placement + camera off
+    for(const o of (window.InfraV161&&window.InfraV161.enabled?window.InfraV161.obstacles():[]))register({owner:o.owner,category:'industrial',label:o.label,shape:o.shape,pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,radius:o.radius,flags:{placement:false,camera:false}});
     // v161 market (assets/market-v161.js): the sealed stall bodies + big props, the fountain, benches, planters, gate posts as real oriented boxes / circles (the customer side in front of a counter stays open); placement off on purpose
     for(const o of (window.MarketV161&&window.MarketV161.enabled?window.MarketV161.obstacles():[]))register({owner:o.owner,category:'market',label:o.label,shape:o.shape,pos:o.pos,hx:o.hx,hz:o.hz,yaw:o.yaw,radius:o.radius,flags:{player:true,agent:true,placement:false,camera:false}});
 
