@@ -61,7 +61,7 @@ for (let i = 0; i < info.n; i++) {
         meas.door = P.doorInfo(m, i);
         meas.gold = m.userData.goldTierV161 || 0;
         meas.goldMesh = m.children.some((c) => c.name === 'houseGoldV161' || c.name === 'shopGoldV161' || c.name === 'logisticsGoldV161' || c.name === 'factoryGoldV161' || c.name === 'officeTowerGoldV161');
-        meas.goldTris = (() => { const c = m.children.find((x) => x.name === 'houseGoldV161' || x.name === 'shopGoldV161' || x.name === 'logisticsGoldV161' || x.name === 'factoryGoldV161'); return c ? c.geometry.index.count / 3 : 0; })();
+        meas.goldTris = (() => { const c = m.children.find((x) => x.name === 'houseGoldV161' || x.name === 'shopGoldV161' || x.name === 'logisticsGoldV161' || x.name === 'factoryGoldV161' || x.name === 'officeTowerGoldV161'); return c ? c.geometry.index.count / 3 : 0; })();
         meas.legacyPlayer = legacyEntry ? !!legacyEntry.flags.player : null;
         meas.legacyPlacement = legacyEntry ? !!legacyEntry.flags.placement : null;
         meas.legacyCamera = legacyEntry ? !!legacyEntry.flags.camera : null;
@@ -297,7 +297,9 @@ const fyRow = await ev(() => {
     o.updateMatrixWorld(true); const pa = o.geometry.attributes.position;
     for (let i = 0; i < pa.count; i++) {
       v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld);
-      if (v.y < 0.3 || v.y > 1.2) continue;
+      if (v.y < 0.05 || v.y > 2.2) continue;
+      // (2026-10-06 (11): the hollow service garage's piers / walls have vertices only at floor and lintel height, so "box has geometry" looks at the whole 0.05..2.2 m band, the cover ratio at 0.3..1.2 m as before)
+      if (v.y < 0.3 || v.y > 1.2) { own.forEach((e, k) => { closest[k] = Math.min(closest[k], dist(e, v.x, v.z)); }); continue; }
       let d = 1e9; own.forEach((e, k) => { const dd = dist(e, v.x, v.z); d = Math.min(d, dd); closest[k] = Math.min(closest[k], dd); });
       tot++; if (d <= 0.1) near++; else worst = Math.max(worst, d);
     }

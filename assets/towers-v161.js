@@ -676,11 +676,12 @@
   // ============================================================================================== live: night windows + aviation light (shared materials, 90 ms tick, no per-frame allocation)
   let tickT = 0;
   function windowTick(now) {
-    if (now - tickT < 90) return; tickT = now;
+    if (now - tickT < 90) return; const dt = Math.min(0.5, (now - tickT) / 1000); tickT = now;
     if (!SM) return;
     let night = false; try { night = isNightV40(); } catch (e) { /* layer not ready */ }
-    SM.win.emissiveIntensity += ((night ? 0.95 : 0.0) - SM.win.emissiveIntensity) * 0.08;
-    SM.curtain.emissiveIntensity += ((night ? 0.1 : 0.22) - SM.curtain.emissiveIntensity) * 0.08;
+    const k = 1 - Math.exp(-dt * 1.4);                                                                  // frame-rate independent ease (about 1 s time constant, also at 3-5 fps)
+    SM.win.emissiveIntensity += ((night ? 0.95 : 0.0) - SM.win.emissiveIntensity) * k;
+    SM.curtain.emissiveIntensity += ((night ? 0.1 : 0.22) - SM.curtain.emissiveIntensity) * k;
     SM.beacon.emissiveIntensity = (Math.floor(now / 700) % 2) ? 1.9 : 0.2;
   }
   (window.__TYCOON_VISUAL_TICKS__ = window.__TYCOON_VISUAL_TICKS__ || []).push(windowTick);

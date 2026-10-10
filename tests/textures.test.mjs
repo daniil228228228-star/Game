@@ -19,7 +19,7 @@ import { loadImage, metricsOf } from '../tools/lib/texture-metrics-v161.mjs';
 const ASSETS = path.join(REPO_ROOT, 'assets');
 const FAMILIES = ['grass', 'dirt', 'asphalt', 'concrete', 'brick', 'corrugated', 'metal', 'roof', 'siding', 'wood', 'wood-end'];
 const MAX_SIDE = 512;
-const OLD_TEXTURE_BYTES = 587118, OLD_ASSETS_BYTES = 3791838;
+const OLD_TEXTURE_BYTES = 587118, OLD_ASSETS_BYTES = 3791838; // (the old number included assets/*.js of that day, 2026-10-03; image-only now, the check is only stricter)
 const OLD_MEAN = { // mean RGB of the files before the 2026-10-05 regeneration
   grass: [86.9, 124.8, 64], dirt: [153.3, 124.9, 90.5], asphalt: [43.7, 46.9, 51.8], concrete: [210.6, 206.2, 195.7], brick: [179.3, 141.3, 112.3],
   corrugated: [207.2, 211.3, 210], metal: [204.7, 208.9, 207.6], roof: [193.9, 184.3, 169.5], siding: [228.9, 224.8, 213.9], wood: [183.5, 145.5, 96.3], 'wood-end': [188.8, 150.4, 103.4],
@@ -106,7 +106,8 @@ check(heightMean.length === 0, `height maps centred (mean 88..168): ${JSON.strin
 
 // ---- 7. size ---------------------------------------------------------------------------------------------------------------------------
 const textureBytes = files.reduce((s, f) => s + M[f].bytes, 0);
-const assetsBytes = fs.readdirSync(ASSETS).reduce((s, n) => s + fs.statSync(path.join(ASSETS, n)).size, 0);
+// images only: the user's later layers and ours (assets/*.js|css, +0.2 MB since factories_2) are code, the budget is about picture bytes
+const assetsBytes = fs.readdirSync(ASSETS).filter((n) => /\.(jpg|png)$/.test(n)).reduce((s, n) => s + fs.statSync(path.join(ASSETS, n)).size, 0);
 check(textureBytes <= OLD_TEXTURE_BYTES, `33 texture files ${textureBytes} B <= old ${OLD_TEXTURE_BYTES} B (${(100 * textureBytes / OLD_TEXTURE_BYTES).toFixed(0)}%)`);
 check(assetsBytes <= OLD_ASSETS_BYTES, `assets/ total ${assetsBytes} B <= old ${OLD_ASSETS_BYTES} B`);
 

@@ -12,7 +12,7 @@
 // SHOTS_DIR=<dir> writes front + iso pictures of every stage at levels 1 / 5 / 10 (the showcase tool does the same with the old builder next to it).
 import fs from 'node:fs';
 import path from 'node:path';
-import { openGame, check, OLD_SAVE } from './lib/harness.mjs';
+import { openGame, check, waitForState, OLD_SAVE } from './lib/harness.mjs';
 import { installProbe } from '../tools/lib/buildings-probe-v161.mjs';
 
 const g = await openGame({ save: OLD_SAVE, waitMs: 6000 });
@@ -78,8 +78,11 @@ for (const h of live) {
 }
 
 // ------------------------------------------------------------------------------------------------ C. night windows + aviation light
-await ev(() => { v40State.timeOfDay = 12; });
+// warm-up: the game's own first night / dawn creates a few world textures (sky, lights) once - that is not the windows' allocation, so the baseline is taken after one full cycle
+await ev(() => { v40State.timeOfDay = 23; });
 await page.waitForTimeout(5000);
+await ev(() => { v40State.timeOfDay = 12; });
+await waitForState(page, () => OfficeTowerV161.smats().win.emissiveIntensity < 0.08, null, { timeout: 25000 });
 const dayV = await ev(() => { const S = OfficeTowerV161.smats(); return { win: +S.win.emissiveIntensity.toFixed(3), geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures }; });
 await ev(() => { v40State.timeOfDay = 23; });
 await page.waitForTimeout(7000);

@@ -80,10 +80,10 @@ async function runFresh() {
   // ---- gold tiers per level, silhouette of level 5 kept
   const tiers = await ev(() => {
     const st = STAGES[8], out = [];
-    for (const L of [5, 6, 7, 8, 9, 10]) { const m = createBuildingMesh(st, L); const box = new THREE.Box3().setFromObject(m); out.push({ L, n: m.children.length, h: +(box.max.y - box.min.y).toFixed(2), gold: m.userData.goldTierV161 || 0 }); disposeObject3D(m); }
+    for (const L of [5, 6, 7, 8, 9, 10]) { const m = createBuildingMesh(st, L); const box = new THREE.Box3().setFromObject(m); let tris = 0; m.traverse((o) => { if (o.isMesh && o.geometry) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; }); out.push({ L, n: tris, h: +(box.max.y - box.min.y).toFixed(2), gold: m.userData.goldTierV161 || 0 }); disposeObject3D(m); }
     return out;
   });
-  check(tiers.every((t, i) => i === 0 || t.n > tiers[i - 1].n || t.L === 6) && tiers[1].n > tiers[0].n && tiers[5].n > tiers[4].n, `more gold detail with every tier (children per level ${tiers.map((t) => t.n)})`);
+  check(tiers.every((t, i) => i === 0 || t.n > tiers[i - 1].n || t.L === 6) && tiers[1].n > tiers[0].n && tiers[5].n > tiers[4].n, `more gold detail with every tier (triangles per level ${tiers.map((t) => t.n)}; stage 8 is a merged-mesh tower now, so the child count no longer grows)`);
   check(tiers[1].h - tiers[0].h < 1.5 && tiers[5].h < tiers[0].h * 1.9, `no 18 %-per-level growth above level 5 (heights ${tiers.map((t) => t.h)})`);
 
   // ---- save + reload
