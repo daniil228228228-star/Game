@@ -35,6 +35,7 @@ export function unbundle(standalonePath, entryPath) {
   const lines = fs.readFileSync(standalonePath, 'utf8').split('\n');
   const out = [];
   let assetsMap = null;
+  let globalAssets = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const bundled = line.match(/^<(script|style) data-bundled-source="([^"]+)">$/);
@@ -66,15 +67,16 @@ export function unbundle(standalonePath, entryPath) {
     if (assetsBlock) {
       const end = closeIdx(lines, i, 'script');
       const body = lines.slice(i + 1, end).join('\n');
-      const m = body.match(/^\(function\(\)\{const assets=(\{.*\});THREE\.DefaultLoadingManager\.setURLModifier\(function\(url\)\{return assets\[url\]\|\|url;\}\);\}\)\(\);$/s);
+      const m = body.match(/^\(function\(\)\{const assets=(?:window\.__TYCOON_STANDALONE_ASSETS__=)?(\{.*\});THREE\.DefaultLoadingManager\.setURLModifier\(function\(url\)\{return assets\[url\]\|\|url;\}\);\}\)\(\);$/s);
       if (!m) throw new Error('unrecognised standalone assets block');
       assetsMap = JSON.parse(m[1]);
+      globalAssets = /const assets=window\.__TYCOON_STANDALONE_ASSETS__=/.test(body);
       for (const [rel, uri] of Object.entries(assetsMap)) {
         const mm = uri.match(/^data:([^;]+);base64,(.*)$/s);
         if (!mm) throw new Error(`asset ${rel} is not a base64 data URI`);
         write(root, rel, Buffer.from(mm[2], 'base64'));
       }
-      out.push(`<!-- ${assetsBlock[1]}: textures/height/roughness maps live in assets/ (inlined by tools/standalone.mjs build) -->`);
+      out.push(`<!-- ${assetsBlock[1]}${globalAssets ? ' [global]' : ''}: textures/height/roughness maps live in assets/ (inlined by tools/standalone.mjs build) -->`);
       i = end;
       continue;
     }
@@ -110,7 +112,8 @@ export function build(entryPath, standalonePath) {
   for (const rel of assetFiles) {
     assetsMap[rel] = `data:${MIME[rel.split('.').pop().toLowerCase()]};base64,${fs.readFileSync(path.join(root, rel)).toString('base64')}`;
   }
-  const assetsId = commentIdx >= 0 ? lines[commentIdx].match(/^<!-- (standaloneAssets[^:]*):/)[1] : 'standaloneAssets';
+  const assetsId = commentIdx >= 0 ? lines[commentIdx].match(/^<!-- (standaloneAssets[^: ]*)/)[1] : 'standaloneAssets';
+  const globalAssets = commentIdx >= 0 && / \[global\]:/.test(lines[commentIdx]);
   for (const line of lines) {
     let m;
     if ((m = line.match(/^<script src="(vendor\/three_r128\/[^"]+)"><\/script>$/))) {
@@ -120,7 +123,7 @@ export function build(entryPath, standalonePath) {
     } else if ((m = line.match(/^<link rel="stylesheet" href="(assets\/[^"]+)">$/))) {
       out.push(`<style data-bundled-source="${m[1]}">`, read(m[1]), '</style>');
     } else if (/^<!-- standaloneAssets/.test(line)) {
-      out.push(`<script id="${assetsId}">`, `(function(){const assets=${JSON.stringify(assetsMap)};${URL_MODIFIER}})();`, '</script>');
+      out.push(`<script id="${assetsId}">`, `(function(){const assets=${globalAssets ? 'window.__TYCOON_STANDALONE_ASSETS__=' : ''}${JSON.stringify(assetsMap)};${URL_MODIFIER}})();`, '</script>');
     } else {
       out.push(line);
     }

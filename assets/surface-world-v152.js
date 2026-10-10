@@ -41,7 +41,15 @@
     if(retired.size){const used=new Set();scene.traverse(o=>{if(o.geometry)used.add(o.geometry);});for(const g of retired)if(!used.has(g))g.dispose();}
   }
   // v161 feel: a plate never sits under the top HUD (stat chips, top-right buttons, goal card): those rects are read at the layout tick (5 Hz) and such labels stay at opacity 0
-  const hudIds=['hud','topRightBtns','nextCard'],hudRects=[];
+  const hudIds=['hud','topRightBtns','actionPrompt','actionBtn','carryRouteV139','nextCard'],hudRects=[];
+  let labelFadeLastV163=0;
+  function fadeWorldLabelsV163(now){
+    const dt=Math.min(.1,Math.max(0,(now-(labelFadeLastV163||now-33))/1000));labelFadeLastV163=now;
+    const k=1-Math.exp(-dt*14);
+    for(const label of labels){const m=label.material;if(!m)continue;const goal=label.userData.v163TargetOpacity||0;
+      m.opacity+=(goal-m.opacity)*k;if(Math.abs(goal-m.opacity)<.002)m.opacity=goal;
+    }
+  }
   function hudBlocked(x,y,w,h){
     for(let i=0;i<hudRects.length;i++){const r=hudRects[i];if(Math.abs(x-r.x)<(w+r.w)/2&&Math.abs(y-r.y)<(h+r.h)/2)return true;}
     return false;
@@ -54,10 +62,12 @@
       for(let i=pend.length-1;i>=0;i--){let o=pend[i];while(o.parent)o=o.parent;if(o===scene){if(!labels.includes(pend[i]))labels.push(pend[i]);pend.splice(i,1);}else if(pend.length>300)pend.splice(i,1);}
     }
     hudRects.length=0;
-    for(const id of hudIds){const el=document.getElementById(id);if(!el||el.hidden)continue;const r=el.getBoundingClientRect();if(r.width>1&&r.height>1)hudRects.push({x:(r.left+r.right)/2,y:(r.top+r.bottom)/2,w:r.width,h:r.height});}
+    for(const id of hudIds){const el=document.getElementById(id);if(!el||el.hidden)continue;const style=getComputedStyle(el);if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity)<.02)continue;const r=el.getBoundingClientRect();if(r.width>1&&r.height>1)hudRects.push({x:(r.left+r.right)/2,y:(r.top+r.bottom)/2,w:r.width,h:r.height});}
     const candidates=[],accepted=[],limit=VISUAL_MOBILE?4:6;
     const target=typeof currentGuidanceTarget==='function'?currentGuidanceTarget()?.pos:null;
     for(const label of labels){
+      const wasSelected=!!label.userData.v163Selected,mainGoal=!!label.userData.v163MainGoal;
+      label.userData.v163TargetOpacity=0;label.userData.v163Selected=false;
       let visible=label.visible;
       for(let p=label.parent;p&&visible;p=p.parent)visible=p.visible;
       if(!visible)continue;
@@ -66,28 +76,29 @@
       const m=label.material;
       if(!m.userData)m.userData={};
       if(m.userData.v152BaseOpacity===undefined)m.userData.v152BaseOpacity=m.opacity;
-      m.opacity=0;
-      if(distance>(VISUAL_MOBILE?24:36)||point.z<-1||point.z>1||Math.abs(point.x)>1||Math.abs(point.y)>1)continue;
+      if((!mainGoal&&distance>(VISUAL_MOBILE?24:36)+(wasSelected?2:0))||point.z<-1||point.z>1||Math.abs(point.x)>1||Math.abs(point.y)>1)continue;
       const cameraDistance=world.distanceTo(camera.position);
       const pixels=innerHeight/(2*Math.tan(camera.fov*Math.PI/360)*Math.max(.1,cameraDistance));
       const base=label.userData.v157LabelScale||(label.userData.v157LabelScale=label.scale.clone());
-      const zoom=distance<9?THREE.MathUtils.clamp(104/(base.x*pixels),1,label.userData.padPlateV161?3.2:2):1; // v161: a pad's own plate may grow to 3.2x (at the far camera, 20 m, 2x left it 49 px wide = unreadable)
+      const zoom=mainGoal||distance<9?THREE.MathUtils.clamp(104/(base.x*pixels),1,mainGoal?5:label.userData.padPlateV161?3.2:2):1;
       label.scale.copy(base).multiplyScalar(zoom);label.getWorldScale(labelScale);
-      const priority=label.userData.padPlateV161||(target&&Math.hypot(world.x-target.x,world.z-target.z)<2.6)?0:1; // v161: a pad's own plate (industrial/infra/chain markers) is never pushed out by decor plates around it
+      const priority=mainGoal?-1:label.userData.padPlateV161||(target&&Math.hypot(world.x-target.x,world.z-target.z)<2.6)?0:1;
       const cx=(point.x+1)*innerWidth/2,cy=(1-point.y)*innerHeight/2,cw=labelScale.x*pixels+12,ch=labelScale.y*pixels+10;
       if(hudBlocked(cx,cy,cw,ch))continue;
-      candidates.push({label,distance,priority,x:cx,y:cy,w:cw,h:ch});
+      candidates.push({label,distance,priority,score:distance-(wasSelected?2.5:0),mainGoal,x:cx,y:cy,w:cw,h:ch});
     }
-    candidates.sort((a,b)=>a.priority-b.priority||a.distance-b.distance);
+    candidates.sort((a,b)=>a.priority-b.priority||a.score-b.score);
+    let regularCount=0;
     for(const c of candidates){
-      if(accepted.length>=limit)break;
+      if(!c.mainGoal&&regularCount>=limit)continue;
       if(accepted.some(a=>Math.abs(a.x-c.x)<(a.w+c.w)/2&&Math.abs(a.y-c.y)<(a.h+c.h)/2))continue;
-      c.label.material.opacity=c.label.material.userData.v152BaseOpacity;accepted.push(c);
+      c.label.userData.v163TargetOpacity=c.label.material.userData.v152BaseOpacity;
+      c.label.userData.v163Selected=true;accepted.push(c);if(!c.mainGoal)regularCount++;
     }
     surfaceRuntimeV152.visibleLabels=accepted.length;
   }
   scan(performance.now(),true);
-  window.__TYCOON_VISUAL_TICKS__.push(now=>{scan(now);labelLayout(now);if(typeof animateFoliageV154==='function')animateFoliageV154(now);});
+  window.__TYCOON_VISUAL_TICKS__.push(now=>{scan(now);labelLayout(now);fadeWorldLabelsV163(now);if(typeof animateFoliageV154==='function')animateFoliageV154(now);});
   window.__TYCOON_V152__={version:'v152-surfaces-lighting',runtime:surfaceRuntimeV152,
     audit(){return {version:this.version,ok:surfaceRuntimeV152.loadErrors.length===0,
       surfaces:Object.keys(SURFACES_V152).length,textures:surfaceCacheV152.size,

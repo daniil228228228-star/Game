@@ -593,11 +593,23 @@
 
   // ============================================================================================== FLEET YARD (backlog #8)
   // rebuildParkingV65 (tycoon-v161.html) keeps the lot slab and the road throat and calls FleetYardV161.build(group, {OX, homes, label}) instead of the old 40 loose fence / post / bay meshes (<= 9 merged meshes).
-  // The yard stays where it was (lot x -46.66..-34.74, z 4.86..8.58; trucks drive in from the service lane z = 4.45 straight into their six bays across the whole front, so the front is the open "mouth" of the
+  // The driving yard stays where it was (lot x -46.66..-34.74, z 4.86..8.68); the service building now extends behind it to z 10.62. Trucks drive in from the service lane z = 4.45 straight into their six bays across the whole front, so the front is the open "mouth" of the
   // yard and nothing solid stands on a truck line); the fence now closes the west, east and rear sides and is solid, the rear strip behind the truck tails holds the service garage (3 roller doors), the guard /
   // dispatcher booth, a fuel pump and a wash stand; front corner pillars carry floodlights; an entrance sign stands on a T-post between the lift and concrete bays. All lines on the slab are decals of the
   // yard mesh (no road meshes). Everything is neutral (no stock).
-  const FLEET = { lotTop: 0.069, hw: 5.86, zFront: 4.98, zRear: 8.68, gz0: 7.92, gz1: 8.66 };
+  // The service garage used to be only 0.74u deep, while a service truck is about
+  // 2.20u long.  Keep the doors and manoeuvring lane in their original positions,
+  // but extend the building behind the yard so a truck can physically fit inside.
+  const FLEET = { lotTop: 0.069, hw: 5.86, zFront: 4.98, zRear: 8.68, gz0: 7.92, gz1: 10.62 };
+  // Canonical public bounds for later placement/road/audit layers. Keeping these values in one
+  // descriptor prevents a visual garage resize from leaving the old 9.0u keep-out rectangle behind.
+  window.__TYCOON_FLEET_BOUNDS_V161__ = Object.freeze({
+    lotMinZ: 4.86,
+    lotMaxZ: FLEET.zRear,
+    garageMinZ: FLEET.gz0,
+    garageMaxZ: FLEET.gz1,
+    halfWidth: FLEET.hw + 0.32
+  });
   let FM = null;
   function fleetMats() {
     if (FM) return FM;
@@ -636,10 +648,30 @@
       for (const q of [0, 1, 2]) { bx(B.Dt, x + sgn * (0.02 + q * 0.12), 2.62, zFront, 0.1, 0.07, 0.07, { color: 0x2b2f36 }); bx(Lf, x + sgn * (0.02 + q * 0.12), 2.62, zFront + 0.04, 0.08, 0.05, 0.02); }
       ob('fleet:pillar', x - 0.19, x + 0.19, zFront - 0.19, zFront + 0.19);
     }
-    // ---- rear strip: 2026-10-06 (11) (user: "Гаражи тонкие, 5 нет? В них даже не залезет машина"): the old 0.74 m deep strip with THREE closed roller doors (1.5 x 1.3 m) was a pretend garage - no truck (1.15 x 1.28 x 2.11 m) fits
-    // into it and the yard has SIX trucks. The garage of the fleet is the purchasable base module "Гараж автопарка" (createFleetGarageV72: 3 / 5 / 6 bays at levels 1 / 2 / 3, built over the six parking homes),
-    // so the yard no longer draws a second, fake one; the rear west corner is closed by a fence run and the entrance sign hangs on a gate gantry (below).
-    p.garage = null;
+    // ---- rear strip: service garage (3 roller doors aligned with the first three bays), flat roof with a canopy, lamps
+    {
+      const gx0 = xW - 0.03, gx1 = cx + 0.5, h = 1.5, oz = 0.22;
+      const doorW = 1.60; // 1.08u truck body + comfortable clearance on both sides
+      bx(B.Pn, (gx0 + gx1) / 2, 0.05, (gz0 + gz1) / 2, gx1 - gx0 + 0.08, 0.1, gz1 - gz0 + 0.06);
+      bu(B.Wl, gx0, gx1, 0.1, h, gz0, gz1);
+      bu(B.Dt, gx0, gx1, 0.1, 0.3, gz0 - 0.012, gz0 + 0.0, { color: 0x4a525b });
+      bu(B.Tr, gx0 - 0.04, gx1 + 0.04, h - 0.1, h + 0.04, gz0 - 0.04, gz1 + 0.04);
+      o.pq(B.Rf, [gx0 - 0.04, h + 0.04, gz0 - oz], [gx1 + 0.04, h + 0.04, gz0 - oz], [gx1 + 0.04, h + 0.1, gz1], [gx0 - 0.04, h + 0.1, gz1], [0, 1, -0.1]);
+      bu(B.Dt, gx0 - 0.04, gx1 + 0.04, h - 0.02, h + 0.06, gz0 - oz - 0.012, gz0 - oz + 0.012, { color: BLUE });
+      bu(B.Dt, gx0 - 0.04, gx1 + 0.04, h + 0.06, h + 0.075, gz0 - oz - 0.012, gz0 - oz + 0.012, { color: ORANGE });
+      const doors = [p.homes[0].x, p.homes[1].x, p.homes[2].x];
+      doors.forEach((dx, i) => {
+        bx(B.Dr, dx, 0.1 + 0.65, gz0 - 0.02, doorW, 1.3, 0.04);
+        for (let r = 1; r < 7; r++) bx(B.Tr, dx, 0.1 + r * 1.3 / 7, gz0 - 0.045, doorW, 0.012, 0.012);
+        for (const s of [-1, 1]) bx(B.Dt, dx + s * (doorW / 2 + 0.045), 0.1 + 0.68, gz0 - 0.035, 0.09, 1.36, 0.07, { color: ORANGE });
+        bx(B.Dt, dx, 1.46, gz0 - 0.035, doorW + 0.18, 0.08, 0.07, { color: ORANGE });
+        for (let k2 = 0; k2 <= i; k2++) bx(B.Dt, dx - i * 0.045 + k2 * 0.09, 1.34, gz0 - 0.06, 0.055, 0.055, 0.012, { color: YELLOW });
+        bx(Lf, dx, 1.38, gz0 - 0.1, 0.16, 0.04, 0.1);
+      });
+      ob('fleet:garage', gx0, gx1, gz0, gz1);
+      // tyre racks + a rolling cabinet on the west end wall (props on the garage side wall, neutral)
+      p.garage = { x0: gx0, x1: gx1, h };
+    }
     // ---- guard / dispatcher booth: windows all round on the front, door on the left, flat roof with an overhang and a beacon
     {
       const bz0 = 7.88, bz1 = 8.66, h = 1.5, x0 = boothX0, x1 = boothX1;

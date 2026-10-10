@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Tycoon City 3D</title>
 <meta name="description" content="Строительный 3D-тайкон: развивай компанию, строй город, добывай ресурсы и автоматизируй логистику.">
 <meta name="theme-color" content="#0b0f14">
@@ -919,7 +919,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 </script>
 <script src="vendor/three_r128/three.min.js"></script>
 <script src="vendor/three_r128/OrbitControls.js"></script>
-<!-- standaloneAssetsV161: textures/height/roughness maps live in assets/ (inlined by tools/standalone.mjs build) -->
+<!-- standaloneAssetsV161 [global]: textures/height/roughness maps live in assets/ (inlined by tools/standalone.mjs build) -->
 <script src="assets/materials-v152.js"></script>
 <script src="assets/sawmill-v161.js"></script>
 <script src="assets/buildings-v161.js"></script>
@@ -936,7 +936,18 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script>
 if (!window.THREE) { window.__showTycoonBootError && window.__showTycoonBootError('Не удалось загрузить Three.js.'); throw new Error('THREE unavailable'); }
 
-const EMBEDDED_ASSETS = {"grass":"assets/grass.jpg","dirt":"assets/dirt.jpg","asphalt":"assets/asphalt.jpg","concrete":"assets/concrete.jpg","metal":"assets/metal.jpg","wood":"assets/wood.jpg","brick":"assets/brick.jpg","roof":"assets/roof.jpg","siding":"assets/siding.jpg","splash":"assets/splash.png"};
+// Central non-fatal error channel. Optional subsystems may recover, but their
+// failures remain available to the in-game audit instead of disappearing.
+window.__TYCOON_RUNTIME_ERRORS__=window.__TYCOON_RUNTIME_ERRORS__||[];
+window.__TYCOON_ERROR_KEYS__=window.__TYCOON_ERROR_KEYS__||new Set();
+window.__TYCOON_CAPTURE_ERROR__=window.__TYCOON_CAPTURE_ERROR__||function(error,scope='legacy'){
+  const message=String(error?.message||error||'Unknown error'),key=`${scope}|${message}`;
+  window.__TYCOON_RUNTIME_ERRORS__.push({at:Date.now(),scope,message,stack:String(error?.stack||'').slice(0,1200)});
+  if(window.__TYCOON_RUNTIME_ERRORS__.length>60)window.__TYCOON_RUNTIME_ERRORS__.shift();
+  if(!window.__TYCOON_ERROR_KEYS__.has(key)){window.__TYCOON_ERROR_KEYS__.add(key);console.warn(`[tycoon:${scope}]`,error);}
+};
+
+const EMBEDDED_ASSETS = {"grass":"assets/grass.jpg","dirt":"assets/dirt.jpg","asphalt":"assets/asphalt.jpg","concrete":"assets/concrete.jpg","metal":"assets/metal.jpg","wood":"assets/wood.jpg","brick":"assets/brick.jpg","roof":"assets/roof.jpg","siding":"assets/siding.jpg","splash":window.__TYCOON_STANDALONE_ASSETS__?.["assets/splash.png"]||""};
 
 
 const embeddedTextureCache = new Map();
@@ -975,7 +986,7 @@ let otherTabSaveLockV63 = false;
 // Snapshot of the primary save this tab actually read or wrote. Checking this
 // synchronously at save time also catches writes before a queued storage event runs.
 let knownSaveRawV64 = null;
-try { knownSaveRawV64 = localStorage.getItem(SAVE_KEY); } catch (_) {}
+try { knownSaveRawV64 = localStorage.getItem(SAVE_KEY); } catch (error) { window.__TYCOON_CAPTURE_ERROR__(error,'save-read'); }
 
 /* v116 (empty-world boot, 2026-09-27 user request): "я хочу чтобы игрок был один в мире --
    ничего не было, ни лесопилок, ни дорог -- сам всё строит, наступая на кружочки". A brand
@@ -1104,7 +1115,7 @@ const V30_META_UPGRADES = [
 ];
 
 let metaState = { points:0, upgrades:{}, tierClaims:[], totalPrestiges:0 };
-let gameSettings = { music:true, haptics:true };
+let gameSettings = { music:true, haptics:true, flashes:false, graphics:'auto' };
 let staffState = { builder:0, driver:0, engineer:0, foreman:0 };
 let specialProjectState = { completed:[], active:null };
 let fleetState = { planks:0, concrete:0, metal:0, lift:0 };
@@ -1292,6 +1303,8 @@ function fleetLiftWorkMultiplier(){ return 1 + fleetLevel('lift')*0.12; }
     if (s && typeof s === 'object') {
       if (typeof s.music === 'boolean') gameSettings.music = s.music;
       if (typeof s.haptics === 'boolean') gameSettings.haptics = s.haptics;
+      if (typeof s.flashes === 'boolean') gameSettings.flashes = s.flashes;
+      if (['auto','performance','quality'].includes(s.graphics)) gameSettings.graphics = s.graphics;
     }
   } catch (_) {}
 })();
@@ -1301,10 +1314,10 @@ function metaLevel(key){
 }
 function saveV30Meta(){
   if (suppressAutoSaveV36 || otherTabSaveLockV63) return false;
-  try { localStorage.setItem(V30_META_KEY, JSON.stringify(metaState)); } catch (_) {}
+  try { localStorage.setItem(V30_META_KEY, JSON.stringify(metaState)); } catch (error) { window.__TYCOON_CAPTURE_ERROR__(error,'meta-save'); }
 }
 function saveV30Settings(){
-  try { localStorage.setItem(V30_SETTINGS_KEY, JSON.stringify(gameSettings)); } catch (_) {}
+  try { localStorage.setItem(V30_SETTINGS_KEY, JSON.stringify(gameSettings)); } catch (error) { window.__TYCOON_CAPTURE_ERROR__(error,'settings-save'); }
 }
 function startingCashAmount(){ return (knownSaveRawV64 ? 300 : 220) + metaLevel('startCash') * 100; }
 function contractRewardMultiplier(){ return (1 + metaLevel('contractBonus') * 0.08) * (1 + staffLevel('foreman') * 0.05) * (1 + baseLevel('office') * 0.05) * cityContractMultiplier(); }
@@ -1446,9 +1459,9 @@ const STRINGS = {
     hint_title: 'Добро пожаловать в Tycoon 3D!',
     hint_button: 'Понятно, начнём!',
     hint_bullets: [
-      '<b>Джойстик / WASD</b> — движение. Экраном можно вращать камеру.',
-      '<b>Начни с ручной поставки</b> — забери материалы у временного склада и отнеси прорабу.',
-      '<b>Дальше строй по цепочке</b>: первый дом → дорога → автопарк → лесопилка.',
+      '<b>Двигайся</b> джойстиком или WASD; камеру можно вращать перетаскиванием.',
+      '<b>Выполни первую поставку</b> — забери материалы и отнеси их прорабу.',
+      '<b>Построй дом и автоматизируй доставку</b>. Остальные системы откроются постепенно.',
     ],
     ach_title: 'Достижения',
     ach_unlocked: 'Получено',
@@ -1481,9 +1494,9 @@ const STRINGS = {
     hint_title: 'Welcome to Tycoon 3D!',
     hint_button: "Got it, let's go!",
     hint_bullets: [
-      '<b>Joystick / WASD</b> moves you. Drag the screen to rotate the camera.',
-      '<b>Start with a manual supply run</b> — collect materials and carry them to the foreman.',
-      '<b>Then follow the chain</b>: first house → road → fleet depot → sawmill.',
+      '<b>Move</b> with the joystick or WASD; drag to rotate the camera.',
+      '<b>Complete the first supply run</b> — collect materials and bring them to the foreman.',
+      '<b>Build a house and automate delivery</b>. The other systems unlock gradually.',
     ],
     ach_title: 'Achievements',
     ach_unlocked: 'Unlocked',
@@ -1960,9 +1973,11 @@ const V54_IOS_STABILITY = VISUAL_MOBILE && /iPhone|iPad|iPod/i.test(navigator.us
 // iPhone now gets the same tier as any other VISUAL_MOBILE device. V54_STABILITY watchdog
 // below (emergencyLoopV54) is untouched and still demotes to a fallback render on a genuine
 // core-loop stall, regardless of these initial settings.
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-const MAX_RENDER_DPR = Math.min(devicePixelRatio, VISUAL_MOBILE ? 1.5 : 2);
-const MIN_RENDER_DPR = VISUAL_MOBILE ? 1.08 : 1.35;
+const WEBGL_RECOVERY_V164 = sessionStorage.getItem('tycoon3d_v164_webgl_recovery') === '1';
+const DEVICE_CONSTRAINED_V164 = VISUAL_MOBILE && ((navigator.deviceMemory && navigator.deviceMemory <= 4) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) || navigator.connection?.saveData);
+const renderer = new THREE.WebGLRenderer({ antialias: !WEBGL_RECOVERY_V164, powerPreference: 'high-performance' });
+const MAX_RENDER_DPR = Math.min(devicePixelRatio, VISUAL_MOBILE ? (DEVICE_CONSTRAINED_V164 ? 1.25 : 1.5) : 2);
+const MIN_RENDER_DPR = Math.min(MAX_RENDER_DPR,VISUAL_MOBILE ? 0.85 : 1);
 let renderDpr = MAX_RENDER_DPR;
 renderer.setPixelRatio(renderDpr);
 renderer.setSize(innerWidth, innerHeight);
@@ -1972,10 +1987,11 @@ renderer.shadowMap.type = VISUAL_MOBILE ? THREE.PCFShadowMap : THREE.PCFSoftShad
 document.body.appendChild(renderer.domElement);
 renderer.domElement.addEventListener('webglcontextlost', (e) => {
   e.preventDefault();
+  sessionStorage.setItem('tycoon3d_v164_webgl_recovery','1');
   try { save(); } catch (_) {}
   const msg = lang === 'ru'
-    ? '3D-контекст был остановлен устройством. Прогресс сохранён. Перезапусти страницу — v55 запустится в облегчённом мобильном режиме.'
-    : 'The device stopped the 3D context. Progress was saved. Reload the page — v55 will start in reduced mobile mode.';
+    ? 'Устройство перезапускает 3D. Прогресс сохранён; игра автоматически откроется в облегчённом режиме.'
+    : 'The device is restarting 3D. Progress is saved; the game will reopen automatically in reduced mode.';
   if (window.__showTycoonBootError) window.__showTycoonBootError(msg);
 });
 renderer.domElement.addEventListener('webglcontextrestored', () => location.reload());
@@ -6679,6 +6695,7 @@ function ensureImpactFlash() {
 }
 
 function triggerImpactFlash(strength = 0.6) {
+  if(!gameSettings.flashes||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)return;
   impactFlashStrength = Math.max(impactFlashStrength, THREE.MathUtils.clamp(strength, 0, 1));
   ensureImpactFlash();
 }
@@ -8834,7 +8851,7 @@ function updateHUD() {
 
 let economyTickCount = 0;
 setInterval(() => {
-  if (document.hidden) return;
+  if (gamePausedV163()) return;
   earn(totalIncomePerSec());
   updateHUD();
   checkAchievements();
@@ -9850,7 +9867,8 @@ function baseModulePosition(slot){
     if(Math.hypot(p.x-SAWMILL_POS.x,p.z-SAWMILL_POS.z)<4.2) continue;
     // Reserve the long fleet-garage strip even before the garage is purchased.
     // v116: x bounds translated with the fleet yard (INDUSTRIAL_ZONE_OFFSET_X).
-    if(p.x>-15.3+INDUSTRIAL_ZONE_OFFSET_X&&p.x<-2.4+INDUSTRIAL_ZONE_OFFSET_X&&p.z>2.6&&p.z<9.0) continue;
+    const fleetRearV161=Number(window.__TYCOON_FLEET_BOUNDS_V161__?.garageMaxZ)||10.62;
+    if(p.x>-15.3+INDUSTRIAL_ZONE_OFFSET_X&&p.x<-2.4+INDUSTRIAL_ZONE_OFFSET_X&&p.z>2.6&&p.z<fleetRearV161+.35) continue;
     let blocked=false; for(let s=0;s<STAGES.length;s++){const q=stagePosition(s);if(Math.hypot(p.x-q.x,p.z-q.z)<4.4){blocked=true;break;}}
     if(!blocked)for(const g of baseRuntime.groups.values()){if(Math.hypot(p.x-g.position.x,p.z-g.position.z)<3.8){blocked=true;break;}}
     if(!blocked)return p;
@@ -10338,12 +10356,18 @@ function marketStallBuy(stallId){
 // play (buying a house doesn't itself call refreshMarketStallsV118() -- nothing about a stage
 // purchase should need to know about the market). Same lightweight 700ms cadence/idempotent-swap
 // pattern refreshSpecialProjectWorld() already uses for its own vacant-site markers.
-setInterval(()=>{try{refreshMarketStallsV118();}catch(e){console.warn('v118 market stall marker sync',e);}},700);
-// v161: same cadence for the stage-gated production level-2 pads (refresh is idempotent).
-setInterval(()=>{try{refreshIndustrialPadMarkersV118();}catch(e){console.warn('v161 industrial level pad sync',e);}},700);
-// Signs refresh on the same lightweight cadence the field-upgrade/district-hub signs already use
-// elsewhere in this file (a plain setInterval calling a cheap idempotent regenerateSprite swap).
-setInterval(()=>{
+// One shared cadence owns the market and production markers. These used to be
+// three independent 700 ms timers doing related idempotent scene work.
+// Polling remains for compatibility with the historical layers, but sprite textures are rebuilt
+// only when the visible text actually changes. The old version allocated/disposed every sign and
+// canvas texture every 700 ms for the whole session.
+let marketSignSignatureV161='';
+function refreshMarketSignsV161(){
+  const signature=`${lang}|${marketRuntimeV116.stalls.size}|${MARKET_STALLS_V116.map(cfg=>{
+    const info=marketStallInfo(cfg.id);return `${cfg.id}:${info.name}:${info.sub||''}:${info.maxed?1:0}`;
+  }).join('|')}`;
+  if(signature===marketSignSignatureV161)return false;
+  marketSignSignatureV161=signature;
   for(const cfg of MARKET_STALLS_V116){
     const stall = marketRuntimeV116.stalls.get(cfg.id); if(!stall) continue;
     const info = marketStallInfo(cfg.id);
@@ -10351,7 +10375,14 @@ setInterval(()=>{
     const newSprite = regenerateSprite(stall.infoSign, [line]);
     stall.group.remove(stall.infoSign); stall.group.add(newSprite); stall.infoSign = newSprite;
   }
-}, 700);
+  return true;
+}
+setInterval(()=>{
+  if(gamePausedV163())return;
+  try{refreshMarketStallsV118();}catch(e){console.warn('v118 market stall marker sync',e);}
+  try{refreshIndustrialPadMarkersV118();}catch(e){console.warn('v161 industrial level pad sync',e);}
+  try{refreshMarketSignsV161();}catch(e){console.warn('v161 market sign sync',e);}
+},700);
 
 // v116: ping the compass toward the market instead of opening a panel -- see #pingMarketBtn in
 // systemsOverlay and currentGuidanceTarget()'s new first check below.
@@ -10679,7 +10710,7 @@ renderSystemsPanel = function() {
 /* ---------------------------------------------------------------------- */
 /*  UI — buttons, toast, hint                                              */
 /* ---------------------------------------------------------------------- */
-document.getElementById('resetBtn').addEventListener('click', () => {
+document.getElementById('resetBtn').addEventListener('click', async () => {
   if (!confirm(t('reset_confirm'))) return;
   // location.reload() below fires 'pagehide' (and can flash 'visibilitychange' hidden) on the way
   // out, and both normally autosave -- which would re-write the very save we're about to delete
@@ -10703,6 +10734,8 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   localStorage.removeItem('tycoon3d_v131_aux_recovery');
   localStorage.removeItem('tycoon3d_v135_contract_board');
   localStorage.removeItem('tycoon3d_v144_start_flow');
+  localStorage.removeItem('tycoon3d_v145_fleet_economy');
+  localStorage.removeItem('tycoon3d_v146_site_assist');
   sessionStorage.removeItem('tycoon3d_v52_recovery_reload');
   sessionStorage.removeItem('tycoon3d_v131_aux_reloaded');
   // v63 1.1 (P3-2 / Pass 14 cleanup #14): merged in the three separate resetBtn click
@@ -10713,6 +10746,14 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   // values are inlined as literals -- they must stay equal to those consts' values.
   localStorage.removeItem('tycoon_v41_utilities_density'); // = V41_STATE_KEY
   localStorage.removeItem('tycoon_v42_municipal_operations'); // = V42_STATE_KEY
+  // Replace the remote run with a tombstone before reloading. Without this, an absent local save
+  // is immediately repopulated from the previous Yandex cloud save and the reset appears broken.
+  try {
+    sessionStorage.setItem('tycoonSkipCloudRestoreOnceV161','1');
+    const resetCloudRaw=JSON.stringify({resetV161:true,savedAt:Date.now()});
+    const upload=window.TycoonPlatform?.cloudSave?.(resetCloudRaw,true);
+    if(upload&&typeof upload.then==='function')await Promise.race([upload,new Promise(resolve=>setTimeout(resolve,1800))]);
+  } catch (error) { window.__TYCOON_CAPTURE_ERROR__(error,'cloud-reset'); }
   location.reload();
 });
 
@@ -11018,7 +11059,10 @@ function createDistrictHub(cfg){
 }
 function refreshCityExpansionWorld(){
   for(const cfg of CITY_DISTRICTS){
-    const old=cityWorldRuntime.hubs.get(cfg.id); if(old){scene.remove(old);disposeObject3D(old);} const g=createDistrictHub(cfg); cityWorldRuntime.hubs.set(cfg.id,g);
+    const signature=districtVisualSignatureV163(cfg),old=cityWorldRuntime.hubs.get(cfg.id);
+    if(old?.userData.v163HubSignature===signature)continue;
+    const g=createDistrictHub(cfg);g.userData.v163HubSignature=signature;cityWorldRuntime.hubs.set(cfg.id,g);
+    if(old){scene.remove(old);disposeObject3D(old);}
   }
   if (typeof refreshLivingDistrictStreets === 'function') refreshLivingDistrictStreets();
   if (typeof refreshV33CityWorld === 'function') refreshV33CityWorld();
@@ -13243,7 +13287,7 @@ function load() {
     }
     money = finiteNonNegative(data.money, money);
     /* v160 integration begin */
-    if (typeof companyDevelopmentV160 !== 'undefined') companyDevelopmentV160.restore(data.developmentV160);
+    if (typeof companyDevelopmentV160 !== 'undefined') {companyDevelopmentV160.restore(data.developmentV160);companyDevelopmentV160.migrateLegacyGates(data);}
     /* v160 integration end */
     planks = integerNonNegative(data.planks, planks);
     concrete = integerNonNegative(data.concrete, concrete); // absent on saveVersion < 5, defaults to 0
@@ -13612,12 +13656,17 @@ function load() {
 /* ---------------------------------------------------------------------- */
 /*  RESIZE                                                                  */
 /* ---------------------------------------------------------------------- */
+let resizeFrameV163=0;
+const resizeSizeV163=new THREE.Vector2();
 addEventListener('resize', () => {
-  const w = Math.max(1, innerWidth);
-  const h = Math.max(1, innerHeight);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-  renderer.setSize(w, h, false);
+  if(resizeFrameV163)return;
+  resizeFrameV163=requestAnimationFrame(()=>{
+    resizeFrameV163=0;
+    const w=Math.max(1,innerWidth),h=Math.max(1,innerHeight);
+    if(Math.abs(camera.aspect-w/h)>1e-6){camera.aspect=w/h;camera.updateProjectionMatrix();}
+    renderer.getSize(resizeSizeV163);
+    if(resizeSizeV163.x!==w||resizeSizeV163.y!==h)renderer.setSize(w,h,false);
+  });
 });
 addEventListener('pagehide', save);
 document.addEventListener('visibilitychange', () => {
@@ -14308,34 +14357,8 @@ function updatePlayer(dt) {
   const posLerp = 1 - Math.exp(-dt * (followWeight > 0.01 ? 7.2 : (moving ? 3.1 : 2.1)));
   camera.position.lerp(camDesiredPos, posLerp);
 
-  // Pull the camera in front of any building it would otherwise clip through, then smoothly
-  // restore distance once the obstruction clears.
-  camToCam.subVectors(camera.position, camEyeTarget);
-  let camDist = camToCam.length();
-  let obstructed = false;
-  if (camDist > CAMERA_OBSTRUCTION_BUFFER + 0.1 && buildings.length) {
-    camToCam.divideScalar(camDist);
-    cameraRaycaster.set(camEyeTarget, camToCam);
-    cameraRaycaster.far = camDist;
-    cameraRaycaster.near = 0.1;
-    if (cameraSolidMeshes.length) {
-      const hits = cameraRaycaster.intersectObjects(cameraSolidMeshes, true);
-      if (hits.length && hits[0].distance < camDist - CAMERA_OBSTRUCTION_BUFFER) {
-        const pulled = Math.max(CAM_MIN_DIST * 0.4, hits[0].distance - CAMERA_OBSTRUCTION_BUFFER);
-        camera.position.copy(camEyeTarget).addScaledVector(camToCam, pulled);
-        obstructed = true;
-      }
-    }
-  }
-
-  if (!obstructed) {
-    camToCam.subVectors(camera.position, camEyeTarget);
-    camDist = camToCam.length();
-    if (camDist < desiredCameraDistance - 0.06 && camDist > 0.001) {
-      camToCam.divideScalar(camDist);
-      camera.position.addScaledVector(camToCam, Math.min(desiredCameraDistance - camDist, dt * CAMERA_RECOVER_SPEED * desiredCameraDistance));
-    }
-  }
+  // Collision is resolved once, after OrbitControls, by resolveCameraObstructionV85.
+  // A second pre-controls pull used to fight the final camera resolver.
 
   controls.target.set(player.position.x, PLAYER_EYE_HEIGHT+cameraJumpLift, player.position.z);
 }
@@ -14346,11 +14369,47 @@ const V54_STABILITY={
   warned:false,forceVisible:V54_IOS_STABILITY
 };
 window.__TYCOON_V54__=V54_STABILITY;
+// All frame owners share the platform/visibility pause contract, including the watchdog.
+function gamePausedV163(){return document.hidden||!!window.TycoonPlatform?.paused||!!document.body?.classList?.contains('v164-context-lost');}
+// Reconcile rendered panels without replacing stable buttons or losing keyboard/pointer focus.
+function syncPanelMarkupV163(host,html){
+  if(!host)return;
+  const template=document.createElement('template');template.innerHTML=html;
+  const key=node=>{
+    if(node.nodeType!==1)return '';
+    if(node.id)return 'id:'+node.id;
+    for(const a of node.attributes)if(/^data-v(?:158-(?:focus|batch|job|delivery|stop|return)|160-(?:start|commission))$/.test(a.name))return a.name+':'+a.value;
+    return '';
+  };
+  const same=(a,b)=>a&&a.nodeType===b.nodeType&&(a.nodeType!==1||a.tagName===b.tagName);
+  function patch(parent,source){
+    let cursor=parent.firstChild;
+    for(const desired of [...source.childNodes]){
+      const wantedKey=key(desired);
+      let live=cursor;
+      if(wantedKey){live=[...parent.childNodes].find(n=>key(n)===wantedKey&&same(n,desired))||null;}
+      else if(!same(live,desired)||key(live))live=null;
+      if(!live){live=desired.cloneNode(true);parent.insertBefore(live,cursor);}
+      else{
+        if(live!==cursor)parent.insertBefore(live,cursor);
+        if(live.nodeType===1){
+          for(const a of [...live.attributes])if(!desired.hasAttribute(a.name)&&a.name!=='data-v161-opened')live.removeAttribute(a.name);
+          for(const a of desired.attributes)if(live.getAttribute(a.name)!==a.value)live.setAttribute(a.name,a.value);
+          patch(live,desired);
+        }else if(live.nodeValue!==desired.nodeValue)live.nodeValue=desired.nodeValue;
+      }
+      cursor=live.nextSibling;
+    }
+    while(cursor){const next=cursor.nextSibling;parent.removeChild(cursor);cursor=next;}
+  }
+  patch(host,template.content);
+}
 function safeFrameCallV54(name,fn,{critical=false}={}){
   if(V54_STABILITY.disabled.has(name))return undefined;
   try{return fn();}
   catch(err){
     const n=(V54_STABILITY.errors.get(name)||0)+1;V54_STABILITY.errors.set(name,n);
+    if(n===1)window.__TYCOON_CAPTURE_ERROR__?.(err,`frame:${name}`);
     if(n<=2)console.error(`[v54] ${name} failed`,err);
     if(!critical&&n>=3){V54_STABILITY.disabled.add(name);console.warn(`[v54] disabled unstable subsystem: ${name}`);}
     return undefined;
@@ -14387,6 +14446,12 @@ function activateStabilityModeV54(reason){
   console.warn('[v54] stability mode:',reason);
 }
 function emergencyLoopV54(now){
+  if(gamePausedV163()){
+    V54_STABILITY.lastCoreFrame=now;V54_STABILITY._emergencyLast=now;
+    V54_STABILITY.fallbackActive=false;V54_STABILITY.fallbackSince=0;
+    document.body?.classList?.remove('v54-stability-mode');
+    requestAnimationFrame(emergencyLoopV54);return;
+  }
   // v55: watchdog reacts only to a real core-frame stall. Slow movement, collision, camera
   // settling or joystick dead-zone must NEVER activate a second movement source.
   const stalled=now-V54_STABILITY.lastCoreFrame>1200;
@@ -14423,7 +14488,7 @@ function tuneRenderResolution(dt) {
     renderDpr = next;
     renderer.setPixelRatio(renderDpr);
     renderer.setSize(innerWidth, innerHeight, false);
-    perfCooldown = 5;
+    perfCooldown = avgMs<17.2?20:10;
   }
   perfWindowTime = 0;
   perfWindowFrames = 0;
@@ -14467,7 +14532,7 @@ function auditRuntimeIntegrity(dt) {
 let v30ContractTimer = 0;
 function animate() {
   requestAnimationFrame(animate);
-  if ((document.hidden && !V54_STABILITY.forceVisible) || window.TycoonPlatform?.paused) return; // paused: Yandex ad / game_api_pause (assets/yandex-platform.js)
+  if(gamePausedV163()){clock.getDelta();V54_STABILITY.lastCoreFrame=performance.now();return;}
   const dt = Math.min(clock.getDelta(), 0.075);
   V54_STABILITY.frame++;V54_STABILITY.lastCoreFrame=performance.now();
   safeFrameCallV54('auditRuntimeIntegrity',()=>auditRuntimeIntegrity(dt));
@@ -14479,6 +14544,8 @@ function animate() {
   v30ContractTimer += dt; if (v30ContractTimer >= 1) { v30ContractTimer = 0; safeFrameCallV54('contractTick',()=>{checkContracts(); renderContracts(); processConstructionQueue(); if (projectsOverlay?.classList.contains('show')) renderProjectsPanel(); if (bonusOverlay?.classList.contains('show')) renderBonusPanel(); if (operationsOverlay?.classList.contains('show')) renderOperationsPanel();}); }
 
   const v55PlayerErrBefore=V54_STABILITY.errors.get('updatePlayer')||0;
+  camera.position.sub(cameraMotionOffset).sub(shakeOffset);
+  cameraMotionOffset.set(0,0,0);shakeOffset.set(0,0,0);
   safeFrameCallV54('updatePlayer',()=>updatePlayer(dt),{critical:true});
   if((V54_STABILITY.errors.get('updatePlayer')||0)>v55PlayerErrBefore)fallbackPlayerMoveV54(Math.min(dt,.028));
   interactionAccumulator += dt;
@@ -14580,7 +14647,7 @@ function animate() {
   if (updateVisualUi) visualUiAccumulator = 0;
   if (goalHudAccumulator >= (VISUAL_MOBILE ? 0.20 : 0.16)) {
     goalHudAccumulator = 0;
-    updateHUD();
+    safeFrameCallV54('goalHud',()=>updateHUD());
   }
   if (currentPad && updateVisualUi) {
     const padDist = Math.hypot(player.position.x - currentPad.pos.x, player.position.z - currentPad.pos.z);
@@ -14729,10 +14796,9 @@ function animate() {
   }
 
   // Remove the previous frame's motion offset before OrbitControls resolves the real camera.
-  camera.position.sub(cameraMotionOffset);
   cameraMotionOffset.set(0, 0, 0);
   controls.update();
-  if(typeof resolveCameraObstructionV85==='function')resolveCameraObstructionV85();
+  if(typeof resolveCameraObstructionV85==='function')safeFrameCallV54('cameraObstruction',()=>resolveCameraObstructionV85(dt));
   if (playerMoveVisualSpeed > 0.08) {
     const comfort = VISUAL_MOBILE ? 0.55 : 1;
     cameraMotionOffset.y = Math.abs(Math.sin(runCycle)) * 0.018 * playerMoveVisualSpeed * comfort;
@@ -14751,7 +14817,6 @@ function animate() {
 
   // Camera shake is a purely visual jitter applied to the already-resolved camera position;
   // it's undone before the next frame so it never pollutes the follow-cam's base position.
-  camera.position.sub(shakeOffset);
   if (shakeTime > 0) {
     shakeTime -= dt;
     const s = shakeStrength * Math.max(0, shakeTime);
@@ -14765,7 +14830,7 @@ function animate() {
   foliageOcclusionAccumulator += dt;
   if (foliageOcclusionAccumulator >= (VISUAL_MOBILE ? 0.10 : 0.034)) {
     foliageOcclusionAccumulator = 0;
-    updateCameraFoliageOcclusion();
+    safeFrameCallV54('cameraFoliage',()=>updateCameraFoliageOcclusion());
   }
   safeFrameCallV54('renderer.render',()=>{renderer.render(scene, camera);V54_STABILITY.lastRender=performance.now();},{critical:true});
   if (!bootCompleted) {
@@ -15208,7 +15273,8 @@ function ensureGuideWorldMarker(){
   g.add(column);
   const label = makeLabelSprite([lang==='ru' ? 'ЦЕЛЬ' : 'TARGET']);
   label.position.set(0, 3.25, 0);
-  label.scale.set(1.08, 0.36, 1);
+  label.scale.set(1.28, 0.43, 1);
+  label.userData.v163MainGoal=true;
   g.add(label);
   g.visible = false;
   scene.add(g);
@@ -15221,9 +15287,13 @@ function updateGuideWorldMarker(forceLabel){
   if (!target?.pos) { group.visible = false; guideWorld.visible = false; return; }
   group.visible = true; guideWorld.visible = true;
   group.position.set(target.pos.x, 0, target.pos.z);
-  if (forceLabel || guideWorld._labelKey !== `${lang}|${target.label || ''}`) {
-    updateLabelSprite(guideWorld.label, [target.label || (lang==='ru' ? 'Цель' : 'Target'), lang==='ru' ? 'иди сюда' : 'go here']);
-    guideWorld._labelKey = `${lang}|${target.label || ''}`;
+  const distance=Math.max(0,Math.round(Math.hypot(target.pos.x-player.position.x,target.pos.z-player.position.z)));
+  const bucket=distance<3?0:Math.max(5,Math.round(distance/5)*5);
+  const labelKey=`${lang}|${target.label || ''}|${bucket}`;
+  if (forceLabel || guideWorld._labelKey !== labelKey) {
+    const direction=bucket===0?(lang==='ru'?'ТЫ НА МЕСТЕ':'YOU ARE HERE'):(lang==='ru'?`${bucket} м · ИДИ К ЦЕЛИ`:`${bucket} m · GO TO TARGET`);
+    updateLabelSprite(guideWorld.label, [target.label || (lang==='ru' ? 'ЦЕЛЬ' : 'TARGET'), direction]);
+    guideWorld._labelKey = labelKey;
   }
 }
 function animateGuideWorldMarker(){
@@ -15354,12 +15424,11 @@ animate = function(){
   _animateV35();
 };
 
-setInterval(()=>{
-  if (document.hidden) return;
-  guidePulseTimer += 1;
-  updateGuideMarkers();
-  updateGuideWorldMarker();
-}, 500);
+let guideUiSyncAtV162=0;
+(window.__TYCOON_VISUAL_TICKS__=window.__TYCOON_VISUAL_TICKS__||[]).push(now=>{
+  if(document.hidden||now-guideUiSyncAtV162<500)return;
+  guideUiSyncAtV162=now;guidePulseTimer+=1;updateGuideMarkers();updateGuideWorldMarker();
+});
 
 /* v35.1: world-guide pulse is throttled below instead of running a second 60fps RAF loop. */
 refreshDrivewaysV35();
@@ -15569,7 +15638,7 @@ const GUIDE_MILESTONES_V351=[
   {id:'fire',done:()=>districtHasFire('suburb'),reward:1600,emoji:'🚒',ru:'Полный городской сервис',en:'Complete City Services'}
 ];
 function guideRewardSetV351(){try{return new Set(JSON.parse(localStorage.getItem(GUIDE_REWARD_KEY_V351)||'[]'));}catch(_){return new Set();}}
-function saveGuideRewardSetV351(set){try{localStorage.setItem(GUIDE_REWARD_KEY_V351,JSON.stringify([...set]));}catch(_){}}
+function saveGuideRewardSetV351(set){try{localStorage.setItem(GUIDE_REWARD_KEY_V351,JSON.stringify([...set]));}catch(error){window.__TYCOON_CAPTURE_ERROR__(error,'guide-rewards-save');}}
 function showGuideMilestoneV351(m){const el=document.getElementById('milestoneBanner');if(!el)return;el.querySelector('.mbEmoji').textContent=m.emoji;el.querySelector('.mbTitle').textContent=lang==='ru'?m.ru:m.en;el.querySelector('.mbSub').textContent=(lang==='ru'?`Этап завершён · +${fmt(m.reward)} 💰`:`Milestone complete · +${fmt(m.reward)} 💰`);el.classList.add('show');clearTimeout(milestoneTimer);milestoneTimer=setTimeout(()=>el.classList.remove('show'),3000);sfx.achievement();haptic('medium');}
 function initializeGuideRewardsV351(){if(localStorage.getItem(GUIDE_INIT_KEY_V351))return;const set=guideRewardSetV351();for(const m of GUIDE_MILESTONES_V351)if(m.done())set.add(m.id);saveGuideRewardSetV351(set);try{localStorage.setItem(GUIDE_INIT_KEY_V351,'1');}catch(_){}}
 function checkGuideRewardsV351(){const set=guideRewardSetV351();let changed=false;for(const m of GUIDE_MILESTONES_V351){if(set.has(m.id)||!m.done())continue;set.add(m.id);earn(m.reward);showGuideMilestoneV351(m);changed=true;}if(changed){saveGuideRewardSetV351(set);save();updateHUD();}}
@@ -15584,9 +15653,11 @@ function tickGuideWorldMarkerV351(){
   guideWorld.ring.scale.set(k,k,k);guideWorld.ring.material.opacity=.72+Math.sin(t*5.2)*.10;
   guideWorld.column.material.opacity=.12+Math.sin(t*3.6)*.05;guideWorld.group.rotation.y+=.018;
 }
-setInterval(()=>{if(!document.hidden)tickGuideWorldMarkerV351();},50);
+// The premium visual loop already owns frame animation. Keep the guide pulse
+// on that loop instead of maintaining a permanent 50 ms timer.
+(window.__TYCOON_VISUAL_TICKS__=window.__TYCOON_VISUAL_TICKS__||[]).push(()=>tickGuideWorldMarkerV351());
 
-setInterval(()=>{if(document.hidden)return;checkGuideRewardsV351();updateRecommendedPadsV351();},1000);
+setInterval(()=>{if(gamePausedV163())return;checkGuideRewardsV351();updateRecommendedPadsV351();},1000);
 
 
 
@@ -15597,7 +15668,7 @@ setInterval(()=>{if(document.hidden)return;checkGuideRewardsV351();updateRecomme
 const GUIDE_STATE_KEY_V352='tycoon3d_v352_guide_state';
 let v352GuideState={lastQuest:null,lastProgress:0,lastProgressAt:performance.now(),lastNudgeAt:0};
 try{Object.assign(v352GuideState,JSON.parse(localStorage.getItem(GUIDE_STATE_KEY_V352)||'{}')||{});}catch(_){}
-function saveV352GuideState(){try{localStorage.setItem(GUIDE_STATE_KEY_V352,JSON.stringify({lastQuest:v352GuideState.lastQuest,lastProgress:v352GuideState.lastProgress}));}catch(_){}}
+function saveV352GuideState(){try{localStorage.setItem(GUIDE_STATE_KEY_V352,JSON.stringify({lastQuest:v352GuideState.lastQuest,lastProgress:v352GuideState.lastProgress}));}catch(error){window.__TYCOON_CAPTURE_ERROR__(error,'guide-state-save');}}
 function v352Pending(bucket,id){const o=cityState?.[bucket]?.[id];return Number(o?.pendingUntil)||0;}
 function v352PlotIndex(id,pred){return districtLandState(id).plots.findIndex(pred);}
 function v352Quest(id,title,hint,opts={}){return guideQuestV351(id,title,hint,{chapterCount:12,...opts});}
@@ -15760,7 +15831,7 @@ window.__TYCOON_V352_AUDIT__={snapshot(){const q=currentGuideQuest(),access=audi
 /* Keep road visuals in sync when city state changes, but only on a slow cadence. */
 let v352AccessSignature='';
 function v352AccessSignatureNow(){return CITY_DISTRICTS.map(d=>`${d.id}:${districtLevel(d.id)}:`+districtBuiltAccessTargets(d.id).map(p=>`${p.x.toFixed(1)},${p.z.toFixed(1)}`).join(';')).join('|');}
-setInterval(()=>{if(document.hidden)return;const sig=v352AccessSignatureNow();if(sig!==v352AccessSignature){v352AccessSignature=sig;refreshDistrictAccessRoads();refreshDrivewaysV35(true);auditV352AccessNetwork();}updateGuideMarkers();},1400);
+setInterval(()=>{if(gamePausedV163())return;const sig=v352AccessSignatureNow();if(sig!==v352AccessSignature){v352AccessSignature=sig;refreshDistrictAccessRoads();refreshDrivewaysV35(true);auditV352AccessNetwork();}updateGuideMarkers();},1400);
 
 
 
@@ -16064,18 +16135,32 @@ for(let i=0;i<Math.min(STAGES.length,FIRST_RUN_STAGE_COSTS_V36.length);i++)STAGE
 /* Contextual hierarchy inside panels: one gold action, affordable alternatives neutral,
    everything else quiet. This runs after each dynamic panel render. */
 function refinePanelButtonsV36(root=document){
-  const q=currentGuideQuest(),final=q?.steps?.[q.steps.length-1]||'';const target=final?document.querySelector(final):null;
-  root.querySelectorAll?.('.v30Btn').forEach(b=>{b.classList.remove('v36-choice');if(!b.disabled&&!b.classList.contains('primary'))b.style.removeProperty('box-shadow');});
-  if(target?.classList?.contains('v30Btn')){target.classList.add('primary','v36-choice');target.style.boxShadow='0 0 0 2px rgba(214,183,108,.18)';}
+  if(!root)return;
+  if(root===document){document.querySelectorAll('.v30Panel').forEach(panel=>refinePanelButtonsV36(panel));return;}
+  const q=currentGuideQuest(),final=q?.steps?.[q.steps.length-1]||'',target=final?document.querySelector(final):null;
+  const buttons=[...root.querySelectorAll('.v30Btn,button[data-v158-focus]:not([data-v158-focus="auto"]),button[data-v158-delivery],button[data-v160-start],button[data-v160-commission]')];
+  const eligible=b=>b&&!b.disabled&&!b.hidden&&!b.closest('[hidden]')&&!b.classList.contains('dangerV60')&&getComputedStyle(b).display!=='none'&&getComputedStyle(b).visibility!=='hidden';
+  const guided=buttons.includes(target)&&eligible(target)?target:null;
+  const chosen=guided||buttons.find(b=>b.classList.contains('primary')&&eligible(b))||buttons.find(eligible)||null;
+  const flag=(b,name,on)=>{if(b.classList.contains(name)!==on)b.classList.toggle(name,on);};
+  for(const b of buttons){
+    const alternative=b!==chosen&&(b.classList.contains('primary')||b.classList.contains('v36-alt'));
+    flag(b,'primary',b===chosen);flag(b,'v36-choice',b===guided);flag(b,'v36-alt',alternative);
+    const shadow=b===guided?'0 0 0 2px rgba(214,183,108,.18)':'';
+    if(b.style.boxShadow!==shadow)b.style.boxShadow=shadow;
+  }
 }
 
 /* 60-minute path audit model — deterministic checks for guidance coverage and pacing. */
 const FIRST_HOUR_PATH_V36=[
-  {m:0,id:'core-1',why:'first build'}, {m:2,id:'core-resources',why:'wood loop'}, {m:5,id:'housing',why:'city reveal'},
-  {m:8,id:'clinic',why:'service payoff'}, {m:11,id:'police',why:'safety payoff'}, {m:14,id:'school',why:'family district'},
-  {m:18,id:'land',why:'developer layer'}, {m:23,id:'commerce',why:'jobs loop'}, {m:28,id:'park-fire',why:'complete first district'},
-  {m:34,id:'industrial',why:'map expansion'}, {m:41,id:'business',why:'second economy center'}, {m:48,id:'waterfront',why:'premium district'},
-  {m:55,id:'flagship',why:'large visible payoff'}, {m:60,id:'prestige-or-freeplay',why:'cycle continuation'}
+  {m:0,id:'manual-supply',why:'learn one physical action'},
+  {m:4,id:'first-build',why:'visible construction payoff'},
+  {m:10,id:'resource-loop',why:'repeat and understand production'},
+  {m:18,id:'first-truck',why:'automate the learned route'},
+  {m:28,id:'company-choice',why:'choose staff, fleet or base investment'},
+  {m:40,id:'city-reveal',why:'open the management layer'},
+  {m:52,id:'first-district',why:'one complete city decision'},
+  {m:60,id:'free-choice',why:'continue without a forced checklist'}
 ];
 function auditFirstHourV36(){
   const issues=[];
@@ -16085,7 +16170,7 @@ function auditFirstHourV36(){
   const source=currentGuideQuest.toString()+_currentGuideQuestV36.toString();
   // runtime wrapper hides implementation, so use document source for audit where available
   const known=new Set(['home-build','clinic-build','police-build','school-build','land-first','zone-home','zone-shop','park-build','fire-build','industrial-open','business-open','waterfront-open','flagship-start']);for(const id of required)if(!known.has(id))issues.push(`missing guide step ${id}`);
-  const menuRules={staff:stageIndex>=1,city:stageIndex>=3,projects:stageIndex>=3,operations:stageIndex>=4};
+  const menuRules={staff:stageIndex>=4,fleet:stageIndex>=3,base:stageIndex>=5,city:stageIndex>=6,projects:stageIndex>=8,operations:stageIndex>=9};
   return {version:'36.0',timeline:FIRST_HOUR_PATH_V36,costs:[...FIRST_RUN_STAGE_COSTS_V36],issues,menuRules};
 }
 window.__TYCOON_FIRST_HOUR_AUDIT__={snapshot:auditFirstHourV36};
@@ -16114,7 +16199,7 @@ renderOperationsPanel=function(){_renderOperationsPanelV36();refinePanelButtonsV
 
 /* Convert “Show me” to a proper vector icon after guide card rendering. */
 function refineGuideShowButtonV36(){const b=document.getElementById('guideShowBtnV351');if(b&&!b.querySelector('.ui-svg')){b.innerHTML=`${v36Icon('eye',14)}<span>${lang==='ru'?'Показать':'Show me'}</span>`;b.style.display='inline-flex';b.style.alignItems='center';b.style.gap='6px';}}
-setInterval(()=>{if(document.hidden)return;refineGuideShowButtonV36();renderSecondaryObjectiveV36();applyProgressiveDisclosureV36();},850);
+setInterval(()=>{if(gamePausedV163())return;refineGuideShowButtonV36();renderSecondaryObjectiveV36();applyProgressiveDisclosureV36();},850);
 
 /* Install only after the full UI exists. */
 setTimeout(()=>{rebuildTopIconsV36(true);applyProgressiveDisclosureV36(true);renderSecondaryObjectiveV36();refineGuideShowButtonV36();installIconObserversV36();},0);
@@ -16248,7 +16333,7 @@ function v361RelevantMaterial(){
 }
 function applySmartHudV361(){
   const mobile=window.innerWidth<=680;
-  const housingOn=!!cityState.housing?.suburb?.apartmentBlockBuilt||stageIndex>=3;
+  const housingOn=!!cityState.housing?.suburb?.apartmentBlockBuilt||stageIndex>=6;
   const need=v361RelevantMaterial();
   const q=currentGuideQuest();
   const cityFocus=!!q&&['home','clinic','police','school','land','zone','park','fire','industrial','business','waterfront'].some(k=>(q.id||'').includes(k));
@@ -16289,14 +16374,14 @@ applyProgressiveDisclosureV36=function(force=false){
   const rec=recommendedMenuButtonV36();
   const rules={
     openMetaBtn:stats.prestige>0||stageIndex>=STAGES.length,
-    openStaffBtn:stageIndex>=2,
+    openStaffBtn:stageIndex>=4,
     openFleetBtn:stageIndex>=3,
     openBaseBtn:stageIndex>=5,
-    openCityBtn:stageIndex>=3,
-    openProjectsBtn:stageIndex>=6,
-    openTendersBtn:stageIndex>=6,
-    openOperationsBtn:stageIndex>=7,
-    openBonusBtn:!document.getElementById('bonusMenuRow')?.hidden
+    openCityBtn:stageIndex>=6,
+    openProjectsBtn:stageIndex>=8,
+    openTendersBtn:stageIndex>=8,
+    openOperationsBtn:stageIndex>=9,
+    openBonusBtn:stageIndex>=10&&!document.getElementById('bonusMenuRow')?.hidden
   };
   for(const id of Object.keys(NAV_ICONS_V36)){
     const btn=document.getElementById(id),row=btn?.closest('.v30Row');if(!row)continue;
@@ -16446,7 +16531,7 @@ const _renderSystemsPanelV361=renderSystemsPanel;
 renderSystemsPanel=function(){_renderSystemsPanelV361();applyProgressiveDisclosureV36(true);refinePanelButtonsV36(document.getElementById('systemsOverlay'));};
 
 setInterval(()=>{
-  if(document.hidden)return;
+  if(gamePausedV163())return;
   applySmartHudV361();
   const issues=auditGuideTargetV361();
   if(issues.length)console.warn('[v36.1 guide audit]',issues);
@@ -17872,7 +17957,9 @@ function updateRequiredActionV38(){const el=ensureRequiredActionV38(),q=currentG
 const _updateGuideMarkersV38=updateGuideMarkers;updateGuideMarkers=function(){_updateGuideMarkersV38();updateRequiredActionV38();};
 
 // Refresh the small construction-cone layer only when pending infrastructure changes.
-let infraPendingSigV38='';setInterval(()=>{const sig=CITY_DISTRICTS.map(d=>`${d.id}:${(cityState.districtRoads?.[d.id]?.pendingUntil||0)>Date.now()?1:0}:${(cityState.streetlights?.[d.id]?.pendingUntil||0)>Date.now()?1:0}`).join('|');if(sig!==infraPendingSigV38){infraPendingSigV38=sig;try{refreshInfrastructureWorksitesV38();}catch(_){}}},700);
+// v162: called by the shared city cadence below instead of owning another timer.
+let infraPendingSigV38='';
+function pollInfrastructureWorksitesV38(){const sig=CITY_DISTRICTS.map(d=>`${d.id}:${(cityState.districtRoads?.[d.id]?.pendingUntil||0)>Date.now()?1:0}:${(cityState.streetlights?.[d.id]?.pendingUntil||0)>Date.now()?1:0}`).join('|');if(sig!==infraPendingSigV38){infraPendingSigV38=sig;try{refreshInfrastructureWorksitesV38();}catch(error){window.__TYCOON_CAPTURE_ERROR__(error,'infrastructure-worksites');}}}
 
 window.__TYCOON_V38_CITY__={ready:infrastructureReadyV38,requiredLevel:requiredInfrastructureLevelV38,roads:masterInfrastructureRecordsV38,refresh(){refreshInfrastructureWorldV37();renderCityPanel();updateRequiredActionV38();}};
 
@@ -17954,16 +18041,19 @@ function districtDecorCandidatesV39(cfg){
     {p:new THREE.Vector3(cfg.pos.x+d.hw*.48,0,cfg.pos.z+z),yaw:Math.PI},
   ];
 }
-function refreshDistrictDressingV39(){
-  for(const [id,old] of cityWorldRuntime.v39Dressing.entries()){if(old){scene.remove(old);disposeObject3D(old);}cityWorldRuntime.v39Dressing.delete(id);}
+function refreshDistrictDressingV39(onlyIds=null){
+  const signatures=new Map(CITY_DISTRICTS.map(cfg=>{const id=cfg.id,ds=cityState.districtStats?.[id]||{};return [id,[districtRoadLevelV37(id),districtStreetlightLevelV37(id),districtLevel(id),districtBuiltAssetCountV39(id),(ds.population||0)>12?1:0,(ds.jobs||0)>25?1:0].join('|')];}));
+  for(const [id,old] of cityWorldRuntime.v39Dressing.entries()){if(onlyIds&&!onlyIds.has(id)||old?.userData.v163DressingSignature===signatures.get(id))continue;if(old){scene.remove(old);disposeObject3D(old);}cityWorldRuntime.v39Dressing.delete(id);}
   for(const cfg of CITY_DISTRICTS){
+    if(onlyIds&&!onlyIds.has(cfg.id))continue;
+    if(cityWorldRuntime.v39Dressing.has(cfg.id))continue;
     const r=districtRoadLevelV37(cfg.id),l=districtStreetlightLevelV37(cfg.id),dl=districtLevel(cfg.id),assets=districtBuiltAssetCountV39(cfg.id);if(dl<=0||r<dl||l<dl||assets<=0)continue;
     const g=new THREE.Group(),spots=districtDecorCandidatesV39(cfg),treeCount=Math.min(spots.length,assets<3?2:assets<6?4:6);
     for(let i=0;i<treeCount;i++){const t=makeYoungTreeV39(.76+(i%3)*.07);t.position.copy(spots[i].p);t.rotation.y=spots[i].yaw;g.add(t);}
     const benches=assets>=2?(assets>=5?3:2):1;for(let i=0;i<benches;i++){const s=spots[(i*2+1)%spots.length],b=makeBenchV39();b.position.copy(s.p).add(new THREE.Vector3(Math.cos(s.yaw)*.58,0,Math.sin(s.yaw)*.58));b.rotation.y=s.yaw;g.add(b);}
     if(assets>=4){const s=spots[6],bin=makeBinV39();bin.position.copy(s.p).add(new THREE.Vector3(.45,0,.35));g.add(bin);}
     const ds=cityState.districtStats?.[cfg.id]||{};if(r>=3&&l>=3&&assets>=5&&((ds.population||0)>12||(ds.jobs||0)>25)){const stop=makeBusStopV39();const s=spots[7];stop.position.copy(s.p).add(new THREE.Vector3(0,0,.72));stop.rotation.y=s.yaw;g.add(stop);}
-    if(g.children.length){scene.add(g);cityWorldRuntime.v39Dressing.set(cfg.id,g);}
+    if(g.children.length){g.userData.v163DressingSignature=signatures.get(cfg.id);scene.add(g);cityWorldRuntime.v39Dressing.set(cfg.id,g);}
   }
 }
 
@@ -17982,9 +18072,20 @@ function pendingCitySitesV39(){
   }return out;
 }
 function refreshCityConstructionSitesV39(){
-  if(!cityConstructionSitesV39){cityConstructionSitesV39=new THREE.Group();cityConstructionSitesV39.name='cityConstructionSitesV39';scene.add(cityConstructionSitesV39);}while(cityConstructionSitesV39.children.length){const o=cityConstructionSitesV39.children.pop();disposeObject3D(o);}for(const site of pendingCitySitesV39())cityConstructionSitesV39.add(makeConstructionSiteV39(site.pos,site.scale||1,site.accent));
+  if(!cityConstructionSitesV39){cityConstructionSitesV39=new THREE.Group();cityConstructionSitesV39.name='cityConstructionSitesV39';scene.add(cityConstructionSitesV39);}
+  const pending=pendingCitySitesV39(),live=new Set(pending.map(s=>s.id));
+  for(const old of [...cityConstructionSitesV39.children])if(!live.has(old.userData.v163SiteId)){cityConstructionSitesV39.remove(old);disposeObject3D(old);}
+  for(const site of pending){
+    const signature=[site.pos.x,site.pos.z,site.scale||1,site.accent].join('|');
+    let old=cityConstructionSitesV39.children.find(o=>o.userData.v163SiteId===site.id);
+    if(old?.userData.v163SiteSignature===signature)continue;
+    const fresh=makeConstructionSiteV39(site.pos,site.scale||1,site.accent);
+    fresh.userData.v163SiteId=site.id;fresh.userData.v163SiteSignature=signature;
+    cityConstructionSitesV39.add(fresh);if(old){cityConstructionSitesV39.remove(old);disposeObject3D(old);}
+  }
 }
-function cityVisualSignatureV39(){const now=Date.now();return CITY_DISTRICTS.map(cfg=>{const id=cfg.id,pend=['housing','civic','police','school','kindergarten','commercial','parks','fire'].map(k=>(cityState?.[k]?.[id]?.pendingUntil||0)>now?1:0).join('');const land=typeof districtLandState==='function'?districtLandState(id).plots.map(p=>(p.pendingUntil||0)>now?1:0).join(''):'';return [id,districtLevel(id),districtRoadLevelV37(id),districtStreetlightLevelV37(id),districtBuiltAssetCountV39(id),pend,land].join(':');}).join('|');}
+function districtVisualSignatureV163(cfg){const now=Date.now(),id=cfg.id,pend=['housing','civic','police','school','kindergarten','commercial','parks','fire'].map(k=>(cityState?.[k]?.[id]?.pendingUntil||0)>now?1:0).join('');const land=typeof districtLandState==='function'?districtLandState(id).plots.map(p=>(p.pendingUntil||0)>now?1:0).join(''):'';const ds=cityState.districtStats?.[id]||{};return [id,lang,districtUnlocked(cfg)?1:0,districtLevel(id),districtRoadLevelV37(id),districtStreetlightLevelV37(id),districtBuiltAssetCountV39(id),(ds.population||0)>12?1:0,(ds.jobs||0)>25?1:0,pend,land].join(':');}
+function cityVisualSignatureV39(){return CITY_DISTRICTS.map(districtVisualSignatureV163).join('|');}
 
 const _refreshCityExpansionWorldV39=refreshCityExpansionWorld;
 refreshCityExpansionWorld=function(){const r=_refreshCityExpansionWorldV39.apply(this,arguments);refreshDistrictDressingV39();refreshCityConstructionSitesV39();return r;};
@@ -17996,12 +18097,24 @@ postProcessCityPanelV38=function(){_postProcessCityPanelV39();const cards=[...do
 const _syncLivingCityActorsV39=syncLivingCityActors;
 syncLivingCityActors=function(){const r=_syncLivingCityActorsV39.apply(this,arguments);livingCityRuntime.districtCars.forEach(c=>{if(c?.group?.visible&&(!infrastructureReadyV38(c.districtId)||districtRoadLevelV37(c.districtId)<2))c.group.visible=false;});livingCityRuntime.arterialCars.forEach(c=>{if(c?.group?.visible&&(!infrastructureReadyV38(c.districtId)||districtRoadLevelV37(c.districtId)<1))c.group.visible=false;});livingCityRuntime.residents.forEach(r=>{const id=r?.districtId;if(r?.group?.visible&&id&&!infrastructureReadyV38(id))r.group.visible=false;});return r;};
 
-let cityVisualSigV39='';setInterval(()=>{try{const sig=cityVisualSignatureV39();if(sig!==cityVisualSigV39){cityVisualSigV39=sig;refreshDistrictDressingV39();refreshCityConstructionSitesV39();for(const cfg of CITY_DISTRICTS){const old=cityWorldRuntime.hubs.get(cfg.id);if(old){scene.remove(old);disposeObject3D(old);}const g=createDistrictHub(cfg);cityWorldRuntime.hubs.set(cfg.id,g);}if(document.getElementById('cityOverlay')?.classList.contains('show'))renderCityPanel();syncLivingCityActors();}}catch(e){console.warn('v39 visual refresh',e);}},650);
+const districtVisualSigsV163=new Map();setInterval(()=>{
+  if(gamePausedV163())return;
+  pollInfrastructureWorksitesV38();
+  try{
+    const changed=new Set();
+    for(const cfg of CITY_DISTRICTS){const sig=districtVisualSignatureV163(cfg);if(districtVisualSigsV163.get(cfg.id)!==sig){changed.add(cfg.id);}}
+    if(changed.size){
+      refreshDistrictDressingV39(changed);refreshCityConstructionSitesV39();
+      for(const cfg of CITY_DISTRICTS){if(!changed.has(cfg.id))continue;const signature=districtVisualSignatureV163(cfg),old=cityWorldRuntime.hubs.get(cfg.id);if(old?.userData.v163HubSignature!==signature){const g=createDistrictHub(cfg);g.userData.v163HubSignature=signature;cityWorldRuntime.hubs.set(cfg.id,g);if(old){scene.remove(old);disposeObject3D(old);}}districtVisualSigsV163.set(cfg.id,signature);}
+      if(document.getElementById('cityOverlay')?.classList.contains('show'))renderCityPanel();syncLivingCityActors();
+    }
+  }catch(e){window.__TYCOON_CAPTURE_ERROR__?.(e,'district-visual-refresh');console.warn('v39 visual refresh',e);}
+  try{refreshSpecialProjectWorld();}catch(e){console.warn('v116 special project marker sync',e);}
+},700);
 // v116: re-sync special-project vacant-site markers on the same cadence as the district
 // hubs above, so a project that just got unlocked by a new stage gets its ground marker
 // without needing a reload. refreshSpecialProjectWorld() is a cheap no-op when nothing
 // changed (Map.has() checks only), so an unconditional poll here is safe.
-setInterval(()=>{try{refreshSpecialProjectWorld();}catch(e){console.warn('v116 special project marker sync',e);}},700);
 
 window.__TYCOON_V39_CITY__={maturity:districtMaturityV39,assets:districtBuiltAssetCountV39,refresh(){refreshCityExpansionWorld();refreshDistrictDressingV39();refreshCityConstructionSitesV39();renderCityPanel();}};
 
@@ -26720,7 +26833,7 @@ function v44Curve(name,value){
   }
 
   function v44Tick(){
-    if(document.hidden)return;v44RefreshQualityWorld(false);v44PostProcessUI(document);
+    if(gamePausedV163())return;v44RefreshQualityWorld(false);v44PostProcessUI(document);
   }
 
   function v44Boot(){
@@ -27928,7 +28041,7 @@ body.v46-modal-open #toast{opacity:0!important;visibility:hidden!important;trans
   function installCalmMode(){
     ['pointerdown','pointermove','touchstart','wheel','keydown'].forEach(type=>addEventListener(type,markInput,{passive:type!=='keydown',capture:type==='keydown'}));
     setInterval(()=>{
-      if(document.hidden)return;
+      if(gamePausedV163())return;
       let modal=false,action=false,moving=document.body.classList.contains('v47-moving');
       try{modal=typeof modalOpenV46==='function'?modalOpenV46():document.body.classList.contains('v46-modal-open');}catch(_){}
       try{action=$('actionPrompt')?.classList.contains('show')&&!$('actionBtn')?.hidden;}catch(_){}
@@ -28025,7 +28138,7 @@ body.v46-modal-open #toast{opacity:0!important;visibility:hidden!important;trans
     };
     wrapped.__v48=true;toast=wrapped;
     setInterval(()=>{
-      if(!V48.pendingToasts.length||document.hidden)return;
+      if(!V48.pendingToasts.length||gamePausedV163())return;
       let modal=false;try{modal=typeof modalOpenV46==='function'?modalOpenV46():document.body.classList.contains('v46-modal-open');}catch(_){}
       if(modal)return;
       const item=V48.pendingToasts.shift();if(item&&now()-item.at<12000)old(item.text);
@@ -28564,7 +28677,7 @@ body.v50-near-target #compass{opacity:.34!important;transform:scale(.92)!importa
     if(V50.started)return;V50.started=true;
     installPressFeedback();installObjectivePolish();installAccessibility();installKeyboardTopButtons();installLate();
     syncMood();syncActionFocus();syncCompass();syncLowResources();
-    setInterval(()=>{if(document.hidden)return;syncMood();syncActionFocus();syncCompass();syncLowResources();},700);
+    setInterval(()=>{if(gamePausedV163())return;syncMood();syncActionFocus();syncCompass();syncLowResources();},700);
     addEventListener('resize',()=>{syncActionFocus();syncCompass();},{passive:true});
     addEventListener('visibilitychange',()=>{if(!document.hidden){syncMood();syncActionFocus();syncCompass();}});
   }
@@ -28727,6 +28840,9 @@ body.v51-action-blocked #actionPrompt{border-color:rgba(224,140,117,.14)!importa
 
   function setPerf(level){
     if(V51.perf===level)return;
+    const now=performance.now(),rank={low:0,mid:1,high:2},hold=rank[level]>rank[V51.perf]?20000:8000;
+    if(V51.qualityChangedAt&&now-V51.qualityChangedAt<hold)return;
+    V51.qualityChangedAt=now;
     V51.perf=level;
     document.body.classList.toggle('v51-perf-mid',level==='mid');
     document.body.classList.toggle('v51-perf-low',level==='low');
@@ -28736,7 +28852,8 @@ body.v51-action-blocked #actionPrompt{border-color:rgba(224,140,117,.14)!importa
   function perfLoop(now){
     if(!V51._last)V51._last=now;
     const dt=Math.min(100,Math.max(0,now-V51._last));V51._last=now;
-    if(!document.hidden&&dt>0){V51.frameT+=dt;V51.frameN++;}
+    if(gamePausedV163()){V51.frameT=0;V51.frameN=0;V51._last=now;requestAnimationFrame(perfLoop);return;}
+    if(dt>0){V51.frameT+=dt;V51.frameN++;}
     if(V51.frameT>=2600){
       const avg=V51.frameT/Math.max(1,V51.frameN);
       V51.frameT=0;V51.frameN=0;
@@ -29230,7 +29347,7 @@ body.v53-input-shield #actionBtn{filter:saturate(.75) brightness(.92)!important}
       if(Array.isArray(constructionQueue)&&typeof sanitizeConstructionQueue==='function')sanitizeConstructionQueue();
     }catch(e){console.warn('v53 runtime repair skipped',e);}
   }
-  function installLongSessionIntegrityV53(){setInterval(()=>{if(!document.hidden)repairRuntimeNumbersV53();},1200);document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearWorldInputV53();setTimeout(repairRuntimeNumbersV53,50);}},{passive:true});}
+  function installLongSessionIntegrityV53(){setInterval(()=>{if(!gamePausedV163())repairRuntimeNumbersV53();},1200);document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearWorldInputV53();setTimeout(repairRuntimeNumbersV53,50);}},{passive:true});}
 
   function installSaveFailureUXV53(){
     if(typeof save!=='function'||save.__v53)return;
@@ -30233,7 +30350,7 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
     safe62(()=>syncUniversalFleet?.());
     // Manual gathering remains available for the whole run; automation is optional progression.
     const manual=true;
-    const population=document.getElementById('populationStat');if(population)population.style.display=(stageIndex>=4?'':'none');
+    const population=document.getElementById('populationStat');if(population)population.style.display=(stageIndex>=6?'':'none');
     const carry=document.getElementById('carriedLogs')?.closest('.stat');if(carry)carry.style.display=manual?'':'none';
     syncStagedPadVisibilityV161(); // v161: one owner (was stageIndex<2&&[carry,sawmill,yield])
     if(typeof sawmillDropoff!=='undefined'&&sawmillDropoff?.group)sawmillDropoff.group.visible=manual&&sawmillBuiltV118;
@@ -30264,7 +30381,7 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
   window.__TYCOON_V62_AUDIT__={run:audit62,refresh(){for(const n of ['refreshLivingDistrictStreets','refreshArterialRoads','refreshStageRoadsV367','refreshTransportAccessRoads','refreshDistrictAccessRoads'])safe62(()=>window[n]?.());polishRoads62();syncCoreAssets62();repairWorkers62();ensureMuteUtility62();}};
 
   function refresh62(){for(const n of ['refreshLivingDistrictStreets','refreshArterialRoads','refreshStageRoadsV367','refreshTransportAccessRoads','refreshDistrictAccessRoads'])wrapRefresh62(n);polishRoads62();syncCoreAssets62();repairWorkers62();ensureMuteUtility62();}
-  function init62(){refresh62();setTimeout(refresh62,650);setTimeout(()=>{refresh62();console.log('[v62 audit]',audit62());},1800);setInterval(()=>{if(document.hidden)return;syncCoreAssets62();repairWorkers62();ensureMuteUtility62();},1400);}
+  function init62(){refresh62();setTimeout(refresh62,650);setTimeout(()=>{refresh62();console.log('[v62 audit]',audit62());},1800);setInterval(()=>{if(gamePausedV163())return;syncCoreAssets62();repairWorkers62();ensureMuteUtility62();},1400);}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init62,{once:true});else init62();
 })();
 </script>
@@ -31119,7 +31236,7 @@ window.__TYCOON_V74_BUILD__={
     }
     for(const key of [...stuck.keys()])if(!liveKeys.has(key))stuck.delete(key);
   }
-  const timer=setInterval(()=>{if(!document.hidden)tick();},500);
+  const timer=setInterval(()=>{if(!gamePausedV163())tick();},500);
   window.__TYCOON_V68_TRAFFIC__={version:VERSION,run(){
     const vs=(typeof serviceVehicles!=='undefined'?serviceVehicles:[]).filter(v=>v&&v.visible!==false&&v.userData);
     return {version:VERSION,vehicles:vs.map(v=>({id:idOf(v),state:v.userData.state,cargo:v.userData.cargo,x:+v.position.x.toFixed(2),z:+v.position.z.toFixed(2),speed:+(v.userData.currentSpeed||0).toFixed(2),depot:+depotDist(v).toFixed(2)})),stuck:[...stuck.entries()]};
@@ -31406,7 +31523,7 @@ window.__TYCOON_V74_BUILD__={
 
   let last=performance.now(),slowFleetAcc=0,garageAcc=0;
   const timer=setInterval(()=>{
-    if(document.hidden)return;
+    if(gamePausedV163()){last=performance.now();return;}
     const now=performance.now(),dt=Math.min(.5,(now-last)/1000);last=now;
     safe(()=>updateSiteLiftV74(dt));
     safe(deadlockGuardV74);
@@ -33411,15 +33528,20 @@ function renderPath(group,path,width,role,excludeOwner=null){
 (() => {
   'use strict';
   const VERSION='v85-consolidation-repair';
-  function resolveCameraObstructionV85Impl(){
+  let cameraSafeDistanceV163=null,cameraBlockedUntilV163=0;
+  function resolveCameraObstructionV85Impl(dt=1/60){
     if(!cameraSolidMeshes?.length)return;
-    camEyeTarget.set(player.position.x,PLAYER_EYE_HEIGHT,player.position.z);
+    camEyeTarget.copy(controls.target);
     camToCam.subVectors(camera.position,camEyeTarget);const dist=camToCam.length();
     if(dist<=CAMERA_OBSTRUCTION_BUFFER+.10)return;
     camToCam.divideScalar(dist);cameraRaycaster.set(camEyeTarget,camToCam);cameraRaycaster.near=.10;cameraRaycaster.far=dist;
     const hits=cameraRaycaster.intersectObjects(cameraSolidMeshes,true);
-    if(!hits.length||hits[0].distance>=dist-CAMERA_OBSTRUCTION_BUFFER)return;
-    const pulled=Math.max(.72,hits[0].distance-CAMERA_OBSTRUCTION_BUFFER);
+    const now=performance.now(),blocked=hits.length&&hits[0].distance<dist-CAMERA_OBSTRUCTION_BUFFER;
+    const allowed=blocked?Math.max(.72,hits[0].distance-CAMERA_OBSTRUCTION_BUFFER):dist;
+    if(cameraSafeDistanceV163===null||Math.abs(dist-cameraSafeDistanceV163)>desiredCameraDistance*1.5)cameraSafeDistanceV163=dist;
+    if(blocked){cameraBlockedUntilV163=now+180;cameraSafeDistanceV163=Math.min(cameraSafeDistanceV163,allowed);}
+    else if(now>=cameraBlockedUntilV163)cameraSafeDistanceV163+=(allowed-cameraSafeDistanceV163)*(1-Math.exp(-Math.min(.075,Math.max(0,dt))*5));
+    const pulled=Math.min(dist,allowed,cameraSafeDistanceV163);
     camera.position.copy(camEyeTarget).addScaledVector(camToCam,pulled);
   }
   window.resolveCameraObstructionV85=resolveCameraObstructionV85Impl;
@@ -36399,7 +36521,15 @@ Do not treat this geometry block as completion of the entire road/transport audi
 (()=>{
   'use strict';
   const VERSION='v116-clean-yard-audit';
-  const FLEET_RECT={cx:-8.70+INDUSTRIAL_ZONE_OFFSET_X,cz:6.52,hx:6.18,hz:2.55}; // v116: translated with the fleet yard
+  const fleetBoundsV161=window.__TYCOON_FLEET_BOUNDS_V161__||{lotMinZ:4.86,garageMaxZ:10.62,halfWidth:6.18};
+  const fleetAuditMinZ=Number(fleetBoundsV161.lotMinZ)||4.86;
+  const fleetAuditMaxZ=Number(fleetBoundsV161.garageMaxZ)||10.62;
+  const FLEET_RECT={
+    cx:-8.70+INDUSTRIAL_ZONE_OFFSET_X,
+    cz:(fleetAuditMinZ+fleetAuditMaxZ)*.5,
+    hx:Math.max(6.18,Number(fleetBoundsV161.halfWidth)||0),
+    hz:(fleetAuditMaxZ-fleetAuditMinZ)*.5
+  }; // v161: includes the full-depth service garage, not only the original yard slab
   const SERVICE_WIDTH=1.68;
 
   function segPointDist(p,a,b){
@@ -37359,7 +37489,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
     ensureExchangePanel();ensureCargoHudV119();refreshCarryVisualV119();refreshMineNodesV119();refreshManualZoneLabelsV120();ensureManualLoadingGuidesV121();refreshAllPartialRoadsV122();
     fleetOpsState.universalTrucks=state.owned.universal;removeUnownedFleetV119();syncDeliveryFleet();ensureRoadCrewVisualV123();safe(()=>window.__TYCOON_V65_TRAFFIC__?.refresh?.());persist();
     reconcileManualCarryV143();
-    setInterval(()=>{if(document.hidden)return;refreshMineNodesV119();refreshManualZoneLabelsV120();for(const b of buildings)if(Number.isInteger(b?.index)&&!manualRoadStagesV116.has(b.index))refreshRoadPadV122(b.index);fleetOpsState.universalTrucks=state.owned.universal;syncDeliveryFleet();roadCrewTickV123();if($('fleetOverlay')?.classList.contains('show'))renderFleetOwnershipV119();},900);
+    setInterval(()=>{if(gamePausedV163())return;refreshMineNodesV119();refreshManualZoneLabelsV120();for(const b of buildings)if(Number.isInteger(b?.index)&&!manualRoadStagesV116.has(b.index))refreshRoadPadV122(b.index);fleetOpsState.universalTrucks=state.owned.universal;syncDeliveryFleet();roadCrewTickV123();if($('fleetOverlay')?.classList.contains('show'))renderFleetOwnershipV119();},900);
       const debugApi={version:VERSION,state,openTrader:window.openMarketTraderV119,reconcile:reconcileManualCarryV143,getCarryVisual:()=>carryVisual,audit(){const job=nextManualOrderV120(),crewRoad=nextIncompleteRoadV123();return {version:VERSION,roadSectionMetres:ROAD_SECTION_LENGTH_V122,owned:{...state.owned},carry:{...state.carry},manualStats:{...state.manualStats},roadStats:{...state.roadStats},permits:fleetPermitAuditV133(),protectedReserve:{planks:stageReserveV133('planks'),concrete:stageReserveV133('concrete'),metal:stageReserveV133('metal')},roadCrew:{owned:state.owned.roadCrew,nextIn:Math.max(0,Math.ceil((state.roadCrew.nextAt-Date.now())/1000)),target:crewRoad?.i??null,status:roadCrewStatusV123(crewRoad)},partialRoads:[...partialRoadGroupsV122.keys()].map(i=>{const x=roadInfoV122(i);return {stage:i,built:x.built,total:x.total,cost:roadSectionCostV122(i,x.built,x.total)};}),nextManualJob:job?{cargo:job.ticket.cargo,delivered:ticketProgress(job.ticket),amount:job.ticket.amount,reservedBy:job.ticket.assignedVehicle||null}:null,guidance:safe(()=>currentGuidanceTarget()?.label,null),marketFacing:MARKET_STALLS_V116.map(s=>({id:s.id,error:+Math.abs(Math.atan2(MARKET_PLAZA_CENTER_V116.x-s.pos.x,MARKET_PLAZA_CENTER_V116.z-s.pos.z)-s.facing).toFixed(4)})),manualNodes:[...mineRuntime.keys()]};}};
     debugApi.orders=manualOrdersV150;debugApi.selectOrder=selectManualOrderV150;debugApi.work=()=>manualWorkV150?{cargo:manualWorkV150.cargo,elapsed:manualWorkV150.elapsed,duration:manualWorkV150.duration}:null;debugApi.cancelWork=cancelManualWorkV150;debugApi.roads=roadPlansV151;debugApi.roadTarget=roadTargetV151;
     debugApi.capacity=carryCapacityV119;
@@ -37475,7 +37605,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
   let raw=null;try{raw=JSON.parse(localStorage.getItem(KEY)||'null');}catch(_){raw=null;}
   const statsV125={completed:Math.max(0,Math.floor(Number(raw?.completed)||0)),checkpoints:Math.max(0,Math.floor(Number(raw?.checkpoints)||0)),bestStreak:Math.max(0,Math.floor(Number(raw?.bestStreak)||0)),earned:Math.max(0,Math.floor(Number(raw?.earned)||0)),cooldownUntil:Math.max(0,Number(raw?.cooldownUntil)||0)};
   let streak=0,active=null,marker=null,spawnIn=Math.max(12,(statsV125.cooldownUntil-Date.now())/1000),chipTick=0,labelSecond=-1,lastPosIndex=-1,lastCarryPauseV140=false;
-  function persistV125(){if(typeof suppressAutoSaveV36!=='undefined'&&suppressAutoSaveV36)return;try{localStorage.setItem(KEY,JSON.stringify(statsV125));}catch(_){}}
+  function persistV125(){if(typeof suppressAutoSaveV36!=='undefined'&&suppressAutoSaveV36)return;try{localStorage.setItem(KEY,JSON.stringify(statsV125));}catch(error){window.__TYCOON_CAPTURE_ERROR__(error,'work-order-save');}}
   function ensureChip(){let el=$('sideJobV125');if(el)return el;el=document.createElement('div');el.id='sideJobV125';el.hidden=true;document.body.appendChild(el);return el;}
   function jobPositionsV125(){
     const out=[],count=Math.max(1,Math.min(STAGES.length,stageIndex||1));
@@ -37580,7 +37710,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
     if(!active||active.touchLock>0)return false;active.touchLock=.28;const small=checkpointRewardV125();earn(small);statsV125.checkpoints++;statsV125.earned+=small;spawnBurst(marker?.position||player.position,active.def.color);spawnFloatingTextV117(marker?.position||player.position,`+${small} 💰`);sfx.click?.();haptic('light');active.step++;
     if(active.step>=active.route.length){finishJobV125();return true;}if(marker){marker.position.copy(active.route[active.step]);marker.userData.ring.scale.setScalar(1.22);}statsV125.cooldownUntil=Date.now()+25000;persistV125();updateHUD();save();renderChipV125(true);return true;
   }
-  function spawnJobV125(){if(active||stageIndex<1)return false;const def=weightedDefV130(),route=chooseContextRouteV130(def.steps);if(route.length<def.steps)return false;let routeDistance=0,prev=player.position;for(const p of route){routeDistance+=Math.hypot(p.x-prev.x,p.z-prev.z);prev=p;}const remaining=Math.max(54,Math.min(96,38+def.steps*6+routeDistance*1.05));active={def,route,step:0,remaining,touchLock:0,routeDistance};createMarkerV125();renderChipV125(true);return true;}
+  function spawnJobV125(){if(active||stageIndex<4)return false;const def=weightedDefV130(),route=chooseContextRouteV130(def.steps);if(route.length<def.steps)return false;let routeDistance=0,prev=player.position;for(const p of route){routeDistance+=Math.hypot(p.x-prev.x,p.z-prev.z);prev=p;}const remaining=Math.max(54,Math.min(96,38+def.steps*6+routeDistance*1.05));active={def,route,step:0,remaining,touchLock:0,routeDistance};createMarkerV125();renderChipV125(true);return true;}
   function expireJobV125(){const def=active?.def;removeMarkerV125();active=null;streak=Math.max(0,streak-1);spawnIn=18+Math.random()*8;statsV125.cooldownUntil=Date.now()+Math.round(spawnIn*1000);persistV125();if(def)toast(lang==='ru'?`⌛ Наряд «${def.ru}» упущен — серия слегка снизилась`:`⌛ “${def.en}” expired — streak reduced slightly`);renderChipV125(true);}
   function distanceV125(){if(!active)return 0;const p=active.route[active.step];return Math.hypot(player.position.x-p.x,player.position.z-p.z);}
   function carryingV140(){return carriedLogs>0||Number(window.__TYCOON_V123__?.state?.carry?.amount||0)>0||!!window.__TYCOON_START_CARRY__?.()||!!window.__TYCOON_V123__?.work?.();}
@@ -37591,7 +37721,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
   function updateWorkOrdersV125(dt){
     dt=Math.max(0,Math.min(.1,Number(dt)||0));if(chipTick>0)chipTick-=dt;if(active?.touchLock>0)active.touchLock-=dt;
     if(active){const decisionOpen=!!document.getElementById('opportunityV128')?.classList.contains('show'),carrying=carryingV140();if(carrying!==lastCarryPauseV140){lastCarryPauseV140=carrying;labelSecond=-1;renderChipV125(true);}if(!modal()&&!decisionOpen&&!carrying)active.remaining-=dt;if(active.remaining<=0){expireJobV125();return;}if(marker){const pulse=1+Math.sin(performance.now()*.006)*.08;marker.userData.ring.scale.lerp(new THREE.Vector3(pulse,pulse,pulse),.16);const sec=Math.ceil(active.remaining);if(sec!==labelSecond){labelSecond=sec;updateLabelSprite(marker.userData.label,[`${active.def.emoji} ${lang==='ru'?active.def.ru:active.def.en}`,carrying?(lang==='ru'?'ПАУЗА · ДОСТАВЬ ГРУЗ':'PAUSED · DELIVER CARGO'):`${active.step+1}/${active.route.length} · ${sec}с`]);}}renderChipV125();}
-    else if(stageIndex>=1&&!modal()){const c=companyContextV130();spawnIn-=dt*(c.waiting?1.65:.72);if(spawnIn<=0)spawnJobV125();}
+    else if(stageIndex>=4&&!modal()){const c=companyContextV130();spawnIn-=dt*(c.waiting?1.65:.72);if(spawnIn<=0)spawnJobV125();}
   }
   const updatePlayerBeforeV125=updatePlayer;
   updatePlayer=function(dt){if(active&&!carryingV140()&&interactRequested&&!modal()&&distanceV125()<2.25&&workOrderActionMatchesV158()){collectCheckpointV125();interactRequested=false;}const r=updatePlayerBeforeV125.call(this,dt);updateWorkOrdersV125(dt);return r;};
@@ -37610,7 +37740,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
   let nextJobIdV158=null;
   const weightedBeforeV158=weightedDefV130;weightedDefV130=function(){const def=defs.find(d=>d.id===nextJobIdV158);nextJobIdV158=null;return def||weightedBeforeV158();};
   function jobChoicesV158(){return defs.map(d=>({id:d.id,name:lang==='ru'?d.ru:d.en,steps:d.steps,selected:nextJobIdV158===d.id}));}
-  function chooseJobV158(id){if(stageIndex<1||active||!defs.some(d=>d.id===id))return false;nextJobIdV158=id;return true;}
+  function chooseJobV158(id){if(stageIndex<4||active||!defs.some(d=>d.id===id))return false;nextJobIdV158=id;return true;}
   function jobTargetV158(){if(!active||carryingV140())return null;const p=active.route[active.step];return {pos:p.clone(),label:lang==='ru'?active.def.ru:active.def.en,type:'workorder'};}
   const resetChoicesBeforeV158=resetRunOperationsV302;resetRunOperationsV302=function(){nextJobIdV158=null;return resetChoicesBeforeV158.apply(this,arguments);};
   /* v158 integration end */
@@ -37618,7 +37748,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootV125,{once:true});else bootV125();
   const api={version:VERSION,stats:statsV125,get active(){return active?{type:active.def.id,step:active.step+1,total:active.route.length,remaining:+active.remaining.toFixed(1),distance:+distanceV125().toFixed(1),streak,uniqueStops:new Set(active.route.map(p=>`${p.x.toFixed(2)}:${p.z.toFixed(2)}`)).size}:null;},spawn:spawnJobV125,audit(){return {version:VERSION,stats:{...statsV125},streak,spawnIn:+spawnIn.toFixed(1),active:this.active};}};window.__TYCOON_V125__=api;window.__TYCOON_V126__=api;
   /* v158 integration begin */
-  api.choices=jobChoicesV158;api.choose=chooseJobV158;api.target=jobTargetV158;api.next=()=>({id:nextJobIdV158,wait:Math.max(0,Math.ceil(spawnIn)),available:stageIndex>=1&&!active});
+  api.choices=jobChoicesV158;api.choose=chooseJobV158;api.target=jobTargetV158;api.next=()=>({id:nextJobIdV158,wait:Math.max(0,Math.ceil(spawnIn)),available:stageIndex>=4&&!active});
   /* v158 integration end */
 })();
 </script>
@@ -37655,7 +37785,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
     return 0;
   }
   function availableV127(kind){
-    if(kind==='side')return stageIndex>=1;
+    if(kind==='side')return stageIndex>=4;
     const a=audit119V127();if(!a)return false;
     if(kind==='delivery')return !!a.nextManualJob;
     if(kind==='road')return (a.partialRoads||[]).some(x=>x.built<x.total);
@@ -37671,10 +37801,10 @@ Do not treat this geometry block as completion of the entire road/transport audi
   function rewardV127(goal=stateV127.active){return goal?Math.round(45+stageIndex*12+goal.target*5):0;}
   function shiftBonusV134(){return Math.round(120+stageIndex*24);}
   function shiftStepsHtmlV134(active=true){return `<div class="v127Steps">${Array.from({length:SHIFT_LENGTH_V134},(_,i)=>`<i class="${i<stateV127.shiftStep?'done':active&&i===stateV127.shiftStep?'current':''}"></i>`).join('')}</div>`;}
-  function persistV127(){if(typeof suppressAutoSaveV36!=='undefined'&&suppressAutoSaveV36)return;try{localStorage.setItem(KEY,JSON.stringify(stateV127));}catch(_){}}
+  function persistV127(){if(typeof suppressAutoSaveV36!=='undefined'&&suppressAutoSaveV36)return;try{localStorage.setItem(KEY,JSON.stringify(stateV127));}catch(error){window.__TYCOON_CAPTURE_ERROR__(error,'shift-goal-save');}}
   function ensureChipV127(){let el=$('shiftGoalV127');if(el)return el;el=document.createElement('div');el.id='shiftGoalV127';el.hidden=true;document.body.appendChild(el);return el;}
   function createGoalV127(){
-    if(stageIndex<1)return false;
+    if(stageIndex<4)return false;
     let kinds=Object.keys(defs).filter(availableV127);if(!kinds.length)kinds=['side'];const unused=kinds.filter(k=>!stateV127.shiftKinds.includes(k));if(unused.length)kinds=unused;
     const activeContract=contracts?.[0]||null;
     const a=audit119V127();
@@ -37935,7 +38065,7 @@ body.v46-modal-open #opportunityV128{opacity:0!important;pointer-events:none!imp
   }
   function spawnOpportunityV128(force=false){
     const actionBusy=document.body?.classList?.contains('v50-action-focus')||document.body?.classList?.contains('v139-carrying')||document.body?.classList?.contains('v144-start-carry')||document.getElementById('actionPrompt')?.classList.contains('show');
-    if(activeOpportunityV128||stageIndex<1||(!force&&(modal()||actionBusy))){if(!force&&stageIndex>=1&&!activeOpportunityV128){state.nextOpportunityAt=Math.max(state.nextOpportunityAt,now()+8000);persist();}return false;}const list=opportunitiesV128();if(!list.length){scheduleNextOpportunityV128(true);return false;}
+    if(activeOpportunityV128||stageIndex<6||(!force&&(modal()||actionBusy))){if(!force&&stageIndex>=6&&!activeOpportunityV128){state.nextOpportunityAt=Math.max(state.nextOpportunityAt,now()+8000);persist();}return false;}const list=opportunitiesV128();if(!list.length){scheduleNextOpportunityV128(true);return false;}
     const o=chooseOpportunityV130(list);activeOpportunityV128={def:o,expiresAt:now()+30000};state.opportunitiesShown++;persist();renderOpportunityV128();sfx.click?.();return true;
   }
 
@@ -37954,7 +38084,7 @@ body.v46-modal-open #opportunityV128{opacity:0!important;pointer-events:none!imp
       if(modal()||actionBusy)activeOpportunityV128.expiresAt+=dt*1000;
       else if(now()>=activeOpportunityV128.expiresAt){activeOpportunityV128=null;renderOpportunityV128();scheduleNextOpportunityV128(true);}
       else if(oppRenderTickV128<=0){oppRenderTickV128=.9;renderOpportunityV128();}
-    }else if(stageIndex>=1&&now()>=state.nextOpportunityAt&&!modal()&&!document.body?.classList?.contains('v50-action-focus'))spawnOpportunityV128(false);
+    }else if(stageIndex>=6&&now()>=state.nextOpportunityAt&&!modal()&&!document.body?.classList?.contains('v50-action-focus'))spawnOpportunityV128(false);
   }
   const updatePlayerBeforeV128=updatePlayer;
   updatePlayer=function(dt){const r=updatePlayerBeforeV128.call(this,dt);updateV128(dt);return r;};
@@ -38104,7 +38234,7 @@ body.v46-modal-open #coachChip.v131-nudge,body.v50-action-focus #coachChip.v131-
     let env=null;try{env=JSON.parse(localStorage.getItem(AUX_RECOVERY_KEY)||'null');}catch(_){return 0;}
     if(!env||env.v!==1||!env.items||typeof env.items!=='object')return 0;
     let restored=0;
-    for(const key of AUX_KEYS){const cur=localStorage.getItem(key),backup=env.items[key];if(validJson(cur)||!validJson(backup))continue;try{localStorage.setItem(key,backup);restored++;}catch(_){}}
+    for(const key of AUX_KEYS){const cur=localStorage.getItem(key),backup=env.items[key];if(validJson(cur)||!validJson(backup))continue;try{localStorage.setItem(key,backup);restored++;}catch(error){window.__TYCOON_CAPTURE_ERROR__(error,'aux-recovery');}}
     runtime.auxRecovered+=restored;return restored;
   }
 
@@ -38152,7 +38282,7 @@ body.v46-modal-open #coachChip.v131-nudge,body.v50-action-focus #coachChip.v131-
   /* ---------- reset integration ---------- */
   if(typeof resetRunOperationsV302==='function'&&!resetRunOperationsV302.__v131){const prev=resetRunOperationsV302;const wrapped=function(){const r=prev.apply(this,arguments);try{localStorage.removeItem(AUX_RECOVERY_KEY);}catch(_){}clearNudge();return r;};wrapped.__v131=true;resetRunOperationsV302=wrapped;}
 
-  function tick(){if(document.hidden)return;if(playerMoving())runtime.lastMotionAt=performance.now();maybeNudge();syncTaskUI();writeAuxRecovery(false);}
+  function tick(){if(gamePausedV163())return;if(playerMoving())runtime.lastMotionAt=performance.now();maybeNudge();syncTaskUI();writeAuxRecovery(false);}
   function boot(){const restored=recoverAuxIfNeeded();if(restored>0&&sessionStorage.getItem('tycoon3d_v131_aux_reloaded')!=='1'){sessionStorage.setItem('tycoon3d_v131_aux_reloaded','1');location.reload();return;}sessionStorage.removeItem('tycoon3d_v131_aux_reloaded');runtime.lastMotionAt=performance.now();setInterval(tick,700);setTimeout(()=>writeAuxRecovery(true),3500);document.addEventListener('visibilitychange',()=>{if(document.hidden)writeAuxRecovery(true);else runtime.lastMotionAt=performance.now();},{passive:true});addEventListener('pagehide',()=>writeAuxRecovery(true),{capture:true});}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 
@@ -38349,7 +38479,7 @@ body.v138-context-action #coachChip:not(.guideMain){opacity:0!important;pointer-
       btn.classList.add('v138-success');const previous=btn.textContent;btn.textContent=typeof lang!=='undefined'&&lang==='ru'?'Готово ✓':'Done ✓';
       setTimeout(()=>{btn.classList.remove('v138-success');if(btn.textContent===(typeof lang!=='undefined'&&lang==='ru'?'Готово ✓':'Done ✓'))btn.textContent=previous;sync();},260);
     });
-    addEventListener('resize',sync,{passive:true});sync();setInterval(()=>{if(!document.hidden)sync();},500);
+    addEventListener('resize',sync,{passive:true});document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync();});sync();
   }
   function audit(){const btn=$('actionBtn'),prompt=$('actionPrompt'),active=!!prompt?.classList.contains('show')&&!btn?.hidden,manual=!!btn?.dataset.v119ManualAction,unavailable=manual&&!!btn.dataset.v150Unavailable,enabled=!manual||unavailable||(!btn.disabled&&btn.getAttribute('aria-disabled')!=='true');return {version:VERSION,ok:typeof window.__TYCOON_DIRECT_ACTION__==='function'&&enabled,checks:{directAction:typeof window.__TYCOON_DIRECT_ACTION__==='function',genericNeedDoesNotBlock:!explicitFailureText('нужно ещё 3'),manualButtonEnabled:enabled,focusedHud:!active||document.body.classList.contains('v138-context-action')},state:{...state}};}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
@@ -38391,7 +38521,8 @@ body.v139-carrying #manualCargoStatV119{box-shadow:0 0 0 1px rgba(244,206,121,.0
     runtime.updates++;runtime.lastMode=nav.mode;runtime.lastDistance=distance;
   }
   function audit(){const carrying=Number(window.__TYCOON_V123__?.state?.carry?.amount||0)>0,nav=typeof window.__TYCOON_MANUAL_NAV__==='function'?window.__TYCOON_MANUAL_NAV__():null,btn=$('actionBtn'),logistics=window.__TYCOON_V123__?.audit?.();const checks={roadStepThreeMetres:logistics?.roadSectionMetres===3,directAction:typeof window.__TYCOON_DIRECT_ACTION__==='function',navigationApi:typeof window.__TYCOON_MANUAL_NAV__==='function',carryHasDestination:!carrying||!!nav,noStaleManualAction:!btn?.dataset.v119ManualAction||actionLabelMatchesV155(btn.textContent,btn.dataset.v119ExpectedButton)};return {version:VERSION,ok:Object.values(checks).every(Boolean),checks,runtime:{...runtime}};}
-  function boot(){ensureChip();sync();setInterval(()=>{if(!document.hidden)sync();},300);document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync();});}
+  let navSyncAtV162=0;
+  function boot(){ensureChip();sync();(window.__TYCOON_VISUAL_TICKS__=window.__TYCOON_VISUAL_TICKS__||[]).push(now=>{if(document.hidden||now-navSyncAtV162<300)return;navSyncAtV162=now;sync();});document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync();});}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
   window.__TYCOON_V139__={version:VERSION,runtime,audit,sync};
 })();
@@ -38512,7 +38643,7 @@ body.v142-nav-near #actionBtn[data-v119-manual-action]{min-height:52px}
     ring.scale.setScalar(pulse);halo.scale.setScalar(near?1.16:pulse*.98);halo.material.opacity=near?.25:.13;beam.material.opacity=near?.07:.12;arrow.position.y=1.55+(reduced?0:Math.sin(phase*1.35)*.12);arrow.rotation.y=phase*.42;
     runtime.frames++;
   }
-  function frame(now){if(!document.hidden&&(now-lastNow>65)){lastNow=now;sync(now);}requestAnimationFrame(frame);}
+  function frame(now){if(!gamePausedV163()&&(now-lastNow>65)){lastNow=now;sync(now);}requestAnimationFrame(frame);}
   function audit(){const n=nav(),carrying=Number(window.__TYCOON_V123__?.state?.carry?.amount||0)>0;const checks={beaconBuilt:!!root&&root.parent===scene,navigationPresent:typeof window.__TYCOON_MANUAL_NAV__==='function',cargoNeverStranded:!carrying||!!n,comfortableRadius:Number(window.__TYCOON_MANUAL_INTERACT_RADIUS__)>=2.5,returnModeStyled:!!document.getElementById('v142-waypoint-style')};return {version:VERSION,ok:Object.values(checks).every(Boolean),checks,nav:n?{mode:n.mode,cargo:n.cargo,x:n.x,z:n.z}:null,runtime:{...runtime}};}
   ensure();requestAnimationFrame(frame);window.__TYCOON_V142__={version:VERSION,runtime,audit,sync};
 })();
@@ -38566,7 +38697,7 @@ body.v143-manual-pulse #manualCargoStatV119{animation:v143CargoPulse .38s ease-o
     el.hidden=false;el.classList.toggle('near',near);if(text!==lastCoachText){lastCoachText=text;el.textContent=text;runtime.tutorialViews++;}
   }
   function reconcile(now){if(now-lastReconcile<1800)return;lastReconcile=now;const a=api();if(typeof a?.reconcile==='function'){const before=JSON.stringify(a.state?.carry||{}),result=a.reconcile(),after=JSON.stringify(a.state?.carry||{});runtime.reconciles++;if(before!==after&&result?.changed)coach();}}
-  function frame(now){if(!document.hidden&&now-lastFrame>16){lastFrame=now;animateAction(now);coach();reconcile(now);}requestAnimationFrame(frame);}
+  function frame(now){if(!gamePausedV163()&&now-lastFrame>16){lastFrame=now;animateAction(now);coach();reconcile(now);}requestAnimationFrame(frame);}
   function audit(){const a=api(),c=carry(),n=window.__TYCOON_MANUAL_NAV__?.(),visual=a?.getCarryVisual?.();const checks={actionHook:typeof window.__TYCOON_MANUAL_ACTION_PULSE__==='function',recoveryApi:typeof a?.reconcile==='function',validCargo:!c.amount||['planks','concrete','metal'].includes(c.type),visibleCargo:!c.amount||!!visual,cargoInHands:!visual||visual.children.every(x=>x.position.z>0),cargoHasRoute:!c.amount||!!n,coachPresent:!!document.getElementById('manualCoachV143')};return {version:VERSION,ok:Object.values(checks).every(Boolean),checks,carry:c,activeAction:activeAction?.type||null,runtime:{...runtime}};}
   ensureCoach();requestAnimationFrame(frame);window.__TYCOON_V143__={version:VERSION,runtime,audit,pulse};
 })();
@@ -38593,7 +38724,7 @@ body.v144-start-carry #jumpBtn{filter:saturate(.72);opacity:.78}
   const flow={runs:Math.max(0,Math.min(RUNS_REQUIRED,Math.floor(Number(raw?.runs)||0))),carrying:!!raw?.carrying,completed:raw?!!raw.completed:(!!knownSaveRawV64||!manualRoadModeV116||legacyProgress)};
   flow.carrying=flow.carrying&&!flow.completed&&flow.runs<RUNS_REQUIRED;
   let pickupMarker=null,dropMarker=null,carryVisualV144=null,lastCardSignature='',lastHudRefresh=0;
-  function persist(){if(suppressAutoSaveV36||otherTabSaveLockV63)return;try{localStorage.setItem(KEY,JSON.stringify(flow));}catch(_){}}
+  function persist(){if(suppressAutoSaveV36||otherTabSaveLockV63)return;try{localStorage.setItem(KEY,JSON.stringify(flow));}catch(error){window.__TYCOON_CAPTURE_ERROR__(error,'start-flow-save');}}
   function active(){return !flow.completed&&manualRoadModeV116&&Number(stats.prestige||0)===0;}
   function blockedByCargo(){return Number(window.__TYCOON_V123__?.state?.carry?.amount||0)>0||carriedLogs>0;}
   window.__TYCOON_START_CARRY__=()=>active()&&flow.carrying;
@@ -38659,7 +38790,7 @@ body.v144-start-carry #jumpBtn{filter:saturate(.72);opacity:.78}
     const sig=`${lang}|${s.id}|${title}|${hint}|${status}|${progress.toFixed(3)}|${meta}`;if(sig===lastCardSignature)return;lastCardSignature=sig;card.className='v144-start-flow';card.innerHTML=goalCardHtml(title,hint,{progress,ready:false,blocked:false,status,meta});runtime.cardUpdates++;
   }
   const updateHUDBefore=updateHUD;updateHUD=function(){const r=updateHUDBefore.apply(this,arguments);decorate();return r;};
-  function tick(now){syncWorld(now);if(now-lastHudRefresh>350){lastHudRefresh=now;decorate();}requestAnimationFrame(tick);}
+  function tick(now){if(!gamePausedV163()){syncWorld(now);if(now-lastHudRefresh>350){lastHudRefresh=now;decorate();}}requestAnimationFrame(tick);}
   ensureWorld();syncWorld();decorate();requestAnimationFrame(tick);persist();
   window.__TYCOON_V144__={version:VERSION,state:flow,runtime,step,audit(){const s=step(),checks={oldSavesProtected:manualRoadModeV116||flow.completed,startCashDeliberate:knownSaveRawV64?true:startingCashAmount()<=220+metaLevel('startCash')*100,twoRunLoop:RUNS_REQUIRED===2&&RUN_REWARD>0,directAction:typeof window.__TYCOON_DIRECT_ACTION__==='function',navigation:typeof window.__TYCOON_MANUAL_NAV__==='function',markers:!!pickupMarker&&!!dropMarker,carryWeightHook:typeof window.__TYCOON_START_CARRY__==='function'};return {version:VERSION,ok:Object.values(checks).every(Boolean),checks,state:{...flow},currentStep:s?.id||null,runtime:{...runtime}};}};
 })();
@@ -38684,7 +38815,7 @@ body.v144-start-carry #jumpBtn{filter:saturate(.72);opacity:.78}
   let raw=null;try{raw=JSON.parse(localStorage.getItem(KEY)||'null');}catch(_){raw=null;}
   const state={mode:MODES[raw?.mode]?raw.mode:'balanced',autoDeliveries:Math.max(0,Math.floor(Number(raw?.autoDeliveries)||0)),autoByCargo:{planks:Math.max(0,Math.floor(Number(raw?.autoByCargo?.planks)||0)),concrete:Math.max(0,Math.floor(Number(raw?.autoByCargo?.concrete)||0)),metal:Math.max(0,Math.floor(Number(raw?.autoByCargo?.metal)||0))},lastWarning:Math.max(0,Math.min(2,Math.floor(Number(raw?.lastWarning)||0)))};
   const runtime={modeChanges:0,deliveriesTracked:0,panelRenders:0,warnings:0};
-  function persist(){if(suppressAutoSaveV36||otherTabSaveLockV63)return;try{localStorage.setItem(KEY,JSON.stringify(state));}catch(_){}}
+  function persist(){if(suppressAutoSaveV36||otherTabSaveLockV63)return;try{localStorage.setItem(KEY,JSON.stringify(state));}catch(error){window.__TYCOON_CAPTURE_ERROR__(error,'fleet-economy-save');}}
   function ownership(){return window.__TYCOON_V123__?.state?.owned||{};}
   function ownedFleetKeys(){const o=ownership(),keys=[];for(const key of ['planks','concrete','metal'])if(o[key])keys.push(key);if(Number(o.universal)>0)keys.push('universal');return keys;}
   function ownedMachineCount(){const o=ownership();return ['planks','concrete','metal','roadCrew'].reduce((n,k)=>n+(o[k]?1:0),0)+Math.max(0,Math.floor(Number(o.universal)||0));}
@@ -38727,7 +38858,7 @@ body.v146-site-near #actionPrompt{border-color:rgba(238,192,96,.30)!important}
   if(!Number.isFinite(state.energy))state.energy=MAX_ENERGY;
   const runtime={actions:0,markerMoves:0,blockedByMaterials:0,promptFrames:0,recharges:0};
   let marker=null,markerRing=null,markerLabel=null,activeBuild=null,activePoint=null,lastLabel='',lastTick=0;
-  function persist(){if(suppressAutoSaveV36||otherTabSaveLockV63)return;try{localStorage.setItem(KEY,JSON.stringify(state));}catch(_){}}
+  function persist(){if(suppressAutoSaveV36||otherTabSaveLockV63)return;try{localStorage.setItem(KEY,JSON.stringify(state));}catch(error){window.__TYCOON_CAPTURE_ERROR__(error,'site-assist-save');}}
   function recharge(now=Date.now()){
     if(state.energy>=MAX_ENERGY){state.energy=MAX_ENERGY;state.lastEnergyAt=now;return false;}
     const gained=Math.min(MAX_ENERGY-state.energy,Math.floor((now-state.lastEnergyAt)/RECHARGE_MS));if(gained<=0)return false;
@@ -38795,7 +38926,7 @@ body.v146-site-near #actionPrompt{border-color:rgba(238,192,96,.30)!important}
   updatePlayer=function(dt){const ctx=context(),btn=document.getElementById('actionBtn'),prompt=document.getElementById('actionPrompt');if(interactRequested&&ctx&&btn?.dataset.v146SiteAssist==='1'&&actionLabelMatchesV155(btn.textContent,btn.dataset.v146ExpectedButton)&&actionLabelMatchesV155(prompt?.textContent,btn.dataset.v146ExpectedPrompt)){assist(ctx);interactRequested=false;}return updatePlayerBeforeV146.call(this,dt);};
   const resetBeforeV146=resetRunOperationsV302;
   resetRunOperationsV302=function(){const result=resetBeforeV146.apply(this,arguments);state.energy=MAX_ENERGY;state.lastEnergyAt=Date.now();state.cooldownUntil=0;state.assists=0;state.secondsSaved=0;persist();return result;};
-  function frame(now){if(!document.hidden&&now-lastTick>80){lastTick=now;sync(now);}requestAnimationFrame(frame);}
+  function frame(now){if(!gamePausedV163()&&now-lastTick>80){lastTick=now;sync(now);}requestAnimationFrame(frame);}
   function audit(){const n=nearest(),checks={markerBuilt:!!marker&&marker.parent===scene,energyBounded:state.energy>=0&&state.energy<=MAX_ENERGY,phaseSafe:!n||room(n.build)>.18,materialGateRespected:typeof addConstructionProgress==='function'&&typeof nextPendingDelivery==='function',directActionHook:typeof window.__TYCOON_DIRECT_ACTION__==='function',starterProtected:starterDone()||!marker?.visible};return {version:VERSION,ok:Object.values(checks).every(Boolean),checks,state:{...state,secondsSaved:+state.secondsSaved.toFixed(2)},active:n?{stage:n.build.entry.index,distance:+n.distance.toFixed(2),room:+room(n.build).toFixed(2)}:null,runtime:{...runtime}};}
   if(Array.isArray(typeof AUX_KEYS!=='undefined'?AUX_KEYS:null)&&!AUX_KEYS.includes(KEY))AUX_KEYS.push(KEY);ensureMarker();sync();requestAnimationFrame(frame);persist();window.__TYCOON_V146__={version:VERSION,state,runtime,audit,assist:()=>assist(context())};
   /* v158 integration begin */
@@ -38963,6 +39094,465 @@ body.v51-perf-low #jumpBtn{-webkit-backdrop-filter:none!important;backdrop-filte
 <script src="assets/late-game-v161.js"></script>
 <script src="assets/traffic-v161.js"></script>
 <script src="assets/feel-v161.js"></script>
+
+<style id="v162-focus-style">
+/* v162 focus pass: one primary goal, genuinely progressive navigation. */
+body.v162-focus #secondaryObjectiveV36{display:none!important}
+body.v162-focus .v36-later{display:none!important}
+body.v162-focus #systemsOverlay .v30Row[hidden]{display:none!important}
+body.v162-focus #nextCard{max-width:min(430px,calc(100vw - 24px))}
+body.v162-focus #nextCard .goalHint{max-width:42ch}
+body.v162-focus .v30Panel .v30Btn.primary{box-shadow:0 0 0 2px rgba(214,183,108,.16)}
+body.v162-focus .v30Panel .v30Btn.v36-alt{
+  color:var(--muted,#aab0bb)!important;
+  background:rgba(255,255,255,.035)!important;
+  border-color:rgba(255,255,255,.1)!important;
+  box-shadow:none!important;
+}
+body.v162-focus .v30Panel .v30Btn.v36-alt:hover{
+  color:var(--text,#f4f1e8)!important;
+  background:rgba(255,255,255,.075)!important;
+  border-color:rgba(214,183,108,.26)!important;
+}
+body.v162-focus .v30Panel .v30Btn:not(.primary):not(:hover){box-shadow:none}
+body.v162-focus.v139-carrying #sideJobV125,
+body.v162-focus.v139-carrying #shiftGoalV127,
+body.v162-focus.v138-context-action #sideJobV125,
+body.v162-focus.v138-context-action #shiftGoalV127{
+  opacity:0!important;
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
+@media(max-width:680px){
+  body.v162-focus #nextCard{left:10px;right:10px;width:auto;max-width:none}
+  body.v162-focus #shiftGoalV127{max-width:calc(100vw - 20px)}
+}
+</style>
+<script id="v162-focus-and-quality">
+(()=>{
+  'use strict';
+  const VERSION='v162-focus-and-quality';
+  if(window.__TYCOON_V162_FOCUS__)return;
+
+  const captured=window.__TYCOON_RUNTIME_ERRORS__;
+
+  const MENU_UNLOCKS={
+    openFleetBtn:3,
+    openStaffBtn:4,
+    openBaseBtn:5,
+    openCityBtn:6,
+    openProjectsBtn:8,
+    openTendersBtn:8,
+    openOperationsBtn:9,
+    openBonusBtn:10,
+  };
+  const CITY_REVEAL_STAGE=6;
+  const CITY_STEP_RE=/(openCityBtn|data-district|data-v3[78]-|data-v4[12]-|data-land|data-zone|data-civic|data-police|data-school|data-fire|data-commercial)/;
+
+  function cityQuest(q){return !!q?.steps?.some(step=>CITY_STEP_RE.test(String(step)));}
+  function establishedCity(){
+    try{return CITY_DISTRICTS.some(cfg=>districtLevel(cfg.id)>0)||Number(cityState.population||0)>0;}catch(error){window.__TYCOON_CAPTURE_ERROR__(error,'city-progress-check');return false;}
+  }
+  function existingSystemProgress(id){
+    try{
+      if(id==='openCityBtn')return establishedCity();
+      if(id==='openStaffBtn')return STAFF_CONFIG.some(cfg=>staffLevel(cfg.key)>0);
+      if(id==='openFleetBtn')return FLEET_CONFIG.some(cfg=>fleetLevel(cfg.key)>0)||Object.values(window.__TYCOON_V123__?.state?.owned||{}).some(Boolean);
+      if(id==='openBaseBtn')return BASE_CONFIG.some(cfg=>baseLevel(cfg.key)>0);
+      if(id==='openProjectsBtn')return !!specialProjectState.active||specialProjectState.completed.length>0;
+      if(id==='openTendersBtn')return !!tenderState.active||tenderState.completed.length>0;
+      if(id==='openOperationsBtn')return activeConstructionCount()>0||constructionQueue.length>0;
+    }catch(error){window.__TYCOON_CAPTURE_ERROR__(error,'system-progress-check');}
+    return false;
+  }
+  function focusedChapter(q){
+    const id=String(q?.id||'');
+    if(stageIndex<2)return 1;
+    if(stageIndex<CITY_REVEAL_STAGE)return 2;
+    if(/district|road-network|lighting|power|water|plant-/.test(id))return 3;
+    if(/home|clinic|police|school|land|zone|commerce|park|fire|kindergarten/.test(id))return 4;
+    if(/industrial|business|waterfront/.test(id))return 5;
+    return 6;
+  }
+
+  const questBeforeV162=currentGuideQuest;
+  currentGuideQuest=function(){
+    const q=questBeforeV162.apply(this,arguments);
+    if(!q)return q;
+    if(stageIndex<CITY_REVEAL_STAGE&&!establishedCity()&&cityQuest(q))return null;
+    return {...q,chapterIndex:focusedChapter(q),chapterCount:6};
+  };
+
+  function menuUnlocked(id){
+    if(id==='openMetaBtn')return stats.prestige>0||stageIndex>=STAGES.length;
+    if(existingSystemProgress(id))return true;
+    const at=MENU_UNLOCKS[id];
+    if(at===undefined)return true;
+    if(id==='openBonusBtn'&&document.getElementById('bonusMenuRow')?.hidden)return false;
+    return stageIndex>=at;
+  }
+  function applyFocusedNavigation(){
+    for(const id of Object.keys(NAV_ICONS_V36||{})){
+      const button=document.getElementById(id),row=button?.closest('.v30Row');
+      if(!row)continue;
+      const visible=menuUnlocked(id);
+      row.hidden=!visible;
+      row.classList.toggle('v36-later',!visible);
+      if(!visible)row.classList.remove('v36-recommended','v36-muted');
+    }
+  }
+  function applyFocusedHud(){
+    try{applySmartHudV361?.();}catch(error){window.__TYCOON_CAPTURE_ERROR__(error,'focused-hud');}
+    const secondary=document.getElementById('secondaryObjectiveV36');
+    if(secondary){secondary.classList.remove('show','v361-deferred');secondary.setAttribute('aria-hidden','true');}
+    applyFocusedNavigation();
+  }
+
+  const disclosureBeforeV162=applyProgressiveDisclosureV36;
+  applyProgressiveDisclosureV36=function(){
+    const result=disclosureBeforeV162.apply(this,arguments);
+    applyFocusedNavigation();
+    return result;
+  };
+
+  function economyAudit(){
+    let income=0;
+    return STAGES.slice(0,10).map((stage,index)=>{
+      const before=income;
+      income+=Math.max(0,Number(stage.incomeAdd)||0);
+      return {index,name:stageName(stage),cost:stage.cost,incomeAfter:income,paybackSeconds:income>0?Math.round(stage.cost/income):null,incomeGain:income-before};
+    });
+  }
+  function audit(){
+    const q=currentGuideQuest();
+    const visibleMenus=Object.keys(NAV_ICONS_V36||{}).filter(id=>!document.getElementById(id)?.closest('.v30Row')?.hidden);
+    const checks={
+      cityDeferred:stageIndex>=CITY_REVEAL_STAGE||establishedCity()||!cityQuest(q),
+      singlePrimaryGoal:!document.getElementById('secondaryObjectiveV36')?.classList.contains('show'),
+      menuRules:Object.entries(MENU_UNLOCKS).every(([id,at])=>stageIndex>=at||existingSystemProgress(id)||document.getElementById(id)?.closest('.v30Row')?.hidden!==false),
+      garageRearBound:Math.abs(Number(window.__TYCOON_FLEET_BOUNDS_V161__?.garageMaxZ)-10.62)<.01,
+      scriptsHealthy:V54_STABILITY.disabled.size===0&&V54_STABILITY.errors.size===0&&(window.__TYCOON_V149__?.retryState?.().length||0)===0&&(window.__TYCOON_V149__?.runtime?.errors?.length||0)===0,
+    };
+    return {version:VERSION,ok:Object.values(checks).every(Boolean)&&captured.length===0,checks,stageIndex,guide:q?.id||null,visibleMenus,economy:economyAudit(),capturedErrors:[...captured]};
+  }
+
+  document.body.classList.add('v162-focus');
+  try{applyLanguage();applyFocusedHud();}catch(error){window.__TYCOON_CAPTURE_ERROR__(error,'initial-language');}
+  let lastSignature='';
+  (window.__TYCOON_VISUAL_TICKS__=window.__TYCOON_VISUAL_TICKS__||[]).push(()=>{
+    const signature=`${stageIndex}|${stats.prestige}|${lang}|${document.getElementById('bonusMenuRow')?.hidden?1:0}`;
+    if(signature===lastSignature)return;
+    lastSignature=signature;
+    applyFocusedHud();
+  });
+  window.__TYCOON_V162_FOCUS__={version:VERSION,MENU_UNLOCKS,CITY_REVEAL_STAGE,economyAudit,audit,errors:captured};
+})();
+</script>
+<style id="v163-stability-style">
+body.v163-quality #workdayV158 button.primary,
+body.v163-quality .v30Panel .v30Btn.primary,
+body.v163-quality #developmentV160 button.primary{
+  background:linear-gradient(#e7c984,#ceaa60)!important;border-color:#f2d897!important;color:#25251f!important;
+}
+body.v163-quality .v30Panel .v36-alt,
+body.v163-quality #workdayV158 button.v36-alt,
+body.v163-quality #developmentV160 button.v36-alt{
+  background:#2a3c43!important;border-color:#536970!important;color:#d6e0df!important;box-shadow:none!important;
+}
+body.v163-quality .v30Panel button:focus-visible{outline:3px solid #efd18c;outline-offset:3px}
+@media(prefers-reduced-motion:reduce){body.v163-quality #impactFlash{display:none!important}}
+</style>
+<script id="v163-stability-finalizers">
+(()=>{
+  'use strict';
+  if(window.__TYCOON_V163_QUALITY__)return;
+  document.body.classList.add('v163-quality');
+  const dirty=new Set();let panelFrame=0;
+  function schedule(panel){
+    if(!panel)return;dirty.add(panel);if(panelFrame)return;
+    panelFrame=requestAnimationFrame(()=>{panelFrame=0;for(const p of dirty){if(p.isConnected)refinePanelButtonsV36(p);}dirty.clear();});
+  }
+  function finalPanel(before,id){return function(){const result=before.apply(this,arguments);const overlay=document.getElementById(id);const panel=overlay?.matches('.v30Panel')?overlay:overlay?.querySelector('.v30Panel');refinePanelButtonsV36(panel);return result;};}
+  renderFleetPanel=finalPanel(renderFleetPanel,'fleetOverlay');
+  renderCityPanel=finalPanel(renderCityPanel,'cityOverlay');
+  renderStaffPanel=finalPanel(renderStaffPanel,'staffOverlay');
+  renderProjectsPanel=finalPanel(renderProjectsPanel,'projectsOverlay');
+  renderTendersPanel=finalPanel(renderTendersPanel,'tendersOverlay');
+  renderOperationsPanel=finalPanel(renderOperationsPanel,'operationsOverlay');
+  renderBasePanel=finalPanel(renderBasePanel,'baseOverlay');
+  const systemsBefore=renderSystemsPanel;
+  renderSystemsPanel=finalPanel(function(){const result=systemsBefore.apply(this,arguments);installComfort();return result;},'systemsOverlay');
+  // These floating cards are intentionally retired; avoid repainting their hidden DOM.
+  renderSecondaryObjectiveV36=function(){const el=document.getElementById('secondaryObjectiveV36');if(el?.classList.contains('show'))el.classList.remove('show');};
+  updateRequiredActionV38=function(){const el=document.getElementById('requiredActionV38');if(el?.classList.contains('show'))el.classList.remove('show');};
+  const observed=new WeakSet();
+  const panelObserver=new MutationObserver(records=>{for(const r of records){const panel=r.target.nodeType===1?r.target.closest('.v30Panel'):r.target.parentElement?.closest('.v30Panel');schedule(panel);}});
+  function observePanels(){for(const p of document.querySelectorAll('.v30Panel')){if(observed.has(p))continue;observed.add(p);panelObserver.observe(p,{subtree:true,childList:true,attributes:true,attributeFilter:['class','hidden','disabled']});schedule(p);}}
+  function installComfort(){
+    const anchor=document.getElementById('hapticToggle')?.closest('.v30Row');if(!anchor)return;
+    let row=document.getElementById('screenEffectsRowV163');
+    if(!row){row=document.createElement('div');row.id='screenEffectsRowV163';row.className='v30Row';const title=document.createElement('b'),button=document.createElement('button');button.type='button';button.className='v30Btn';button.id='screenEffectsToggleV163';row.append(title,button);anchor.insertAdjacentElement('afterend',row);button.addEventListener('click',()=>{gameSettings.flashes=!gameSettings.flashes;if(!gameSettings.flashes){impactFlashStrength=0;if(impactFlashEl)impactFlashEl.style.opacity='0';}saveV30Settings();installComfort();});}
+    const ru=lang==='ru',button=row.querySelector('button'),title=row.querySelector('b');
+    const text=ru?'Световые вспышки':'Screen flashes',value=gameSettings.flashes?(ru?'ВКЛ':'ON'):(ru?'ВЫКЛ':'OFF');
+    if(title.textContent!==text)title.textContent=text;if(button.textContent!==value)button.textContent=value;
+    if(button.getAttribute('aria-pressed')!==String(gameSettings.flashes))button.setAttribute('aria-pressed',String(gameSettings.flashes));
+  }
+  function audit(){
+    const now=performance.now(),visiblePanels=[...document.querySelectorAll('.v30Panel')].filter(p=>!p.hidden&&p.getBoundingClientRect().width>0&&p.getBoundingClientRect().height>0);
+    const panelActions=visiblePanels.map(p=>({id:p.id||p.parentElement?.id,count:[...p.querySelectorAll('button.primary,.v30Btn.primary')].filter(b=>!b.disabled&&!b.hidden&&!b.closest('[hidden]')&&b.getBoundingClientRect().width>0).length}));
+    const retrying=window.__TYCOON_V149__?.retryState?.()||[],frameErrors=[...V54_STABILITY.errors.entries()],disabled=[...V54_STABILITY.disabled];
+    const checks={pauseShared:typeof gamePausedV163==='function',renderFresh:gamePausedV163()||now-V54_STABILITY.lastRender<2000,panelsSinglePrimary:panelActions.every(x=>x.count<=1),goalReserved:!!guideWorld.label?.userData.v163MainGoal,noDisabledFrameSubsystems:disabled.length===0,noRetryingVisualCallbacks:retrying.length===0,noFrameErrors:frameErrors.length===0,menuRules:window.__TYCOON_V162_FOCUS__.audit().checks.menuRules};
+    return {version:'v163-stability',ok:Object.values(checks).every(Boolean)&&window.__TYCOON_RUNTIME_ERRORS__.length===0,checks,panelActions,retrying,frameErrors,disabled,errors:[...window.__TYCOON_RUNTIME_ERRORS__],render:{frames:V54_STABILITY.frame,lastRenderMsAgo:Math.round(now-V54_STABILITY.lastRender),dpr:renderDpr,shadowSize:sun.shadow.mapSize.x,drawCalls:renderer.info?.render?.calls},development:window.__TYCOON_V160__?.audit?.()};
+  }
+  observePanels();installComfort();
+  document.addEventListener('visibilitychange',()=>{V54_STABILITY.lastCoreFrame=performance.now();V54_STABILITY._emergencyLast=performance.now();if(!document.hidden)clock.getDelta();},{passive:true});
+  (window.__TYCOON_VISUAL_TICKS__=window.__TYCOON_VISUAL_TICKS__||[]).push(()=>{observePanels();});
+  window.__TYCOON_V163_QUALITY__={version:'v163-stability',audit,syncPanelMarkup:syncPanelMarkupV163};
+})();
+</script>
+<style id="v164-ten-out-of-ten-style">
+:root{--v164-vvh:100dvh;--v164-vvw:100vw;--v164-safe-top:env(safe-area-inset-top,0px);--v164-safe-bottom:env(safe-area-inset-bottom,0px)}
+html,body{width:100%;height:100%;min-height:100%;overflow:hidden}
+body>canvas{display:block;width:100vw!important;width:var(--v164-vvw)!important;height:100dvh!important;height:var(--v164-vvh)!important;touch-action:none}
+.v30Panel{max-height:min(88vh,calc(var(--v164-vvh) - 24px - var(--v164-safe-top) - var(--v164-safe-bottom)))!important}
+.v30Panel :is(button,.v30Btn,[role="button"]){touch-action:manipulation}
+body.v164-perf-low :is(#sideJobV125,#shiftGoalV127,#coachChip,#actionPrompt,.v30Panel){-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+body.v164-perf-low :is(#sideJobV125,#shiftGoalV127,#coachChip){transition-duration:.08s!important}
+body.v164-context-lost #joyBase,body.v164-context-lost #jumpBtn,body.v164-context-lost #actionBtn{pointer-events:none!important;opacity:.28!important}
+@media(max-width:600px),(pointer:coarse){
+  .v30Panel{width:calc(100vw - 16px)!important;width:calc(var(--v164-vvw) - 16px)!important;max-height:calc(var(--v164-vvh) - 16px - var(--v164-safe-top) - var(--v164-safe-bottom))!important}
+  .v30Panel :is(button,.v30Btn,[role="button"]){min-height:44px}
+  .v30Panel :is(input,select,textarea){font-size:16px}
+  #actionBtn{min-height:48px}
+}
+@media(max-height:520px) and (orientation:landscape){
+  .v30Panel{width:min(820px,calc(var(--v164-vvw) - 24px))!important;max-height:calc(var(--v164-vvh) - 12px - var(--v164-safe-top) - var(--v164-safe-bottom))!important}
+  .v30Panel>.v30Head{padding-top:8px!important;padding-bottom:8px!important}
+  body:not(.v46-modal-open) #shiftGoalV127{top:calc(54px + var(--v164-safe-top))!important}
+}
+@media(prefers-reduced-motion:reduce){
+  body.v163-quality *,body.v163-quality *::before,body.v163-quality *::after{scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+}
+</style>
+<script id="v164-ten-out-of-ten-finalizers">
+(()=>{
+  'use strict';
+  if(window.__TYCOON_V164__)return;
+  const levels=['low','balanced','high'];
+  const runtime={level:'high',reason:'boot',averageMs:0,windows:0,badWindows:0,goodWindows:0,longTasks:0,lastQualityAt:0,lastShadowAt:0,viewportUpdates:0};
+  let sampleSeconds=0,sampleFrames=0,dprCooldown=0,lastViewportFrame=0;
+  const mode=()=>['auto','performance','quality'].includes(gameSettings.graphics)?gameSettings.graphics:'auto';
+  const levelRank=x=>levels.indexOf(x);
+  function qualityLabel(value=mode()){
+    const ru=lang==='ru';
+    if(value==='performance')return ru?'FPS':'FPS';
+    if(value==='quality')return ru?'Качество':'Quality';
+    return ru?'Авто':'Auto';
+  }
+  function shadowFor(level){
+    if(level==='low')return VISUAL_MOBILE?512:1024;
+    if(level==='balanced')return 1024;
+    return VISUAL_MOBILE?1024:2048;
+  }
+  function applyShadow(level,force=false){
+    const now=performance.now(),size=shadowFor(level);
+    if(!sun?.shadow||sun.shadow.mapSize.x===size)return;
+    if(!force&&now-runtime.lastShadowAt<12000)return;
+    runtime.lastShadowAt=now;
+    try{sun.shadow.map?.dispose?.();sun.shadow.map=null;sun.shadow.mapSize.set(size,size);sun.shadow.needsUpdate=true;}catch(error){window.__TYCOON_CAPTURE_ERROR__?.(error,'v164-shadow-quality');}
+  }
+  function setLevel(level,reason,force=false){
+    if(!levels.includes(level))level='balanced';
+    const now=performance.now();
+    if(!force&&runtime.level===level)return;
+    if(!force&&now-runtime.lastQualityAt<(levelRank(level)>levelRank(runtime.level)?20000:7000))return;
+    runtime.level=level;runtime.reason=reason;runtime.lastQualityAt=now;
+    document.body.classList.toggle('v164-perf-low',level==='low');
+    document.body.classList.toggle('v51-perf-low',level==='low');
+    document.body.classList.toggle('v51-perf-mid',level==='balanced');
+    document.body.dataset.v164Quality=level;
+    if(window.__TYCOON_V51__)window.__TYCOON_V51__.perf=level==='balanced'?'mid':level;
+    applyShadow(level,force);
+  }
+  function dprBounds(level){
+    const pixels=Math.max(1,innerWidth*innerHeight),budget=level==='low'?1300000:level==='balanced'?2200000:3600000;
+    const areaCap=Math.sqrt(budget/pixels),tierCap=level==='low'?(VISUAL_MOBILE ? .95 : 1.15):level==='balanced'?(VISUAL_MOBILE ? 1.2 : 1.55):MAX_RENDER_DPR;
+    return {min:MIN_RENDER_DPR,max:Math.max(MIN_RENDER_DPR,Math.min(MAX_RENDER_DPR,tierCap,areaCap))};
+  }
+  function applyDpr(avgMs,force=false){
+    const bounds=dprBounds(runtime.level);let next=Math.min(renderDpr,bounds.max);
+    if(mode()==='performance')next=bounds.max;
+    else if(avgMs>28)next=Math.max(bounds.min,next-.14);
+    else if(avgMs>22)next=Math.max(bounds.min,next-.08);
+    else if(avgMs<17.4)next=Math.min(bounds.max,next+.06);
+    if(!force&&Math.abs(next-renderDpr)<.025)return;
+    renderDpr=next;renderer.setPixelRatio(renderDpr);renderer.setSize(Math.max(1,innerWidth),Math.max(1,innerHeight),false);dprCooldown=avgMs<17.4?18:8;
+  }
+  const initialLevel=mode()==='performance'?'low':mode()==='quality'?'high':(WEBGL_RECOVERY_V164||DEVICE_CONSTRAINED_V164?'low':VISUAL_MOBILE?'balanced':'high');
+  setLevel(initialLevel,WEBGL_RECOVERY_V164?'webgl-recovery':'device-profile',true);applyDpr(20,true);
+  tuneRenderResolution=function(dt){
+    if(document.hidden||gamePausedV163())return;
+    dt=Math.max(0,Math.min(.1,Number(dt)||0));sampleSeconds+=dt;sampleFrames++;dprCooldown=Math.max(0,dprCooldown-dt);
+    if(sampleSeconds<2.8)return;
+    const avgMs=sampleSeconds/Math.max(1,sampleFrames)*1000;runtime.averageMs=avgMs;runtime.windows++;
+    sampleSeconds=0;sampleFrames=0;
+    const currentMode=mode();
+    if(currentMode==='performance')setLevel('low','manual-performance');
+    else if(currentMode==='quality')setLevel(avgMs>38?'balanced':'high',avgMs>38?'quality-safety':'manual-quality');
+    else{
+      runtime.badWindows=avgMs>27?runtime.badWindows+1:Math.max(0,runtime.badWindows-1);
+      runtime.goodWindows=avgMs<18?runtime.goodWindows+1:0;
+      if(avgMs>36||runtime.badWindows>=2)setLevel('low','frame-pressure');
+      else if(avgMs>22.5&&runtime.level==='high')setLevel('balanced','frame-pressure');
+      else if(runtime.goodWindows>=4&&runtime.level!=='high'){setLevel(runtime.level==='low'?'balanced':'high','stable-frames');runtime.goodWindows=0;runtime.badWindows=0;}
+    }
+    if(dprCooldown<=0)applyDpr(avgMs);applyShadow(runtime.level);
+  };
+  function updateViewport(){
+    lastViewportFrame=0;const vv=window.visualViewport,w=Math.max(1,Math.round(vv?.width||innerWidth)),h=Math.max(1,Math.round(vv?.height||innerHeight));
+    document.documentElement.style.setProperty('--v164-vvw',w+'px');document.documentElement.style.setProperty('--v164-vvh',h+'px');
+    document.body.classList.toggle('v164-keyboard-open',!!vv&&innerHeight-h>120);runtime.viewportUpdates++;
+  }
+  function scheduleViewport(){if(!lastViewportFrame)lastViewportFrame=requestAnimationFrame(updateViewport);}
+  addEventListener('resize',scheduleViewport,{passive:true});addEventListener('orientationchange',scheduleViewport,{passive:true});
+  window.visualViewport?.addEventListener('resize',scheduleViewport,{passive:true});window.visualViewport?.addEventListener('scroll',scheduleViewport,{passive:true});updateViewport();
+  renderer.domElement.addEventListener('webglcontextlost',()=>document.body.classList.add('v164-context-lost'),{passive:true});
+  if('PerformanceObserver' in window)try{const observer=new PerformanceObserver(list=>{runtime.longTasks+=list.getEntries().length;});observer.observe({type:'longtask',buffered:true});}catch(_){}
+  function installGraphicsRow(){
+    const anchor=document.getElementById('screenEffectsRowV163')||document.getElementById('hapticToggle')?.closest('.v30Row');if(!anchor)return;
+    let row=document.getElementById('graphicsModeRowV164');
+    if(!row){row=document.createElement('div');row.id='graphicsModeRowV164';row.className='v30Row';const title=document.createElement('b'),button=document.createElement('button');button.type='button';button.className='v30Btn';button.id='graphicsModeToggleV164';row.append(title,button);anchor.insertAdjacentElement('afterend',row);button.addEventListener('click',()=>{const order=['auto','performance','quality'],next=order[(order.indexOf(mode())+1)%order.length];gameSettings.graphics=next;saveV30Settings();runtime.lastQualityAt=0;setLevel(next==='performance'?'low':next==='quality'?'high':(DEVICE_CONSTRAINED_V164?'low':VISUAL_MOBILE?'balanced':'high'),'manual-mode',true);applyDpr(runtime.averageMs||20,true);installGraphicsRow();});}
+    row.querySelector('b').textContent=lang==='ru'?'Графика':'Graphics';const button=row.querySelector('button');button.textContent=qualityLabel();button.setAttribute('aria-label',(lang==='ru'?'Режим графики: ':'Graphics mode: ')+qualityLabel());
+  }
+  const systemsV164=renderSystemsPanel;renderSystemsPanel=function(){const result=systemsV164.apply(this,arguments);installGraphicsRow();return result;};installGraphicsRow();
+  setTimeout(()=>{if(runtime.averageMs&&runtime.averageMs<30&&!V54_STABILITY.errors.size)try{sessionStorage.removeItem('tycoon3d_v164_webgl_recovery');}catch(_){}},30000);
+  function audit(){
+    const visible=[...document.querySelectorAll('#actionBtn,.v30Panel,#topRightBtns,#joyBase')].filter(el=>{const s=getComputedStyle(el),r=el.getBoundingClientRect();return !el.hidden&&s.display!=='none'&&s.visibility!=='hidden'&&r.width>1&&r.height>1;});
+    const overflow=visible.filter(el=>{const r=el.getBoundingClientRect();return r.left<-2||r.top<-2||r.right>(window.visualViewport?.width||innerWidth)+2||r.bottom>(window.visualViewport?.height||innerHeight)+2;}).map(el=>el.id||el.className);
+    const prior=window.__TYCOON_V163_QUALITY__?.audit?.()||null;
+    const checks={validMode:['auto','performance','quality'].includes(mode()),dprInBounds:renderDpr>=MIN_RENDER_DPR-.01&&renderDpr<=MAX_RENDER_DPR+.01,validShadow:[512,1024,2048].includes(sun.shadow.mapSize.x),viewportContained:overflow.length===0,noFrameFailures:V54_STABILITY.errors.size===0&&V54_STABILITY.disabled.size===0,priorAudit:prior?.ok!==false};
+    return {version:'v164-ten-out-of-ten',ok:Object.values(checks).every(Boolean),checks,mode:mode(),runtime:{...runtime},render:{dpr:renderDpr,dprBounds:dprBounds(runtime.level),shadow:sun.shadow.mapSize.x,drawCalls:renderer.info?.render?.calls,triangles:renderer.info?.render?.triangles},overflow,prior};
+  }
+  window.__TYCOON_V164__={version:'v164-ten-out-of-ten',runtime,audit,setLevel,updateViewport};
+})();
+</script>
+<style id="v165-graphics-interface-style">
+:root{
+  --v165-panel:#18272d;
+  --v165-panel-deep:#101b22;
+  --v165-line:rgba(210,225,226,.14);
+  --v165-line-soft:rgba(210,225,226,.08);
+  --v165-gold:#e1bd72;
+  --v165-gold-hi:#f3d89b;
+  --v165-text:#f1f3ee;
+  --v165-muted:#a5b1b3;
+}
+body.v165-polish #hud .stat,
+body.v165-polish .iconBtn{background:linear-gradient(160deg,rgba(24,39,45,.94),rgba(12,21,27,.94))!important;border-color:var(--v165-line)!important;box-shadow:0 8px 24px rgba(0,0,0,.24),inset 0 1px rgba(255,255,255,.055)!important}
+body.v165-polish #hud .stat{font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+body.v165-polish .iconBtn:not(:disabled):hover{border-color:rgba(225,189,114,.34)!important;color:#f5e4ba!important;background:linear-gradient(160deg,rgba(36,52,57,.97),rgba(17,28,34,.97))!important}
+body.v165-polish #actionPrompt{background:rgba(14,24,29,.95)!important;border-color:rgba(225,189,114,.28)!important;color:#f0e2bd!important;box-shadow:0 12px 34px rgba(0,0,0,.28)!important}
+body.v165-polish #actionBtn{background:linear-gradient(180deg,var(--v165-gold-hi),var(--v165-gold))!important;border:1px solid #f7dfa7!important;color:#252117!important;box-shadow:0 14px 30px rgba(0,0,0,.30),inset 0 1px rgba(255,255,255,.48)!important}
+body.v165-polish #actionBtn:not(:disabled):active{transform:translateY(1px) scale(.985)!important;filter:brightness(.96)}
+body.v165-polish :is(#systemsOverlay,#metaOverlay,#staffOverlay,#projectsOverlay,#bonusOverlay,#fleetOverlay,#baseOverlay,#tendersOverlay,#operationsOverlay,#cityOverlay,#achOverlay,#hintOverlay){background:rgba(3,8,11,.76)!important;-webkit-backdrop-filter:blur(12px) saturate(.8);backdrop-filter:blur(12px) saturate(.8)}
+body.v165-polish .v30Panel{width:min(720px,calc(100vw - 24px))!important;background:linear-gradient(155deg,var(--v165-panel),var(--v165-panel-deep) 78%)!important;border:1px solid var(--v165-line)!important;border-radius:24px!important;box-shadow:0 34px 110px rgba(0,0,0,.58),inset 0 1px rgba(255,255,255,.06)!important;color:var(--v165-text)!important;padding:0 20px 20px!important}
+body.v165-polish .v30Panel>.v30Head{position:sticky;top:0;z-index:9;margin:0 -20px 14px!important;padding:15px 20px 13px!important;background:linear-gradient(180deg,#20343a 0%,#17272d 86%,rgba(23,39,45,.94) 100%)!important;border-bottom:1px solid var(--v165-line)!important;box-shadow:0 8px 18px rgba(3,8,11,.14)}
+body.v165-polish .v30Head>strong{font-size:19px!important;font-weight:820!important;letter-spacing:-.02em;color:#f7f4ea!important}
+body.v165-polish .v30Close{width:38px!important;height:38px!important;border-radius:11px!important;border-color:var(--v165-line)!important;background:rgba(255,255,255,.035)!important;color:#c7d0d0!important;opacity:1!important}
+body.v165-polish .v30Close:hover{background:rgba(255,255,255,.075)!important;color:white!important}
+body.v165-polish .v161-tabs{position:sticky;top:67px;z-index:8;background:#0e1b22!important;border-color:var(--v165-line)!important;box-shadow:0 8px 18px rgba(3,8,11,.16)}
+body.v165-polish .v30Section{background:rgba(255,255,255,.022)!important;border-color:var(--v165-line-soft)!important;border-radius:15px!important;padding:14px!important}
+body.v165-polish .v30SectionTitle{color:#9eadb0!important;font-size:12px!important;letter-spacing:.13em!important}
+body.v165-polish .v30Row{border-color:var(--v165-line-soft)!important;gap:14px!important}
+body.v165-polish .v30Row b{font-size:13px!important;color:#eef0eb!important}
+body.v165-polish .v30Row .sub{font-size:12px!important;line-height:1.48!important;color:var(--v165-muted)!important}
+body.v165-polish :is(.metaCard,.operationsCard,.staffCard,.projectCard,.bonusCard,.fleetCard,.baseCard,.tenderCard,.fleetOpsCard,.cityCard,.initiativeCard){background:linear-gradient(150deg,rgba(255,255,255,.042),rgba(255,255,255,.016))!important;border-color:var(--v165-line-soft)!important;border-radius:14px!important;padding:13px!important;transition:border-color .14s ease,background .14s ease,transform .14s ease!important}
+body.v165-polish :is(.metaCard,.operationsCard,.staffCard,.projectCard,.bonusCard,.fleetCard,.baseCard,.tenderCard,.fleetOpsCard,.cityCard,.initiativeCard) :is(.name,b){color:#f0f1ec!important;font-size:13px!important;line-height:1.3!important}
+body.v165-polish :is(.metaCard,.operationsCard,.staffCard,.projectCard,.bonusCard,.fleetCard,.baseCard,.tenderCard,.fleetOpsCard,.cityCard,.initiativeCard) :is(.desc,.sub){color:var(--v165-muted)!important;line-height:1.48!important}
+body.v165-polish .v30Btn{border-radius:11px!important;border-color:rgba(200,216,218,.16)!important;background:#263a40!important;color:#e2e8e6!important;min-height:46px!important;font-size:13px!important}
+body.v165-polish .v30Btn.primary{background:linear-gradient(180deg,var(--v165-gold-hi),var(--v165-gold))!important;border-color:#f3d89b!important;color:#292319!important;box-shadow:0 8px 20px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.4)!important}
+body.v165-polish .v30Btn:disabled{filter:saturate(.5);opacity:.38!important}
+body.v165-polish :is(.projectProgress,.cityProgress,.fleetCondition){height:6px!important;background:rgba(255,255,255,.075)!important}
+body.v165-polish :is(.projectProgress,.cityProgress,.fleetCondition)>i{background:linear-gradient(90deg,#7fab92,var(--v165-gold))!important}
+@media(hover:hover) and (pointer:fine){body.v165-polish :is(.metaCard,.operationsCard,.staffCard,.projectCard,.bonusCard,.fleetCard,.baseCard,.tenderCard,.fleetOpsCard,.cityCard,.initiativeCard):hover{border-color:rgba(225,189,114,.24)!important;background:linear-gradient(150deg,rgba(255,255,255,.058),rgba(225,189,114,.025))!important;transform:translateY(-1px)}}
+@media(max-width:680px),(pointer:coarse){
+  body.v165-polish :is(#systemsOverlay,#metaOverlay,#staffOverlay,#projectsOverlay,#bonusOverlay,#fleetOverlay,#baseOverlay,#tendersOverlay,#operationsOverlay,#cityOverlay){align-items:flex-end!important;padding:0!important}
+  body.v165-polish .v30Panel{width:100%!important;max-height:calc(var(--v164-vvh) - var(--v164-safe-top) - 8px)!important;border-radius:24px 24px 0 0!important;border-left:0!important;border-right:0!important;border-bottom:0!important;padding:0 14px calc(16px + var(--v164-safe-bottom))!important}
+  body.v165-polish .v30Panel>.v30Head{margin:0 -14px 12px!important;padding:12px 14px 11px!important;border-radius:24px 24px 0 0}
+  body.v165-polish .v30Panel>.v30Head::before{content:"";position:absolute;top:6px;left:50%;width:38px;height:4px;border-radius:4px;transform:translateX(-50%);background:rgba(220,229,228,.22)}
+  body.v165-polish .v30Head>strong{font-size:18px!important;padding-top:3px}
+  body.v165-polish .v161-tabs{top:62px;margin-left:-3px;margin-right:-3px}
+  body.v165-polish .v30Section{padding:12px!important;border-radius:13px!important}
+  body.v165-polish .v30Row{align-items:stretch!important}
+  body.v165-polish .v30Row>.v30Btn{width:100%!important}
+  body.v165-polish #hud .stat{box-shadow:0 6px 18px rgba(0,0,0,.2)!important}
+}
+@media(max-height:520px) and (orientation:landscape){body.v165-polish .v30Panel{width:min(840px,calc(100vw - 24px))!important;border-radius:20px!important;border:1px solid var(--v165-line)!important;padding-bottom:12px!important}body.v165-polish :is(#systemsOverlay,#metaOverlay,#staffOverlay,#projectsOverlay,#bonusOverlay,#fleetOverlay,#baseOverlay,#tendersOverlay,#operationsOverlay,#cityOverlay){align-items:center!important;padding:6px!important}.v30Panel>.v30Head::before{display:none}}
+@media(prefers-reduced-motion:reduce){body.v165-polish :is(.metaCard,.operationsCard,.staffCard,.projectCard,.bonusCard,.fleetCard,.baseCard,.tenderCard,.fleetOpsCard,.cityCard,.initiativeCard){transition:none!important}}
+</style>
+<script id="v165-graphics-interface-finalizers">
+(()=>{
+  'use strict';
+  if(window.__TYCOON_V165__)return;
+  document.body.classList.add('v165-polish');
+  const runtime={atmosphereFrames:0,contactShadows:0,shadowTargetMoves:0,weather:'',errors:[]};
+  const weatherPalette={
+    clear:{top:new THREE.Color(0x4a90d9),bottom:new THREE.Color(0xcfe9ff),fog:new THREE.Color(0xcfe9ff),mix:0},
+    cloudy:{top:new THREE.Color(0x708797),bottom:new THREE.Color(0xb8c6cb),fog:new THREE.Color(0xaebdc1),mix:.48},
+    rain:{top:new THREE.Color(0x405966),bottom:new THREE.Color(0x83979e),fog:new THREE.Color(0x7f949b),mix:.68},
+    fog:{top:new THREE.Color(0x91a2a4),bottom:new THREE.Color(0xc4cdca),fog:new THREE.Color(0xb8c3c1),mix:.76}
+  };
+  const atmosphere={last:performance.now(),top:new THREE.Color(),bottom:new THREE.Color(),fog:new THREE.Color(),cloud:new THREE.Color()};
+  function updateAtmosphereV165(){
+    const now=performance.now(),dt=Math.min(.1,Math.max(0,(now-atmosphere.last)/1000));atmosphere.last=now;
+    const day=daylightV40(),weather=weatherDefV40().key,p=weatherPalette[weather]||weatherPalette.clear,base=skyColorsV40(),mix=p.mix*(.38+day*.62),k=1-Math.exp(-dt*1.8);
+    atmosphere.top.copy(base[0]).lerp(p.top,mix);atmosphere.bottom.copy(base[1]).lerp(p.bottom,mix);
+    atmosphere.fog.copy(V40_SKY.fogNight).lerp(V40_SKY.fogDay,day).lerp(p.fog,mix);
+    if(sky?.material?.uniforms?.topColor){sky.material.uniforms.topColor.value.lerp(atmosphere.top,k);sky.material.uniforms.bottomColor.value.lerp(atmosphere.bottom,k);}
+    if(scene.fog)scene.fog.color.lerp(atmosphere.fog,k);
+    renderer.setClearColor(atmosphere.bottom,1);
+    atmosphere.cloud.setHex(day<.16?0x8d9aa5:weather==='rain'?0xb5c0c2:weather==='cloudy'?0xd5dcda:0xffffff);
+    const cloudOpacity=weather==='fog' ? .48 : weather==='rain' ? .68 : weather==='cloudy' ? .82 : .94;
+    for(let i=0;i<clouds.length;i++){const cloud=clouds[i];cloud.visible=window.__TYCOON_V164__?.runtime?.level!=='low'||i<3;for(const child of cloud.children){const m=child.material;if(!m)continue;m.color.lerp(atmosphere.cloud,k);m.transparent=cloudOpacity<1;m.opacity=cloudOpacity;m.depthWrite=cloudOpacity>.72;}}
+    const snap=3,px=Math.round(player.position.x/snap)*snap,pz=Math.round(player.position.z/snap)*snap;
+    if(sun.target.position.x!==px||sun.target.position.z!==pz){runtime.shadowTargetMoves++;sun.target.position.set(px,0,pz);}
+    const angle=((v40State.timeOfDay-6)/24)*Math.PI*2;sun.position.set(px+Math.cos(angle)*92,Math.max(-12,Math.sin(angle)*92),pz+Math.sin(angle)*64);
+    runtime.weather=weather;runtime.atmosphereFrames++;
+  }
+  const lightingV165=applySceneLightingV152;
+  applySceneLightingV152=function(){const result=lightingV165.apply(this,arguments);try{updateAtmosphereV165();}catch(error){if(runtime.errors.length<12)runtime.errors.push(String(error?.message||error));window.__TYCOON_CAPTURE_ERROR__?.(error,'v165-atmosphere');}return result;};
+  if(!sun.target.parent)scene.add(sun.target);
+
+  function radialTexture(){
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=64;const ctx=canvas.getContext('2d'),g=ctx.createRadialGradient(32,32,2,32,32,31);
+    g.addColorStop(0,'rgba(255,255,255,.88)');g.addColorStop(.42,'rgba(255,255,255,.48)');g.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=g;ctx.fillRect(0,0,64,64);
+    const texture=new THREE.CanvasTexture(canvas);texture.encoding=THREE.LinearEncoding;texture.minFilter=THREE.LinearFilter;texture.magFilter=THREE.LinearFilter;texture.generateMipmaps=false;return texture;
+  }
+  const contactTexture=radialTexture(),contactGeometry=new THREE.PlaneGeometry(1,1);
+  contactTexture.userData=contactTexture.userData||{};contactTexture.userData.sharedSurfaceV153=true;contactGeometry.userData=contactGeometry.userData||{};contactGeometry.userData.sharedSurfaceV153=true;
+  const contactMaterial=new THREE.MeshBasicMaterial({color:0x101b19,alphaMap:contactTexture,transparent:true,opacity:.28,depthWrite:false,toneMapped:false});contactMaterial.userData.sharedSurfaceV153=true;
+  const playerContactMaterial=contactMaterial.clone();playerContactMaterial.opacity=.34;
+  function contactMesh(material=contactMaterial){const mesh=new THREE.Mesh(contactGeometry,material);mesh.rotation.x=-Math.PI/2;mesh.position.y=.052;mesh.renderOrder=3;mesh.frustumCulled=false;scene.add(mesh);return mesh;}
+  const playerContact=contactMesh(playerContactMaterial);playerContact.name='playerContactShadowV165';playerContact.scale.set(1.12,.72,1);
+  const vehicleContacts=[];let contactSyncAt=0;
+  function ensureVehicleContacts(n){while(vehicleContacts.length<n){const mesh=contactMesh();mesh.name='vehicleContactShadowV165';vehicleContacts.push(mesh);}}
+  function updateContactsV165(now){
+    playerContact.position.x=player.position.x;playerContact.position.z=player.position.z;playerContact.visible=player.visible!==false&&player.position.y<2.2;
+    playerContactMaterial.opacity=.34*Math.max(.15,1-player.position.y/2.2);const airScale=1+Math.min(.6,player.position.y*.18);playerContact.scale.set(1.12*airScale,.72*airScale,1);
+    if(now-contactSyncAt<80)return;contactSyncAt=now;
+    const level=window.__TYCOON_V164__?.runtime?.level||'high',cap=level==='low'?4:VISUAL_MOBILE?7:12,candidates=[];
+    for(const vehicle of serviceVehicles||[]){if(!vehicle||vehicle.visible===false)continue;const d2=(vehicle.position.x-player.position.x)**2+(vehicle.position.z-player.position.z)**2;if(d2<1600)candidates.push({vehicle,d2});}
+    candidates.sort((a,b)=>a.d2-b.d2);const active=candidates.slice(0,cap);ensureVehicleContacts(active.length);
+    for(let i=0;i<vehicleContacts.length;i++){const mesh=vehicleContacts[i],item=active[i];if(!item){mesh.visible=false;continue;}const v=item.vehicle,role=v.userData?.role||'';mesh.visible=true;mesh.position.set(v.position.x,.054,v.position.z);mesh.rotation.z=-(v.rotation?.y||0);const long=/truck|delivery|universal|lift/.test(role)?1.55:1.28;mesh.scale.set(.82,long,1);}
+    runtime.contactShadows=1+active.length;
+  }
+  const oldGroundMaterial=groundShadow.material;
+  groundShadow.material=new THREE.ShaderMaterial({transparent:true,depthWrite:false,toneMapped:false,vertexShader:'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',fragmentShader:'varying vec2 vUv; void main(){float d=distance(vUv,vec2(.5))*2.0;float a=(1.0-smoothstep(.48,1.0,d))*.075;gl_FragColor=vec4(.055,.105,.075,a);}'});groundShadow.material.userData.sharedSurfaceV153=true;oldGroundMaterial?.dispose?.();
+  (window.__TYCOON_VISUAL_TICKS__=window.__TYCOON_VISUAL_TICKS__||[]).push(updateContactsV165);
+  function audit(){const contacts=[playerContact,...vehicleContacts],checks={atmosphereHook:applySceneLightingV152!==lightingV165,skyLinked:!!sky.material?.uniforms?.topColor,softGround:groundShadow.material?.isShaderMaterial===true,contactPool:contacts.every(x=>x.parent===scene),finiteContacts:contacts.every(x=>Number.isFinite(x.position.x)&&Number.isFinite(x.position.z)),noErrors:runtime.errors.length===0};return{version:'v165-graphics-interface',ok:Object.values(checks).every(Boolean),checks,runtime:{...runtime},contacts:contacts.length,weather:weatherDefV40().key,quality:window.__TYCOON_V164__?.runtime?.level||null};}
+  window.__TYCOON_V165__={version:'v165-graphics-interface',runtime,audit,updateAtmosphere:updateAtmosphereV165,updateContacts:updateContactsV165};
+})();
+</script>
 </body>
 
 </html>

@@ -8,7 +8,7 @@ function createCompanyDevelopmentV160(raw){
  const number=(n,max)=>typeof n==='number'&&Number.isFinite(n)?Math.min(max,Math.max(0,n)):0;
  const metrics=value=>Object.fromEntries(keys.map(k=>[k,integer(value?.[k])]));
  function restore(value){
-   state={version:1,levels:Object.fromEntries(ids.map(k=>[k,value?.version===1?integer(value.levels?.[k],5):0])),active:null};
+   state={version:1,levels:Object.fromEntries(ids.map(k=>[k,value?.version===1?integer(value.levels?.[k],5):0])),active:null,legacyGateCredits:value?.version===1?integer(value.legacyGateCredits,6):0};
    const a=value?.version===1?value.active:null;
    if(a&&ids.includes(a.id)&&Number.isInteger(a.level)&&a.level===state.levels[a.id]+1&&a.level<=5&&keys.every(k=>typeof a.last?.[k]==='number'&&Number.isFinite(a.last[k])&&a.last[k]>=0)){const i=a.level-1;state.active={id:a.id,level:a.level,elapsed:number(a.elapsed,seconds[i]),work:integer(a.work,work[i]),last:metrics(a.last)};}
  }
@@ -30,5 +30,8 @@ function createCompanyDevelopmentV160(raw){
  function commission(){if(!writable()||!ready()||env.occupied())return false;const a=state.active;state.levels[a.id]=a.level;state.active=null;return true;}
  function view(){return ids.map(id=>{const level=state.levels[id],a=state.active?.id===id?state.active:null,i=Math.min(4,level);return {id,level,cost:price(id),unlock:unlocks[i],duration:seconds[i],requiredWork:work[i],active:a?{elapsed:a.elapsed,work:a.work,ready:ready()}:null};});}
  restore(raw);
- return {attach(value){env=value;},restore,start,tick,commission,ready,price,view,total:()=>ids.reduce((n,id)=>n+state.levels[id],0),level:id=>state.levels[id]||0,snapshot:()=>JSON.parse(JSON.stringify(state)),reset:()=>restore(null)};
+ return {attach(value){env=value;},restore,start,tick,commission,ready,price,view,
+   migrateLegacyGates(save){if(save&&save.developmentV160===undefined&&typeof save.stageIndex==='number'&&Number.isFinite(save.stageIndex)){state.legacyGateCredits=save.stageIndex>=16?6:save.stageIndex>=10?3:0;}},
+   gateTotal:()=>Math.max(state.legacyGateCredits,ids.reduce((n,id)=>n+state.levels[id],0)),
+   total:()=>ids.reduce((n,id)=>n+state.levels[id],0),level:id=>state.levels[id]||0,snapshot:()=>JSON.parse(JSON.stringify(state)),reset:()=>restore(null)};
 }

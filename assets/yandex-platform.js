@@ -24,6 +24,15 @@
   var SAVE_KEY = 'tycoon3d_save_v3'; // same value as SAVE_KEY in tycoon-v161.html
   var LANG_KEY = 'tycoon3d_lang';    // same value as LANG_KEY in tycoon-v161.html
   var CLOUD_LIMIT = 190000;          // Yandex player data limit is 200 KB in total
+  // Gameplay state created by later systems lives outside SAVE_KEY. It is packed into the cloud
+  // copy so another device restores one coherent run. Device preferences intentionally stay local.
+  var CLOUD_AUX_KEYS_V161 = [
+    'tycoon3d_v351_guide_rewards','tycoon3d_v351_guide_rewards_initialized','tycoon3d_v352_guide_state',
+    'tycoon3d_v40_city_systems','tycoon_v41_utilities_density','tycoon_v42_municipal_operations',
+    'tycoon3d_v119_manual_market_fleet','tycoon3d_v125_activity','tycoon3d_v127_shift_goals',
+    'tycoon3d_v128_engagement','tycoon3d_v135_contract_board','tycoon3d_v144_start_flow',
+    'tycoon3d_v145_fleet_economy','tycoon3d_v146_site_assist'
+  ];
   // Modal screens of the game (same list as currentOverlayV46): the player is not "in gameplay" while one is open.
   var MODAL_SEL = '#systemsOverlay.show,#metaOverlay.show,#staffOverlay.show,#projectsOverlay.show,#bonusOverlay.show,#fleetOverlay.show,#baseOverlay.show,#tendersOverlay.show,#operationsOverlay.show,#cityOverlay.show,#achOverlay.show,#hintOverlay.show';
   var LEADERBOARD = (typeof window.TYCOON_YANDEX_LEADERBOARD === 'string' && window.TYCOON_YANDEX_LEADERBOARD) || 'tycoon';
@@ -152,17 +161,55 @@
   P._shouldRestore = shouldRestore;
 
   var lastUploadedRaw = null, lastUploadAt = 0;
+  function cloudPayloadV161(data) {
+    var core = parse(data); if (!core) return data;
+    var aux = {}, packed = data;
+    // Add keys in priority order and stop each addition at the platform payload ceiling.
+    for (var i = 0; i < CLOUD_AUX_KEYS_V161.length; i++) {
+      var key = CLOUD_AUX_KEYS_V161[i];
+      var raw = safe(function () { return localStorage.getItem(key); });
+      if (!raw || typeof raw !== 'string' || raw.length > 650000) continue;
+      var value = parse(raw); if (!value) continue;
+      aux[key] = value; core.cloudAuxV161 = aux;
+      var candidate = safe(function () { return JSON.stringify(core); });
+      if (!candidate || candidate.length > CLOUD_LIMIT) delete aux[key]; else packed = candidate;
+    }
+    return packed;
+  }
+  function restoreCloudAuxV161(parsed) {
+    var aux = parsed && parsed.cloudAuxV161;
+    if (!aux || typeof aux !== 'object') return 0;
+    var restored = 0;
+    for (var i = 0; i < CLOUD_AUX_KEYS_V161.length; i++) {
+      var key = CLOUD_AUX_KEYS_V161[i];
+      if (!Object.prototype.hasOwnProperty.call(aux, key)) continue;
+      var raw = safe(function () { return JSON.stringify(aux[key]); });
+      if (!raw || raw.length > 650000) continue;
+      safe(function () { localStorage.setItem(key, raw); restored++; });
+    }
+    return restored;
+  }
   function cloudSave(data, flush) {
-    if (!player || typeof data !== 'string' || !data || data.length > CLOUD_LIMIT) return Promise.resolve(false);
-    var o = parse(data);
+    if (!player || typeof data !== 'string' || !data) return Promise.resolve(false);
+    var uploadData = cloudPayloadV161(data);
+    if (!uploadData || uploadData.length > CLOUD_LIMIT) return Promise.resolve(false);
+    var o = parse(uploadData);
     // flush=true (tab hidden / pagehide) asks the SDK to send now instead of batching; ignored by SDKs that do not know it.
-    return settle(Promise.resolve(player.setData({ save: data, savedAt: (o && Number(o.savedAt)) || Date.now() }, !!flush)).then(function () {
+    return settle(Promise.resolve(player.setData({ save: uploadData, savedAt: (o && Number(o.savedAt)) || Date.now() }, !!flush)).then(function () {
       lastUploadedRaw = data; return true;
     }), false);
   }
   function cloudLoad() {
+    if (safe(function () { return sessionStorage.getItem('tycoonSkipCloudRestoreOnceV161'); }) === '1') {
+      safe(function () { sessionStorage.removeItem('tycoonSkipCloudRestoreOnceV161'); });
+      return Promise.resolve(null);
+    }
     if (!player) return Promise.resolve(null);
-    return settle(Promise.resolve(player.getData(['save'])).then(function (d) { return d && typeof d.save === 'string' ? d.save : null; }), null);
+    return settle(Promise.resolve(player.getData(['save'])).then(function (d) {
+      var raw = d && typeof d.save === 'string' ? d.save : null;
+      var parsed = parse(raw);
+      return parsed && parsed.resetV161 === true ? null : raw;
+    }), null);
   }
   function syncTick(force) {
     if (!player) return;
@@ -175,14 +222,18 @@
   }
   // Returns true only when it really starts the reload.
   function restoreFromCloud(cloudRaw) {
-    var stamp = String((parse(cloudRaw) || {}).savedAt || '');
+    var parsedCloud = parse(cloudRaw) || {};
+    var stamp = String(parsedCloud.savedAt || '');
     if (safe(function () { return sessionStorage.getItem('tycoonYandexRestored'); }) === stamp) return false; // never loop
     safe(function () { sessionStorage.setItem('tycoonYandexRestored', stamp); });
     safe(function () { if (typeof suppressAutoSaveV36 !== 'undefined') suppressAutoSaveV36 = true; }); // reload must not re-save the old state
     try {
-      localStorage.setItem(SAVE_KEY, cloudRaw);
+      restoreCloudAuxV161(parsedCloud);
+      delete parsedCloud.cloudAuxV161;
+      var coreRaw = JSON.stringify(parsedCloud);
+      localStorage.setItem(SAVE_KEY, coreRaw);
       ['tycoon3d_save_v3_backup', 'tycoon3d_save_v52_recovery'].forEach(function (k) { safe(function () { localStorage.removeItem(k); }); });
-      lastUploadedRaw = cloudRaw;
+      lastUploadedRaw = coreRaw;
       location.reload();
       return true;
     } catch (_) { safe(function () { if (typeof suppressAutoSaveV36 !== 'undefined') suppressAutoSaveV36 = false; }); return false; }
