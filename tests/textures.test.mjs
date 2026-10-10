@@ -33,7 +33,7 @@ check(loaderFamilies.length === FAMILIES.length && FAMILIES.every((f) => loaderF
 const files = [];
 for (const f of FAMILIES) files.push(`${f}.jpg`, `${f}-roughness.jpg`, `${f}-height.png`);
 const html = fs.readFileSync(path.join(REPO_ROOT, 'tycoon-v161.html'), 'utf8');
-const embedded = JSON.parse(html.match(/const EMBEDDED_ASSETS = (\{.*?\});/)[1]);
+const embedded = JSON.parse(html.match(/const EMBEDDED_ASSETS = (\{.*?\});/)[1].replace(/"splash":window[^}]*\}$/, '"splash":"assets/splash.png"}')); // the user's build reads the splash from the standalone asset map (window.__TYCOON_STANDALONE_ASSETS__), not a literal
 const literal = new Set();
 for (const src of [html, ...fs.readdirSync(ASSETS).filter((n) => n.endsWith('.js')).map((n) => fs.readFileSync(path.join(ASSETS, n), 'utf8'))]) {
   for (const m of src.matchAll(/assets\/([A-Za-z0-9_-]+\.(?:jpg|png))/g)) literal.add(m[1]);

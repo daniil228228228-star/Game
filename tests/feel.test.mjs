@@ -160,11 +160,13 @@ const PLATES = () => {
   const labels = []; scene.traverse((o) => { if (o.userData?.v152WorldLabel) labels.push(o); });
   const markerPlates = new Set(); for (const [id, grp] of industrialPadMarkersV118) { const sp = grp.children.find((c) => c.isSprite); if (sp) { markerPlates.add(sp); sp.userData.padIdV161 = id; } }
   const v = new THREE.Vector3(), ws = new THREE.Vector3(); camera.updateMatrixWorld(true);
-  let chainVisible = 0, shown = 0, far = 0, underHud = 0, small = 0, minNear = 1e9; const rows = [];
+  let chainVisible = 0, shown = 0, mainGoal = 0, far = 0, underHud = 0, small = 0, minNear = 1e9; const rows = [];
   for (const l of labels) {
     let vis = l.visible; for (let p = l.parent; p && vis; p = p.parent) vis = p.visible;
     if (!vis) continue; chainVisible++;
-    if (!(l.material.opacity > 0)) continue;
+    if (!(l.material.opacity > 0.02)) continue;                                              // the user's v163 label fade eases opacity (k = 1 - e^(-14 dt)): a plate on its way out is not "drawn"
+    // the user's v163 "main goal" plate (the one primary goal of the focus pass) is deliberately outside the 4-plate cap and the 24 m range (surface-world-v152.js labelLayout)
+    if (l.userData.v163MainGoal) { mainGoal++; continue; }
     shown++; l.getWorldPosition(v); const d = v.distanceTo(player.position); if (d > 24.5) far++;
     const cd = v.distanceTo(camera.position), pixels = innerHeight / (2 * Math.tan(camera.fov * Math.PI / 360) * Math.max(0.1, cd)); l.getWorldScale(ws);
     v.project(camera); const cx = (v.x + 1) * innerWidth / 2, cy = (1 - v.y) * innerHeight / 2, w = ws.x * pixels, h = ws.y * pixels;
@@ -172,7 +174,7 @@ const PLATES = () => {
     if (d < 9 && markerPlates.has(l)) { minNear = Math.min(minNear, w); if (w < 70) small++; }
     rows.push({ d: +d.toFixed(1), w: Math.round(w), y: Math.round(cy), pad: l.userData.padIdV161 || null });
   }
-  return { total: labels.length, chainVisible, shown, far, underHud, small, minNear: minNear === 1e9 ? null : Math.round(minNear), rows };
+  return { total: labels.length, chainVisible, shown, mainGoal, far, underHud, small, minNear: minNear === 1e9 ? null : Math.round(minNear), rows };
 };
 const spots = await ev(() => {
   const s = INDUSTRIAL_BUILD_STEPS_V118.filter((x) => !x.built() && x.prereq()).map((x) => ({ id: x.id, x: x.pos.x, z: x.pos.z }));
@@ -188,7 +190,7 @@ for (const [px, pz] of poses) {
   lastPlates = P; worstShown = Math.max(worstShown, P.shown); worstFar = Math.max(worstFar, P.far); worstHud = Math.max(worstHud, P.underHud); worstSmall = Math.max(worstSmall, P.small); anyShown += P.shown;
   console.log(`INFO plates at (${px.toFixed(0)},${pz.toFixed(0)}): ${P.total} plate sprites in the scene, ${P.chainVisible} with visible parents, ${P.shown} shown, near-plate min width ${P.minNear} px, rows ${J(P.rows)}`);
 }
-check(worstShown <= 4, `at most 4 plates are drawn at once (opacity > 0) at ${poses.length} spots (max ${worstShown}); scene has ${lastPlates.total} plate sprites (${lastPlates.chainVisible} with visible parents)`);
+check(worstShown <= 4, `at most 4 regular plates (+ the main-goal plate) are drawn at once (opacity > 0.02) at ${poses.length} spots (max ${worstShown}); scene has ${lastPlates.total} plate sprites (${lastPlates.chainVisible} with visible parents)`);
 check(anyShown > 0 && worstFar === 0, `no plate is drawn beyond 24 m (${worstFar}) and plates do appear (${anyShown} drawn over the spots)`);
 check(worstHud === 0, `no drawn plate overlaps the top HUD (#hud/#topRightBtns/#nextCard) at 390x664 (${worstHud})`);
 check(worstSmall === 0, `pad plates (industrial/infra/chain markers) closer than 9 m are >= 70 px wide on screen (${worstSmall} too small)`);

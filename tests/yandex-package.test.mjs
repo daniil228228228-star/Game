@@ -38,8 +38,10 @@ try {
   check(zipBuf.length <= ARCHIVE_LIMIT && entries.length <= 100, `archive ${(zipBuf.length / 1048576).toFixed(2)} MB <= 100 MB, ${entries.length} file(s)`);
   const html = fs.readFileSync(path.join(out, 'index.html'), 'utf8');
   check(html.length < 12 * 1048576, `index.html ${(html.length / 1048576).toFixed(2)} MB < 12 MB`);
-  const splashUri = html.match(/"splash":"(data:image\/png;base64,[A-Za-z0-9+/=]+)"/);
-  check(!!splashUri && html.split(splashUri[1]).length - 1 === 1, 'splash.png is embedded exactly once (the duplicate in the texture-loader map is dropped)');
+  // the user's build (2026-10-06, factories_2) reads the boot splash from the standalone asset map itself (EMBEDDED_ASSETS.splash = window.__TYCOON_STANDALONE_ASSETS__["assets/splash.png"]):
+  // the map holds the ONLY copy, so dedupeSplash (which acts only when exactly two copies exist) correctly leaves it alone
+  const splashUri = html.match(/"assets\/splash\.png":"(data:image\/png;base64,[A-Za-z0-9+/=]+)"/);
+  check(!!splashUri && html.split(splashUri[1]).length - 1 === 1 && /EMBEDDED_ASSETS = \{[^\n]*"splash":window\.__TYCOON_STANDALONE_ASSETS__/.test(html), 'splash.png is embedded exactly once (the asset map holds it, the boot splash reads it from there)');
   check(rep.externalUrls.length === 0, `no external URL in the page (${JSON.stringify(rep.externalUrls)})`);
   check(!/<script[^>]+src=["']?https?:/i.test(html) && !/<link[^>]+href=["']?https?:/i.test(html) && !/@import|url\(\s*["']?https?:/i.test(html), 'no remote <script src>, <link href>, @import, url(http...)');
   check(!/<script[^>]+src=["']?\/sdk\.js/i.test(html), 'the SDK is not hard-wired into the page: the adapter adds /sdk.js itself and only on a Yandex host / ?yandex=1');

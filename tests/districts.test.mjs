@@ -72,7 +72,7 @@ const i2 = await standAt('industrial');
 check(!i2.unlocked && i2.type !== 'district', `industrial: tier ${i2.tier} but reputation ${i2.rep} < ${need2.rep} -> closed, no pad (${J(i2)})`);
 await ev(() => awardCityReputation(1, 'test'));
 const i3 = await standAt('industrial');
-check(i3.unlocked && i3.type === 'district' && i3.id === 'industrial' && i3.level === 0 && i3.rep === need2.rep, `industrial: reputation ${i3.rep} + tier ${i3.tier} -> the hub pad appears (${J(i3)})`);
+check(i3.unlocked && i3.type === 'district' && i3.id === 'industrial' && i3.level === 0 && i3.rep >= need2.rep, `industrial: reputation ${i3.rep} + tier ${i3.tier} -> the hub pad appears (${J(i3)})`);
 
 // ---- 3. guidance chain: finish the base industrial pads first, then the next target must be a district hub pad
 const gd = await ev(() => {

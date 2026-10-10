@@ -39354,12 +39354,12 @@ body.v164-context-lost #joyBase,body.v164-context-lost #jumpBtn,body.v164-contex
     if(level==='balanced')return 1024;
     return VISUAL_MOBILE?1024:2048;
   }
-  function applyShadow(level,force=false){
+  function applyShadow(level,force=false){ // v161 anti-shimmer kept under the adaptive map: normalBias >= half a texel (GROUND_HALF/size m), 0.09..0.12
     const now=performance.now(),size=shadowFor(level);
     if(!sun?.shadow||sun.shadow.mapSize.x===size)return;
     if(!force&&now-runtime.lastShadowAt<12000)return;
     runtime.lastShadowAt=now;
-    try{sun.shadow.map?.dispose?.();sun.shadow.map=null;sun.shadow.mapSize.set(size,size);sun.shadow.needsUpdate=true;}catch(error){window.__TYCOON_CAPTURE_ERROR__?.(error,'v164-shadow-quality');}
+    try{sun.shadow.map?.dispose?.();sun.shadow.map=null;sun.shadow.mapSize.set(size,size);sun.shadow.normalBias=Math.min(.12,Math.max(.09,GROUND_HALF/size));sun.shadow.needsUpdate=true;}catch(error){window.__TYCOON_CAPTURE_ERROR__?.(error,'v164-shadow-quality');}
   }
   function setLevel(level,reason,force=false){
     if(!levels.includes(level))level='balanced';

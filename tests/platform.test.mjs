@@ -153,12 +153,22 @@ try {
   check(cf[0] === false && cf[1] === true && cf[2] === false, `confirm(): first call false (toast), second true ${JSON.stringify(cf)}`);
 
   // cloud save / load / leaderboard
+  // the user's build (factories_2) packs the later systems' localStorage keys into the cloud copy (`cloudAuxV161`), so stored / loaded text is the save PLUS that block: compare the core
   const cloud = await page.evaluate(async () => {
     const raw = JSON.stringify({ saveVersion: 64, savedAt: 123456, stageIndex: 3, buildings: [{ index: 0 }] });
+    const core = (t) => { try { const o = JSON.parse(t); delete o.cloudAuxV161; return JSON.stringify(o); } catch (e) { return null; } };
+    try { localStorage.setItem('tycoon3d_v127_shift_goals', JSON.stringify({ probe: 1 })); } catch (e) { /* storage blocked */ }
     const ok = await cloudSave(raw);
-    return { ok, stored: __f.cloud && __f.cloud.save === raw && __f.cloud.savedAt === 123456, back: (await cloudLoad()) === raw, tooBig: await cloudSave('x'.repeat(200000)) };
+    const stored = !!__f.cloud && core(__f.cloud.save) === raw && __f.cloud.savedAt === 123456;
+    const aux = (() => { try { return JSON.parse(__f.cloud.save).cloudAuxV161['tycoon3d_v127_shift_goals'].probe === 1; } catch (e) { return false; } })();
+    const back = core(await cloudLoad()) === raw;
+    const tooBig = await cloudSave('x'.repeat(200000));
+    // reset tombstone: a cloud copy marked resetV161 is never restored
+    const keep = __f.cloud; __f.cloud = { save: JSON.stringify({ resetV161: true, savedAt: 1 }), savedAt: 1 };
+    const tomb = await cloudLoad(); __f.cloud = keep;
+    return { ok, stored, aux, back, tooBig, tombstoneIgnored: tomb === null };
   });
-  check(cloud.ok === true && cloud.stored && cloud.back && cloud.tooBig === false, `cloud save/load round-trip, oversize refused ${JSON.stringify(cloud)}`);
+  check(cloud.ok === true && cloud.stored && cloud.aux && cloud.back && cloud.tooBig === false && cloud.tombstoneIgnored, `cloud save/load round-trip, oversize refused ${JSON.stringify(cloud)}`);
   const lb = await page.evaluate(async () => {
     const lite = await submitLeaderboardScore(1234.9); const callsLite = __f.lb.length;
     __f.mode = 'logged'; const ok = await submitLeaderboardScore(1234.9);
