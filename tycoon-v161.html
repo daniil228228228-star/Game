@@ -6825,15 +6825,18 @@ function createWorkerNPC(roleKeyOrColor) {
 
   const group = new THREE.Group();
 
+  // v161 (16): the hip joint sits at the torso bottom (y .62, was .48: a 13 cm gap between the thighs and the hips) and the boots are children of the legs
+  // (they were separate meshes left standing while the legs swung +-0.9 rad: the "legs fall off" the user saw). Leg = 0.60 m (0.62 box x scale .935), foot at y ~0.02.
   const bootsMat = new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.92 });
-  for (const sx of [-0.1, 0.1]) {
-    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, 0.2), bootsMat);
-    boot.position.set(sx, 0.05, 0.02);
-    group.add(boot);
+  const LEG_SX = 0.74, LEG_SY = 0.935, HIP_Y = 0.62;
+  const legL = makeLimb(0x2b2f38); legL.scale.set(LEG_SX, LEG_SY, LEG_SX); legL.position.set(-0.11, HIP_Y, 0); group.add(legL);
+  const legR = makeLimb(0x2b2f38); legR.scale.set(LEG_SX, LEG_SY, LEG_SX); legR.position.set(0.11, HIP_Y, 0); group.add(legR);
+  for (const [leg, sx] of [[legL, -0.1], [legR, 0.1]]) {
+    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.12 / LEG_SX, 0.07 / LEG_SY, 0.2 / LEG_SX), bootsMat);   // compensated for the leg scale: a 12 x 7 x 20 cm boot
+    boot.position.set((sx - leg.position.x) / LEG_SX, (0.05 - HIP_Y) / LEG_SY, 0.02 / LEG_SX);
+    boot.name = 'workerBootV161';
+    leg.add(boot);
   }
-
-  const legL = makeLimb(0x2b2f38); legL.scale.setScalar(0.74); legL.position.set(-0.11, 0.48, 0); group.add(legL);
-  const legR = makeLimb(0x2b2f38); legR.scale.setScalar(0.74); legR.position.set(0.11, 0.48, 0); group.add(legR);
 
   const torso = new THREE.Mesh(
     new THREE.BoxGeometry(0.4, 0.54, 0.24),
@@ -6882,7 +6885,7 @@ function createWorkerNPC(roleKeyOrColor) {
   const armR = makeLimb(shirtColor); armR.scale.setScalar(0.68); armR.position.set(0.24, 1.02, 0); group.add(armR);
   addWorkerTool(role.tool, armR);
 
-  return { group, armL, armR, legL, legR, role: role.key, phase: Math.random() * Math.PI * 2, speed: (1 + Math.random() * 0.45) * workerSpeedMultiplier(), target: null, idle: 0, homeBase: null };
+  return { group, armL, armR, legL, legR, parts: { vest, head, helmet, brim }, role: role.key, phase: Math.random() * Math.PI * 2, speed: (1 + Math.random() * 0.45) * workerSpeedMultiplier(), target: null, idle: 0, homeBase: null };
 }
 
 function workerCanHelpPhase(role, phase) {
@@ -12686,10 +12689,11 @@ function createResidentNPC(seed=0){
   const pantsMat=new THREE.MeshStandardMaterial({color:pants,roughness:.86});
   const head=new THREE.Mesh(new THREE.SphereGeometry(.13,8,8),skin);head.position.y=1.12;g.add(head);
   const torso=new THREE.Mesh(new THREE.BoxGeometry(.32,.46,.20),shirtMat);torso.position.y=.77;g.add(torso);
-  const legL=new THREE.Mesh(new THREE.BoxGeometry(.10,.42,.11),pantsMat);legL.position.set(-.085,.35,0);g.add(legL);
-  const legR=new THREE.Mesh(new THREE.BoxGeometry(.10,.42,.11),pantsMat);legR.position.set(.085,.35,0);g.add(legR);
-  const armL=new THREE.Mesh(new THREE.BoxGeometry(.08,.40,.09),shirtMat);armL.position.set(-.21,.78,0);g.add(armL);
-  const armR=new THREE.Mesh(new THREE.BoxGeometry(.08,.40,.09),shirtMat);armR.position.set(.21,.78,0);g.add(armR);
+  const limbGeo=(w,h,d)=>{const q=new THREE.BoxGeometry(w,h,d);q.translate(0,-h/2,0);return q;};   // v161 (16): origin = the hip / shoulder joint (the boxes used to swing about their own centre: the legs detached from the hips)
+  const legL=new THREE.Mesh(limbGeo(.10,.49,.11),pantsMat);legL.position.set(-.085,.55,0);g.add(legL);
+  const legR=new THREE.Mesh(limbGeo(.10,.49,.11),pantsMat);legR.position.set(.085,.55,0);g.add(legR);
+  const armL=new THREE.Mesh(limbGeo(.08,.40,.09),shirtMat);armL.position.set(-.21,.98,0);g.add(armL);
+  const armR=new THREE.Mesh(limbGeo(.08,.40,.09),shirtMat);armR.position.set(.21,.98,0);g.add(armR);
   g.scale.setScalar(.82);
   if(!VISUAL_MOBILE){head.castShadow=true;torso.castShadow=true;}
   scene.add(g);
@@ -27438,6 +27442,8 @@ html,body{overscroll-behavior:none}
 /* v162 HUD top stack: #shiftGoalV127 sits under #carryRouteV139 when both are on screen (offset computed in layoutTopV46); the toast is raised above the floating panels (z 41/42) so it is never hidden behind them. */
 #shiftGoalV127{top:var(--v46-shift-top,calc(72px + var(--v46-safe-top)))!important}
 #toast{z-index:43!important}
+#carryRouteV139{margin-top:var(--v46-carry-dy,0px)!important}
+#manualCoachV143{margin-top:var(--v46-coach-dy,0px)!important}
 #requiredActionV38{bottom:var(--v46-required-bottom,78px)!important}
 #coachChip{bottom:var(--v46-coach-bottom,118px)!important}
 #actionPrompt{bottom:var(--v46-prompt-bottom,168px)!important}
@@ -27583,21 +27589,27 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
     if(intersects(cr,nr,7)){setVar('--v46-contracts-top',(nr?.bottom||base)+7);cr=rect(contracts);}
     if(intersects(cor,nr,7)){setVar('--v46-company-top',(nr?.bottom||base)+7);cor=rect(company);}
     let topOccupied=Math.max(centerBottom,cr?.bottom||0,cor?.bottom||0,hud?.bottom||0);
-    // v162: #carryRouteV139 (centre, top 68px) and #shiftGoalV127 (left, top 72px) are created lazily by later layers
-    // and used to sit at fixed offsets, overlapping each other and the toast in the first minute on a phone
-    // (CHANGELOG_V161.md). One stack now: the carry route keeps its own CSS top, the shift goal moves under it when
-    // they share horizontal space, and the event banner/toast go under both. Nothing is hidden.
-    const carry=$('carryRouteV139'),shift=$('shiftGoalV127');watchLazyV162(carry);watchLazyV162(shift);
-    const carryR=rect(carry);let shiftR=rect(shift);
-    if(shift){
-      if(shiftR&&carryR&&shiftR.left<carryR.right+6&&carryR.left<shiftR.right+6){setVar('--v46-shift-top',carryR.bottom+6);shiftR=rect(shift);}
-      else document.documentElement.style.removeProperty('--v46-shift-top');
+    // v162 + v163 (2026-10-11 (16)): ONE vertical stack for every floating card of the top area. #carryRouteV139 (centre, 68 px), #manualCoachV143 (centre, 112-126 px), #shiftGoalV127 (left, 72 px),
+    // #eventBanner and #toast used to sit at fixed offsets and overlapped each other on a phone (user screenshot 390x664: carry-route card + "2/3 · Неси груз к зелёному маяку" strip + toast
+    // on top of each other). Each card now keeps its own natural position (CSS) and is pushed down only below the cards it would collide with (horizontal + vertical intersection, 6 px gap);
+    // the toast/event banner end up under everything. Nothing is hidden or removed; a new top card = one line in STACK below.
+    const root=document.documentElement;
+    const placed=[];for(const el of [next,sec,prestige,contracts,company]){const q=rect(el);if(q)placed.push(q);}
+    const STACK=[['carryRouteV139','--v46-carry-dy',null],['manualCoachV143','--v46-coach-dy',null],['shiftGoalV127',null,'--v46-shift-top'],['eventBanner',null,'--v46-event-top'],['toast',null,'--v46-toast-top']];
+    for(const [id,dyVar,topVar] of STACK){
+      const el=$(id);if(!el)continue;watchLazyV162(el);
+      if(dyVar)root.style.removeProperty(dyVar);if(topVar)root.style.removeProperty(topVar);
+      if(id==='toast'&&!el.classList.contains('show'))continue;
+      const r0=rect(el);if(!r0)continue;
+      let top=r0.top;const h=r0.height;
+      for(let k=0;k<10;k++){
+        let hit=null;for(const p of placed)if(r0.left<p.right+4&&p.left<r0.right+4&&p.bottom+4>top&&p.top<top+h+4&&(!hit||p.bottom>hit.bottom))hit=p;
+        if(!hit)break;top=hit.bottom+6;
+      }
+      if(top>r0.top+0.5){if(dyVar)setVar(dyVar,top-r0.top);else setVar(topVar,top);}
+      placed.push({left:r0.left,right:r0.right,top,bottom:top+h});
     }
-    topOccupied=Math.max(topOccupied,carryR?.bottom||0,shiftR?.bottom||0);
-    const event=$('eventBanner');
-    if(visible(event)){setVar('--v46-event-top',topOccupied+7);topOccupied=rect(event)?.bottom||topOccupied;}
-    const toast=$('toast');
-    if(visible(toast)&&toast.classList.contains('show')){setVar('--v46-toast-top',topOccupied+7);topOccupied=rect(toast)?.bottom||topOccupied;}
+    for(const p of placed)topOccupied=Math.max(topOccupied,p.bottom);
     return topOccupied;
   }
   function layoutBottomV46(){

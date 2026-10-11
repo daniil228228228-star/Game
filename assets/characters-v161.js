@@ -110,7 +110,8 @@
   }
   const updatePlayerBase = updatePlayer;
   updatePlayer = function (dt) {
-    if (!api.enabled) return updatePlayerBase.apply(this, arguments);
+    if (!api.enabled) { if (api.applied) cleanAll(); return updatePlayerBase.apply(this, arguments); }
+    api.applied = true;
     wrapFootstep();
     playerPre();
     const r = updatePlayerBase.apply(this, arguments);
@@ -184,9 +185,9 @@
   function vary(w) {
     if (w.cvVaried || !w.group) return;
     w.cvVaried = true; api.workers++;
-    const kids = w.group.children, n = api.workers;
+    const n = api.workers;
     try {
-      const vest = kids[5], head = kids[7], helmet = kids[8], brim = kids[9];
+      const { vest, head, helmet, brim } = w.parts || {};   // refs from createWorkerNPC (child indices shifted when the boots moved onto the legs)
       if (vest && vest.material && vest.geometry && vest.geometry.type === 'BoxGeometry') vest.material.color.setHex(VEST[n % VEST.length]);
       if (head && head.material && head.geometry && head.geometry.type === 'SphereGeometry') head.material.color.setHex(SKIN[(n * 3 + 1) % SKIN.length]);
       const shade = HAT_SHADE[n % HAT_SHADE.length];
@@ -202,9 +203,17 @@
   createWorkerNPC = function () { const w = createBase.apply(this, arguments); try { vary(w); initEntity(w); } catch (_) { /* cosmetic */ } return w; };
   for (const w of list()) { try { vary(w); initEntity(w); } catch (_) { /* cosmetic */ } }
 
+  // switched off (CharactersV161.enabled = false): hand every figure back at exactly the base pose (the offsets written last frame are subtracted once), never leave the last overlay pose standing
+  function cleanAll() {
+    api.applied = false;
+    for (const w of list()) if (w && w.cv) entityPre(w);
+    for (const r of residents()) if (r && r.cv) entityPre(r);
+    try { playerPre(); } catch (_) { /* cosmetic */ }
+  }
   const ambientBase = updateAmbientLife;
   updateAmbientLife = function (dt) {
-    if (!api.enabled) return ambientBase.apply(this, arguments);
+    if (!api.enabled) { if (api.applied) cleanAll(); return ambientBase.apply(this, arguments); }
+    api.applied = true;
     const W = list();
     for (let i = 0; i < W.length; i++) { const w = W[i]; if (w && w.group && !w.cv) initEntity(w); entityPre(w); }
     const r = ambientBase.apply(this, arguments);

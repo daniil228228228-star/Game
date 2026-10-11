@@ -7,6 +7,10 @@
 //      (KNOWN ISSUE print otherwise), no mesh added by the overlay;
 //   E. footstep sound: never while muted, rate limited (>= 130 ms);
 //   F. no worker figure stands inside a collider; far figures (> 48 m from the camera) get no overlay;
+//   H. LIMB PIVOTS (2026-10-11 (16), user: «у рабочих при походке как будто ноги отвалились»): for the player, every worker role (builder / rigger / foreman / loader), the sawmill stacker and the
+//      residents, over 150+ frames of real walking: local joint positions stay EXACTLY at rest (limbs only rotate), the world distance between a limb pivot and its anchor in the body frame is
+//      0, the hip / shoulder joint sits on the torso (<= 1 cm), boots are children of the legs, the swing is non-zero; switching the overlay off hands the figures back at the base pose.
+//      SHOTS_DIR=dir also writes mid-stride pictures (side + 3/4) of a worker, a resident and the player.
 //   G. 0 console errors.
 import { openGame, check, waitForState } from './lib/harness.mjs';
 
@@ -152,6 +156,134 @@ const far = await page.evaluate(async () => {
   return { far: w.cv.far, sp: w.cv.sp, ox: w.cv.ox, oaL: w.cv.oaL };
 });
 check(far.far === true && far.ox === 0 && far.oaL === 0, `a figure far from the camera gets no overlay ${J(far)}`);
+
+
+// ---------------------------------------------------------------- H. limb pivots / drift
+import fs from 'node:fs';
+import path from 'node:path';
+const SHOTS = process.env.SHOTS_DIR ? path.resolve(process.env.SHOTS_DIR) : null;
+if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
+await page.evaluate(() => {
+  window.__figH = (get, n) => new Promise((done) => {   // get() -> { o, legs: {name: obj}, arms: {...}, torso, anchor? }; records n frames of the real loop
+    const f = get(); if (!f) return done(null);
+    const limbs = { ...f.legs, ...f.arms }, rest = {}, rot = {};
+    for (const [k, l] of Object.entries(limbs)) { rest[k] = l.position.clone(); rot[k] = { min: 9, max: -9 }; }
+    const anchors = {}; for (const [k, l] of Object.entries(limbs)) anchors[k] = f.group.worldToLocal(l.getWorldPosition(new THREE.Vector3()));
+    let drift = 0, yz = 0, anchorErr = 0, cnt = 0, last = V54_STABILITY.frame, moved = 0, p0 = f.group.position.clone();
+    const tick = () => {
+      if (V54_STABILITY.frame !== last) {
+        last = V54_STABILITY.frame; cnt++; f.group.updateMatrixWorld(true);
+        for (const [k, l] of Object.entries(limbs)) {
+          drift = Math.max(drift, l.position.distanceTo(rest[k]));
+          yz = Math.max(yz, Math.abs(l.rotation.y), Math.abs(l.rotation.z - (k.startsWith('arm') ? 0 : 0)));
+          rot[k].min = Math.min(rot[k].min, l.rotation.x); rot[k].max = Math.max(rot[k].max, l.rotation.x);
+          anchorErr = Math.max(anchorErr, f.group.worldToLocal(l.getWorldPosition(new THREE.Vector3())).distanceTo(anchors[k]));   // pivot vs its anchor in the body frame
+        }
+        moved = Math.max(moved, f.group.position.distanceTo(p0));
+        if (f.keep) f.keep();
+      }
+      if (cnt >= n) return done({ n: cnt, drift, yz, anchorErr, moved, amp: Object.fromEntries(Object.entries(rot).map(([k, r]) => [k, +(r.max - r.min).toFixed(3)])) });
+      requestAnimationFrame(tick);
+    };
+    tick(); setTimeout(() => done({ n: cnt, drift, yz, anchorErr, moved, amp: {}, timeout: true }), 90000);
+  });
+  // distance (body frame, rest) from a joint pivot to a box mesh of the figure: 0 when the pivot is inside the box
+  window.__jointGap = (group, pivotLocal, mesh) => {
+    const bb = new THREE.Box3().setFromObject(mesh); const inv = group.matrixWorld.clone().invert(); bb.applyMatrix4(inv);
+    const dx = Math.max(bb.min.x - pivotLocal.x, 0, pivotLocal.x - bb.max.x), dy = Math.max(bb.min.y - pivotLocal.y, 0, pivotLocal.y - bb.max.y);
+    return Math.hypot(dx, dy);
+  };
+});
+const J2 = (r) => J({ n: r.n, drift: +r.drift.toExponential(1), yz: +r.yz.toExponential(1), anchorErr: +r.anchorErr.toExponential(1), amp: r.amp, moved: +r.moved.toFixed(1) });
+const figs = {};
+// the player: runs for 150 frames
+await page.evaluate(() => { joyVec.x = 0; joyVec.z = 1; });
+figs.player = await page.evaluate(() => __figH(() => ({ group: characterRig, legs: { legL, legR }, arms: { armL, armR } }), 150));
+await page.evaluate(() => { joyVec.x = joyVec.z = 0; });
+const jointP = await page.evaluate(() => { characterRig.updateMatrixWorld(true); return { legL: __jointGap(characterRig, legL.position, hips), legR: __jointGap(characterRig, legR.position, hips), armL: __jointGap(characterRig, armL.position, torso), armR: __jointGap(characterRig, armR.position, torso) }; });
+// workers by role: the player stands next to one of the role, the figures walk on their own
+for (const role of ['builder', 'rigger', 'foreman', 'loader']) {
+  const place = (r) => page.evaluate((role) => { const w = npcWorkers.find((x) => x.role === role); if (!w) return false; player.position.set(w.group.position.x + 4, 0, w.group.position.z + 4); playerVelocity.set(0, 0, 0); return true; }, r);
+  if (!(await place(role))) { console.log(`KNOWN ISSUE: no ${role} in the scene`); continue; }
+  await settleCamera();
+  figs[role] = await page.evaluate((role) => __figH(() => { const w = npcWorkers.find((x) => x.role === role); window.__hw = w; return { group: w.group, legs: { legL: w.legL, legR: w.legR }, arms: { armL: w.armL, armR: w.armR }, keep: () => { player.position.set(w.group.position.x + 4, 0, w.group.position.z + 4); playerVelocity.set(0, 0, 0); } }; }, 200), role);
+  figs[role].joint = await page.evaluate((role) => { const w = npcWorkers.find((x) => x.role === role); w.group.updateMatrixWorld(true); const torso = w.group.children.find((c) => c.geometry && c.geometry.type === 'BoxGeometry' && Math.abs(c.geometry.parameters.height - 0.54) < 1e-6); const boots = []; w.legL.traverse((o) => { if (o.name === 'workerBootV161') boots.push(o); }); w.legR.traverse((o) => { if (o.name === 'workerBootV161') boots.push(o); }); return { legL: __jointGap(w.group, w.legL.position, torso), legR: __jointGap(w.group, w.legR.position, torso), armL: __jointGap(w.group, w.armL.position, torso), armR: __jointGap(w.group, w.armR.position, torso), boots: boots.length, bootsOk: boots.length === 2 && boots.every((b) => b.parent === w.legL || b.parent === w.legR) }; }, role);
+}
+// the sawmill stacker (same set-up as C): stacking pose active, limbs still only rotate
+const stackFig = await page.evaluate(async () => {
+  const w = npcWorkers.find((x) => x.homeBase && Math.hypot(x.homeBase.x - SAWMILL_POS.x, x.homeBase.z - SAWMILL_POS.z) < 16);
+  if (!w) return null;
+  player.position.set(w.homeBase.x + 5, 0, w.homeBase.z + 5); playerVelocity.set(0, 0, 0); w.workBuild = null; w.group.position.set(w.homeBase.x, 0, w.homeBase.z); w.target = new THREE.Vector3(w.homeBase.x, 0, w.homeBase.z); w.idle = 1e6; window.__hs = w;
+  return true;
+});
+if (stackFig) {
+  await settleCamera();
+  figs.stacker = await page.evaluate(() => __figH(() => { const w = __hs; return { group: w.group, legs: { legL: w.legL, legR: w.legR }, arms: { armL: w.armL, armR: w.armR }, keep: () => { sawmillMillV161.userData.anim.running = true; __hs.idle = 1e6; } }; }, 150));
+  figs.stacker.stack = await page.evaluate(() => __hs.cv.stack);
+}
+// residents: the player walks to the one that moves most
+const resPick = await page.evaluate(async () => {
+  const R = livingCityRuntime.residents.filter((r) => r.legL); if (!R.length) return null;
+  player.position.set(R[0].group.position.x + 4, 0, R[0].group.position.z + 4); playerVelocity.set(0, 0, 0);
+  await new Promise((r) => setTimeout(r, 2500));
+  return R.length;
+});
+if (!resPick) console.log('KNOWN ISSUE: no resident in this save, the resident limb check is skipped');
+if (resPick) {
+  figs.resident = await page.evaluate(() => __figH(() => { const R = livingCityRuntime.residents.filter((r) => r.legL); const r = R[0]; window.__hr = r; return { group: r.group, legs: { legL: r.legL, legR: r.legR }, arms: { armL: r.armL, armR: r.armR }, keep: () => { player.position.set(r.group.position.x + 4, 0, r.group.position.z + 4); playerVelocity.set(0, 0, 0); } }; }, 220));
+  figs.resident.joint = await page.evaluate(() => { const r = __hr; r.group.updateMatrixWorld(true); const torso = r.group.children.find((c) => c.geometry && c.geometry.parameters && Math.abs(c.geometry.parameters.height - 0.46) < 1e-6); return { legL: __jointGap(r.group, r.legL.position, torso), legR: __jointGap(r.group, r.legR.position, torso), armL: __jointGap(r.group, r.armL.position, torso), armR: __jointGap(r.group, r.armR.position, torso) }; });
+}
+for (const [kind, r] of Object.entries(figs)) {
+  if (!r) { console.log(`KNOWN ISSUE: no ${kind} figure to measure`); continue; }
+  console.log('limbs', kind, J2(r), r.joint ? J(r.joint) : '');
+  check(r.n >= 100 && r.drift <= 1e-3 && r.yz <= 1e-3, `${kind}: over ${r.n} frames every limb joint stays at its rest position (max drift ${r.drift.toExponential(1)} m <= 1e-3) and only rotates about x (yaw/roll ${r.yz.toExponential(1)})`);
+  check(r.anchorErr <= 0.01, `${kind}: the limb pivot stays within ${(r.anchorErr * 100).toFixed(2)} cm of its anchor in the body frame (<= 1 cm)`);
+}
+check(figs.player && Math.max(...Object.values(figs.player.amp)) > 0.5 && Math.max(jointP.legL, jointP.legR) <= 0.01, `player: legs swing (${J(figs.player && figs.player.amp)}), the thigh joint sits in the hips box (${J(jointP)})`);
+for (const role of ['builder', 'rigger', 'foreman', 'loader']) {
+  const r = figs[role]; if (!r) continue;
+  check(r.joint.legL <= 0.01 && r.joint.legR <= 0.01 && r.joint.armL <= 0.15 && r.joint.armR <= 0.15, `${role}: the hip joints touch the torso (gap ${(r.joint.legL * 100).toFixed(1)} / ${(r.joint.legR * 100).toFixed(1)} cm <= 1 cm), shoulders ${(r.joint.armL * 100).toFixed(1)} cm`);
+  check(r.joint.bootsOk, `${role}: both boots are children of the legs (they swing with them: ${r.joint.boots} found)`);
+}
+{
+  const walkers = ['builder', 'rigger', 'foreman', 'loader'].map((k) => figs[k]).filter(Boolean);
+  check(walkers.some((r) => Math.max(...Object.values(r.amp)) > 0.4), `at least one worker really walked and swung its limbs (max amplitude ${Math.max(0, ...walkers.map((r) => Math.max(...Object.values(r.amp)))).toFixed(2)} rad)`);
+  if (figs.stacker) check(figs.stacker.stack > 0.5 && Math.max(...Object.values(figs.stacker.amp)) > 0.2, `sawmill stacker: stacking pose blend ${figs.stacker.stack.toFixed(2)}, arms move ${J(figs.stacker.amp)}`);
+  if (figs.resident) check(figs.resident.joint.legL <= 0.01 && figs.resident.joint.legR <= 0.01 && figs.resident.joint.armL <= 0.15, `resident: the hip joints touch the torso (gap ${(figs.resident.joint.legL * 100).toFixed(1)} cm), the limbs swing about the joint (amplitude ${J(figs.resident.amp)})`);
+}
+// switching the overlay off hands every figure back at exactly the base pose (nothing of the last overlay pose is left standing)
+const off = await page.evaluate(async () => {
+  CharactersV161.enabled = false;
+  await new Promise((r) => { let n = 0; const f = () => (++n >= 4 ? r() : requestAnimationFrame(f)); f(); });
+  const W = npcWorkers.filter((w) => w.cv), bad = [];
+  for (const w of W) { const c = w.cv; if (c.ox || c.oyaw || c.oy || c.olL || c.olR || c.oaL || c.oaR || c.sy !== 1) bad.push(w.role); }
+  const Pc = CharactersV161.player.o; const pbad = Object.entries(Pc).filter(([k, v]) => v !== (k === 'torsoSY' ? 1 : 0)).map(([k]) => k);
+  CharactersV161.enabled = true;
+  return { n: W.length, bad, pbad };
+});
+check(off.n > 0 && off.bad.length === 0 && off.pbad.length === 0, `overlay switched off: all ${off.n} worker offsets and the player offsets are zero again ${J(off)}`);
+if (SHOTS) {   // deterministic mid-stride poses (legs +-0.85, arms the other way), side and 3/4, nothing else in the frame
+  const shots = await page.evaluate(() => {
+    const out = {}, cv = renderer.domElement;
+    const shoot = (obj, tag, limbs) => {
+      let top = obj; while (top.parent && top.parent !== scene) top = top.parent;
+      const saved = limbs.map((l) => l.rotation.x); const full = scene.children; scene.children = full.filter((o) => o.isLight || o === ground || o === top);
+      limbs[0].rotation.x = 0.85; limbs[1].rotation.x = -0.85; limbs[2].rotation.x = -0.7; limbs[3].rotation.x = 0.7;
+      try {
+        obj.updateMatrixWorld(true); const c = new THREE.Vector3(); obj.getWorldPosition(c); c.y += 0.85;
+        const q = obj.getWorldQuaternion(new THREE.Quaternion()), fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(q), base = Math.atan2(fwd.x, fwd.z);
+        const cam = new THREE.PerspectiveCamera(30, cv.width / cv.height, 0.1, 100);
+        for (const [v, ang] of [['side', Math.PI / 2], ['q34', Math.PI / 4]]) { const yaw = base + ang; cam.position.set(c.x + Math.sin(yaw) * 5.2, c.y + 0.3, c.z + Math.cos(yaw) * 5.2); cam.lookAt(c); cam.updateMatrixWorld(true); renderer.render(scene, cam); out[tag + '-' + v] = cv.toDataURL('image/jpeg', 0.9); }
+      } finally { scene.children = full; limbs.forEach((l, i) => { l.rotation.x = saved[i]; }); }
+    };
+    const w = npcWorkers[0]; shoot(w.group, 'worker', [w.legL, w.legR, w.armL, w.armR]);
+    const r = livingCityRuntime.residents.find((x) => x.legL); if (r) shoot(r.group, 'resident', [r.legL, r.legR, r.armL, r.armR]);
+    shoot(characterRig, 'player', [legL, legR, armL, armR]);
+    return out;
+  });
+  for (const [k, u] of Object.entries(shots)) fs.writeFileSync(path.join(SHOTS, `limbs-${k}.jpg`), Buffer.from(u.split(',')[1], 'base64'));
+  console.log('shots', Object.keys(shots).join(','));
+}
 
 check(g.errors.length === 0, `no console errors ${J(g.errors.slice(0, 3))}`);
 check(g.badResponses.length === 0, `no 4xx ${J(g.badResponses.slice(0, 3))}`);
