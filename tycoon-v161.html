@@ -3711,9 +3711,7 @@ function updateMetalPlantProduction(dt) {
 /*  sparsely decorated between the functional gameplay props.              */
 /* ---------------------------------------------------------------------- */
 (function addEnvironmentPolishPlus() {
-  const parkPathMat = createConcreteMaterial(0xded7cb, { roughness: 0.95 });
   const mulchMat = new THREE.MeshStandardMaterial({ color: 0x9a744d, roughness: 1 });
-  const borderMat = createConcreteMaterial(0xc7c0b3, { roughness: 0.92 });
   const flowerColors = [0xf6f1e7, 0xf59ab3, 0xffd46f, 0x9ed9ff, 0xd6b6ff];
 
   function clearEnvironmentSpot(x, z, roadClear, centerClear) {
@@ -3746,18 +3744,7 @@ function updateMetalPlantProduction(dt) {
     if (dir.lengthSq() < 0.0001) dir.set(0, 0, 1);
     const tangent = new THREE.Vector3(-dir.z, 0, dir.x);
 
-    const border = new THREE.Mesh(new THREE.CircleGeometry(2.3, 28), borderMat);
-    border.rotation.x = -Math.PI / 2;
-    border.position.set(center.x, 0.055, center.z);
-    border.receiveShadow = true;
-    scene.add(border);
-
-    const pathDisc = new THREE.Mesh(new THREE.CircleGeometry(2.08, 28), parkPathMat);
-    pathDisc.rotation.x = -Math.PI / 2;
-    pathDisc.position.set(center.x, 0.062, center.z);
-    pathDisc.receiveShadow = true;
-    scene.add(pathDisc);
-
+    // v161 (16): the white curb + path discs of the pocket park served nothing (user: «белые кружки которые ничего не делают»); the tree bed (mulch), tree, benches, bush and flowers stay
     const mulch = new THREE.Mesh(new THREE.CircleGeometry(1.24, 24), mulchMat);
     mulch.rotation.x = -Math.PI / 2;
     mulch.position.set(center.x, 0.07, center.z);
@@ -3871,7 +3858,6 @@ function updateMetalPlantProduction(dt) {
   const walkMat = createConcreteMaterial(0xdfd9ce, { roughness: 0.95 });
   const curbMat = createConcreteMaterial(0xc7c0b5, { roughness: 0.91 });
   const mulchMat = new THREE.MeshStandardMaterial({ color: 0x98714a, roughness: 1 });
-  const accentMat = new THREE.MeshStandardMaterial({ color: 0xe6dcc8, roughness: 0.93 });
   const flowerPalette = [0xf7efe6, 0xf39ab2, 0xffd76c, 0xaad9ff, 0xdab4ff];
 
   function isAuditClear(x, z, cfg = {}) {
@@ -3908,20 +3894,6 @@ function updateMetalPlantProduction(dt) {
     return tree;
   }
 
-  function addPlazaSpoke(angle, len = 3.2, width = 1.0) {
-    const path = new THREE.Mesh(new THREE.BoxGeometry(width, 0.05, len), walkMat);
-    path.rotation.y = angle;
-    path.position.set(Math.cos(angle) * (4.48 + len * 0.5), 0.028, Math.sin(angle) * (4.48 + len * 0.5));
-    path.receiveShadow = true;
-    scene.add(path);
-
-    const endCap = new THREE.Mesh(new THREE.CircleGeometry(width * 0.56, 18), accentMat);
-    endCap.rotation.x = -Math.PI / 2;
-    endCap.position.set(Math.cos(angle) * (4.48 + len), 0.031, Math.sin(angle) * (4.48 + len));
-    endCap.receiveShadow = true;
-    scene.add(endCap);
-  }
-
   function addPromenadeCluster(angle) {
     const normal = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
     const tangent = new THREE.Vector3(-Math.sin(angle), 0, Math.cos(angle));
@@ -3955,18 +3927,7 @@ function updateMetalPlantProduction(dt) {
   }
 
   function placeGardenCourt(center, orientation = 0) {
-    const border = new THREE.Mesh(new THREE.CircleGeometry(3.15, 32), curbMat);
-    border.rotation.x = -Math.PI / 2;
-    border.position.set(center.x, 0.055, center.z);
-    border.receiveShadow = true;
-    scene.add(border);
-
-    const walk = new THREE.Mesh(new THREE.CircleGeometry(2.92, 32), walkMat);
-    walk.rotation.x = -Math.PI / 2;
-    walk.position.set(center.x, 0.062, center.z);
-    walk.receiveShadow = true;
-    scene.add(walk);
-
+    // v161 (16): the white curb + walk discs of the garden court served nothing (see placePocketPark); the tree bed (mulch), tree, benches, bushes and flowers stay
     const mulch = new THREE.Mesh(new THREE.CircleGeometry(1.78, 26), mulchMat);
     mulch.rotation.x = -Math.PI / 2;
     mulch.position.set(center.x, 0.07, center.z);
@@ -4004,7 +3965,7 @@ function updateMetalPlantProduction(dt) {
   }
 
   // Central plaza connectors: the fountain area now reads like an intentional civic square.
-  [0.54, 2.11, 3.68, 5.25].forEach(a => addPlazaSpoke(a, 3.3, 1.02));
+  // v161 (16): the four plaza spokes (path box + cream end cap) led from a plaza that is not in the world: the caps lay alone on the grass (user: «белые кружки»). the unused addPlazaSpoke was deleted.
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2 + 0.18;
     const pos = new THREE.Vector3(Math.cos(a) * 6.7, 0, Math.sin(a) * 6.7);
