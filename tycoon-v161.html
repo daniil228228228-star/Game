@@ -27837,7 +27837,7 @@ body{user-select:none;-webkit-user-select:none}
 .v30Btn,.iconBtn,#actionBtn,.requiredActionBtnV38,.guideShowBtn{-webkit-tap-highlight-color:transparent}
 .v30Btn:focus-visible,.iconBtn:focus-visible,#actionBtn:focus-visible,.requiredActionBtnV38:focus-visible,.v30Close:focus-visible,.close:focus-visible{outline:2px solid var(--v47-focus)!important;outline-offset:2px!important}
 #toast{pointer-events:none!important;backdrop-filter:blur(16px)!important}
-#toast.v47-soft{opacity:.88!important}
+#toast.v47-soft.show{opacity:.88!important}   /* v163 (17): was '#toast.v47-soft{opacity:.88!important}' without .show: after the 2.4 s timer removed .show the toast STAYED on screen at .88 for ever (user screenshots: a stale toast sitting on the cards) */
 #actionPrompt{backdrop-filter:blur(16px)!important;transition:opacity .18s ease,transform .18s ease,background .18s ease,border-color .18s ease!important}
 #actionBtn{min-width:116px;min-height:52px!important}
 @media(pointer:fine){#actionBtn:not([hidden])::after{content:'E';display:inline-grid;place-items:center;min-width:18px;height:18px;margin-left:8px;padding:0 4px;border-radius:5px;background:rgba(20,16,10,.16);border:1px solid rgba(20,16,10,.15);font-size:12px;font-weight:950;vertical-align:1px}}

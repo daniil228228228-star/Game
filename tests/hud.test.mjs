@@ -133,6 +133,18 @@ console.log('fade-in race:', J(fade.filter((x) => x.all)));
 check(fade.some((x) => x.all), 'fade-in race: all four (carry route, coach strip, shift goal, toast) were on screen after the fade');
 check(fade.some((x) => x.all && !x.ov.length), `fade-in race: no two of them overlap once the cards are opaque, without any resize event (attempts: ${J(fade.map((x) => x.ov))})`);
 
+// ---- 2c. a toast really disappears (2026-10-11 (17): '#toast.v47-soft{opacity:.88!important}' kept every toast on screen for ever after its .show class was removed: it covered the cards in the user screenshots)
+const gone = await ev(async () => {
+  const t = document.getElementById('toast');
+  toast('Куплено · ' + Date.now());   // a unique text: the same text twice in a row is merged by the game and does not re-arm the timer
+  const shown = t.classList.contains('show') && Number(getComputedStyle(t).opacity) > 0.3;
+  const t0 = performance.now();
+  while (t.classList.contains('show') && performance.now() - t0 < 12000) await new Promise((r) => setTimeout(r, 100));
+  await new Promise((r) => setTimeout(r, 1200));   // the opacity transition
+  return { shown, showClass: t.classList.contains('show'), opacity: Number(getComputedStyle(t).opacity), cls: t.className };
+});
+check(gone.shown && !gone.showClass && gone.opacity < 0.05, `a toast shows and then disappears (opacity ${gone.opacity} after .show was removed, classes "${gone.cls}")`);
+
 // ---- 3. stat feedback frequency under steady income
 const fb = await ev(async () => {
   const hud = document.getElementById('hud');
