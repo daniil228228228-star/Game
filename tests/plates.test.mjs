@@ -31,7 +31,7 @@ const frames = (n) => page.evaluate((n) => new Promise((res) => { const f0 = V54
 const A = await page.evaluate(() => {
   const P = window.PlatesV161, probe = document.createElement('canvas').getContext('2d');
   const FONT = (s, w) => `${w} ${s}px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif`;
-  const rowsOf = (info, weights) => info.rows.map((r, i) => { probe.font = r.font || FONT(r.size, weights[i]);   // premium style (2026-10-11 (17)): the row remembers its exact font (semi-bold title, lighter subtitle) return { text: r.text, size: r.size, measured: probe.measureText(r.text).width, inner: info.inner, ell: r.ellipsis }; });
+  const rowsOf = (info, weights) => info.rows.map((r, i) => { probe.font = r.font || FONT(r.size, weights[i]); return { text: r.text, size: r.size, measured: probe.measureText(r.text).width, inner: info.inner, ell: r.ellipsis }; });
   const WEIGHTS = { 1: [850], 2: [850, 800], 3: [850, 800, 750] };
   const types = new Map();
   const add = (o) => {
@@ -86,7 +86,7 @@ await page.evaluate(() => {
     const stat = (r) => { // dark (pill) / bright (text) share of a screen rect
       const x0 = Math.max(0, Math.floor((r.x - r.w / 2) * k)), y0 = Math.max(0, Math.floor((r.y - r.h / 2) * k)), w = Math.max(1, Math.min(c2.width - x0, Math.floor(r.w * k))), h = Math.max(1, Math.min(c2.height - y0, Math.floor(r.h * k)));
       const d = x2.getImageData(x0, y0, w, h).data; let dark = 0, bright = 0, n = 0;
-      for (let i = 0; i < d.length; i += 4 * 3) { const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; n++; if (l < 70) dark++; else if (l > 190) bright++; }
+      for (let i = 0; i < d.length; i += 4 * 3) { const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; n++; if (l < 70) dark++; else if (l > 120) bright++; }   // 2026-10-11 (17): text is semi-bold / muted and mip-mapped on small plates: its anti-aliased pixels sit at 120..190, not only above 190
       return { dark: dark / n, bright: bright / n };
     };
     const plates = [];
