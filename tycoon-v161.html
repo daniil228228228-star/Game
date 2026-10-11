@@ -27675,6 +27675,10 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
       for(const id of ['hud','nextCard','secondaryObjectiveV36','contractsCard','companyChip','eventBanner','toast','prestigeBtn','requiredActionV38','coachChip','actionPrompt','actionBtn','joyBase','staminaWrap']){const el=$(id);if(el)V46.resizeObs.observe(el);}
       document.querySelectorAll('.v30Panel,#achPanel,#hintCard').forEach(el=>V46.resizeObs.observe(el));
     }
+    // v163 (2026-10-11 (17)): the cards FADE IN (opacity 0 -> 1 over ~.2 s) and visible() ignores a card whose opacity is 0, so a layout pass that ran at the first frame of the fade (the toast shows at the
+    // same moment: "Помощь принята" + the carry-route card + the coach strip) placed the toast without it, and nothing re-ran the pass once the card was opaque: the toast sat on top of the cards (user
+    // screenshot, 390x664). While a toast or one of the stacked cards is on screen the pass is repeated every 240 ms (about 30 rect reads, no work when idle / hidden / a modal is open).
+    setInterval(()=>{if(document.hidden||V46.modal)return;const tt=$('toast');if((tt&&tt.classList.contains('show'))||['carryRouteV139','manualCoachV143','shiftGoalV127','eventBanner'].some(id=>visible($(id))))requestLayoutV46();},240);
     V46.mutObs=new MutationObserver(requestLayoutV46);
     const layoutWatchIds=['hud','topRightBtns','nextCard','secondaryObjectiveV36','contractsCard','companyChip','eventBanner','toast','prestigeBtn','requiredActionV38','coachChip','actionPrompt','actionBtn','joyBase','staminaWrap'];
     for(const id of layoutWatchIds){const el=$(id);if(el)V46.mutObs.observe(el,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['class','hidden','disabled']});}

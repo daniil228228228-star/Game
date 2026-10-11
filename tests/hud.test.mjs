@@ -53,7 +53,7 @@ const runStack = (subset) => ev(async (subset) => {
   const keep = () => {
     for (const [id] of CARDS) {
       const el = document.getElementById(id);
-      if (el && (el.hidden || el.style.opacity !== '1' || el.style.visibility !== 'visible' || el.style.display !== 'block')) { el.hidden = false; el.style.setProperty('opacity', '1', 'important'); el.style.setProperty('visibility', 'visible', 'important'); el.style.setProperty('display', 'block', 'important'); }
+      if (el && (el.hasAttribute('hidden') || el.style.opacity !== '1' || el.style.visibility !== 'visible' || el.style.display !== 'block')) { el.hidden = false; el.style.setProperty('opacity', '1', 'important'); el.style.setProperty('visibility', 'visible', 'important'); el.style.setProperty('display', 'block', 'important'); }
     }
     for (const c of ['v139-carrying', 'v138-context-action', 'v50-action-focus', 'v47-moving']) if (document.body.classList.contains(c)) document.body.classList.remove(c);
   };
@@ -97,6 +97,41 @@ for (const [name, subset] of SCEN) {
   const fin = res.find((x) => x.all && !x.overlaps.length); if (fin) check(Math.max(...Object.values(fin.m).filter(Boolean).map((r) => r.b)) < 640, `${name}: the whole stack ends above the bottom controls (lowest card edge ${Math.max(...Object.values(fin.m).filter(Boolean).map((r) => r.b))} px of 664)`);
   if (subset && fin) check(fin.m.carryRouteV139.t <= 80, `${name}: the carry-route card keeps its own top (${fin.m.carryRouteV139.t} px), the others go below it`);
 }
+
+// ---- 2b. FADE-IN race (2026-10-11 (17), user screenshot 1: toast "Помощь принята · ускорение 1.1с · энергия 2/3" on top of the carry-route card + the "1/3 · Иди к золотому маяку" strip, "Новая смена" below):
+// the cards fade in (opacity 0 -> 1); a layout pass at the first frame of the fade used to skip them and nothing re-ran it. Here the cards start at opacity 0 (with an .2 s transition), the toast shows and ONE
+// layout pass runs in that state; then the cards fade in and NO resize / mutation event is sent: the periodic pass (240 ms) must separate them. Measured pairwise with getBoundingClientRect.
+const fade = await ev(async () => {
+  const CARDS = [['carryRouteV139', null], ['manualCoachV143', '1/3 · Иди к золотому маяку'], ['shiftGoalV127', 'Новая смена · доставь 6 грузов']];
+  const mk = (id, text) => { let el = document.getElementById(id); if (!el) { el = document.createElement('div'); el.id = id; document.body.appendChild(el); } if (text) el.textContent = text; return el; };
+  document.body.classList.remove('v139-carrying', 'v138-context-action', 'v50-action-focus', 'v47-moving');
+  const els = CARDS.map(([id, text]) => mk(id, text));
+  els[0].innerHTML = '<div class="v139Line"><span class="v139Arrow">↑</span><span>На погрузку: 🪵 1</span><span class="v139Dist">23 м</span></div><div class="v139Meta">Забрать: ДОСКИ · 0/1 · 23 м</div>';
+  for (const el of els) { el.removeAttribute('hidden'); try { Object.defineProperty(el, 'hidden', { get: () => false, set: () => {}, configurable: true }); } catch (_) {} }   // the game's own chip ticks re-hide idle chips every frame: shield the property so the card stays on screen
+  const put = (o) => els.forEach((el) => { el.hidden = false; el.style.setProperty('display', 'block', 'important'); el.style.setProperty('visibility', 'visible', 'important'); el.style.setProperty('transition', 'opacity .2s', 'important'); el.style.setProperty('opacity', String(o), 'important'); });
+  let want = 1;   // the game's own chip updaters re-hide idle chips on their ticks: undo it in a microtask (opacity follows `want`)
+  const keep = () => els.forEach((el) => { if (el.hasAttribute('hidden') || el.style.opacity !== String(want) || el.style.display !== 'block' || el.style.visibility !== 'visible') put(want); for (const c of ['v139-carrying', 'v138-context-action', 'v50-action-focus', 'v47-moving']) document.body.classList.remove(c); });
+  const keeper = setInterval(keep, 25);   // a timer, not a MutationObserver: the observer could ping-pong with the game's own tick forever
+  const raf = () => new Promise((r) => requestAnimationFrame(r));
+  const IDS = ['carryRouteV139', 'manualCoachV143', 'shiftGoalV127', 'toast'];
+  const out = [];
+  for (let i = 0; i < 12; i++) {
+    want = 0; put(0); toast('Помощь принята · ускорение 1.1с · энергия 2/3'); try { clearTimeout(toastTimer); } catch (_) {}
+    dispatchEvent(new Event('resize')); await raf(); await raf();   // one pass with the cards still transparent
+    want = 1; put(1);
+    await new Promise((r) => setTimeout(r, 900));   // the fade ends, the periodic pass runs
+    const m = {}; for (const id of IDS) { const el = document.getElementById(id), cs = getComputedStyle(el), r = el.getBoundingClientRect(); m[id] = !el.hidden && cs.display !== 'none' && Number(cs.opacity) > 0.5 && r.width > 1 ? { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom) } : null; }
+    const hit = (a, b) => a && b && a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b, ov = [];
+    for (let a = 0; a < IDS.length; a++) for (let b = a + 1; b < IDS.length; b++) if (hit(m[IDS[a]], m[IDS[b]])) ov.push(IDS[a] + '|' + IDS[b]);
+    out.push({ all: IDS.every((id) => m[id]), ov, m });
+    if (out[out.length - 1].all && !ov.length) break;
+  }
+  clearInterval(keeper);
+  return out;
+});
+console.log('fade-in race:', J(fade.filter((x) => x.all)));
+check(fade.some((x) => x.all), 'fade-in race: all four (carry route, coach strip, shift goal, toast) were on screen after the fade');
+check(fade.some((x) => x.all && !x.ov.length), `fade-in race: no two of them overlap once the cards are opaque, without any resize event (attempts: ${J(fade.map((x) => x.ov))})`);
 
 // ---- 3. stat feedback frequency under steady income
 const fb = await ev(async () => {
