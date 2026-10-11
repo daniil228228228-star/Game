@@ -4,9 +4,9 @@
  * Until now the concrete / metal pickup pads and the piles on them stood ON the service lane (pad = the lane centre, z -7.2), the trucks of all three cargos stopped on the carriageway
  * (the plank spur's last metres, the corridor), and the plants' own plates / aprons reached into the lane. Every cargo now has a LOADING YARD of its own beside the lane:
  *   - a paved slab (concrete family, NOT asphalt) with a kerb and a dropped-kerb gate that two bollards flank, hazard stripes across the gate, a truck bay marked on the slab (side lines,
- *     wheel stop), a lamp post and a cargo sign; the static parts are merged (slab+kerb / paint / lamp heads = 3 meshes, +1 for the plank stack);
+ *     wheel stop), a lamp post and a cargo sign; the static parts are merged (slab+kerb / paint / lamp heads = 3 meshes, no stock meshes);
  *   - the stock on display equals the real stock: concrete / metal = the pile the plant already animates (PlantsV161 PILES, its pose now points into the yard: the blocks hop over the
- *     lane onto it, the jib reaches it), planks = a board stack in the plank yard (floor(planks), at most STACK_CAP, one mesh with a draw range);
+ *     lane onto it, the jib reaches it), planks = NO stack here (2026-10-11: the one plank stack stands at the saw's output, the plank yard is the trucks' lay-by only);
  *   - the trucks stop IN the bay (cargoInfo(...).source), off the carriageway; the route is the game's own up to the lane node (`entry`) and a short lead-in polyline through the gate
  *     (leadIn), the way out is the same polyline reversed. The player's pad stands on the concrete / metal pile (LOGISTICS_ZONES pos); the plank pad stays under the sawmill's lean-to.
  * Roads, nodes, driveways and the depot lot are untouched (road signatures stay): the yards are drawn OUTSIDE the road groups.
@@ -150,12 +150,6 @@
     const loc = (lx, lz) => [s.stop.x + c * lx + n * lz, s.stop.z - n * lx + c * lz];   // rotation.y = yaw: x' = c x + s z, z' = -s x + c z
     for (const sx of [-0.78, 0.78]) { const [bx, bz] = loc(sx, 0.0); P.box(0.07, 0.01, 2.7, bx, FLOOR + 0.005, bz, { c: colors.white, ry: s.yaw }); }
     { const [bx, bz] = loc(0, 1.3); P.box(1.0, 0.1, 0.14, bx, FLOOR + 0.05, bz, { c: colors.yellow, ry: s.yaw }); P.box(1.0, 0.012, 0.07, bx, FLOOR + 0.106, bz, { c: colors.dark, ry: s.yaw }); }
-    if (s.key === 'planks') {   // corner marks around the board stack (the concrete / metal piles stand on the game's own pad mat with its corner posts)
-      for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-        const px = s.pile.x + sx * 0.48, pz = s.pile.z + sz * 0.95;
-        P.box(0.3, 0.01, 0.05, px - sx * 0.12, FLOOR + 0.005, pz, { c: colors.white }); P.box(0.05, 0.01, 0.3, px, FLOOR + 0.005, pz - sz * 0.12, { c: colors.white });
-      }
-    }
     // lamp post with a short arm toward the yard, sign post with an accent plate
     P.cyl(0.05, 0.065, 3.0, 8, s.lamp.x, FLOOR + 1.5, s.lamp.z, { c: colors.post });
     const tx = cx - s.lamp.x, tz = cz - s.lamp.z, tl = Math.hypot(tx, tz) || 1, ax = s.lamp.x + tx / tl * 0.5, az = s.lamp.z + tz / tl * 0.5;
@@ -170,14 +164,7 @@
     add(SL.toMesh(M.slab, { name: 'v161YardSlab_' + s.key, cast: false }));
     add(P.toMesh(M.paint, { name: 'v161YardPaint_' + s.key }));
     add(L.toMesh(M.lamp, { name: 'v161YardLamp_' + s.key, cast: false }));
-    if (s.key === 'planks') {   // dispatch stack of boards: 3 across, layer by layer, the first n boards = the bottom n (draw range follows floor(planks))
-      const B = batch(true);
-      for (let i = 0; i < STACK_CAP; i++) { const layer = Math.floor(i / 3), k = i % 3; B.box(0.2, 0.075, 1.5, s.pile.x + (k - 1) * 0.22 + ((i * 37) % 7 - 3) * 0.004, FLOOR + 0.0375 + 0.03 + layer * 0.08, s.pile.z + ((i * 13) % 5 - 2) * 0.012, { c: i % 3 === 1 ? colors.woodDark : colors.wood }); }
-      const stack = add(B.toMesh(M.paint, { name: 'v161YardPlankStack' }));
-      stack.frustumCulled = false; stack.userData.drawPer = 36; stack.visible = false; stack.geometry.setDrawRange(0, 0);
-      stack.userData.v161Soft = true;
-      yards.planks_stack = stack;
-    }
+    // 2026-10-11: NO plank stack in the plank yard. Planks exist at ONE place only: the pickup stack at the saw's output (assets/sawmill-v161.js syncPlankStackV161). This yard is just the trucks' lay-by.
     // obstacles: bollards, lamp post, sign post (small oriented boxes, registry flags like the plants')
     s.obstacles = [];
     s.bollards.forEach((b, i) => s.obstacles.push({ label: `yard-${s.key}:bollard${i}`, x: b[0], z: b[1], hx: 0.09, hz: 0.09 }));
@@ -234,13 +221,8 @@
     GROUP.visible = true;
     if (changed) { try { window.__TYCOON_V83_COLLISIONS__?.rebuild?.(); } catch (e) { /* ignore */ } }
   }
-  // plank stack follows floor(planks), called every frame by syncPlankStackV161 (the boards appear in the frame the game credits them)
-  function tick(n) {
-    const st = yards.planks_stack; if (!st) return -1;
-    n = Math.max(0, Math.min(STACK_CAP, n | 0));
-    if (st.userData.shown !== n) { st.userData.shown = n; st.geometry.setDrawRange(0, n * st.userData.drawPer); st.visible = n > 0; }
-    return n;
-  }
+  // kept for callers that still pass the stock (sawmill-v161.js): the yard shows no stock any more (one plank stack in the world, at the saw output)
+  function tick() { return -1; }
   function obstacles() {
     const out = []; if (!GROUP || !api.enabled) return out;
     const S = spec();
@@ -254,7 +236,7 @@
       let meshes = 0; y.group.traverse((m) => { if (m.isMesh) meshes++; });
       out.yards[k] = { visible: y.group.visible, meshes, decorHidden: y.hidden, stop: { x: S[k].stop.x, z: S[k].stop.z }, pile: { x: S[k].pile.x, z: S[k].pile.z }, slab: S[k].slab };
     }
-    const st = yards.planks_stack; out.plankStack = st ? { shown: st.userData.shown, visible: st.visible, range: st.geometry.drawRange.count, boards: st.userData.drawPer ? st.geometry.drawRange.count / st.userData.drawPer : 0 } : null;
+    out.plankStack = null;   // 2026-10-11: the plank yard has no stack
     return out;
   }
   const api = { enabled: true, version: 'v161-yards', KEYS, STACK_CAP, spec, pad, stop, pilePose, yardAt, route, settle, sync, tick, obstacles, snap, nudgeTrees, group: () => GROUP, yardGroup: (k) => (yards[k] ? yards[k].group : null), padPos: pad, stopPos: stop };

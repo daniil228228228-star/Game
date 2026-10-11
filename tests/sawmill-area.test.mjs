@@ -164,7 +164,7 @@ async function runFresh() {
   // the player stands at the pad (the name plate is distance-gated like every label)
   await ev(() => { const L = SAWMILL_L_V161, p = sawmillMillV161.localToWorld(new THREE.Vector3(L.PICK_X + 0.4, 0, L.PICK_Z + 2.2)); player.position.set(p.x, 0, p.z); });
   const plate = await page.waitForFunction(() => { const l = LOGISTICS_ZONES.planks.label; return l.visible && l.material.opacity > 0.5 ? { vis: l.visible, op: l.material.opacity } : false; }, null, { timeout: 15000, polling: 'raf' }).then((h) => h.jsonValue(), () => false);
-  check(!!plate, `the name plate "ДОСКИ · ПОГРУЗКА" is visible with the player at the pad ${J(plate)}`);
+  check(!!plate, `the name plate "ДОСКИ · ВЫГРУЗКА ПИЛЫ" is visible with the player at the pad ${J(plate)}`);
   const aim = await ev(() => { const z = LOGISTICS_ZONES.planks; return [z.pos.x, 0.3, z.pos.z]; });
   const shotB = await ev((t) => __shot(t, [-5.2, 4.3, 8.6]), aim);
   save('sawmill-area-2-pickup-empty.jpg', shotB);

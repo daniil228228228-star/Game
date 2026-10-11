@@ -124,14 +124,16 @@ check(J(B.flags.hidden) === '[false,false,false]' && J(B.flags.shown) === '[true
 
 // ------------------------------------------------------------------------------------------------ C. the stock on display is the real stock
 const CAP = 24;
-const shownNow = () => page.evaluate(() => ({ planks: YardsV161.snap().plankStack?.shown, outlet: plankStackV161?.shown, concrete: PlantsV161.snap('concrete')?.pile?.shown, metal: PlantsV161.snap('metal')?.pile?.shown, ranges: { y: YardsV161.snap().plankStack?.boards, c: PlantsV161.snap('concrete')?.pile?.range, m: PlantsV161.snap('metal')?.pile?.range } }));
+const shownNow = () => page.evaluate(() => ({ planks: plankStackV161?.shown, outlet: plankStackV161?.shown, concrete: PlantsV161.snap('concrete')?.pile?.shown, metal: PlantsV161.snap('metal')?.pile?.shown, ranges: { y: null, c: PlantsV161.snap('concrete')?.pile?.range, m: PlantsV161.snap('metal')?.pile?.range } }));
 for (const n of [0, 1, 5, CAP, 60]) {
   await page.evaluate((n) => { planks = n; concrete = n; metal = n; }, n);
   const want = Math.min(CAP, n);
-  const ok = await waitForState(page, (w) => { const s = YardsV161.snap().plankStack, c = PlantsV161.snap('concrete')?.pile, m = PlantsV161.snap('metal')?.pile; return s && c && m && s.shown === w && c.shown === w && m.shown === w; }, want, { timeout: 25000 });
+  const ok = await waitForState(page, (w) => { const s = { shown: plankStackV161?.shown }, c = PlantsV161.snap('concrete')?.pile, m = PlantsV161.snap('metal')?.pile; return c && m && s.shown === w && c.shown === w && m.shown === w; }, want, { timeout: 25000 });
   const sh = await shownNow();
-  check(ok && sh.planks === want && sh.concrete === want && sh.metal === want, `stock ${n}: plank yard stack ${sh.planks}, concrete pile ${sh.concrete}, metal pile ${sh.metal} boards/blocks/beams shown (want ${want}); the outlet stack ${sh.outlet}`);
-  if (n === 0) check(await page.evaluate(() => !YardsV161.yardGroup('planks').getObjectByName('v161YardPlankStack').visible), 'stock 0: the plank yard shows an empty slab (no boards)');
+  check(ok && sh.planks === want && sh.concrete === want && sh.metal === want, `stock ${n}: the (single) plank stack ${sh.planks}, concrete pile ${sh.concrete}, metal pile ${sh.metal} boards/blocks/beams shown (want ${want}); the outlet stack ${sh.outlet}`);
+  // 2026-10-11 (user: "2 зоны с досками ... откуда доски не понятно"): planks exist at ONE place, the pickup stack at the saw output; the plank yard is a lay-by with NO stock mesh
+  const stacks = await page.evaluate(() => { const names = []; scene.traverse((o) => { if (o.isMesh && /plank.?stack/i.test(o.name || '')) names.push(o.name); }); return { names, yardStack: !!YardsV161.yardGroup('planks').getObjectByName('v161YardPlankStack'), snap: YardsV161.snap().plankStack }; });
+  check(stacks.names.length === 1 && stacks.names[0] === 'v161PlankStack' && !stacks.yardStack && stacks.snap === null, `stock ${n}: exactly one plank stack mesh in the scene (${J(stacks.names)}), none in the plank yard`);
 }
 await page.evaluate(() => { planks = 60; concrete = 60; metal = 60; });
 
@@ -191,7 +193,7 @@ check(D.planks.netDist > 2.2 && D.metal.netDist > 2.2, `plank / metal trucks wai
 if (SHOTS) {
   fs.mkdirSync(SHOTS, { recursive: true });
   await page.evaluate(() => { planks = 12; concrete = 12; metal = 12; });
-  await waitForState(page, () => { const s = YardsV161.snap().plankStack, c = PlantsV161.snap('concrete')?.pile, m = PlantsV161.snap('metal')?.pile; return s && c && m && s.shown === 12 && c.shown === 12 && m.shown === 12; }, null, { timeout: 25000 });
+  await waitForState(page, () => { const s = { shown: plankStackV161?.shown }, c = PlantsV161.snap('concrete')?.pile, m = PlantsV161.snap('metal')?.pile; return c && m && s.shown === 12 && c.shown === 12 && m.shown === 12; }, null, { timeout: 25000 });
   const shots = await page.evaluate(() => {
     const Y = YardsV161, S = Y.spec(), cv = renderer.domElement, out = {};
     const saved = [];

@@ -3644,7 +3644,7 @@ function createLoadingZone(key, pos, emoji, ru, en, color, rotation = 0) {
     stripe.rotation.y = 0.38;
     group.add(stripe);
   }
-  const label = makeLabelSprite([`${emoji} ${lang === 'ru' ? ru : en}`, lang === 'ru' ? 'ПОГРУЗКА' : 'LOADING']);
+  const label = makeLabelSprite([`${emoji} ${lang === 'ru' ? ru : en}`, key === 'planks' ? (lang === 'ru' ? 'ВЫГРУЗКА ПИЛЫ' : 'SAW OUTPUT') : (lang === 'ru' ? 'ПОГРУЗКА' : 'LOADING')]); // 2026-10-11: planks exist at ONE place, the saw's output
   label.position.set(0, 1.45, 0);
   label.scale.set(1.26, 0.48, 1);
   group.add(label);
@@ -10852,7 +10852,7 @@ function applyLanguage() {
   fieldUpgradePads.forEach(refreshFieldUpgradePad);
   if (concretePlant?.label) updateLabelSprite(concretePlant.label, [lang === 'ru' ? 'БЕТОННЫЙ ЗАВОД' : 'CONCRETE PLANT', lang === 'ru' ? `🧱 склад ${fmt(concrete)}/${fmt(concreteCapacity())}` : `🧱 storage ${fmt(concrete)}/${fmt(concreteCapacity())}`]);
   if (metalPlant?.label) updateLabelSprite(metalPlant.label, [lang === 'ru' ? 'МЕТАЛЛОБАЗА' : 'STEEL YARD', lang === 'ru' ? `🔩 склад ${fmt(metal)}/${fmt(metalCapacity())}` : `🔩 storage ${fmt(metal)}/${fmt(metalCapacity())}`]);
-  if (LOGISTICS_ZONES.planks?.label) updateLabelSprite(LOGISTICS_ZONES.planks.label, [lang === 'ru' ? '🪵 ДОСКИ' : '🪵 PLANKS', lang === 'ru' ? 'ПОГРУЗКА' : 'LOADING']);
+  if (LOGISTICS_ZONES.planks?.label) updateLabelSprite(LOGISTICS_ZONES.planks.label, [lang === 'ru' ? '🪵 ДОСКИ' : '🪵 PLANKS', lang === 'ru' ? 'ВЫГРУЗКА ПИЛЫ' : 'SAW OUTPUT']);
   if (LOGISTICS_ZONES.concrete?.label) updateLabelSprite(LOGISTICS_ZONES.concrete.label, [lang === 'ru' ? '🧱 БЕТОН' : '🧱 CONCRETE', lang === 'ru' ? 'ПОГРУЗКА' : 'LOADING']);
   if (LOGISTICS_ZONES.metal?.label) updateLabelSprite(LOGISTICS_ZONES.metal.label, [lang === 'ru' ? '🔩 МЕТАЛЛ' : '🔩 STEEL', lang === 'ru' ? 'ПОГРУЗКА' : 'LOADING']);
   for (const v of serviceVehicles) {
@@ -13050,6 +13050,7 @@ function updateCompass() {
     if (r.width > 1) {
       const m = 6, dx = Math.max(0, m - r.left) - Math.max(0, r.right - (innerWidth - m)), dy = Math.max(0, m - r.top) - Math.max(0, r.bottom - (innerHeight - m));
       compassCorrV161.x = THREE.MathUtils.clamp(compassCorrV161.x + dx, -160, 160); compassCorrV161.y = THREE.MathUtils.clamp(compassCorrV161.y + dy, -160, 160);
+      if (!dx && !dy) { compassCorrV161.x *= 0.92; compassCorrV161.y *= 0.92; }
     }
   }
 }
@@ -37247,7 +37248,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
       if(zone.v120LabelKey===labelKey)continue;
       zone.v120LabelKey=labelKey;
       const title=cargoName(key).toUpperCase(); // v161: cargoName() already starts with the emoji (the plate read "🪵 🪵 PLANKS")
-      const detail=!ready?(lang==='ru'?'ПРОИЗВОДСТВО ЗАКРЫТО':'PRODUCTION LOCKED'):playerOwns?(lang==='ru'?'ЗАКАЗ У ИГРОКА':'PLAYER DELIVERY'):left>0?(lang==='ru'?`ВЗЯТЬ ${left} · ПОГРУЗКА`:`TAKE ${left} · LOADING`):(lang==='ru'?'ПОГРУЗКА':'LOADING');
+      const detail=!ready?(lang==='ru'?'ПРОИЗВОДСТВО ЗАКРЫТО':'PRODUCTION LOCKED'):playerOwns?(lang==='ru'?'ЗАКАЗ У ИГРОКА':'PLAYER DELIVERY'):left>0?(lang==='ru'?`ВЗЯТЬ ${left} · ${key==='planks'?'С ПИЛЫ':'ПОГРУЗКА'}`:`TAKE ${left} · ${key==='planks'?'FROM SAW':'LOADING'}`):(key==='planks'?(lang==='ru'?'ВЫГРУЗКА ПИЛЫ':'SAW OUTPUT'):(lang==='ru'?'ПОГРУЗКА':'LOADING')); // 2026-10-11: planks exist only at the saw output
       updateLabelSprite(zone.label,[title,detail]);
     }
   }
