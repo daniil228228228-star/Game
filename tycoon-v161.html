@@ -39331,6 +39331,10 @@ body.v163-quality .v30Panel button:focus-visible{outline:3px solid #efd18c;outli
   }
   function finalPanel(before,id){return function(){const result=before.apply(this,arguments);const overlay=document.getElementById(id);const panel=overlay?.matches('.v30Panel')?overlay:overlay?.querySelector('.v30Panel');refinePanelButtonsV36(panel);return result;};}
   renderFleetPanel=finalPanel(renderFleetPanel,'fleetOverlay');
+  // v163 (2026-10-11 (17)): no fleet-sheet rebuild WHILE A FINGER IS DOWN inside an overlay (panelTouchV161.down): the periodic rebuild was already gated, but the many other callers (purchase
+  // handlers of other layers, render(true) of the logistics / operations / workday wrappers) were not, and a rebuild between touchstart and touchend replaces the pressed button (its click is lost:
+  // the flaky 11-13 of 14 "finger held 160-340 ms" check of tests/playthrough.test.mjs). The rebuild that is skipped is repeated by the next throttled updateHUD pass (<= 350 ms after the release).
+  { const fleetFinal=renderFleetPanel; renderFleetPanel=function(){ if(typeof panelTouchV161!=='undefined'&&panelTouchV161.down&&document.getElementById('fleetOverlay')?.classList.contains('show'))return; return fleetFinal.apply(this,arguments); }; }
   renderCityPanel=finalPanel(renderCityPanel,'cityOverlay');
   renderStaffPanel=finalPanel(renderStaffPanel,'staffOverlay');
   renderProjectsPanel=finalPanel(renderProjectsPanel,'projectsOverlay');
