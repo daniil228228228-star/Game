@@ -1335,10 +1335,11 @@ function productionSpeedMultiplier(){ return (1 + metaLevel('production') * 0.06
 
 const GROUND_HALF = 70;
 // Masterplan additions are opt-in for every save, including legacy saves.
-const masterplanStateV161 = {B01:false, B02:false};
+const masterplanStateV161 = {B01:false, B02:false, B03:false};
 function restoreMasterplanV161(data){
   masterplanStateV161.B01 = data?.B01 === true;
   masterplanStateV161.B02 = masterplanStateV161.B01 && data?.B02 === true;
+  masterplanStateV161.B03 = masterplanStateV161.B01 && data?.B03 === true;
 }
 function clampPlayerBoundsV161(x,z,margin=1){
   if(window.MasterplanV161)return window.MasterplanV161.clamp(x,z,margin);
@@ -13652,10 +13653,10 @@ function load() {
       if (Math.hypot(savedX, savedZ) < 1.5) {
         player.position.copy(PLAYER_SPAWN_POS);
       } else {
-        const paidPort = masterplanStateV161.B01 && Number.isFinite(savedX) && Number.isFinite(savedZ) && savedX >= -141 && savedX < -68 && savedZ >= -10 && savedZ <= 65;
+        const paidPort = masterplanStateV161.B01 && Number.isFinite(savedX) && Number.isFinite(savedZ) && ((savedX >= -141 && savedX < -68 && savedZ >= -10 && savedZ <= 65) || (masterplanStateV161.B03 && savedX >= -8 && savedX <= 14 && savedZ >= -155 && savedZ < -68));
         player.position.set(paidPort ? savedX : THREE.MathUtils.clamp(savedX,-GROUND_HALF+2,GROUND_HALF-2),0,paidPort ? savedZ : THREE.MathUtils.clamp(savedZ,-GROUND_HALF+2,GROUND_HALF-2));
       }
-      const safe = !window.MasterplanV161 && masterplanStateV161.B01 && player.position.x < -68 ? {x:player.position.x,z:player.position.z} : nearestSafePlayerPosition(player.position);
+      const safe = !window.MasterplanV161 && masterplanStateV161.B01 && (player.position.x < -68 || (masterplanStateV161.B03 && player.position.z < -68)) ? {x:player.position.x,z:player.position.z} : nearestSafePlayerPosition(player.position);
       player.position.x = safe.x;
       player.position.z = safe.z;
     }

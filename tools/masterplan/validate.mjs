@@ -65,8 +65,14 @@ const stage = plan.existing.stageBuildings, landPoly = plan.land; const pierPoly
     for (const s of stage) { const d = Math.min(...l.poly.map((p) => dist(p, [s.x, s.z]))) - s.r; if (d < 10) prob.stage.push(`${l.id}~stage${s.i} ${d.toFixed(1)}`); }
     const fe = E.find((e) => e.id === l.frontEdge); if (!fe) { prob.nostreet.push(l.id); continue; }
     const d = polyDist(l.door, fe.pts), need = off(fe.cls); frontDist.push(Math.abs(d - need));
-    let bi = 0, bd = 1e9; for (let i = 0; i < fe.pts.length; i++) { const q = dist(fe.pts[i], l.door); if (q < bd) { bd = q; bi = i; } }
-    const t = fe.pts[bi], v = [t[0] - l.door[0], t[1] - l.door[1]], vl = Math.hypot(...v) || 1; const dot = (v[0] * l.normal[0] + v[1] * l.normal[1]) / vl; if (Math.abs(d - need) > 0.8 || dot < 0.9) prob.face.push(`${l.id} d=${d.toFixed(1)} dot=${dot.toFixed(2)}`);
+    let nearest = fe.pts[0], bd = Infinity;
+    for (let i = 1; i < fe.pts.length; i++) {
+      const a=fe.pts[i-1],b=fe.pts[i],dx=b[0]-a[0],dz=b[1]-a[1],len=dx*dx+dz*dz;
+      const u=len?Math.max(0,Math.min(1,((l.door[0]-a[0])*dx+(l.door[1]-a[1])*dz)/len)):0;
+      const q=[a[0]+u*dx,a[1]+u*dz],distance=dist(q,l.door);
+      if(distance<bd){bd=distance;nearest=q;}
+    }
+    const v = [nearest[0] - l.door[0], nearest[1] - l.door[1]], vl = Math.hypot(...v) || 1; const dot = (v[0] * l.normal[0] + v[1] * l.normal[1]) / vl; if (Math.abs(d - need) > 0.8 || dot < 0.9) prob.face.push(`${l.id} d=${d.toFixed(1)} dot=${dot.toFixed(2)}`);
     if (!l.poly.every((p) => inPoly(p, landPoly) || pierPolys.some((pp) => inPoly(p, pp)))) prob.land.push(l.id);
     for (const w of plan.water) if (polyPolyDist(l.poly, w.poly) < 1) prob.water.push(l.id);
   }
