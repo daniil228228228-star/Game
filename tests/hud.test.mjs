@@ -34,8 +34,9 @@ check(vp.w === 390 && vp.h === 664, `iPhone 13 emulation viewport 390x664 (${vp.
 // visible, requests a layout pass ('resize', which runs layoutV46 in the next frame) and measures right after that
 // frame. The check passes when an attempt with all three panels on screen has no overlap; it fails only if EVERY
 // attempt (up to 12) overlaps, which is what the pre-87707f1 layout did deterministically.
-const res = await ev(async () => {
-  const CARDS = [['carryRouteV139', 'Carry route: planks to the site 3/5'], ['manualCoachV143', '2/3 · Неси груз к зелёному маяку'], ['shiftGoalV127', 'Shift goal: deliver 6 loads'], ['nextCard', 'Next: build the sawmill'], ['secondaryObjectiveV36', 'Secondary: 2 houses'], ['contractsCard', 'Contracts 1/3'], ['companyChip', 'Company L2'], ['eventBanner', 'Event: demand +35%']];
+const runStack = (subset) => ev(async (subset) => {
+  const ALL = [['carryRouteV139', 'Carry route: planks to the site 3/5'], ['manualCoachV143', '2/3 · Неси груз к зелёному маяку'], ['shiftGoalV127', 'Shift goal: deliver 6 loads'], ['nextCard', 'Next: build the sawmill'], ['secondaryObjectiveV36', 'Secondary: 2 houses'], ['contractsCard', 'Contracts 1/3'], ['companyChip', 'Company L2'], ['eventBanner', 'Event: demand +35%']];
+  const CARDS = ALL.filter((c) => !subset || subset.includes(c[0]));
   const IDS = [...CARDS.map((c) => c[0]), 'toast'];
   const mk = (id, text) => { let el = document.getElementById(id); if (!el) { el = document.createElement('div'); el.id = id; document.body.appendChild(el); } el.textContent = text; return el; };
   const force = () => {
@@ -84,12 +85,18 @@ const res = await ev(async () => {
   }
   keeper.disconnect();
   return attempts;
-});
-const last = res[res.length - 1];
-console.log(`top stack: ${res.length} attempt(s), last: ${J(last)}`);
-check(res.some((x) => x.all), 'all 9 top cards (carry route, coach, shift goal, next card, secondary, contracts, company, event, toast) were on screen in at least one attempt (forced visible)');
-check(res.some((x) => x.all && !x.overlaps.length), `no two of the 9 top cards overlap at 390x664 (attempts: ${J(res.map((x) => x.overlaps))})`);
-const fin = res.find((x) => x.all && !x.overlaps.length); if (fin) check(Math.max(...Object.values(fin.m).map((r) => r.b)) < 640, `the whole stack ends above the bottom controls (lowest card edge ${Math.max(...Object.values(fin.m).map((r) => r.b))} px of 664)`);
+}, subset);
+// scenario A = the user's screenshot (carry route + coach strip + shift goal + toast), scenario B = all nine cards at once
+const SCEN = [['A: carry route + coach + shift goal + toast (the user screenshot)', ['carryRouteV139', 'manualCoachV143', 'shiftGoalV127']], ['B: all nine top cards', null]];
+for (const [name, subset] of SCEN) {
+  const res = await runStack(subset);
+  const last = res[res.length - 1];
+  console.log(`top stack ${name}: ${res.length} attempt(s), last: ${J(last)}`);
+  check(res.some((x) => x.all), `${name}: every card was on screen in at least one attempt (forced visible)`);
+  check(res.some((x) => x.all && !x.overlaps.length), `${name}: no two cards overlap at 390x664 (attempts: ${J(res.map((x) => x.overlaps))})`);
+  const fin = res.find((x) => x.all && !x.overlaps.length); if (fin) check(Math.max(...Object.values(fin.m).filter(Boolean).map((r) => r.b)) < 640, `${name}: the whole stack ends above the bottom controls (lowest card edge ${Math.max(...Object.values(fin.m).filter(Boolean).map((r) => r.b))} px of 664)`);
+  if (subset && fin) check(fin.m.carryRouteV139.t <= 80, `${name}: the carry-route card keeps its own top (${fin.m.carryRouteV139.t} px), the others go below it`);
+}
 
 // ---- 3. stat feedback frequency under steady income
 const fb = await ev(async () => {

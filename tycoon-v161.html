@@ -27444,6 +27444,9 @@ html,body{overscroll-behavior:none}
 #toast{z-index:43!important}
 #carryRouteV139{margin-top:var(--v46-carry-dy,0px)!important}
 #manualCoachV143{margin-top:var(--v46-coach-dy,0px)!important}
+#shiftGoalV127{margin-top:var(--v46-shift-dy,0px)!important}
+#eventBanner{margin-top:var(--v46-event-dy,0px)!important}
+#toast{margin-top:var(--v46-toast-dy,0px)!important}
 #requiredActionV38{bottom:var(--v46-required-bottom,78px)!important}
 #coachChip{bottom:var(--v46-coach-bottom,118px)!important}
 #actionPrompt{bottom:var(--v46-prompt-bottom,168px)!important}
@@ -27586,8 +27589,12 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
     const company=$('companyChip');setVar('--v46-company-top',base);
     const contracts=$('contractsCard');setVar('--v46-contracts-top',base);
     let cr=rect(contracts),cor=rect(company);nr=rect(next);
-    if(intersects(cr,nr,7)){setVar('--v46-contracts-top',(nr?.bottom||base)+7);cr=rect(contracts);}
-    if(intersects(cor,nr,7)){setVar('--v46-company-top',(nr?.bottom||base)+7);cor=rect(company);}
+    // v163 (16): the side chips go under the next card AND under the secondary objective (it sits under the next card, full width, and used to overlap them)
+    const sr2=rect(sec),blockers=[nr,sr2].filter(Boolean);
+    for(const b of blockers){
+      if(intersects(cr,b,7)){setVar('--v46-contracts-top',b.bottom+7);cr=rect(contracts);}
+      if(intersects(cor,b,7)){setVar('--v46-company-top',b.bottom+7);cor=rect(company);}
+    }
     let topOccupied=Math.max(centerBottom,cr?.bottom||0,cor?.bottom||0,hud?.bottom||0);
     // v162 + v163 (2026-10-11 (16)): ONE vertical stack for every floating card of the top area. #carryRouteV139 (centre, 68 px), #manualCoachV143 (centre, 112-126 px), #shiftGoalV127 (left, 72 px),
     // #eventBanner and #toast used to sit at fixed offsets and overlapped each other on a phone (user screenshot 390x664: carry-route card + "2/3 · Неси груз к зелёному маяку" strip + toast
@@ -27595,10 +27602,10 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
     // the toast/event banner end up under everything. Nothing is hidden or removed; a new top card = one line in STACK below.
     const root=document.documentElement;
     const placed=[];for(const el of [next,sec,prestige,contracts,company]){const q=rect(el);if(q)placed.push(q);}
-    const STACK=[['carryRouteV139','--v46-carry-dy',null],['manualCoachV143','--v46-coach-dy',null],['shiftGoalV127',null,'--v46-shift-top'],['eventBanner',null,'--v46-event-top'],['toast',null,'--v46-toast-top']];
-    for(const [id,dyVar,topVar] of STACK){
+    const STACK=[['carryRouteV139','--v46-carry-dy'],['manualCoachV143','--v46-coach-dy'],['shiftGoalV127','--v46-shift-dy'],['eventBanner','--v46-event-dy'],['toast','--v46-toast-dy']];   // margin-top offsets: independent of each card's own top / transform
+    for(const [id,dyVar] of STACK){
       const el=$(id);if(!el)continue;watchLazyV162(el);
-      if(dyVar)root.style.removeProperty(dyVar);if(topVar)root.style.removeProperty(topVar);
+      root.style.removeProperty(dyVar);
       if(id==='toast'&&!el.classList.contains('show'))continue;
       const r0=rect(el);if(!r0)continue;
       let top=r0.top;const h=r0.height;
@@ -27606,7 +27613,7 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
         let hit=null;for(const p of placed)if(r0.left<p.right+4&&p.left<r0.right+4&&p.bottom+4>top&&p.top<top+h+4&&(!hit||p.bottom>hit.bottom))hit=p;
         if(!hit)break;top=hit.bottom+6;
       }
-      if(top>r0.top+0.5){if(dyVar)setVar(dyVar,top-r0.top);else setVar(topVar,top);}
+      if(top>r0.top+0.5)setVar(dyVar,top-r0.top);
       placed.push({left:r0.left,right:r0.right,top,bottom:top+h});
     }
     for(const p of placed)topOccupied=Math.max(topOccupied,p.bottom);
