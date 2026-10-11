@@ -129,7 +129,7 @@ async function probeAround(name, getCentre, radius, shotName) {
     delete r.shot;
   }
 }
-const signCentre = () => { let p = null; scene.traverse((o) => { if (o.userData && o.userData.v161YardSign) { const v = new THREE.Vector3(); o.getWorldPosition(v); p = { x: v.x, z: v.z }; } }); return p; };
+const signCentre = () => { let p = null; scene.traverse((o) => { if (o.userData && o.userData.v161YardSign) { const v = new THREE.Vector3(); o.userData.v161YardSign.getWorldPosition(v); p = { x: v.x, z: v.z }; } }); return p; };
 const sawCentre = () => ({ x: LOGISTICS_ZONES.planks.group.position.x, z: LOGISTICS_ZONES.planks.group.position.z });
 const padCentre = () => { const t = currentGuidanceTarget(); return t ? { x: t.pos.x, z: t.pos.z } : { x: 0, z: 0 }; };
 await probeAround('yard sign', signCentre, 6.5, 'plates-yard-sign');
