@@ -21,6 +21,7 @@ const record = (n, fnSrc) => page.evaluate(({ n, fnSrc }) => new Promise((res) =
   const t = () => { if (V54_STABILITY.frame !== last) { last = V54_STABILITY.frame; out.push(fn()); } out.length >= n ? res(out) : requestAnimationFrame(t); };
   t(); setTimeout(() => res(out), 60000);
 }), { n, fnSrc });
+const settleCamera = (maxD = 30) => page.evaluate(({ maxD }) => new Promise((res) => { let prev = 1e9, n = 0; const t = () => { const d = Math.hypot(camera.position.x - player.position.x, camera.position.z - player.position.z); if ((d < maxD && Math.abs(d - prev) < 0.02 && ++n > 3) || performance.now() - t0 > 60000) return res(d); prev = d; requestAnimationFrame(t); }; const t0 = performance.now(); t(); }), { maxD });
 const range = (a) => Math.max(...a) - Math.min(...a);
 const PLAYER = '() => [legL.rotation.x, legR.rotation.x, armL.rotation.x, forearmL.rotation.x, torso.rotation.x, playerMoveVisualSpeed, Math.hypot(playerVelocity.x, playerVelocity.z)]';
 
@@ -67,31 +68,35 @@ const H = await page.evaluate(() => {
   const w = npcWorkers.find((x) => x.role === 'builder') || npcWorkers[0], b = growingMeshes[0];
   if (!w || !b) return null;
   window.__w = w; window.__b = b;
-  w.group.position.set(b.entry ? (b.entry.pos?.x ?? w.group.position.x) : w.group.position.x, 0, w.group.position.z);
+  player.position.set(w.group.position.x + 5, 0, w.group.position.z + 5); playerVelocity.set(0, 0, 0);
   w.target = new THREE.Vector3(w.group.position.x, 0, w.group.position.z); w.workBuild = b; w.idle = 1e6; w.velocity?.set(0, 0, 0);
   return { role: w.role, under: !!b.entry?.underConstruction, wait: !!b.waitingForDelivery };
 });
+await settleCamera();
 check(!!H, `a builder and an active construction site exist ${J(H)}`);
 const WSRC = '() => [__w.group.rotation.x, __w.armL.rotation.x, __w.armR.rotation.x, __w.cv ? __w.cv.work : -1]';
-await frames(20);
+// keep the site in its first (helpable) phase and the builder at its spot: the game's own phase gate (workerCanHelpPhase) would otherwise send it away
+await page.evaluate(() => { window.__keepOn = true; const keep = () => { if (!window.__keepOn) return; __b.timer = Math.min(__b.timer, __b.duration * 0.05); __b.phase = 0; if (__w.workBuild) { __w.idle = 1e6; } requestAnimationFrame(keep); }; keep(); });
+await frames(30);
 const act = await record(80, WSRC);
-await page.evaluate(() => { __w.workBuild = null; __w.idle = 1e6; __w.target = new THREE.Vector3(__w.group.position.x, 0, __w.group.position.z); });
+await page.evaluate(() => { window.__keepOn = false; __w.workBuild = null; __w.idle = 1e6; __w.target = new THREE.Vector3(__w.group.position.x, 0, __w.group.position.z); });
 await frames(60);
 const rest = await record(80, WSRC);
 console.log('hammer', J({ actLean: range(act.map((v) => v[0])), actArm: range(act.map((v) => v[1])), restLean: range(rest.map((v) => v[0])), restArm: range(rest.map((v) => v[1])), work: act[act.length - 1][3], workRest: rest[rest.length - 1][3] }));
 const waiting = H && H.wait;
 if (waiting) console.log('KNOWN ISSUE: the test site waits for a delivery, the hammer phase check is skipped');
 check(waiting || (range(act.map((v) => v[0])) > 0.1 && range(act.map((v) => v[1])) > 0.3 && act[act.length - 1][3] > 0.8), `builder hammers while the site is active (body dip ${range(act.map((v) => v[0])).toFixed(2)} rad, arm swing ${range(act.map((v) => v[1])).toFixed(2)}, work blend ${act[act.length - 1][3].toFixed(2)})`);
-check(range(rest.map((v) => v[0])) < 0.03 && range(rest.map((v) => v[1])) < 0.05 && rest[rest.length - 1][3] < 0.05, `no site -> no hammering (dip ${range(rest.map((v) => v[0])).toFixed(3)}, arm ${range(rest.map((v) => v[1])).toFixed(3)}, blend ${rest[rest.length - 1][3].toFixed(2)})`);
+check(Math.max(...rest.map((v) => v[3])) < 0.05, `no site -> no hammering: the work blend stays ${Math.max(...rest.map((v) => v[3])).toExponential(1)} (the game's own scheduler may walk the builder elsewhere; walking is not hammering)`);
 
 // sawmill hands stack while the saw runs
 const stackT = await page.evaluate(async () => {
   const w = npcWorkers.find((x) => x.role === 'loader' && x.homeBase && Math.hypot(x.homeBase.x - SAWMILL_POS.x, x.homeBase.z - SAWMILL_POS.z) < 16) || npcWorkers.find((x) => x.homeBase && Math.hypot(x.homeBase.x - SAWMILL_POS.x, x.homeBase.z - SAWMILL_POS.z) < 16);
   if (!w) return null;
-  window.__s = w; w.workBuild = null; w.group.position.set(w.homeBase.x, 0, w.homeBase.z); w.target = new THREE.Vector3(w.homeBase.x, 0, w.homeBase.z); w.idle = 1e6;
+  player.position.set(w.homeBase.x + 5, 0, w.homeBase.z + 5); playerVelocity.set(0, 0, 0); window.__s = w; w.workBuild = null; w.group.position.set(w.homeBase.x, 0, w.homeBase.z); w.target = new THREE.Vector3(w.homeBase.x, 0, w.homeBase.z); w.idle = 1e6;
   sawmillMillV161.userData.anim.running = true; return { role: w.role };
 });
 if (stackT) {
+  await settleCamera();
   await page.evaluate(() => { const keep = () => { sawmillMillV161.userData.anim.running = true; __s.idle = 1e6; requestAnimationFrame(keep); }; keep(); });
   await frames(30);
   const st = await record(120, '() => [__s.group.rotation.x, __s.cv.stack]');
@@ -99,17 +104,16 @@ if (stackT) {
 } else console.log('KNOWN ISSUE: no sawmill-yard worker found for the stacking probe');
 
 // ---------------------------------------------------------------- D. cost
-await page.evaluate(() => { joyVec.x = 0.3; joyVec.z = 1; });
-await frames(60);   // warm-up: the dust pool fills lazily
+await page.evaluate(() => { player.position.set(0, 0, 14); playerVelocity.set(0, 0, 0); window.__lap = 0; const f = () => { joyVec.x = 0; joyVec.z = (Math.floor(V54_STABILITY.frame / 45) % 2) ? 1 : -1; window.__lapId = requestAnimationFrame(f); }; f(); });
+await settleCamera(); await frames(120);   // warm-up: lazily built things (dust pool, plates of the area) exist; the player paces back and forth over ~12 m
 const count = () => page.evaluate(() => { let n = 0, pts = 0, meshes = 0; scene.traverse((o) => { n++; if (o.name === 'v161FootDust') pts++; if (o.isMesh) meshes++; }); return { objects: n, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, dust: pts, live: CharactersV161.state().dustLive, pool: CharactersV161.state().dustPool, meshes }; });
 const c0 = await count();
-await page.evaluate(() => { joyVec.x = 0.3; joyVec.z = 1; });
 await frames(300);
 const c1 = await count();
 console.log('counts', J(c0), J(c1));
 check(Math.abs(c1.objects - c0.objects) <= 6 && Math.abs(c1.geometries - c0.geometries) <= 6 && Math.abs(c1.textures - c0.textures) <= 2, `object / geometry / texture counts stable over 300 running frames: objects ${c0.objects}->${c1.objects}, geometries ${c0.geometries}->${c1.geometries}, textures ${c0.textures}->${c1.textures}`);
 check(c1.dust <= 8 && c1.pool <= 8 && c1.live <= 8, `pooled foot dust: ${c1.dust} Points objects, ${c1.live} live (<= 8)`);
-await page.evaluate(() => { joyVec.x = 0; joyVec.z = 0; });
+await page.evaluate(() => { cancelAnimationFrame(window.__lapId); joyVec.x = 0; joyVec.z = 0; });
 const meshesPer = await page.evaluate(() => npcWorkers.map((w) => { let n = 0; w.group.traverse((o) => { if (o.isMesh) n++; }); return n; }));
 if (Math.max(...meshesPer) > 14) console.log(`KNOWN ISSUE: worker figures have up to ${Math.max(...meshesPer)} meshes (target <= 14; the extra ones are the v149 crew decorations, the overlay adds none)`);
 check(Math.max(...meshesPer) <= 24, `meshes per worker figure ${J(meshesPer)}; the overlay adds none (rotations only)`);
