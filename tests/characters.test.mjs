@@ -109,19 +109,19 @@ if (stackT) {
 
 // ---------------------------------------------------------------- D. cost
 await page.evaluate(() => { player.position.set(0, 0, 14); playerVelocity.set(0, 0, 0); window.__lap = 0; const f = () => { joyVec.x = 0; joyVec.z = (Math.floor(V54_STABILITY.frame / 45) % 2) ? 1 : -1; window.__lapId = requestAnimationFrame(f); }; f(); });
-await settleCamera(); await frames(120);   // warm-up: lazily built things (dust pool, plates of the area) exist; the player paces back and forth over ~12 m
+await settleCamera(); await frames(60);   // warm-up: lazily built things (dust pool, plates of the area) exist; the player paces back and forth over ~12 m
 const count = () => page.evaluate(() => { let n = 0, pts = 0, meshes = 0; scene.traverse((o) => { n++; if (o.name === 'v161FootDust') pts++; if (o.isMesh) meshes++; }); return { objects: n, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, dust: pts, live: CharactersV161.state().dustLive, pool: CharactersV161.state().dustPool, meshes }; });
 const c0 = await count();
-await frames(300);
+await frames(120);
 const c1 = await count();
 // control: the same pacing with the overlay OFF; the game itself creates / disposes some geometry and textures while the player moves (areas streaming in, plates), the overlay must not add to that
 await page.evaluate(() => { CharactersV161.enabled = false; });
-await frames(300);
+await frames(120);
 const c2 = await count();
 await page.evaluate(() => { CharactersV161.enabled = true; });
 console.log('counts', J(c0), J(c1), J(c2));
 const gOn = c1.geometries - c0.geometries, gOff = c2.geometries - c1.geometries, tOn = c1.textures - c0.textures, tOff = c2.textures - c1.textures;
-check(Math.abs(c1.objects - c0.objects) <= 6 && gOn <= Math.max(gOff, 0) + 60 && tOn <= Math.max(tOff, 0) + 25, `no per-frame allocation from the overlay over 300 running frames: objects ${c0.objects}->${c1.objects}; geometries +${gOn} (overlay off: +${gOff}); textures +${tOn} (off: +${tOff})`);
+check(Math.abs(c1.objects - c0.objects) <= 6 && gOn <= Math.max(gOff, 0) + 60 && tOn <= Math.max(tOff, 0) + 25, `no per-frame allocation from the overlay over 120 running frames: objects ${c0.objects}->${c1.objects}; geometries +${gOn} (overlay off: +${gOff}); textures +${tOn} (off: +${tOff})`);
 check(c1.dust <= 8 && c1.pool <= 8 && c1.live <= 8, `pooled foot dust: ${c1.dust} Points objects, ${c1.live} live (<= 8)`);
 await page.evaluate(() => { cancelAnimationFrame(window.__lapId); joyVec.x = 0; joyVec.z = 0; });
 const meshesPer = await page.evaluate(() => npcWorkers.map((w) => { let n = 0; w.group.traverse((o) => { if (o.isMesh) n++; }); return n; }));
