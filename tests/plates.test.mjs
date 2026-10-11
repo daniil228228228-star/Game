@@ -31,7 +31,7 @@ const frames = (n) => page.evaluate((n) => new Promise((res) => { const f0 = V54
 const A = await page.evaluate(() => {
   const P = window.PlatesV161, probe = document.createElement('canvas').getContext('2d');
   const FONT = (s, w) => `${w} ${s}px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif`;
-  const rowsOf = (info, weights) => info.rows.map((r, i) => { probe.font = FONT(r.size, weights[i]); return { text: r.text, size: r.size, measured: probe.measureText(r.text).width, inner: info.inner, ell: r.ellipsis }; });
+  const rowsOf = (info, weights) => info.rows.map((r, i) => { probe.font = r.font || FONT(r.size, weights[i]);   // premium style (2026-10-11 (17)): the row remembers its exact font (semi-bold title, lighter subtitle) return { text: r.text, size: r.size, measured: probe.measureText(r.text).width, inner: info.inner, ell: r.ellipsis }; });
   const WEIGHTS = { 1: [850], 2: [850, 800], 3: [850, 800, 750] };
   const types = new Map();
   const add = (o) => {
@@ -166,6 +166,34 @@ const E = await page.evaluate(() => {
   return { dark: darkPx / n, light: light / n, toneMapped: s.material.toneMapped, fog: s.material.fog };
 });
 check(E.dark > 0.5 && E.light > 0.03 && E.toneMapped === false, `pill is dark (${E.dark.toFixed(2)}) with light text (${E.light.toFixed(2)}) and no tone mapping / day-night tint (toneMapped ${E.toneMapped}): same contrast day and night`);
+
+// ------------------------------------------------------------------------------------------------ F. premium style (2026-10-11 (17))
+const F = await page.evaluate(() => {
+  const P = window.PlatesV161, T = P.TOKENS;
+  const rgb = (c) => { if (c[0] === '#') return [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16)); const m = c.match(/[\d.]+/g).map(Number); return m.slice(0, 3); };
+  const lum = (c) => { const v = rgb(c).map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+  const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  // the pill is 97 % opaque: worst case over white
+  const over = (c) => { const [r, g, b] = rgb(c); const a = 0.97; return `rgb(${Math.round(r * a + 255 * (1 - a))},${Math.round(g * a + 255 * (1 - a))},${Math.round(b * a + 255 * (1 - a))})`; };
+  const panel = [over(T.panelTop), over(T.panelBottom)];
+  const types = new Map();
+  scene.traverse((o) => { if (o.isSprite && o.userData.v161Plate) { const i = o.userData.v161Plate; types.set(i.rows.map((r) => r.text).join('|').replace(/\d+/g, '#'), i); } });
+  const infos = [...types.values()];
+  const withFrac = infos.filter((i) => i.progress >= 0), s2 = P.makeSpriteParts(['🪵 ДОСКИ', 'ВЫГРУЗКА 3/12']).info, s0 = P.makeSpriteParts(['ГАРАЖ', 'СТОЯНКА']).info;
+  const tex = P.makeSpriteParts(['x']).material.map, caps = renderer.capabilities;
+  return {
+    n: infos.length, noCat: infos.filter((i) => !i.cat).length, fracBad: withFrac.filter((i) => !(i.progress >= 0 && i.progress <= 1)).length, nFrac: withFrac.length,
+    ink: Math.min(...panel.map((p) => ratio(T.ink, p))), ink2: Math.min(...panel.map((p) => ratio(T.ink2, p))), gold: Math.min(...panel.map((p) => ratio(T.gold, p))),
+    weights: infos.filter((i) => i.rows.length >= 2).map((i) => [i.rows[0].weight, i.rows[1].weight]), s2: { cat: s2.cat, emoji: s2.emoji, progress: s2.progress, rows: s2.rows.map((r) => r.text) }, s0: { progress: s0.progress },
+    mip: tex.generateMipmaps, expectMip: !!caps.isWebGL2, minFilter: tex.minFilter === THREE.LinearMipmapLinearFilter, aniso: tex.anisotropy,
+  };
+});
+console.log('premium plates', J(F));
+check(F.n >= 6 && F.noCat === 0, `every plate type carries a category for its medallion (${F.n} types, ${F.noCat} without)`);
+check(F.ink >= 4.5 && F.ink2 >= 4.5 && F.gold >= 4.5, `WCAG AA on the pill (worst case over white): title ${F.ink.toFixed(1)}:1, subtitle ${F.ink2.toFixed(1)}:1, gold ${F.gold.toFixed(1)}:1 (>= 4.5)`);
+check(F.weights.every(([a, b]) => a >= 700 && b <= 650 && a > b), `title semi-bold over a lighter subtitle on every 2+ row plate (${J(F.weights.slice(0, 4))})`);
+check(F.s2.cat === 'wood' && F.s2.emoji === '🪵' && F.s2.rows[0] === 'ДОСКИ' && F.s2.progress > 0.2 && F.s2.progress < 0.3 && F.s0.progress === -1, `leading emoji moves into the medallion (${J(F.s2)}); a progress hairline only where a row has a/b (${F.nFrac} such real plates, none out of range: ${F.fracBad})`);
+check(F.mip === F.expectMip && (!F.mip || F.minFilter), `plate textures are mip-mapped on WebGL2 (generateMipmaps ${F.mip}, anisotropy ${F.aniso}): small far plates no longer alias`);
 
 check(g.errors.length === 0, `no console errors ${J(g.errors.slice(0, 3))}`);
 check(g.badResponses.length === 0, `no 4xx ${J(g.badResponses.slice(0, 3))}`);
