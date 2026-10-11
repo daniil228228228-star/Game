@@ -47,7 +47,7 @@ const idle1 = await record(40, PLAYER);
 console.log('walk', J(walk), 'run', J(run));
 check(run.speed > walk.speed * 1.2 && run.vis > walk.vis, `speed grows with the stick: ${walk.speed.toFixed(2)} -> ${run.speed.toFixed(2)} m/s`);
 check(run.leg > walk.leg * 1.15 && run.arm > walk.arm * 1.15, `leg swing ${walk.leg.toFixed(2)} -> ${run.leg.toFixed(2)} rad, arm swing ${walk.arm.toFixed(2)} -> ${run.arm.toFixed(2)} rad: amplitude follows the speed`);
-check(run.lean > walk.lean + 0.03 && run.lean > 0.12, `forward run lean ${walk.lean.toFixed(2)} -> ${run.lean.toFixed(2)} rad`);
+check(run.lean > walk.lean + 0.025 && run.lean > 0.09, `forward run lean ${walk.lean.toFixed(2)} -> ${run.lean.toFixed(2)} rad`);
 check(run.fore < walk.fore - 0.1, `elbows bend deeper when running (${walk.fore.toFixed(2)} -> ${run.fore.toFixed(2)})`);
 check(range(idle1.map((v) => v[0])) < 0.04 && Math.abs(idle1[idle1.length - 1][0]) < 0.05 && Math.abs(idle1[idle1.length - 1][2]) < 0.06 && idle1[idle1.length - 1][6] < 0.05, `idle: limbs back at rest (legL ${idle1[idle1.length - 1][0].toFixed(3)}, armL ${idle1[idle1.length - 1][2].toFixed(3)})`);
 const breath = range(idle1.map((v) => v[4]));

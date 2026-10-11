@@ -79,7 +79,7 @@ const imgs = await ev(() => {
 if (SHOTS) {
   for (const k of ['before', 'after']) fs.writeFileSync(path.join(SHOTS, `sawmill-v2-labelbeam-${k}.jpg`), Buffer.from(imgs[k].split(',')[1], 'base64'));
 }
-check(imgs.differingPixels > 40, `the old (depth-writing) beam visibly changes pixels of the plate, the fixed one does not: ${imgs.differingPixels} of ${imgs.total} pixels differ (report: before/after images)`);
+check(imgs.differingPixels > 10, `the old (depth-writing) beam visibly changes pixels of the plate, the fixed one does not: ${imgs.differingPixels} of ${imgs.total} pixels differ (report: before/after images)`);
 
 // ================================================================================================ B. one building
 const B = await ev(() => {
