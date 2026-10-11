@@ -141,7 +141,8 @@ const PAGE = () => {
   // ---- stock
   W.stack = () => {
     const z = LOGISTICS_ZONES.planks, m = z.group.getObjectByName('v161PlankStack'), g = m.geometry, per = 36, dr = g.drawRange, total = g.index ? g.index.count : g.attributes.position.count;
-    return { shown: m.visible ? Math.min(dr.count, total) / per : 0, visible: m.visible, planks, boards: total / per };
+    let piles = 0; scene.traverse((o) => { if (o.isMesh && /plank.?(stack|pile)/i.test(o.name || '')) piles++; }); // 2026-10-11: ONE plank stack in the world (the saw output), no second pile
+    return { shown: m.visible ? Math.min(dr.count, total) / per : 0, visible: m.visible, planks, boards: total / per, piles };
   };
   // one saw cut through the real animate loop: boards visible on the belt at their peak == planks credited by the cut
   W.cut = (level, prestige) => new Promise((resolve) => {
@@ -266,7 +267,8 @@ await ev(() => { stageIndex = 2; });
 // ---- B. stock: the plank stack and the boards of a saw cut
 for (const n of [0, 1, 7.9, 24, 60]) {
   const s = await ev((n) => { planks = n; return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(__WC.stack())))); }, n);
-  check(s.shown === Math.min(24, Math.floor(n)) && s.boards === 24, `pickup stack draws floor(planks) boards: planks ${n} -> ${s.shown} (cap 24)`);
+  check(s.shown === Math.min(24, Math.floor(n)) && s.boards === 24, `pickup stack draws floor(planks) boards: planks ${n} -> ${s.shown} (cap 24); exactly one plank pile mesh in the scene (${s.piles})`);
+  check(s.piles === 1, `planks exist at ONE place only (the saw output): ${s.piles} plank stack meshes`);
 }
 const cuts = [];
 await ev(() => { planks = 3; });
