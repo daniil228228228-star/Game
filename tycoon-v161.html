@@ -921,6 +921,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="vendor/three_r128/OrbitControls.js"></script>
 <!-- standaloneAssetsV161 [global]: textures/height/roughness maps live in assets/ (inlined by tools/standalone.mjs build) -->
 <script src="assets/materials-v152.js"></script>
+<script src="assets/plates-v161.js"></script>
 <script src="assets/sawmill-v161.js"></script>
 <script src="assets/buildings-v161.js"></script>
 <script src="assets/plants-v161.js"></script>
@@ -8132,56 +8133,16 @@ function drawLabelLine(ctx, text, y, color, maxSize, minSize, maxWidth, weight =
 }
 
 function makeLabelSprite(lines) {
+  // v161 (2026-10-11) PLATES REDESIGN: one compact pill with a leader stem, drawn by assets/plates-v161.js with REAL measured text widths, rendered ON TOP of the geometry
+  // (depthTest false, renderOrder 1000, no depth write): a wall / fence / board can no longer cut a plate (user: "врезаются в стену"). Same canvas aspect as before (callers set the scale).
   const safeLines = Array.isArray(lines) ? lines.filter(v => v !== undefined && v !== null).slice(0, 3) : [String(lines ?? '')];
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = safeLines.length >= 3 ? 246 : 210;
-  const ctx = canvas.getContext('2d');
-
-  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  grad.addColorStop(0, 'rgba(29,39,55,0.97)');
-  grad.addColorStop(1, 'rgba(11,17,26,0.95)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.roundRect(8, 8, canvas.width - 16, canvas.height - 16, 28);
-  ctx.fill();
-
-  ctx.strokeStyle = 'rgba(255,212,121,0.82)';
-  ctx.lineWidth = 5;
-  ctx.stroke();
-
-  ctx.fillStyle = 'rgba(255,212,121,0.18)';
-  ctx.beginPath();
-  ctx.roundRect(22, 20, canvas.width - 44, 8, 4);
-  ctx.fill();
-
-  ctx.shadowColor = 'rgba(0,0,0,0.5)';
-  ctx.shadowBlur = 10;
-  ctx.shadowOffsetY = 3;
-
-  if (safeLines.length <= 1) {
-    drawLabelLine(ctx, safeLines[0] || '', canvas.height / 2 + 4, '#f2f7ff', 58, 26, 452, 850);
-  } else if (safeLines.length === 2) {
-    drawLabelLine(ctx, safeLines[0], 78, '#f2f7ff', 54, 24, 452, 850);
-    ctx.shadowBlur = 6;
-    drawLabelLine(ctx, safeLines[1], 152, '#ffd479', 42, 22, 452, 800);
-  } else {
-    drawLabelLine(ctx, safeLines[0], 64, '#f2f7ff', 48, 22, 452, 850);
-    drawLabelLine(ctx, safeLines[1], 128, '#ffd479', 38, 21, 452, 800);
-    drawLabelLine(ctx, safeLines[2], 190, '#a9cfff', 32, 19, 452, 750);
-  }
-
-  ctx.shadowBlur = 0;
-  ctx.shadowOffsetY = 0;
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.encoding = THREE.sRGBEncoding;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  const material = new THREE.SpriteMaterial({ map: texture, depthTest: true, depthWrite: false, transparent: true, toneMapped: false });
+  const parts = PlatesV161.makeSpriteParts(safeLines);
+  const material = parts.material;
   const sprite = new THREE.Sprite(material);
   sprite.scale.set(1.45, safeLines.length >= 3 ? 0.688 : 0.597, 1);
-  sprite.renderOrder = 10;
+  sprite.renderOrder = PlatesV161.RENDER_ORDER;
   sprite.userData.v152WorldLabel = true;
+  sprite.userData.v161Plate = parts.info;
   // v161 feel: a plate starts invisible and is shown by labelLayout (assets/surface-world-v152.js, <= 4 nearest, none beyond 24 m, none under the HUD) within ~0.2 s; it used to be fully drawn
   // for up to 1.5 s until the next scene scan, so far plates flashed on creation
   material.opacity = 0; material.userData.v152BaseOpacity = 1;
@@ -8191,8 +8152,12 @@ function makeLabelSprite(lines) {
   return sprite;
 }
 
+// text that is PART of a building (a sign board): a real plane on the board face, depth-tested, w x h metres, faces +z (assets/plates-v161.js)
+function makeBoardLabelV161(lines, w, h, opt) { return PlatesV161.makeBoard(Array.isArray(lines) ? lines : [lines], w, h, opt); }
+
 function updateLabelSprite(sprite, lines) {
   if (!sprite) return;
+  if (sprite.userData && sprite.userData.v161Board) { PlatesV161.redrawBoard(sprite, lines); return; } // text printed on a building's own board (makeBoardLabelV161)
   // v161 QA (2026-10-10 (14)): identical text = keep the texture. The guide plate was re-drawn on every HUD tick (updateGuideWorldMarker(true), ~5 x/s) and the road pad plates
   // every cadence, i.e. a canvas + GPU upload + dispose several times a second for the same words.
   const keyV161 = JSON.stringify(lines);
@@ -8206,6 +8171,7 @@ function updateLabelSprite(sprite, lines) {
   }
   sprite.material = replacement.material;
   sprite.renderOrder = replacement.renderOrder;
+  sprite.userData.v161Plate = replacement.userData.v161Plate;
   if (keepOpacity !== undefined) sprite.material.opacity = keepOpacity;
   const pend = window.__v152PendingLabels; // the throw-away replacement sprite never enters the scene
   if (pend) { const i = pend.lastIndexOf(replacement); if (i >= 0) pend.splice(i, 1); }
@@ -9812,7 +9778,7 @@ function createFleetGarageV72(cfg,lv,pos){
       raisedDoor.position.set(cx,1.78,-depth*.5+.20);raisedDoor.rotation.x=-.16;g.add(raisedDoor); // v161 (2026-10-06 (11)): rolled-up door panel stays >= 1.6 m above the floor (truck 1.28 m + 0.3 m)
       const light=new THREE.Mesh(new THREE.BoxGeometry(.58,.025,.11),glow);
       light.position.set(cx,1.75,.35);g.add(light);
-      const bayNo=makeLabelSprite([`${i+1}`]);bayNo.position.set(cx,2.00,-depth*.5-.025);bayNo.scale.set(.21,.11,1);g.add(bayNo);
+      const bayNo=makeBoardLabelV161([`${i+1}`],.21,.11);bayNo.position.set(cx,2.00,-depth*.5+.15-.065-.004);bayNo.rotation.y=Math.PI;g.add(bayNo); // v161 plates (2026-10-11): the number is printed ON the header board (a real plane, depth-tested), not a floating sprite
 
       // Long bay guides + stop line make parking alignment obvious without giant grey rectangles.
       for(const sx of [-.69,.69]){
@@ -9854,8 +9820,8 @@ function createFleetGarageV72(cfg,lv,pos){
     serviceDoor.position.set(width*.5-.86,.72,depth*.5-.06-.04-.44-.02);g.add(serviceDoor);
     const signPlate=new THREE.Mesh(new THREE.BoxGeometry(2.46,.30,.055),dark);
     signPlate.position.set(0,2.34,-depth*.5+.01);g.add(signPlate);
-    const signText=makeLabelSprite([lang==='ru'?'СЕРВИС · АВТОПАРК':'FLEET SERVICE']);
-    signText.position.set(0,2.35,-depth*.5-.04);signText.scale.set(.84,.22,1);g.add(signText);
+    const signText=makeBoardLabelV161([lang==='ru'?'СЕРВИС · АВТОПАРК':'FLEET SERVICE'],2.3,.26,{pill:false,colors:['#ffffff']});
+    signText.position.set(0,2.35,-depth*.5+.01-.0275-.004);signText.rotation.y=Math.PI;g.add(signText); // v161 plates: printed on the sign plate itself
   }
 
   // Drainage strip and two safety bollards keep the entrance from reading as an unfinished edge.
@@ -13056,26 +13022,36 @@ window.__TYCOON_TRAFFIC_AUDIT__={snapshot:trafficAuditSnapshot};
 const compassEl = document.getElementById('compass');
 const compassDistanceEl = document.getElementById('compassDistance');
 const _padNdc = new THREE.Vector3();
+const compassCorrV161 = { x: 0, y: 0, at: 0 }; // v161 plates (2026-10-11): the distance chip ("Стройка · 48м") is nudged so its whole rectangle stays inside the viewport (it was cut by the screen edge)
 function updateCompass() {
   const objective = currentGuidanceTarget();
-  if (!objective) { compassEl.style.display = 'none'; return; }
+  if (!objective) { compassEl.style.display = 'none'; compassCorrV161.x = compassCorrV161.y = 0; return; }
   const target = objective.pos;
   const worldDist = Math.hypot(player.position.x - target.x, player.position.z - target.z);
   _padNdc.set(target.x, 1.2, target.z).project(camera);
   const behind = _padNdc.z > 1;
   const onScreen = !behind && Math.abs(_padNdc.x) < 0.80 && Math.abs(_padNdc.y) < 0.74;
-  if (onScreen && worldDist < 10) { compassEl.style.display = 'none'; return; }
+  if (onScreen && worldDist < 10) { compassEl.style.display = 'none'; compassCorrV161.x = compassCorrV161.y = 0; return; }
   let x = _padNdc.x, y = _padNdc.y;
   if (behind) { x = -x; y = -y; }
   const angle = Math.atan2(y, x);
   const margin = innerWidth <= 430 ? 0.36 : 0.42;
   const rot = 90 - angle * 180 / Math.PI;
-  compassEl.style.left = `${50 + Math.cos(angle) * margin * 100}%`;
-  compassEl.style.top = `${50 - Math.sin(angle) * margin * 100}%`;
+  compassEl.style.left = `calc(${50 + Math.cos(angle) * margin * 100}% + ${compassCorrV161.x}px)`;
+  compassEl.style.top = `calc(${50 - Math.sin(angle) * margin * 100}% + ${compassCorrV161.y}px)`;
   compassEl.style.transform = `translate(-50%, -50%) rotate(${rot}deg)`;
   compassEl.style.setProperty('--counter-rot', `${-rot}deg`);
   if (compassDistanceEl) compassDistanceEl.textContent = `${objective.label} · ${Math.max(1, Math.round(worldDist))}м`;
   compassEl.style.display = 'block';
+  const nowC = performance.now();
+  if (compassDistanceEl && nowC - compassCorrV161.at > 90) { // measured at ~11 Hz; the correction accumulates until the chip is whole on screen
+    compassCorrV161.at = nowC;
+    const r = compassDistanceEl.getBoundingClientRect();
+    if (r.width > 1) {
+      const m = 6, dx = Math.max(0, m - r.left) - Math.max(0, r.right - (innerWidth - m)), dy = Math.max(0, m - r.top) - Math.max(0, r.bottom - (innerHeight - m));
+      compassCorrV161.x = THREE.MathUtils.clamp(compassCorrV161.x + dx, -160, 160); compassCorrV161.y = THREE.MathUtils.clamp(compassCorrV161.y + dy, -160, 160);
+    }
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -30801,8 +30777,9 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
     const gateHead=new THREE.Mesh(new THREE.BoxGeometry(2.48,.14,.10),fenceMat);
     gateHead.position.set(-8.70+OX,1.35,4.96);g.add(gateHead);
     }
-    const yardLabel=makeLabelSprite([lang==='ru'?'АВТОПАРК':'FLEET YARD',lang==='ru'?'служебная стоянка':'company parking']);
-    yardLabel.position.set(-8.70+OX,1.58,4.92);yardLabel.scale.set(.80,.28,1);g.add(yardLabel);
+    const yardLines=[lang==='ru'?'АВТОПАРК':'FLEET YARD',lang==='ru'?'служебная стоянка':'company parking'];
+    let yardLabel=null;
+    if(!fyV161){yardLabel=makeLabelSprite(yardLines);yardLabel.position.set(-8.70+OX,1.58,4.92);yardLabel.scale.set(.80,.28,1);g.add(yardLabel);}
 
     const homes=[
       {p:FLEET_HOME_V65.planks,key:'planks'},
@@ -30815,7 +30792,12 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
 
     if(fyV161){
       const info=window.FleetYardV161.build(g,{OX,homes:homes.map(h=>({x:h.p.x,z:h.p.z}))});
-      if(info&&info.sign){yardLabel.position.set(info.sign.x,info.sign.y,info.sign.z);yardLabel.scale.set(1.2,.42,1);yardLabel.userData.noZoomV161=true;}
+      if(info&&info.sign){ // v161 plates (2026-10-11): the yard sign text is PRINTED on the gantry board (a plane on both faces, same material), no floating sprite: walls / fences cannot cut it, the text is fitted to the board
+        const sg=info.sign,face=makeBoardLabelV161(yardLines,sg.w,sg.h,{pill:false,colors:['#ffffff','#ffd479']});
+        face.position.set(sg.x,sg.y,sg.z);face.rotation.y=Math.PI;g.add(face);
+        const back=new THREE.Mesh(face.geometry,face.material);back.position.set(sg.x,sg.y,sg.z+.068);back.userData.v161Board=true;back.userData.v161Plate=face.userData.v161Plate;back.renderOrder=3;g.add(back);
+        g.userData.v161YardSign=face;
+      }
     }else{
     // Bays are paint on the single parking surface. No grey slabs and no road connectors.
     homes.forEach((item)=>{

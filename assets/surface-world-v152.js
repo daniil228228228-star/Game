@@ -2,7 +2,7 @@
 (()=>{
   'use strict';
   const visited=new WeakSet(),geometryCache=new WeakMap(),scale=new THREE.Vector3();let last=0;
-  let labels=[],labelLast=0;const point=new THREE.Vector3(),world=new THREE.Vector3(),labelScale=new THREE.Vector3();
+  let labels=[],labelLast=0;const point=new THREE.Vector3(),world=new THREE.Vector3(),labelScale=new THREE.Vector3(),camDir=new THREE.Vector3();
   function scan(now,force=false){
     if(!force&&(document.hidden||now-last<1500))return;
     last=now;scene.updateMatrixWorld(true);const retired=new Set();labels=[];
@@ -63,41 +63,50 @@
     }
     hudRects.length=0;
     for(const id of hudIds){const el=document.getElementById(id);if(!el||el.hidden)continue;const style=getComputedStyle(el);if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity)<.02)continue;const r=el.getBoundingClientRect();if(r.width>1&&r.height>1)hudRects.push({x:(r.left+r.right)/2,y:(r.top+r.bottom)/2,w:r.width,h:r.height});}
-    const candidates=[],accepted=[],limit=VISUAL_MOBILE?4:6;
+    // v161 plates redesign (2026-10-11): plates are pills drawn ON TOP of the geometry (assets/plates-v161.js), so layout is the only thing that limits them: at most 4 in total (the goal
+    // plate included), none beyond 24 m (36 desktop), none for a target behind the camera, a screen width clamped to [84..45 % of the viewport] px (never bigger than the phone allows, never
+    // too small to read), each drawn whole or not at all, priority goal > the nearest pad > buildings; the last 30 % of the range fades out.
+    const candidates=[],accepted=[],limit=PlatesV161.MAX_VISIBLE;
     const target=typeof currentGuidanceTarget==='function'?currentGuidanceTarget()?.pos:null;
+    camera.getWorldDirection(camDir);
+    const minW=VISUAL_MOBILE?84:96,maxW=Math.min(.45*innerWidth,VISUAL_MOBILE?200:260),range=VISUAL_MOBILE?24:36;
     for(const label of labels){
       const wasSelected=!!label.userData.v163Selected,mainGoal=!!label.userData.v163MainGoal;
-      label.userData.v163TargetOpacity=0;label.userData.v163Selected=false;
+      label.userData.v163TargetOpacity=0;label.userData.v163Selected=false;label.userData.v161Rect=null;
       let visible=label.visible;
       for(let p=label.parent;p&&visible;p=p.parent)visible=p.visible;
       if(!visible)continue;
       label.getWorldPosition(world);const distance=world.distanceTo(player.position);
+      const reach=range+(wasSelected?2:0);
+      if(!mainGoal&&distance>reach)continue;
+      // behind the camera (or nearly beside it): projecting such a point is meaningless
+      if((world.x-camera.position.x)*camDir.x+(world.y-camera.position.y)*camDir.y+(world.z-camera.position.z)*camDir.z<.5)continue;
       point.copy(world).project(camera);
       const m=label.material;
       if(!m.userData)m.userData={};
       if(m.userData.v152BaseOpacity===undefined)m.userData.v152BaseOpacity=m.opacity;
-      if((!mainGoal&&distance>(VISUAL_MOBILE?24:36)+(wasSelected?2:0))||point.z<-1||point.z>1||Math.abs(point.x)>1||Math.abs(point.y)>1)continue;
+      if(point.z<-1||point.z>1||Math.abs(point.x)>1||Math.abs(point.y)>1)continue;
       const cameraDistance=world.distanceTo(camera.position);
       const pixels=innerHeight/(2*Math.tan(camera.fov*Math.PI/360)*Math.max(.1,cameraDistance));
       const base=label.userData.v157LabelScale||(label.userData.v157LabelScale=label.scale.clone());
-      let zoom=mainGoal||distance<9?THREE.MathUtils.clamp(104/(base.x*pixels),1,mainGoal?5:label.userData.padPlateV161?3.2:2):1;
-      // v161 QA: a zoomed plate is at most 60 % of the screen wide (the x3.2 / x5 near zoom made plates wider than the phone) and never zooms past its natural size
-      if(label.userData.noZoomV161)zoom=1;else zoom=Math.max(1,Math.min(zoom,.6*innerWidth/(base.x*pixels)));
+      const natural=Math.max(1,base.x*pixels);
+      const wpx=THREE.MathUtils.clamp(natural,mainGoal?Math.max(minW,Math.min(130,maxW)):minW,maxW);
+      const zoom=THREE.MathUtils.clamp(wpx/natural,.15,8);
       label.scale.copy(base).multiplyScalar(zoom);label.getWorldScale(labelScale);
       const priority=mainGoal?-1:label.userData.padPlateV161||(target&&Math.hypot(world.x-target.x,world.z-target.z)<2.6)?0:1;
-      const cx=(point.x+1)*innerWidth/2,cy=(1-point.y)*innerHeight/2,cw=labelScale.x*pixels+12,ch=labelScale.y*pixels+10;
-      // v161 QA: a plate is drawn whole or not at all: its screen rectangle must lie inside the viewport (it used to be cut by the screen edge: only the centre was tested)
+      const cx=(point.x+1)*innerWidth/2,cy=(1-point.y)*innerHeight/2,cw=labelScale.x*pixels+6,ch=labelScale.y*pixels+6;
+      // a plate is drawn whole or not at all: its screen rectangle must lie inside the viewport
       if(cx-cw/2<2||cx+cw/2>innerWidth-2||cy-ch/2<2||cy+ch/2>innerHeight-2)continue;
       if(hudBlocked(cx,cy,cw,ch))continue;
-      candidates.push({label,distance,priority,score:distance-(wasSelected?2.5:0),mainGoal,x:cx,y:cy,w:cw,h:ch});
+      const fade=distance<=range*.7||mainGoal?1:Math.max(.3,1-(distance-range*.7)/(range*.3+2));
+      candidates.push({label,distance,priority,fade,score:distance-(wasSelected?2.5:0),mainGoal,x:cx,y:cy,w:cw,h:ch});
     }
     candidates.sort((a,b)=>a.priority-b.priority||a.score-b.score);
-    let regularCount=0;
     for(const c of candidates){
-      if(!c.mainGoal&&regularCount>=limit)continue;
+      if(accepted.length>=limit)break;
       if(accepted.some(a=>Math.abs(a.x-c.x)<(a.w+c.w)/2&&Math.abs(a.y-c.y)<(a.h+c.h)/2))continue;
-      c.label.userData.v163TargetOpacity=c.label.material.userData.v152BaseOpacity;
-      c.label.userData.v163Selected=true;accepted.push(c);if(!c.mainGoal)regularCount++;
+      c.label.userData.v163TargetOpacity=c.label.material.userData.v152BaseOpacity*c.fade;
+      c.label.userData.v163Selected=true;c.label.userData.v161Rect={x:c.x,y:c.y,w:c.w,h:c.h};accepted.push(c);
     }
     surfaceRuntimeV152.visibleLabels=accepted.length;
   }

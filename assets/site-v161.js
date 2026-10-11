@@ -251,8 +251,10 @@
     group.position.copy(pos);
     const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 5.4 * envH, 8, 1, true), new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }));
     beacon.renderOrder = 2; beacon.position.y = 2.8 * envH; beacon.name = 'v161SiteBeam'; beacon.userData.v161Soft = true; group.add(beacon);
-    const signLabel = makeLabelSprite(['', '']);
-    signLabel.position.set(-1.78 * envW, 1.50, 1.16 * envW + 0.049); signLabel.scale.set(0.87, 0.36, 1); group.add(signLabel);
+    // 2026-10-11 plates: the progress text is PRINTED on the board (a plane on the board face, both sides; depth-tested like the board), not a floating sprite that a fence / the board itself could cut
+    const signLabel = makeBoardLabelV161(['', ''], 0.87, 0.36);
+    signLabel.position.set(-1.78 * envW, 1.50, 1.16 * envW + 0.039); group.add(signLabel);
+    const signBack = new THREE.Mesh(signLabel.geometry, signLabel.material); signBack.rotation.y = Math.PI; signBack.position.set(-1.78 * envW, 1.50, 1.16 * envW - 0.039); signBack.renderOrder = 3; signBack.userData.v161Board = true; group.add(signBack);
     group.userData.v161Site = { envW, envH, craneH, kind };
     return {
       v161: true, group, jibPivot, hook, drumPivot, armBase, arm2Pivot, bucketPivot, excavatorTurret, beacon,

@@ -60,7 +60,8 @@
     const frame=standard(0x39434d,.76,.18),yellow=standard(0xd7a343,.67),dark=standard(0x252c34,.84);
     const board=mesh(detail,new THREE.BoxGeometry(.93,.48,.07),frame,anchor.x,1.48,anchor.z);
     for(const x of [-.36,.36])mesh(detail,new THREE.BoxGeometry(.045,1.32,.045),frame,anchor.x+x,.79,anchor.z);
-    const label=makeLabelSprite(boardLines(site));label.position.set(anchor.x,1.50,anchor.z+.049);label.scale.set(.87,.36,1);detail.add(label);
+    const label=makeBoardLabelV161(boardLines(site),.87,.36);label.position.set(anchor.x,1.50,anchor.z+.039);detail.add(label); // v161 plates: printed on the board (depth-tested plane), not a floating sprite
+    const labelBack=new THREE.Mesh(label.geometry,label.material);labelBack.rotation.y=Math.PI;labelBack.position.set(anchor.x,1.50,anchor.z-.039);labelBack.renderOrder=3;labelBack.userData.v161Board=true;detail.add(labelBack);
     // Hazard edging belongs to the board, safely above the plot surface.
     for(let i=0;i<5;i++){const stripe=mesh(board,new THREE.BoxGeometry(.12,.04,.012),i%2?dark:yellow,(i-2)*.15,-.20,.042);stripe.rotation.z=-.25;}
     const rail=mesh(detail,new THREE.BoxGeometry(.90,.022,.022),yellow,anchor.x,1.18,anchor.z+.06);rail.castShadow=false;
