@@ -88,7 +88,7 @@
     const moving = actual > 0.2 && playerGrounded;
     P.accel += ((actual - P.prevSpeed) / Math.max(0.001, dt) - P.accel) * clamp(dt * 8, 0, 1); P.prevSpeed = actual;
     const k = clamp(dt * 9, 0, 1);
-    const leanT = moving ? clamp(0.03 + 0.1 * s + clamp(P.accel * 0.006, -0.03, 0.03), 0, PLAYER_LEAN) : 0;   // x rotation > 0 = the top tips forward (figure faces +z)
+    const leanT = moving ? clamp(0.02 + 0.26 * s + clamp(P.accel * 0.006, -0.03, 0.03), 0, PLAYER_LEAN) : 0;   // x rotation > 0 = the top tips forward (figure faces +z)
     P.lean += (leanT - P.lean) * k; P.lean = clamp(P.lean, -0.02, PLAYER_LEAN);
     const logs = (typeof carriedLogs === 'number' && carriedLogs > 0);
     P.carry += ((logs ? 1 : 0) - P.carry) * clamp(dt * 8, 0, 1);
