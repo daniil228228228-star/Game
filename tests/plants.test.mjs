@@ -151,9 +151,11 @@ check(C3.pre.inflight === 2, `concrete: at prestige 3 two blocks are in flight a
 }
 
 // ---- metal: beams, jib, sparks, smoke
+const mBefore = await ev(() => METAL_AUTO_INTERVAL / productionSpeedMultiplier() / industrialSpeedV161('metal'));
 const M0 = await cycleChecks('metal', 'metal (prestige 0)', { seconds: 40, dt: 0.1 }, 1);
+const mAfter = await ev(() => METAL_AUTO_INTERVAL / productionSpeedMultiplier() / industrialSpeedV161('metal'));   // the speed multiplier drifts during a long run (it is a live value): the credit must match the interval measured right before or right after the sim
 const interM = INTER.m;
-check(M0.rows.some((r) => r.credited > 0 && Math.abs(r.t - interM) < 0.35), `metal: the first credit comes at the real interval ${interM.toFixed(1)} s (METAL_AUTO_INTERVAL / productionSpeedMultiplier()): ${M0.rows.find((r) => r.credited > 0).t} s`);
+check(M0.rows.some((r) => r.credited > 0 && [interM, mBefore, mAfter].some((iv) => Math.abs(r.t - iv) < 0.35)), `metal: the first credit comes at the real interval ${interM.toFixed(1)} s (METAL_AUTO_INTERVAL / productionSpeedMultiplier()): ${M0.rows.find((r) => r.credited > 0).t} s`);
 {
   const r = M0.pre.pos0, d = M0.dest[0];
   check(M0.pre.inflight === 1 && Math.hypot(r.x - d[0], r.z - d[2]) < 0.4 && Math.abs(r.y - d[1]) < 0.45, `metal: just before the credit the beam hangs over the exact slot of the pile (now ${J([r.x, r.y, r.z].map((v) => +v.toFixed(2)))}, slot ${J(d.map((v) => +v.toFixed(2)))})`);
