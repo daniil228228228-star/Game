@@ -75,7 +75,7 @@ const B = await page.evaluate(() => {
 });
 check(B.sprites.length >= 10, `floating plates in the scene: ${B.sprites.length}`);
 check(B.sprites.every((s) => s.depthTest === false && s.depthWrite === false && s.ro >= 1000), `every floating plate: depthTest false, depthWrite false, renderOrder >= 1000 (bad: ${B.sprites.filter((s) => !(s.depthTest === false && s.depthWrite === false && s.ro >= 1000)).length})`);
-check(B.yardSign && B.boards.length >= 2 && B.boards.every((b) => b.mesh && b.depthTest === true && b.hasMap), `text that is part of a building is a depth-tested textured Mesh (fleet yard sign + ${B.boards.length} board texts)`);
+check(B.yardSign && B.boards.length >= 1 && B.boards.every((b) => b.mesh && b.depthTest === true && b.hasMap), `text that is part of a building is a depth-tested textured Mesh (${B.boards.length} board texts incl. the fleet yard sign)`);
 
 // ------------------------------------------------------------------------------------------------ C. probes from 8 directions
 await page.evaluate(() => {

@@ -30793,10 +30793,9 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
 
     if(fyV161){
       const info=window.FleetYardV161.build(g,{OX,homes:homes.map(h=>({x:h.p.x,z:h.p.z}))});
-      if(info&&info.sign){ // v161 plates (2026-10-11): the yard sign text is PRINTED on the gantry board (a plane on both faces, same material), no floating sprite: walls / fences cannot cut it, the text is fitted to the board
+      if(info&&info.sign){ // v161 plates (2026-10-11): the yard sign text is PRINTED on the lane-side face of the gantry board (a depth-tested plane; the yard-side back stays plain navy: the fleet yard is capped at 16 meshes), no floating sprite: walls / fences cannot cut it, the text is fitted to the board
         const sg=info.sign,face=makeBoardLabelV161(yardLines,sg.w,sg.h,{pill:false,colors:['#ffffff','#ffd479']});
         face.position.set(sg.x,sg.y,sg.z);face.rotation.y=Math.PI;g.add(face);
-        const back=new THREE.Mesh(face.geometry,face.material);back.position.set(sg.x,sg.y,sg.z+.068);back.userData.v161Board=true;back.userData.v161Plate=face.userData.v161Plate;back.renderOrder=3;g.add(back);
         g.userData.v161YardSign=face;
       }
     }else{

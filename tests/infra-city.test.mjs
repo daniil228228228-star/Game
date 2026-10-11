@@ -258,7 +258,7 @@ check(siteRows.out.every((s) => s.all <= 34), `site: <= 34 meshes in the whole r
 check(siteRows.out.every((s) => s.rows.every((r) => r.minY >= -0.05 && r.minY <= 0.05)), `site: nothing floating or sunk (min y ${J(siteRows.out.map((s) => Math.min(...s.rows.map((r) => r.minY))))})`);
 check(siteRows.out.every((s) => s.rows.every((r) => r.nonUniform === 0) && s.envH === 1), 'site: no object is stretched in y at rest (the geometry has its final size; the growth animation plays scale.y 0.08 -> 1 only)');
 check(siteRows.out.every((s) => Math.abs(s.wallH - 1.45 * s.trueEnvH) < 0.02), `site: walls are built at their real height 1.45 x envH (${J(siteRows.out.map((s) => [s.kind, s.wallH]))})`);
-check(siteRows.out.every((s) => s.v45 && s.beacons === 2 && s.sprites === 2), 'site: the hazard boards, beacons and the progress sign are part of the rig (v45 / v149 decoration skipped: exactly 2 beacons, 2 sprites = phase plate + sign line)');
+check(siteRows.out.every((s) => s.v45 && s.beacons === 2 && s.sprites === 1), 'site: the hazard boards, beacons and the progress sign are part of the rig (v45 / v149 decoration skipped: exactly 2 beacons, 1 sprite = the phase plate; the sign line is text PRINTED on the board since 2026-10-11)');
 check(siteRows.geo1 <= siteRows.geo0 + 2, `site: 6 rigs created and removed leave no geometry behind (${siteRows.geo0} -> ${siteRows.geo1})`);
 const craneSolid = await ev(() => {
   const P = __BLD_PROBE__, site = spawnConstructionSite(new THREE.Vector3(30, 0, -58), STAGES[6], 30);

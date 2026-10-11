@@ -52,7 +52,7 @@ const beamInfo = await ev(() => {
   return { out, r };
 });
 for (const b of beamInfo.out) {
-  check(b.transparent && b.depthWrite === false && b.before && b.labelDepthTest === true, `${b.name}: transparent, depthWrite=false, drawn before the plate (beam ${J(b.beamKey)} < plate ${J(b.labelKey)}), plate depthTest on`);
+  check(b.transparent && b.depthWrite === false && b.before && b.labelDepthTest === false, `${b.name}: transparent, depthWrite=false, drawn before the plate (beam ${J(b.beamKey)} < plate ${J(b.labelKey)}), plate depthTest OFF (2026-10-11: plates are drawn on top of the geometry)`);
 }
 check(beamInfo.r.v142 && beamInfo.out.some((b) => b.name.startsWith('v142')), 'the manual-destination beacon (v142) exists and was checked');
 // before/after image: camera at the plate of the construction site, beam on the plate axis
