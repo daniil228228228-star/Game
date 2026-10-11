@@ -48,7 +48,7 @@ export async function openGame({ save, url, waitMs = 4000 } = {}) {
   const server = url ? null : await startServer();
   const gameUrl = url || `${server.url}/${ENTRY}`;
   const browser = await chromium.launch({
-    executablePath: '/opt/pw-browsers/chromium',
+    executablePath: process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium',
     args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'],
   });
   const context = await browser.newContext({ ...devices['iPhone 13'] });

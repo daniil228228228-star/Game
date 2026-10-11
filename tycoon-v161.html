@@ -1334,6 +1334,16 @@ function productionSpeedMultiplier(){ return (1 + metaLevel('production') * 0.06
 
 
 const GROUND_HALF = 70;
+// Masterplan additions are opt-in for every save, including legacy saves.
+const masterplanStateV161 = {B01:false, B02:false};
+function restoreMasterplanV161(data){
+  masterplanStateV161.B01 = data?.B01 === true;
+  masterplanStateV161.B02 = masterplanStateV161.B01 && data?.B02 === true;
+}
+function clampPlayerBoundsV161(x,z,margin=1){
+  if(window.MasterplanV161)return window.MasterplanV161.clamp(x,z,margin);
+  return {x:THREE.MathUtils.clamp(x,-GROUND_HALF+margin,GROUND_HALF-margin),z:THREE.MathUtils.clamp(z,-GROUND_HALF+margin,GROUND_HALF-margin)};
+}
 const PLAYER_SPEED = 5.9;       // v131: calmer, more controllable world-scale movement
 const SPRINT_MULT = 1.48;       // v131: sprint remains useful without turning traversal into a dash
 const PLAYER_ACCEL = 12.8;      // v50: smoother premium acceleration without feeling sluggish
@@ -8409,7 +8419,7 @@ function buildIndustrialStepV118(step) {
   if (step.built() || !step.prereq()) return false;
   // v161 district infra (assets/district-infra-v161.js): steps with `infraOf` delegate to the
   // district's own build function (it charges, starts the pending timer and toasts itself).
-  if ((step.infraOf || step.chainV161) && typeof step.run === 'function') { // chainV161: Frame Workshop (assets/production-chain-v161.js)
+  if ((step.infraOf || step.chainV161 || step.masterplanV161) && typeof step.run === 'function') { // chainV161: Frame Workshop (assets/production-chain-v161.js)
     const ran = step.run(step);
     if (ran && typeof hintNextStepV161 === 'function') hintNextStepV161(); // v161 feel: one-line "what next" toast (assets/feel-v161.js)
     return ran;
@@ -8644,7 +8654,7 @@ function nextActionableTargetV117() {
     let nearIndep = null, nearIndepD = Infinity; // v161 feel: of the independent affordable pads (district infra, production chain) the NEAREST one leads, not the first in table order
     for (const step of INDUSTRIAL_BUILD_STEPS_V118) {
       if (step.built() || !step.prereq()) continue;
-      const independent = !!(step.infraOf || step.chainV161); // v161 district infra pads and production-chain pads are independent of each other
+      const independent = !!(step.infraOf || step.chainV161 || step.masterplanV161); // v161 district infra pads and production-chain pads are independent of each other
       if (canPayResources(step.cost)) {
         if (!independent) return { pos: step.pos.clone(), label: lang === 'ru' ? step.ru : step.en, type: 'industrial', stepId: step.id };
         const d = player.position.distanceToSquared(step.pos);
@@ -9927,6 +9937,7 @@ function renderTendersPanel(){
   grid.querySelectorAll('[data-tender]').forEach(btn=>btn.addEventListener('click',()=>startMajorTender(btn.dataset.tender)));
 }
 function resetRunOperationsV302(){
+  restoreMasterplanV161(null);window.MasterplanV161?.refresh();
   for(const k of Object.keys(fleetState))fleetState[k]=0;
   for(const k of Object.keys(baseState))baseState[k]=0;
   tenderState={active:null,completed:[]};clearBaseWorld();
@@ -13201,6 +13212,7 @@ function save() {
     const payload = JSON.stringify({
       saveVersion: 64, // Backward-compatible addition: persisted reward deadlines.
       strategicPacingV124: true,
+      masterplanV161: {...masterplanStateV161},
       /* v160 integration begin */
       developmentV160: typeof companyDevelopmentV160 === 'undefined' ? undefined : companyDevelopmentV160.snapshot(),
       /* v160 integration end */
@@ -13277,6 +13289,7 @@ function load() {
       console.warn('primary save corrupted; recovered backup');
     }
     knownSaveRawV64 = localStorage.getItem(SAVE_KEY);
+    restoreMasterplanV161(data.masterplanV161);window.MasterplanV161?.refresh();
     rewardBoostState = sanitizeRewardBoosts(data.rewardBoostState);
     if (data.v30MetaMirror && typeof data.v30MetaMirror === 'object' && metaState.totalPrestiges === 0 && metaState.points === 0) {
       const mm = data.v30MetaMirror;
@@ -13639,13 +13652,10 @@ function load() {
       if (Math.hypot(savedX, savedZ) < 1.5) {
         player.position.copy(PLAYER_SPAWN_POS);
       } else {
-        player.position.set(
-          THREE.MathUtils.clamp(savedX, -GROUND_HALF + 2, GROUND_HALF - 2),
-          0,
-          THREE.MathUtils.clamp(savedZ, -GROUND_HALF + 2, GROUND_HALF - 2)
-        );
+        const paidPort = masterplanStateV161.B01 && Number.isFinite(savedX) && Number.isFinite(savedZ) && savedX >= -141 && savedX < -68 && savedZ >= -10 && savedZ <= 65;
+        player.position.set(paidPort ? savedX : THREE.MathUtils.clamp(savedX,-GROUND_HALF+2,GROUND_HALF-2),0,paidPort ? savedZ : THREE.MathUtils.clamp(savedZ,-GROUND_HALF+2,GROUND_HALF-2));
       }
-      const safe = nearestSafePlayerPosition(player.position);
+      const safe = !window.MasterplanV161 && masterplanStateV161.B01 && player.position.x < -68 ? {x:player.position.x,z:player.position.z} : nearestSafePlayerPosition(player.position);
       player.position.x = safe.x;
       player.position.z = safe.z;
     }
@@ -13847,14 +13857,13 @@ function resolvePlayerCircleCollisions(nx, nz, circles) {
 /* ---------------------------------------------------------------------- */
 function nearestSafePlayerPosition(pos) {
   const circles = gatherPhysicsCircles();
-  let x = THREE.MathUtils.clamp(Number.isFinite(pos.x) ? pos.x : 0, -GROUND_HALF + 1.2, GROUND_HALF - 1.2);
-  let z = THREE.MathUtils.clamp(Number.isFinite(pos.z) ? pos.z : 0, -GROUND_HALF + 1.2, GROUND_HALF - 1.2);
+  const bounded = clampPlayerBoundsV161(Number.isFinite(pos.x)?pos.x:0,Number.isFinite(pos.z)?pos.z:0,1.2);
+  let x=bounded.x,z=bounded.z;
   const oldVx = playerVelocity.x, oldVz = playerVelocity.z;
   playerVelocity.set(0, 0, 0);
   for (let i = 0; i < 5; i++) {
     const solved = resolvePlayerCircleCollisions(x, z, circles);
-    x = THREE.MathUtils.clamp(solved.x, -GROUND_HALF + 1.2, GROUND_HALF - 1.2);
-    z = THREE.MathUtils.clamp(solved.z, -GROUND_HALF + 1.2, GROUND_HALF - 1.2);
+    const bounded=clampPlayerBoundsV161(solved.x,solved.z,1.2);x=bounded.x;z=bounded.z;
     if (!solved.hit) break;
   }
   playerVelocity.set(oldVx, 0, oldVz);
@@ -14122,11 +14131,10 @@ function updatePlayer(dt) {
       const sz = playerVelocity.z * (dt / substeps);
       const beforeX = player.position.x;
       const beforeZ = player.position.z;
-      let nx = THREE.MathUtils.clamp(beforeX + sx, -GROUND_HALF + 1, GROUND_HALF - 1);
-      let nz = THREE.MathUtils.clamp(beforeZ + sz, -GROUND_HALF + 1, GROUND_HALF - 1);
+      const bounded=clampPlayerBoundsV161(beforeX+sx,beforeZ+sz);
+      let nx=bounded.x,nz=bounded.z;
       const solved = resolvePlayerCircleCollisions(nx, nz, circles);
-      nx = THREE.MathUtils.clamp(solved.x, -GROUND_HALF + 1, GROUND_HALF - 1);
-      nz = THREE.MathUtils.clamp(solved.z, -GROUND_HALF + 1, GROUND_HALF - 1);
+      const safeBound=clampPlayerBoundsV161(solved.x,solved.z);nx=safeBound.x;nz=safeBound.z;
       travelled += Math.hypot(nx - beforeX, nz - beforeZ);
       player.position.x = nx;
       player.position.z = nz;
@@ -14429,7 +14437,7 @@ function fallbackPlayerMoveV54(dt){
     // Emergency movement is deliberately conservative and collision-aware. It is used only
     // when the normal updatePlayer path actually fails or the core frame loop is genuinely stalled.
     const speed=PLAYER_SPEED*.74;let nx=player.position.x+moveDir.x*speed*dt,nz=player.position.z+moveDir.z*speed*dt;
-    nx=THREE.MathUtils.clamp(nx,-GROUND_HALF+1,GROUND_HALF-1);nz=THREE.MathUtils.clamp(nz,-GROUND_HALF+1,GROUND_HALF-1);
+    {const bounded=clampPlayerBoundsV161(nx,nz);nx=bounded.x;nz=bounded.z;}
     if(typeof gatherPhysicsCircles==='function'&&typeof resolvePlayerCircleCollisions==='function'){
       const solved=resolvePlayerCircleCollisions(nx,nz,gatherPhysicsCircles());nx=solved.x;nz=solved.z;
     }
@@ -29374,7 +29382,7 @@ body.v53-input-shield #actionBtn{filter:saturate(.75) brightness(.92)!important}
       if(!Number.isFinite(concrete)||concrete<0)concrete=Math.max(0,Math.floor(Number(concrete)||0));
       if(!Number.isFinite(metal)||metal<0)metal=Math.max(0,Math.floor(Number(metal)||0));
       if(!Number.isFinite(stamina))stamina=STAMINA_MAX;stamina=THREE.MathUtils.clamp(stamina,0,STAMINA_MAX);
-      if(player?.position){if(!Number.isFinite(player.position.x))player.position.x=0;if(!Number.isFinite(player.position.z))player.position.z=0;player.position.x=THREE.MathUtils.clamp(player.position.x,-GROUND_HALF+1,GROUND_HALF-1);player.position.z=THREE.MathUtils.clamp(player.position.z,-GROUND_HALF+1,GROUND_HALF-1);}
+      if(player?.position){if(!Number.isFinite(player.position.x))player.position.x=0;if(!Number.isFinite(player.position.z))player.position.z=0;const bounded=clampPlayerBoundsV161(player.position.x,player.position.z);player.position.x=bounded.x;player.position.z=bounded.z;}
       if(Array.isArray(constructionQueue)&&typeof sanitizeConstructionQueue==='function')sanitizeConstructionQueue();
     }catch(e){console.warn('v53 runtime repair skipped',e);}
   }
@@ -32899,6 +32907,7 @@ window.__TYCOON_V74_BUILD__={
       registerRoot(obj,hard?'decor':'decorSoft','randomScenery',{shrink:hard?.78:.72,flags:hard?{}:{player:false,agent:false,camera:false}});
     }
 
+    window.MasterplanV161?.syncColliders();
     lastStats={
       total:registry.size,
       byCategory:[...registry.values()].reduce((a,e)=>(a[e.category]=(a[e.category]||0)+1,a),{})
@@ -39614,6 +39623,8 @@ body.v165-polish :is(.projectProgress,.cityProgress,.fleetCondition)>i{backgroun
   window.__TYCOON_V165__={version:'v165-graphics-interface',runtime,audit,updateAtmosphere:updateAtmosphereV165,updateContacts:updateContactsV165};
 })();
 </script>
+<script src="assets/masterplan-port-data-v161.js"></script>
+<script src="assets/masterplan-v161.js"></script>
 <link rel="stylesheet" href="assets/premium-ui-v161.css">
 </body>
 
