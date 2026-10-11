@@ -17,6 +17,8 @@
   if (typeof updatePlayer !== 'function' || typeof updateAmbientLife !== 'function') return;
   const clamp = THREE.MathUtils.clamp, sin = Math.sin, abs = Math.abs;
   const FAR2 = 48 * 48;
+  /* 2026-10-11 (17) caps (user: workers lean ~30 deg «как падают»): forward lean player <= 8 deg, bots <= 6 deg, side sway <= 3 deg, every smoothed with exponential damping, dt <= 50 ms, zero when idle / far */
+  const DT_MAX = 0.05, PLAYER_LEAN = 0.139, BOT_LEAN = 0.104, BOT_SWAY = 0.05, LEG_MAX = 0.75, ARM_MAX = 0.65;
   const api = { version: 'v161-characters', enabled: true, workers: 0, frames: 0 };
 
   /* ------------------------------------------------------------------------------------------------------ foot dust pool (<= 8 live) */
@@ -81,16 +83,16 @@
     o.torsoX = o.torsoY = o.headX = o.headY = o.fL = o.fR = o.legL = o.legR = o.aLz = o.aRz = o.aLx = o.aRx = 0; o.torsoSY = 1;
   }
   function playerPost(dt) {
-    const o = P.o; P.t += dt;
+    const o = P.o; dt = clamp(dt, 0.001, DT_MAX); P.t += dt;   // dt clamped: a 3 fps frame must not spike the acceleration / lean
     const vx = playerVelocity.x, vz = playerVelocity.z, actual = Math.hypot(vx, vz), s = playerMoveVisualSpeed;
     const moving = actual > 0.2 && playerGrounded;
     P.accel += ((actual - P.prevSpeed) / Math.max(0.001, dt) - P.accel) * clamp(dt * 8, 0, 1); P.prevSpeed = actual;
     const k = clamp(dt * 9, 0, 1);
-    const leanT = moving ? 0.05 + 0.2 * s + clamp(P.accel * 0.012, -0.06, 0.08) : 0;   // x rotation > 0 = the top tips forward (figure faces +z)
-    P.lean += (leanT - P.lean) * k;
+    const leanT = moving ? clamp(0.03 + 0.1 * s + clamp(P.accel * 0.006, -0.03, 0.03), 0, PLAYER_LEAN) : 0;   // x rotation > 0 = the top tips forward (figure faces +z)
+    P.lean += (leanT - P.lean) * k; P.lean = clamp(P.lean, -0.02, PLAYER_LEAN);
     const logs = (typeof carriedLogs === 'number' && carriedLogs > 0);
     P.carry += ((logs ? 1 : 0) - P.carry) * clamp(dt * 8, 0, 1);
-    o.torsoX = P.lean + P.carry * 0.07; torso.rotation.x += o.torsoX;
+    o.torsoX = clamp(P.lean + P.carry * 0.03, -0.02, PLAYER_LEAN); torso.rotation.x += o.torsoX;
     o.headX = -(P.lean * 0.75 + P.carry * 0.05); head.rotation.x += o.headX;
     if (moving) {
       const c = sin(runCycle), twist = c * 0.2 * s;
@@ -126,15 +128,17 @@
     if (e.cv) return e.cv;
     const g = e.group;
     g.rotation.order = 'YXZ';
-    e.cv = { ox: 0, oyaw: 0, oy: 0, sy: 1, olL: 0, olR: 0, oaL: 0, oaR: 0, px: g.position.x, pz: g.position.z, sp: 0, work: 0, stack: 0, carry: 0, t: Math.random() * 20, far: false };
+    e.cv = { ox: 0, oz: 0, oyaw: 0, oy: 0, sy: 1, olL: 0, olR: 0, oaL: 0, oaR: 0, px: g.position.x, pz: g.position.z, sp: 0, yw: 0, lean: 0, sway: 0, work: 0, stack: 0, carry: 0, t: Math.random() * 20, far: false };
     return e.cv;
   }
   function entityPre(e) {
     const c = e.cv; if (!c) return;
     const g = e.group;
-    g.rotation.x -= c.ox; g.rotation.y -= c.oyaw; g.position.y -= c.oy; g.scale.y /= c.sy;
+    g.rotation.x -= c.ox; g.rotation.z -= c.oz; g.rotation.y -= c.oyaw;
+    if (c.oy && abs(g.position.y - c.yw) < 1e-6) g.position.y -= c.oy;   // the game's own sanity pass (position.y = 0, ~line 14530) may have reset y since: then there is nothing of ours left to subtract (it used to drift the figure UP by the old offset)
+     g.scale.y /= c.sy;
     e.legL.rotation.x -= c.olL; e.legR.rotation.x -= c.olR; e.armL.rotation.x -= c.oaL; e.armR.rotation.x -= c.oaR;
-    c.ox = c.oyaw = c.oy = c.olL = c.olR = c.oaL = c.oaR = 0; c.sy = 1;
+    c.ox = c.oz = c.oyaw = c.oy = c.olL = c.olR = c.oaL = c.oaR = 0; c.sy = 1;
   }
   const _cam = { x: 0, z: 0 };
   function siteActive(e) {
@@ -142,15 +146,40 @@
     return !!(e.idle > 0 && b && b.entry && b.entry.underConstruction && !b.waitingForDelivery);
   }
   function sawRunning() { try { return !!(sawmillMillV161 && sawmillMillV161.userData.anim.running); } catch (_) { return false; } }
+  // Box legs scissor about the hip and the whole figure leans about its origin, so the lowest corner of a boot / leg box leaves the ground (swing) or digs into it (lean toes).
+  // The pelvis offset puts the LOWEST corner of the two feet exactly back where it stands at rest (compass gait): exact corner maths, no fudge factor. Worker feet = the boot box
+  // (12 x 7 x 20 cm, centre z +2 cm) under a hip at y .62; resident feet = the leg box (10 x 55 x 11 cm) under a hip at y .55.
+  const FOOT_W = { hip: 0.62, sx: 0.11, hw: 0.06, y: -0.605, z0: -0.08, z1: 0.12 }, FOOT_R = { hip: 0.55, sx: 0.085, hw: 0.05, y: -0.55, z0: -0.055, z1: 0.055 };
+  function lowestFoot(F, thL, thR, lean, sway) {
+    const cl = Math.cos(lean), sl = Math.sin(lean), cs = Math.cos(sway), ss = Math.sin(sway);
+    let m = 1e9;
+    for (let k = 0; k < 2; k++) {
+      const th = k ? thR : thL, ct = Math.cos(th), st = Math.sin(th), cx = k ? F.sx : -F.sx;
+      for (let zi = 0; zi < 2; zi++) {
+        const lz = zi ? F.z1 : F.z0, py = F.hip + F.y * ct - lz * st, pz = F.y * st + lz * ct;
+        for (let xi = 0; xi < 2; xi++) {
+          const px = cx + (xi ? F.hw : -F.hw);
+          const y2 = (px * ss + py * cs) * cl - pz * sl;
+          if (y2 < m) m = y2;
+        }
+      }
+    }
+    return m;
+  }
+  function gaitDrop(e, lean, sway) {
+    const F = e.role ? FOOT_W : FOOT_R, sc = e.role ? 1 : (e.group.scale.y || 1);
+    return sc * (lowestFoot(F, 0, 0, 0, 0) - lowestFoot(F, e.legL.rotation.x, e.legR.rotation.x, lean, sway));
+  }
   function entityPost(e, dt) {
     const c = e.cv; if (!c) return;
+    const rawDt = dt; dt = clamp(dt, 0.001, DT_MAX);
     const g = e.group;
     const dx = g.position.x - _cam.x, dz = g.position.z - _cam.z;
     const dxp = g.position.x - c.px, dzp = g.position.z - c.pz; c.px = g.position.x; c.pz = g.position.z;
     c.far = !g.visible || dx * dx + dz * dz > FAR2;
-    if (c.far) { c.sp = 0; return; }   // far figures: frozen at the base pose, no overlay
+    if (c.far) { c.sp = 0; c.lean = c.sway = 0; g.position.y += (c.oy = gaitDrop(e, 0, 0)); c.yw = g.position.y; return; }   // far figures: frozen at the base pose, no overlay
     c.t += dt;
-    const sp = Math.hypot(dxp, dzp) / Math.max(0.001, dt);
+    const topSp = Math.max(0.5, (e.speed || 1) * 1.3), sp = rawDt > 0.25 ? c.sp : Math.min(topSp, Math.hypot(dxp, dzp) / Math.max(0.001, rawDt));   // a teleport / hitch never reads as a sprint
     c.sp += (sp - c.sp) * clamp(dt * 10, 0, 1);
     const top = Math.max(0.5, (e.speed || 1) * 1.1), sn = clamp(c.sp / top, 0, 1), still = 1 - clamp(c.sp / 0.25, 0, 1);
     const isWorker = !!e.role, working = isWorker && siteActive(e) && still > 0.5;
@@ -159,27 +188,32 @@
     const kk = clamp(dt * 6, 0, 1);
     c.work += ((working ? 1 : 0) - c.work) * kk; c.stack += ((stacking ? 1 : 0) - c.stack) * kk; c.carry += ((carrying ? 1 : 0) - c.carry) * kk;
     const ph = e.phase || 0;
-    let lean = 0.045 * sn + 0.15 * sn * sn, bob = abs(sin(ph)) * 0.035 * sn, twist = sin(ph) * 0.13 * sn;
+    let lean = 0.03 * sn + 0.05 * sn * sn, twist = sin(ph) * 0.1 * sn, sway = sin(ph) * 0.03 * sn;
     // work poses (blended)
     if (c.work > 0.01) {
       const role = e.role;
       const strike = role === 'builder' ? 0.14 + 0.13 * sin(ph) : role === 'rigger' ? 0.3 + 0.04 * sin(ph) : role === 'loader' ? 0.12 + 0.06 * sin(ph) : 0.02;
-      lean += c.work * strike; twist += c.work * (role === 'builder' ? 0.1 * sin(ph + 1.2) : role === 'rigger' ? 0.16 * sin(ph) : 0);
+      lean += c.work * strike * 0.4; twist += c.work * (role === 'builder' ? 0.1 * sin(ph + 1.2) : role === 'rigger' ? 0.16 * sin(ph) : 0);
     }
     if (c.stack > 0.01) {   // sawmill hand: bend to the pile, stand up with the board, ~2.4 s per board
       const cyc = 0.5 - 0.5 * Math.cos(c.t * 2.6);
-      lean += c.stack * (0.08 + 0.42 * cyc); twist += c.stack * 0.18 * sin(c.t * 1.3);
+      lean += c.stack * (0.03 + 0.2 * cyc); twist += c.stack * 0.18 * sin(c.t * 1.3);
     }
     if (c.carry > 0.01) lean -= c.carry * 0.06;
-    g.rotation.x += (c.ox = lean); g.rotation.y += (c.oyaw = twist); g.position.y += (c.oy = bob);
+    // damped (exponential, dt <= 50 ms) and clamped: lean <= 6 deg, sway <= ~3 deg; pivot = the group origin = the FEET (the feet never leave the ground)
+    const kl = 1 - Math.exp(-dt * 9);
+    c.lean += (clamp(lean, -BOT_LEAN, BOT_LEAN) - c.lean) * kl; c.sway += (clamp(sway, -BOT_SWAY, BOT_SWAY) - c.sway) * kl;
+    if (abs(c.lean) < 1e-4) c.lean = 0; if (abs(c.sway) < 1e-4) c.sway = 0;
+    g.rotation.x += (c.ox = c.lean); g.rotation.z += (c.oz = c.sway); g.rotation.y += (c.oyaw = clamp(twist, -0.12, 0.12)); 
     // breathing when standing
     if (still > 0.02) { c.sy = 1 + 0.012 * sin(c.t * 2.1 + (e.phase || 0)) * still; g.scale.y *= c.sy; }
     // limbs: stronger swing the faster the figure moves (proportional to the base swing and to the measured speed)
-    c.olL = e.legL.rotation.x * 0.3 * sn; c.olR = e.legR.rotation.x * 0.3 * sn; e.legL.rotation.x += c.olL; e.legR.rotation.x += c.olR;
-    let aL = e.armL.rotation.x * 0.22 * sn, aR = e.armR.rotation.x * 0.22 * sn;
+    c.olL = clamp(e.legL.rotation.x * (1 + 0.3 * sn), -LEG_MAX, LEG_MAX) - e.legL.rotation.x; c.olR = clamp(e.legR.rotation.x * (1 + 0.3 * sn), -LEG_MAX, LEG_MAX) - e.legR.rotation.x; e.legL.rotation.x += c.olL; e.legR.rotation.x += c.olR;
+    let aL = clamp(e.armL.rotation.x * (1 + 0.22 * sn), -ARM_MAX, ARM_MAX) - e.armL.rotation.x, aR = clamp(e.armR.rotation.x * (1 + 0.22 * sn), -ARM_MAX, ARM_MAX) - e.armR.rotation.x;
     if (c.carry > 0.01) { aL += c.carry * (-0.95 - e.armL.rotation.x - aL); aR += c.carry * (-0.95 - e.armR.rotation.x - aR); }   // crate held high with both hands
     if (c.stack > 0.01) { const lift = sin(c.t * 2.6); aL += c.stack * (-0.5 - 0.5 * lift - e.armL.rotation.x - aL); aR += c.stack * (-0.5 - 0.5 * lift - e.armR.rotation.x - aR); }
     c.oaL = aL; c.oaR = aR; e.armL.rotation.x += aL; e.armR.rotation.x += aR;
+    g.position.y += (c.oy = gaitDrop(e, c.lean, c.sway)); c.yw = g.position.y;
   }
 
   function vary(w) {

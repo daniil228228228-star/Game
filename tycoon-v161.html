@@ -12690,8 +12690,8 @@ function createResidentNPC(seed=0){
   const head=new THREE.Mesh(new THREE.SphereGeometry(.13,8,8),skin);head.position.y=1.12;g.add(head);
   const torso=new THREE.Mesh(new THREE.BoxGeometry(.32,.46,.20),shirtMat);torso.position.y=.77;g.add(torso);
   const limbGeo=(w,h,d)=>{const q=new THREE.BoxGeometry(w,h,d);q.translate(0,-h/2,0);return q;};   // v161 (16): origin = the hip / shoulder joint (the boxes used to swing about their own centre: the legs detached from the hips)
-  const legL=new THREE.Mesh(limbGeo(.10,.49,.11),pantsMat);legL.position.set(-.085,.55,0);g.add(legL);
-  const legR=new THREE.Mesh(limbGeo(.10,.49,.11),pantsMat);legR.position.set(.085,.55,0);g.add(legR);
+  const legL=new THREE.Mesh(limbGeo(.10,.55,.11),pantsMat);legL.position.set(-.085,.55,0);g.add(legL);   // v161 (17): leg length .55 = the hip height, the feet stand ON the ground (were .49: hovering 5 cm)
+  const legR=new THREE.Mesh(limbGeo(.10,.55,.11),pantsMat);legR.position.set(.085,.55,0);g.add(legR);
   const armL=new THREE.Mesh(limbGeo(.08,.40,.09),shirtMat);armL.position.set(-.21,.98,0);g.add(armL);
   const armR=new THREE.Mesh(limbGeo(.08,.40,.09),shirtMat);armR.position.set(.21,.98,0);g.add(armR);
   g.scale.setScalar(.82);

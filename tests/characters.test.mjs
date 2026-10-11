@@ -89,7 +89,7 @@ const rest = await record(80, WSRC);
 console.log('hammer', J({ actLean: range(act.map((v) => v[0])), actArm: range(act.map((v) => v[1])), restLean: range(rest.map((v) => v[0])), restArm: range(rest.map((v) => v[1])), work: act[act.length - 1][3], workRest: rest[rest.length - 1][3] }));
 const waiting = H && H.wait;
 if (waiting) console.log('KNOWN ISSUE: the test site waits for a delivery, the hammer phase check is skipped');
-check(waiting || (range(act.map((v) => v[0])) > 0.1 && range(act.map((v) => v[1])) > 0.3 && act[act.length - 1][3] > 0.8), `builder hammers while the site is active (body dip ${range(act.map((v) => v[0])).toFixed(2)} rad, arm swing ${range(act.map((v) => v[1])).toFixed(2)}, work blend ${act[act.length - 1][3].toFixed(2)})`);
+check(waiting || (range(act.map((v) => v[0])) > 0.03 && range(act.map((v) => v[1])) > 0.3 && act[act.length - 1][3] > 0.8), `builder hammers while the site is active (body dip ${range(act.map((v) => v[0])).toFixed(2)} rad, arm swing ${range(act.map((v) => v[1])).toFixed(2)}, work blend ${act[act.length - 1][3].toFixed(2)})`);
 check(Math.max(...rest.map((v) => v[3])) < 0.05, `no site -> no hammering: the work blend stays ${Math.max(...rest.map((v) => v[3])).toExponential(1)} (the game's own scheduler may walk the builder elsewhere; walking is not hammering)`);
 
 // sawmill hands stack while the saw runs
@@ -104,7 +104,7 @@ if (stackT) {
   await page.evaluate(() => { const keep = () => { sawmillMillV161.userData.anim.running = true; __s.idle = 1e6; requestAnimationFrame(keep); }; keep(); });
   await frames(30);
   const st = await record(120, '() => [__s.group.rotation.x, __s.cv.stack]');
-  check(range(st.map((v) => v[0])) > 0.2 && st[st.length - 1][1] > 0.7, `sawmill hand stacks boards while the saw runs (bend cycle ${range(st.map((v) => v[0])).toFixed(2)} rad, blend ${st[st.length - 1][1].toFixed(2)})`);
+  check(range(st.map((v) => v[0])) > 0.05 && st[st.length - 1][1] > 0.7, `sawmill hand stacks boards while the saw runs (bend cycle ${range(st.map((v) => v[0])).toFixed(2)} rad, blend ${st[st.length - 1][1].toFixed(2)})`);
 } else console.log('KNOWN ISSUE: no sawmill-yard worker found for the stacking probe');
 
 // ---------------------------------------------------------------- D. cost
@@ -256,7 +256,7 @@ const off = await page.evaluate(async () => {
   CharactersV161.enabled = false;
   await new Promise((r) => { let n = 0; const f = () => (++n >= 4 ? r() : requestAnimationFrame(f)); f(); });
   const W = npcWorkers.filter((w) => w.cv), bad = [];
-  for (const w of W) { const c = w.cv; if (c.ox || c.oyaw || c.oy || c.olL || c.olR || c.oaL || c.oaR || c.sy !== 1) bad.push(w.role); }
+  for (const w of W) { const c = w.cv; if (c.ox || c.oz || c.oyaw || c.oy || c.olL || c.olR || c.oaL || c.oaR || c.sy !== 1) bad.push(w.role); }
   const Pc = CharactersV161.player.o; const pbad = Object.entries(Pc).filter(([k, v]) => v !== (k === 'torsoSY' ? 1 : 0)).map(([k]) => k);
   CharactersV161.enabled = true;
   return { n: W.length, bad, pbad };
