@@ -15,7 +15,7 @@ const ev = (fn, arg) => page.evaluate(fn, arg);
 // ---- 1. fresh state, table, costs
 const t0 = await ev(() => ({
   levels: ['sawmill', 'concrete', 'metal'].map(industrialLevelV161),
-  ids: INDUSTRIAL_BUILD_STEPS_V118.filter((s) => !s.infraOf && !s.chainV161).map((s) => s.id), // infraOf = district-infra pads (district-infra.test.mjs), chainV161 = workshop + level 3 (production-chain.test.mjs)
+  ids: INDUSTRIAL_BUILD_STEPS_V118.filter((s) => !s.masterplanV161 && !s.infraOf && !s.chainV161).map((s) => s.id), // infraOf = district-infra pads (district-infra.test.mjs), chainV161 = workshop + level 3 (production-chain.test.mjs)
   up: INDUSTRIAL_BUILD_STEPS_V118.filter((s) => s.upgradeOf && s.level === 2).map((s) => ({ id: s.id, of: s.upgradeOf, level: s.level, cost: { ...s.cost }, pad: { x: s.pos.x, z: s.pos.z } })),
   markers: INDUSTRIAL_BUILD_STEPS_V118.filter((s) => s.upgradeOf && s.level === 2).map((s) => industrialPadMarkersV118.has(s.id)),
 }));

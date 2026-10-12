@@ -1,0 +1,27 @@
+[
+  {
+    "file": "district-infra.test.mjs",
+    "code": 0,
+    "seconds": 56.1
+  },
+  {
+    "file": "roads.test.mjs",
+    "code": 0,
+    "seconds": 124.2
+  },
+  {
+    "file": "old-save.test.mjs",
+    "code": 0,
+    "seconds": 39.2
+  },
+  {
+    "file": "boot.test.mjs",
+    "code": 0,
+    "seconds": 14.2
+  },
+  {
+    "file": "world-consistency.test.mjs",
+    "code": 0,
+    "seconds": 80.4
+  }
+]
