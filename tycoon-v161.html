@@ -935,6 +935,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="assets/districts-v161.js"></script>
 <script src="assets/site-v161.js"></script>
 <script src="assets/props-v161.js"></script>
+<script src="assets/masterplan-port-data-v161.js"></script>
 <script src="assets/foliage-v154.js"></script>
 <script src="assets/work-session-v158.js"></script>
 <script src="assets/development-core-v160.js"></script>
@@ -1344,6 +1345,26 @@ function restoreMasterplanV161(data){
     if (id === 'B01') continue;
     masterplanStateV161[id] = data?.[id] === true && (MASTERPLAN_REQUIRES_V161[id] || []).every(r => masterplanStateV161[r]) && masterplanStateV161.B01;
   }
+}
+// The walkable floor of the paid pads: polygons from the compiled data (even-odd over each region's loops, union over the paid pads). Used by the layer (assets/masterplan-v161.js) and by
+// load() before the layer exists, so there is ONE definition and no hard-coded rectangles.
+function masterplanFloorV161(x,z){
+  const D = window.MasterplanPortDataV161;
+  if (!D) return false;
+  const ring = (poly) => { let yes = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > z) !== (b[1] > z) && x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]) yes = !yes; } return yes; };
+  for (const id in D.walkable) {
+    if (!masterplanStateV161[id]) continue;
+    const b = D.bbox[id];
+    if (x < b[0] || x > b[2] || z < b[1] || z > b[3]) continue;
+    for (const region of D.walkable[id]) { let yes = false; for (const loop of region) if (ring(loop)) yes = !yes; if (yes) return true; }
+  }
+  return false;
+}
+function masterplanAccessV161(x,z,margin=.65){
+  if (!masterplanStateV161.B01 || !masterplanFloorV161(x,z)) return false;
+  // margin against the UNION of paid floors (no invisible seam at a parcel entrance)
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; if (!masterplanFloorV161(x + Math.cos(a) * margin, z + Math.sin(a) * margin)) return false; }
+  return true;
 }
 function clampPlayerBoundsV161(x,z,margin=1){
   if(window.MasterplanV161)return window.MasterplanV161.clamp(x,z,margin);
@@ -13660,8 +13681,8 @@ function load() {
       if (Math.hypot(savedX, savedZ) < 1.5) {
         player.position.copy(PLAYER_SPAWN_POS);
       } else {
-        // the paid floor is the layer's own data (walkable polygons per pad), no hard-coded rectangles; without the layer (boot order) its boot code recovers the spot from the raw save
-        const paidPort = masterplanStateV161.B01 && Number.isFinite(savedX) && Number.isFinite(savedZ) && Math.max(Math.abs(savedX), Math.abs(savedZ)) > GROUND_HALF - 2 && !!window.MasterplanV161?.access(savedX, savedZ);
+        // the paid floor is the compiled data (walkable polygons per pad, masterplanFloorV161), no hard-coded rectangles
+        const paidPort = masterplanStateV161.B01 && Number.isFinite(savedX) && Number.isFinite(savedZ) && Math.max(Math.abs(savedX), Math.abs(savedZ)) > GROUND_HALF - 2 && masterplanAccessV161(savedX, savedZ);
         player.position.set(paidPort ? savedX : THREE.MathUtils.clamp(savedX,-GROUND_HALF+2,GROUND_HALF-2),0,paidPort ? savedZ : THREE.MathUtils.clamp(savedZ,-GROUND_HALF+2,GROUND_HALF-2));
       }
       const safe = !window.MasterplanV161 && masterplanStateV161.B01 && (player.position.x < -68 || (masterplanStateV161.B03 && player.position.z < -68)) ? {x:player.position.x,z:player.position.z} : nearestSafePlayerPosition(player.position);
@@ -39646,7 +39667,6 @@ body.v165-polish :is(.projectProgress,.cityProgress,.fleetCondition)>i{backgroun
 })();
 </script>
 <script src="assets/panel-stable-v161.js"></script>
-<script src="assets/masterplan-port-data-v161.js"></script>
 <script src="assets/masterplan-v161.js"></script>
 <link rel="stylesheet" href="assets/premium-ui-v161.css">
 </body>

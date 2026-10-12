@@ -21,19 +21,7 @@
   function inside(x,z,poly){let yes=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];if((a[1]>z)!==(b[1]>z)&&x<(b[0]-a[0])*(z-a[1])/(b[1]-a[1])+a[0])yes=!yes;}return yes;}
   // A region is a list of loops (outer rings and holes): even-odd. A pad's walkable floor is the union of its regions.
   function inRegion(x,z,loops){let yes=false;for(const l of loops)if(inside(x,z,l))yes=!yes;return yes;}
-  function floor(x,z){
-    for(const id in D.walkable){
-      if(!state[id])continue;const b=D.bbox[id];if(x<b[0]||x>b[2]||z<b[1]||z>b[3])continue;
-      for(const r of D.walkable[id])if(inRegion(x,z,r))return true;
-    }
-    return false;
-  }
-  function access(x,z,margin=.65){
-    if(!state.B01||!floor(x,z))return false;
-    // Margin against the UNION of paid floors, not each strip: no invisible seam at a parcel entrance.
-    for(let i=0;i<8;i++){const a=i*Math.PI/4;if(!floor(x+Math.cos(a)*margin,z+Math.sin(a)*margin))return false;}
-    return true;
-  }
+  const floor=masterplanFloorV161,access=masterplanAccessV161;   // core (tycoon-v161.html): one definition for load() and the layer
   // Continuous movement (a per-frame step) slides along the edge of the paid floor; a jump (teleport, test probe) keeps the last safe spot.
   const SLIDE_STEP=2;
   function clamp(x,z,margin=1){
