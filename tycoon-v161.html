@@ -14389,7 +14389,7 @@ function syncPanelMarkupV163(host,html){
   const key=node=>{
     if(node.nodeType!==1)return '';
     if(node.id)return 'id:'+node.id;
-    for(const a of node.attributes)if(/^data-v(?:158-(?:focus|batch|job|delivery|stop|return)|160-(?:start|commission))$/.test(a.name))return a.name+':'+a.value;
+    for(const a of node.attributes)if(/^data-v(?:158-(?:focus|batch|job|delivery|stop|return)|160-(?:start|commission))$/.test(a.name))return a.name+':'+a.value+':'+(node.getAttribute('data-v158-cargo')||''); // v161 panel-stable: the concrete and the metal gather buttons shared one key, so each pass moved one of them (remove+insert)
     return '';
   };
   const same=(a,b)=>a&&a.nodeType===b.nodeType&&(a.nodeType!==1||a.tagName===b.tagName);
@@ -15248,19 +15248,23 @@ function markGuideEl(selector, type, tip){
   if (!selector) return false;
   const el = typeof selector === 'string' ? document.querySelector(selector) : selector;
   if (!el) return false;
-  el.classList.add(type === 'secondary' ? 'guide-secondary' : 'guide-primary');
+  const mine = type === 'secondary' ? 'guide-secondary' : 'guide-primary', other = type === 'secondary' ? 'guide-primary' : 'guide-secondary';
+  if (el.classList.contains(other)) el.classList.remove(other);
+  if (!el.classList.contains(mine)) el.classList.add(mine);
   if (tip != null) el.setAttribute('data-guide-tip', String(tip));
   guidedUiEls.add(el);
   return true;
 }
 function updateGuideMarkers(){
-  clearGuideMarkers();
+  // v161 panel-stable: no clear-then-mark (2 DOM writes per marked element on every call, 25 mutations/s on the market sheet); only elements that lost their mark are cleared
+  const prevMarked = new Set(guidedUiEls); guidedUiEls.clear();
   const q = currentGuideQuest();
   if (q?.steps?.length) {
     q.steps.forEach((selector, i)=> markGuideEl(selector, i === 0 ? 'primary' : 'secondary', formatGuideStepLabel(i)));
   } else {
     if (currentPad) markGuideEl('#nextCard', 'primary', '1');
   }
+  prevMarked.forEach(el=>{ if(!guidedUiEls.has(el)){ el.classList.remove('guide-primary','guide-secondary'); el.removeAttribute('data-guide-tip'); } });
   const coachEl = document.getElementById('coachChip');
   if (coachEl) coachEl.classList.toggle('guideMain', !!q);
 }
@@ -26779,7 +26783,7 @@ function v44Curve(name,value){
 
   function v44PostProcessCards(root=document){
     const cards=root.querySelectorAll?.('.staffCard,.projectCard,.fleetCard,.baseCard,.tenderCard,.bonusCard,.metaCard,.operationsCard,.cityCard,.initiativeCard,.fleetOpsCard,.capacityCardV42,.districtSystemsV40,.districtGrowthV41,.activeContractV42,.financeV42,.cityRequestV40,.incidentCardV41')||[];
-    cards.forEach(card=>{card.classList.remove('v44-card-ready','v44-card-warning','v44-card-critical');const txt=card.textContent||'';if(/MAX|готов|ready|выполн|complete|100%/i.test(txt))card.classList.add('v44-card-ready');if(/⚠|нужн|required|дефицит|constrained/i.test(txt))card.classList.add('v44-card-warning');if(/авари|incident|срок|deadline|❌|крит/i.test(txt))card.classList.add('v44-card-critical');});
+    cards.forEach(card=>{const txt=card.textContent||'';/* v161 panel-stable: toggle(force) writes only when the class really changes (remove-all + add rewrote class on every card every pass) */card.classList.toggle('v44-card-ready',/MAX|готов|ready|выполн|complete|100%/i.test(txt));card.classList.toggle('v44-card-warning',/⚠|нужн|required|дефицит|constrained/i.test(txt));card.classList.toggle('v44-card-critical',/авари|incident|срок|deadline|❌|крит/i.test(txt));});
   }
 
   function v44PostProcessUI(root=document){
@@ -31295,6 +31299,7 @@ window.__TYCOON_V74_BUILD__={
   const baseRender=renderFleetOperations;
   renderFleetOperations=function(){
     baseRender.apply(this,arguments);
+    return; // v161 panel-stable (2026-10-12): the v73 wrapper below removed this card and built its own one on every pass (two DOM writes per pass for nothing); v73 is the only owner of the garage card now
     const grid=document.getElementById('fleetOpsGrid');if(!grid)return;
     const lv=baseLevel('garage'),cfg=baseConfig('garage'),locked=stageIndex<(cfg?.unlock||3),done=lv>=3,cost=baseUpgradeCost('garage');
     const count=fleetGarageBayCountV72(lv);
@@ -39624,6 +39629,7 @@ body.v165-polish :is(.projectProgress,.cityProgress,.fleetCondition)>i{backgroun
   window.__TYCOON_V165__={version:'v165-graphics-interface',runtime,audit,updateAtmosphere:updateAtmosphereV165,updateContacts:updateContactsV165};
 })();
 </script>
+<script src="assets/panel-stable-v161.js"></script>
 <script src="assets/masterplan-port-data-v161.js"></script>
 <script src="assets/masterplan-v161.js"></script>
 <link rel="stylesheet" href="assets/premium-ui-v161.css">
