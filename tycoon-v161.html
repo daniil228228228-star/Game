@@ -2502,6 +2502,7 @@ function makeSkyTexture() {
     hill.rotation.y = Math.random() * Math.PI;
     hill.castShadow = true;
     hill.receiveShadow = true;
+    hill.userData.v161Backdrop = { x: hill.position.x, z: hill.position.z, r: hill.geometry.parameters.radius * Math.max(1, hill.scale.z) }; // masterplan layer hides the backdrop that stands on its paid floor
     scene.add(hill);
   }
 
@@ -2520,6 +2521,7 @@ function makeSkyTexture() {
     b.lookAt(0, h / 2, 0);
     b.castShadow = true;
     b.receiveShadow = true;
+    b.userData.v161Backdrop = { x: b.position.x, z: b.position.z, r: Math.hypot(w, d) / 2 };
     scene.add(b);
     if (Math.random() < 0.55) {
       const crown = new THREE.Mesh(
@@ -2527,6 +2529,7 @@ function makeSkyTexture() {
         new THREE.MeshStandardMaterial({ color: 0x9fb1c5, roughness: 0.48, metalness: 0.18 })
       );
       crown.position.set(b.position.x, h + crown.geometry.parameters.height / 2 - 0.2, b.position.z);
+      crown.userData.v161Backdrop = b.userData.v161Backdrop;
       scene.add(crown);
     }
   }

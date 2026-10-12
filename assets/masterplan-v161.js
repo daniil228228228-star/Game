@@ -37,8 +37,26 @@
   function polygon(bt,poly,y){const p=poly.map(q=>new THREE.Vector2(q[0],q[1]));for(const t of THREE.ShapeUtils.triangulateShape(p,[])){let a=poly[t[0]],b=poly[t[1]],c=poly[t[2]];if((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])>0)[b,c]=[c,b];K.tri(bt,ctx,[a[0],y,a[1]],[b[0],y,b[1]],[c[0],y,c[1]]);}}
   function line(bt,a,b,width,y,height=.01){const dx=b[0]-a[0],dz=b[1]-a[1],length=Math.hypot(dx,dz);if(length<.001)return;K.box(bt,ctx,(a[0]+b[0])/2,y,(a[1]+b[1])/2,width,height,length,{ry:Math.atan2(dx,dz)});}
   function syncColliders(){const api=window.__TYCOON_V83_COLLISIONS__;if(!api||!root)return;api.unregisterOwner(root);for(const b of barriers)api.register({owner:root,category:'decor',label:'mp161:guardrail',shape:'obb',pos:new THREE.Vector3(b.x,0,b.z),hx:.065,hz:b.length/2,yaw:b.yaw,flags:{player:true,agent:true,placement:false,camera:false}});}
+  // The decorative backdrop (24 hill spheres r 76-87 m, 30 skyline boxes, tagged userData.v161Backdrop by the core) stands exactly where the paid avenues cross r 70-100:
+  // a hill covered the Port avenue (camera inside the hill) and a skyline box stood in the road. Backdrop whose footprint touches the paid floor is hidden while that floor is paid.
+  function polyDistance(x,z,poly){if(inside(x,z,poly))return 0;let best=Infinity;for(let i=0;i<poly.length;i++){const q=nearest(x,z,poly[i],poly[(i+1)%poly.length]);best=Math.min(best,Math.hypot(x-q[0],z-q[1]));}return best;}
+  function surfaceDistance(x,z){
+    let best=Infinity;
+    for(const e of D.edges){if(!state[e.pad])continue;const r=e.w/2+e.sw;for(let i=1;i<e.pts.length;i++){const q=nearest(x,z,e.pts[i-1],e.pts[i]);best=Math.min(best,Math.hypot(x-q[0],z-q[1])-r);}}
+    if(state.B02){best=Math.min(best,polyDistance(x,z,D.pier));for(const l of D.lots)best=Math.min(best,polyDistance(x,z,l.poly));}
+    if(state.B03)best=Math.min(best,polyDistance(x,z,northLand));
+    return best;
+  }
+  let backdrop=null;
+  function syncBackdrop(){
+    if(!backdrop){backdrop=[];scene.traverse(o=>{if(o.userData&&o.userData.v161Backdrop)backdrop.push(o);});}
+    let hidden=0;
+    for(const o of backdrop){const b=o.userData.v161Backdrop,hide=!!state.B01&&surfaceDistance(b.x,b.z)<b.r+2;if(o.visible===hide)o.visible=!hide;if(hide)hidden++;}
+    return hidden;
+  }
   function clear(){if(root){window.__TYCOON_V83_COLLISIONS__?.unregisterOwner(root);scene.remove(root);root.traverse(o=>{if(o.geometry)o.geometry.dispose();});root=null;}barriers.length=0;signature='';}
   function refresh(){
+    syncBackdrop();
     refreshNorth();
     const want=state.B02?'B02':state.B01?'B01':'';
     if(want&&Math.hypot(player.position.x+98,player.position.z-21)>=150){if(want!==signature)clear();if(root)root.visible=false;return;}
@@ -120,7 +138,7 @@
     toast(lang==='ru'?(p.id==='B01'?'Портовая авеню открыта. Следующий кружок — у причала.':p.id==='B02'?'Причал открыт: пять участков подготовлены к следующим этапам.':'Северный проспект открыт. Подготовлены три участка.'):(p.id==='B01'?'Port avenue open. The next pad is at the quay.':p.id==='B02'?'Pier open: five parcels reserved for the next phases.':'North avenue open. Three parcels prepared.'));
     return true;
   }
-  window.MasterplanV161={state,refresh,clear,clamp,access,syncColliders};
+  window.MasterplanV161={state,refresh,clear,clamp,access,syncColliders,syncBackdrop};
   function padPosition(p){
     if(p.id==='B03'){
       for(let x=0;x<=12;x+=2)for(let z=-64;z<=-55;z+=2){

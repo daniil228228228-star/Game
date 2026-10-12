@@ -55,9 +55,16 @@
     return true;
   }
   function replace(live, next) { live.replaceWith(next); stats.replaced++; return next; }
+  // Renderers decorate AFTER writing the markup (`b.disabled = true`, `b.title = ...` only when a condition holds) and rely on the rebuild to undo it when the condition
+  // stops holding. With retained nodes that undo must be explicit: attributes the markup does not carry are dropped at the end of the task unless the decoration is applied again.
+  function resetSoft(live, raw) {
+    if (live.nodeType !== 1 || raw.nodeType !== 1 || live.nodeName !== raw.nodeName) return;
+    for (const n of ['disabled', 'title', 'hidden']) if (live.hasAttribute(n) && !raw.hasAttribute(n)) removeAttrDeferred(live, n);
+    if (live.childNodes.length === raw.childNodes.length) for (let i = 0; i < live.childNodes.length; i++) resetSoft(live.childNodes[i], raw.childNodes[i]);
+  }
   // live mirrors prev (raw before), next = raw after. Returns the live node that stands for `next`.
   function patch(live, prev, next) {
-    if (prev.isEqualNode(next)) { stats.skipped++; return live; }
+    if (prev.isEqualNode(next)) { stats.skipped++; resetSoft(live, next); return live; }
     if (live.nodeType !== prev.nodeType || prev.nodeType !== next.nodeType) return replace(live, next);
     if (next.nodeType !== 1) { if (live.nodeValue !== next.nodeValue) live.nodeValue = next.nodeValue; stats.patched++; return live; }
     const prot = isProtected(live);
@@ -204,7 +211,8 @@
   const getAttr = Element.prototype.getAttribute, hasAttr = Element.prototype.hasAttribute;
   const setAttr = Element.prototype.setAttribute;
   const remAttr = Element.prototype.removeAttribute;
-  const deferrable = n => /^(data-|aria-)/.test(n);
+  function removeAttrDeferred(el, n) { let m = pendAttr.get(el); if (!m) pendAttr.set(el, m = new Map()); m.set(n, true); queuePend(); }
+  const deferrable = n => /^(data-|aria-|disabled$|title$|hidden$)/.test(n);
   Element.prototype.setAttribute = function (n, v) {
     if (pendAttr.size) { const m = pendAttr.get(this); if (m && m.has(n)) { m.delete(n); if (getAttr.call(this, n) === String(v)) { stats.noopWrites++; return; } } }
     if (getAttr.call(this, n) === String(v) && scoped(this)) { stats.noopWrites++; return; }
@@ -248,7 +256,7 @@
   for (const prop of ['title', 'className']) {
     const d = Object.getOwnPropertyDescriptor(Element.prototype, prop) || Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop);
     if (!d || !d.set) continue;
-    Object.defineProperty(d === Object.getOwnPropertyDescriptor(Element.prototype, prop) ? Element.prototype : HTMLElement.prototype, prop, { configurable: true, enumerable: d.enumerable, get: d.get, set(v) { if (d.get.call(this) === String(v) && scoped(this)) { stats.noopWrites++; return; } return d.set.call(this, v); } });
+    Object.defineProperty(d === Object.getOwnPropertyDescriptor(Element.prototype, prop) ? Element.prototype : HTMLElement.prototype, prop, { configurable: true, enumerable: d.enumerable, get: d.get, set(v) { if (prop === 'title' && pendAttr.size) { const m = pendAttr.get(this); if (m) m.delete('title'); } if (d.get.call(this) === String(v) && scoped(this)) { stats.noopWrites++; return; } return d.set.call(this, v); } });
   }
   // textContent: several wrappers write the same title in turn ('Fleet', 'Company Fleet', 'Work and fleet'): only the LAST value of a task is applied, and only if it
   // differs from what is shown (a text write that changes nothing still replaces the text node and wakes the decorators).
@@ -273,7 +281,13 @@
   for (const [cls, prop] of [[HTMLButtonElement, 'disabled'], [HTMLInputElement, 'disabled'], [HTMLElement, 'hidden']]) {
     const d = Object.getOwnPropertyDescriptor(cls.prototype, prop);
     if (!d || !d.set) continue;
-    Object.defineProperty(cls.prototype, prop, { configurable: true, enumerable: d.enumerable, get: d.get, set(v) { if (!!d.get.call(this) === !!v && scoped(this)) { stats.noopWrites++; return; } return d.set.call(this, v); } });
+    Object.defineProperty(cls.prototype, prop, { configurable: true, enumerable: d.enumerable,
+      get() { if (pendAttr.size) { const m = pendAttr.get(this); if (m && m.has(prop)) return false; } return d.get.call(this); },
+      set(v) {
+        if (v && pendAttr.size) { const m = pendAttr.get(this); if (m && m.has(prop)) { m.delete(prop); stats.noopWrites++; return; } }
+        if (!!d.get.call(this) === !!v && scoped(this)) { stats.noopWrites++; return; }
+        return d.set.call(this, v);
+      } });
   }
 
   const add = EventTarget.prototype.addEventListener;
