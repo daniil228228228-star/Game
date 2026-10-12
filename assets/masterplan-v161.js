@@ -236,6 +236,12 @@
     }
     refreshSea();
   }
+  // Drop every built group (flags stay): the next frames rebuild what is within reach. Used by the tests for the first-visit case; harmless otherwise.
+  function dropGroups(){
+    clear();if(north){scene.remove(north);north.traverse(o=>o.geometry?.dispose());north=null;}
+    for(const id of Object.keys(padGroups))dropPad(id);
+    if(sea){scene.remove(sea);sea.geometry.dispose();sea=null;}
+  }
   // Every frame (cheap flags only): a paid group that is missing or hidden although the player is within reach is built/shown NOW, before the next render,
   // so a teleport or a reload never leaves the player standing on an invisible floor.
   function ensureNear(){
@@ -257,7 +263,7 @@
     toast(lang==='ru'?p.toast.ru:p.toast.en);
     return true;
   }
-  window.MasterplanV161={state,refresh,clear,clamp,access,floor,ensureNear,syncColliders,syncBackdrop,groups:padGroups};
+  window.MasterplanV161={state,refresh,clear,clamp,access,floor,ensureNear,dropGroups,syncColliders,syncBackdrop,groups:padGroups};
   function padPosition(p){
     if(p.id==='B03'){
       for(let x=0;x<=12;x+=2)for(let z=-64;z<=-55;z+=2){
