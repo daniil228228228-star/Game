@@ -315,6 +315,9 @@ await run(async () => {
     check(Object.values(rel.flags).every(Boolean) && rel.nw && Math.abs(rel.x + 60) < 1 && Math.abs(rel.z + 125) < 1 && rel.access, `reload keeps B01..B05, the built blocks and the player standing in them (${J(rel)})`);
     const sigAfter = await ev(() => __sig());
     check(sigAfter.count === sigBefore.count && sigAfter.hash === sigBefore.hash, `after reload the road signature is still ${sigBefore.count}/${sigBefore.hash}`);
+    // prestige / reset path (restoreMasterplanV161(null) + refresh): groups, sea, prop colliders and the floor all go
+    const reset = await ev(() => { restoreMasterplanV161(null); MasterplanV161.refresh(); return { mp: __mpObjects(), colliders: [...__TYCOON_V83_COLLISIONS__.registry.values()].filter((c) => /^mp161:/.test(c.label || '')).length, access: MasterplanV161.access(-60, -125) || MasterplanV161.access(55, -125) }; });
+    check(reset.mp.length === 0 && reset.colliders === 0 && !reset.access, `reset clears the phase-2 groups, the sea, every mp161 collider and the paid floor (${J(reset)})`);
     check(g.errors.length === 0, `no console/page errors (${J(g.errors.slice(0, 4))})`);
     check(g.badResponses.length === 0, 'no 4xx');
   } finally { await g.close(); }
