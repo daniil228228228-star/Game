@@ -39593,9 +39593,17 @@ body.v165-polish :is(.projectProgress,.cityProgress,.fleetCondition)>i{backgroun
     atmosphere.cloud.setHex(day<.16?0x8d9aa5:weather==='rain'?0xb5c0c2:weather==='cloudy'?0xd5dcda:0xffffff);
     const cloudOpacity=weather==='fog' ? .48 : weather==='rain' ? .68 : weather==='cloudy' ? .82 : .94;
     for(let i=0;i<clouds.length;i++){const cloud=clouds[i];cloud.visible=window.__TYCOON_V164__?.runtime?.level!=='low'||i<3;for(const child of cloud.children){const m=child.material;if(!m)continue;m.color.lerp(atmosphere.cloud,k);m.transparent=cloudOpacity<1;m.opacity=cloudOpacity;m.depthWrite=cloudOpacity>.72;}}
-    const snap=3,px=Math.round(player.position.x/snap)*snap,pz=Math.round(player.position.z/snap)*snap;
-    if(sun.target.position.x!==px||sun.target.position.z!==pz){runtime.shadowTargetMoves++;sun.target.position.set(px,0,pz);}
-    const angle=((v40State.timeOfDay-6)/24)*Math.PI*2;sun.position.set(px+Math.cos(angle)*92,Math.max(-12,Math.sin(angle)*92),pz+Math.sin(angle)*64);
+    // Masterplan prerequisite (a), 2026-10-12 (3): the shadow frustum (+-72 m) follows the player (the paid floor reaches z=-155 and x=-141) and is snapped to the LIGHT-SPACE texel grid:
+    // a world-axis 3 m step is 21.3 texels (1024 map, 0.14 m), so every step re-phased the whole map and edges swam; now the frustum moves in whole texels only.
+    const angle=((v40State.timeOfDay-6)/24)*Math.PI*2,ox=Math.cos(angle)*92,oy=Math.max(-12,Math.sin(angle)*92),oz=Math.sin(angle)*64;
+    const ol=Math.hypot(ox,oy,oz)||1,lx=ox/ol,ly=oy/ol,lz=oz/ol,xl=Math.hypot(lz,lx)||1,ax=lz/xl,az=-lx/xl; // X axis of the light camera = up(0,1,0) x L (horizontal)
+    const bX=-(ly*lx)/xl, bY=xl, bZ=-(ly*lz)/xl; // Y axis = L x X
+    const sc=sun.shadow.camera,texel=(sc.right-sc.left)/Math.max(1,sun.shadow.mapSize.x);
+    const pa=player.position.x*ax+player.position.z*az,pb=player.position.x*bX+player.position.z*bZ;
+    const ia=Math.round(pa/texel),ib=Math.round(pb/texel),da=ia*texel-pa,db=ib*texel-pb;
+    const px=player.position.x+ax*da+bX*db,py=bY*db,pz=player.position.z+az*da+bZ*db;
+    if(runtime.shadowCellA!==ia||runtime.shadowCellB!==ib){runtime.shadowTargetMoves++;runtime.shadowCellA=ia;runtime.shadowCellB=ib;}
+    sun.target.position.set(px,py,pz);sun.position.set(px+ox,py+oy,pz+oz);
     runtime.weather=weather;runtime.atmosphereFrames++;
   }
   const lightingV165=applySceneLightingV152;
