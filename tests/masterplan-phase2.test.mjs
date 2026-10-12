@@ -35,6 +35,31 @@ const GROUP = { B01: 'mp161Net', B02: 'mp161Net', B03: 'mp161North', B04: 'mp161
   check(fails.length <= 3 && /НАРУШЕНИЙ: 3/.test(v.stdout), `validator: no new violations (${fails.length} FAIL rows, "${(v.stdout.match(/НАРУШЕНИЙ: \d+/) || [''])[0]}")`);
 }
 
+// ---- offline: every walkable point of every pad is DRAWN (surface triangles, pier / lot decks, earth slab): the walkable polygons and the meshes come from one source
+{
+  const vm = await import('node:vm');
+  const ctx = { window: {} }; vm.createContext(ctx); vm.runInContext(fs.readFileSync(path.join(ROOT, 'assets/masterplan-port-data-v161.js'), 'utf8'), ctx);
+  const D = ctx.window.MasterplanPortDataV161;
+  const inPoly = (x, z, poly) => { let y = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > z) !== (b[1] > z) && x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]) y = !y; } return y; };
+  const inRegion = (x, z, loops) => { let y = false; for (const l of loops) if (inPoly(x, z, l)) y = !y; return y; };
+  const tris = []; // [minx, minz, maxx, maxz, ax, az, bx, bz, cx, cz]
+  for (const id in D.surfaces) for (const k of ['walk', 'asphalt']) for (const c of D.surfaces[id][k]) for (let i = 0; i < c.positions.length; i += 9) { const P = c.positions, a = [P[i], P[i + 2]], b = [P[i + 3], P[i + 5]], cc = [P[i + 6], P[i + 8]]; tris.push([Math.min(a[0], b[0], cc[0]), Math.min(a[1], b[1], cc[1]), Math.max(a[0], b[0], cc[0]), Math.max(a[1], b[1], cc[1]), ...a, ...b, ...cc]); }
+  const side = (px, pz, ax, az, bx, bz) => (px - bx) * (az - bz) - (ax - bx) * (pz - bz);
+  const inTri = (x, z, t) => { if (x < t[0] - 1e-6 || x > t[2] + 1e-6 || z < t[1] - 1e-6 || z > t[3] + 1e-6) return false; const d1 = side(x, z, t[4], t[5], t[6], t[7]), d2 = side(x, z, t[6], t[7], t[8], t[9]), d3 = side(x, z, t[8], t[9], t[4], t[5]); return !((d1 < -1e-7 || d2 < -1e-7 || d3 < -1e-7) && (d1 > 1e-7 || d2 > 1e-7 || d3 > 1e-7)); };
+  const decks = [D.pier, ...D.lots.filter((l) => l.pad === 'B02').map((l) => l.poly), ...Object.values(D.land)];
+  let tested = 0; const holes = [];
+  for (const id in D.walkable) {
+    const b = D.bbox[id];
+    for (let x = Math.floor(b[0]); x <= b[2]; x += 1) for (let z = Math.floor(b[1]); z <= b[3]; z += 1) {
+      if (!D.walkable[id].some((r) => inRegion(x, z, r))) continue;
+      tested++;
+      if (!decks.some((d) => inPoly(x, z, d)) && !tris.some((t) => inTri(x, z, t))) holes.push([id, x, z]);
+    }
+  }
+  check(holes.length === 0 && tested > 10000, `data: every walkable point (${tested} grid points of B01..B05) is covered by a drawn triangle, deck or slab (holes ${J(holes.slice(0, 5))})`);
+  check(Object.keys(D.land).join() === 'B03,B04,B05' && D.walkable.B04.length === 2 && D.pads.length === 5, 'data: earth slabs only for the phase-2 pads, walkable regions per pad');
+}
+
 const PAGE = () => {
   window.__sig = () => {
     const roads = [];

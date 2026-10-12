@@ -149,7 +149,7 @@ await run(async () => {
     check(bd.total >= 54 && bd.hidden >= 3 && bd.nearVisible === 0, `backdrop hills / skyline standing on the paid avenue or the north strip are hidden (${J(bd)})`);
     // sliding along the edge (info): a diagonal push into the pier edge
     const slide = await ev(() => { const a = __drive(-125, 26.2, -1, 1, 20), b = __drive(-125, 26.2, -1, 0, 20); return { diagonal: a, straight: b }; });
-    console.log('push into the pier end, diagonal vs straight (info; the clamp keeps the last safe spot, it does not slide): ' + J(slide));
+    console.log('push into the pier end, diagonal vs straight (info; since phase 2 the clamp slides along the edge for step-sized moves, see masterplan-phase2): ' + J(slide));
 
     // ---- barriers: the colliders alone (clamp switched off for the walk) stop the player at the guard line
     const pierInfo = await ev(() => { const g = [...__TYCOON_V83_COLLISIONS__.registry.values()].filter((c) => c.label === 'mp161:guardrail'); return g.map((c) => ({ cat: c.category, flags: c.flags, pos: [+c.pos.x.toFixed(1), +c.pos.z.toFixed(1)], hx: c.hx, hz: +c.hz.toFixed(1) })); });
@@ -183,11 +183,11 @@ await run(async () => {
         await page.screenshot({ path: path.join(SHOTS, name + '.png') });
       }
     }
-    const shadow = await ev(() => ({ sun: [sun.shadow.camera.left, sun.shadow.camera.right], layerShadows: scene.getObjectByName('mp161North') ? [...Object.values({ n: 1 })].length : 0 }));
-    console.log('sun shadow camera ' + J(shadow.sun) + ': the layer surfaces beyond +-70 are outside it and take no shadow (flat light); see the screenshots');
+    // the shadow camera follows the player on the light-space texel grid since phase 2 (asserted in tests/masterplan-phase2.test.mjs)
+    console.log('sun shadow camera follows the player: ' + J(await ev(() => ({ target: [+sun.target.position.x.toFixed(1), +sun.target.position.z.toFixed(1)], player: [+player.position.x.toFixed(1), +player.position.z.toFixed(1)] }))));
 
     // ---- persistence
-    await ev(() => { player.position.set(-120, 0, 26); save(); });
+    await ev(() => { player.position.set(-120, 0, 26); save.flush(); });   // save() is the v52 coordinator (defers a call < 420 ms after another)
     await reloadGame(g, 5000);
     const rel = await ev(() => ({ flags: { ...masterplanStateV161 }, net: !!scene.getObjectByName('mp161Net'), x: player.position.x }));
     check(rel.flags.B01 && rel.flags.B02 && rel.flags.B03 && rel.net && rel.x < -100, `reload keeps B01/B02/B03, the built port and the player on the pier (${J(rel)})`);

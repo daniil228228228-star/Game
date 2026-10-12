@@ -103,6 +103,7 @@ const lots=plan.lots.filter(l=>padIds.includes(l.pad));
 const land={};
 for(const id of padIds){
   if(LAND[id]){land[id]=LAND[id];continue;}
+  if(pads.find(p=>p.id===id).phase<2)continue;   // slice 1 (port) has no earth slab: its floor is the drawn streets, pier and decks only
   const es=own(id);if(!es.length)continue;
   const xs=[],zs=[];for(const e of es){const hw=e.w/2+e.sw;for(const q of e.pts){xs.push(q[0]-hw,q[0]+hw);zs.push(q[1]-hw,q[1]+hw);}}
   for(const l of lots.filter(l=>l.pad===id))for(const q of l.poly){xs.push(q[0]);zs.push(q[1]);}
