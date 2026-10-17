@@ -139,7 +139,7 @@ for(const id of padIds){
 
 // ---- phase 5: rails. Static track (ballast + sleepers + rails drawn by the game from the axis polylines), impassable for pedestrians: BLOCKERS (even-odd regions like the walkable floor,
 // subtracted from it while the pad is paid) with a fence on their boundary. The plan has no level crossings, so there is no way over a track; the freight yard is one fenced block.
-const RAIL_BLOCK_HW=2.4;                                   // half width of the blocked strip: ballast 3.4 m + a metre either side for the fence
+const RAIL_BLOCK_HW=3;                                     // half width of the blocked strip: ballast 3.4 m + 1.3 m either side for the fence; the two main tracks (6 m apart) merge into one strip, no 1.2 m slot between them
 // Solid yard furniture (all data, drawn by the game): container stacks of the freight yard along its north edge, the loading dock beside the siding (platform 1.2 m from the axis, plan rule 0.8..2.4)
 const yard={};
 if(railsAll.length){
