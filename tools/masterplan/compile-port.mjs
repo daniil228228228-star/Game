@@ -1,4 +1,4 @@
-// Compile the paid masterplan slices (plan B) into assets/masterplan-port-data-v161.js.  node tools/masterplan/compile-port.mjs [--phase=4]
+// Compile the paid masterplan slices (plan B) into assets/masterplan-port-data-v161.js.  node tools/masterplan/compile-port.mjs [--phase=5]
 // ONE script for every pad B01..B18: a later phase only raises --phase (and adds its texts/overrides below); the game layer reads everything from the data.
 // Union surfaces once, clip triangles to 60 m cells. Uses the game's contour solver OFFLINE: malformed contours stop the build, never a player's frame.
 //
@@ -23,11 +23,14 @@ const context=vm.createContext({Math,Map,Set,Error});
 vm.runInContext(source.slice(source.indexOf('function insideRoadFootprints('),source.indexOf('let unionLayer=null')),context);
 
 const arg=(name,def)=>{const a=process.argv.find(x=>x.startsWith('--'+name+'='));return a?a.split('=')[1]:def;};
-const MAX_PHASE=+arg('phase',4);
+const MAX_PHASE=+arg('phase',5);
 const pads=plan.pads.filter(p=>p.phase<=MAX_PHASE);
 const padIds=pads.map(p=>p.id);
+const railsAll=MAX_PHASE>=5?plan.rails.filter(r=>padIds.includes(r.pad)):[];
+const railNodes=MAX_PHASE>=5?plan.railNodes.filter(n=>n.phase<=MAX_PHASE):[];
+const stations=MAX_PHASE>=5?plan.stations.filter(s=>padIds.includes(s.pad)):[];
 // Everything that is a texts/override of a particular pad lives here, so a new phase never touches the game code.
-const GROUP={B01:'mp161Net',B02:'mp161Net',B03:'mp161North',B04:'mp161NW',B05:'mp161Park',B06:'mp161Main',B07:'mp161Chord',B08:'mp161ParkE',B09:'mp161East',B10:'mp161Centre',B11:'mp161South',B12:'mp161M2'};
+const GROUP={B01:'mp161Net',B02:'mp161Net',B03:'mp161North',B04:'mp161NW',B05:'mp161Park',B06:'mp161Main',B07:'mp161Chord',B08:'mp161ParkE',B09:'mp161East',B10:'mp161Centre',B11:'mp161South',B12:'mp161M2',B13:'mp161Rail',B14:'mp161Siding'};
 const TEXT={
   B01:{icon:'⚓',ru:'Портовая авеню',en:'Port avenue',toast:{ru:'Портовая авеню открыта. Следующий кружок — у причала.',en:'Port avenue open. The next pad is at the quay.'}},
   B02:{icon:'⚓',ru:'Причал и участки порта',en:'Pier and port parcels',toast:{ru:'Причал открыт: пять участков подготовлены к следующим этапам.',en:'Pier open: five parcels reserved for the next phases.'}},
@@ -40,13 +43,15 @@ const TEXT={
   B09:{icon:'🏘️',ru:'Главный проспект (восток), жилые кварталы',en:'Main avenue (east), housing blocks',toast:{ru:'Восточные кварталы открыты: 33 участка подготовлены.',en:'East blocks open: 33 parcels prepared.'}},
   B11:{icon:'🛣️',ru:'Южный проспект и Южная улица',en:'South avenue and South street',toast:{ru:'Южный проспект открыт до набережной: 10 участков подготовлены.',en:'South avenue open down to the embankment: 10 parcels prepared.'}},
   B12:{icon:'🛣️',ru:'М2 и развязка IC-1',en:'M2 and interchange IC-1',toast:{ru:'М2 и развязка IC-1 открыты: магистраль идёт в траншее под Хордой, 3 склада подготовлены.',en:'M2 and interchange IC-1 open: the expressway runs in a trench under the Chord, 3 warehouses prepared.'}},
+  B13:{icon:'🚆',ru:'Железная дорога и грузовой парк',en:'Railway and freight yard',toast:{ru:'Железная дорога открыта: два главных пути и грузовой парк, пути за ограждением.',en:'Railway open: two main tracks and a freight yard, tracks behind a fence.'}},
+  B14:{icon:'🚆',ru:'Подъездная ветка и склады',en:'Siding and warehouses',toast:{ru:'Подъездная ветка к складам открыта: погрузочная платформа готова.',en:'Siding to the warehouses open: the loading dock is ready.'}},
   B10:{icon:'🏙️',ru:'Деловой центр',en:'Business centre',toast:{ru:'Деловой центр открыт: 8 площадок подготовлены.',en:'Business centre open: 8 plazas prepared.'}},
 };
 // Purchase circles that are not the plan node: B03 searches a clear spot in the game; B04/B05 plan nodes (-102,-100)/(6,-100) lie on unpaid ground / the avenue,
 // the circle must stand on the floor the player already owns (rule 3: the player can reach every pad): on the paid strip beside each artery's first metre.
 // Phase 3 circles also stand on floor that is ALREADY paid when the pad appears (B06: the old core east of the ring, searched in the game for a clear spot; B07: B05's earth beside the
 // chord start; B08: B07's land beside the chord; B09: B07's land at the avenue crossing; B10: B09's land in the gap between two parcels).
-const PAD_POS={B04:[-3.5,-97.5],B05:[11.5,-97.5],B06:[64,9],B07:[106,-95.4],B08:[106.5,-92],B09:[111,1],B10:[150,8],B11:[14,64],B12:[110,104]};   // phase 4: B11 in the old core beside the avenue start (searched in the game), B12 on B07's land beside the chord's end
+const PAD_POS={B04:[-3.5,-97.5],B05:[11.5,-97.5],B06:[64,9],B07:[106,-95.4],B08:[106.5,-92],B09:[111,1],B10:[150,8],B11:[14,64],B12:[110,104],B13:[165,52.9],B14:[203,90]};   // phase 5: B13 on B10's land south of the z=48 street (the yard itself is unpaid until bought), B14 on B12's land east of the warehouse parcels   // phase 4: B11 in the old core beside the avenue start (searched in the game), B12 on B07's land beside the chord's end
 // Paid earth slab of a pad (the floor between its streets). B03 is the slice-1 rectangle (kept byte for byte); later pads default to the padded bbox of their roads+lots.
 const LAND={
   B03:[[-8,-60],[14,-60],[14,-155],[-8,-155]],
@@ -62,6 +67,8 @@ const LAND={
   // Phase 4 (south; the estuary starts at z 192, the floors stop at z 188). B11: avenue x 6 (z 58..188), South street z 100 with its parcels (to x 106), the M2 arterial z 140 (to x 32, where the expressway hole begins). B12: everything between x 26 and the map edge 212
   B11:[[-4,58],[16,58],[16,88],[106,88],[106,104],[16,104],[16,134],[32,134],[32,146],[16,146],[16,188],[-4,188]],
   B12:[[26,88],[212,88],[212,188],[26,188]],
+  // Phase 5 (railway). One slab for the freight yard, the two main tracks and the siding zone, between B10 (z 54) and B12 (z 88); the tracks themselves are BLOCKERS (not walkable), see below
+  B13:[[108,52],[212,52],[212,90],[108,90]],
 };
 // Holes of a slab that are NOT earth: the open cut of the M2 trench (clear span 18 m of the overpass; the walls, the floor and the bridge are drawn by the game from the trench profile)
 const cutOf=()=>{const o=plan.edges.find(e=>e.overpass&&e.phase<=MAX_PHASE);if(!o)return null;const t=plan.edges.find(e=>e.id===o.overpass.over);const [x0,x1]=[Math.min(...t.trench.profile.map(q=>q[0])),Math.max(...t.trench.profile.map(q=>q[0]))],zc=t.pts[0][1],h=o.overpass.clearSpan/2;return {edge:t.id,rect:[[x0,zc-h],[x1,zc-h],[x1,zc+h],[x0,zc+h]],x0,x1,zc,h};};
@@ -122,12 +129,36 @@ const surfaces={};
 // B02's mesh set is the WHOLE port (B01+B02 edges) so the two never overlap; every other pad is its own group.
 for(const id of padIds){
   let list=id==='B02'?edges.filter(e=>e.pad==='B01'||e.pad==='B02'):own(id);
-  if(!list.length)continue;
+  if(!list.length){if(railsAll.some(r=>r.pad===id))surfaces[id]={walk:[],asphalt:[]};continue;}   // rail pads draw their own track
   const extra=EXPRESS_RECTS[id]||[];
   if(extra.length)list=list.filter(e=>!/^B-M2-[1-4]$/.test(e.id));   // M2 at grade = the flat rectangles; the trench piece is drawn by the game
   // the sidewalk-coloured under-layer exists only for streets people walk on (an expressway / ramp has no sidewalk: asphalt alone, half the triangles)
   const walkList=extra.length||list.some(VEHICLE_ONLY)?list.filter(e=>!VEHICLE_ONLY(e)):list;
   surfaces[id]={walk:walkList.length?surface(walkList,true,id,[]):[],asphalt:surface(list,false,id,extra)};
+}
+
+// ---- phase 5: rails. Static track (ballast + sleepers + rails drawn by the game from the axis polylines), impassable for pedestrians: BLOCKERS (even-odd regions like the walkable floor,
+// subtracted from it while the pad is paid) with a fence on their boundary. The plan has no level crossings, so there is no way over a track; the freight yard is one fenced block.
+const RAIL_BLOCK_HW=2.4;                                   // half width of the blocked strip: ballast 3.4 m + a metre either side for the fence
+// Solid yard furniture (all data, drawn by the game): container stacks of the freight yard along its north edge, the loading dock beside the siding (platform 1.2 m from the axis, plan rule 0.8..2.4)
+const yard={};
+if(railsAll.length){
+  const CONT=[[148,0,2],[154.4,0,1],[160.8,0,2],[184,0,1],[190.4,0,2],[196.8,0,1]];   // x centre, yaw, levels; z 57.4 (north of the yard tracks, south of the B10 street)
+  yard.B13={containers:CONT.map(([x,yaw,levels])=>({x,z:57.4,l:6.1,w:2.44,yaw,levels}))};
+  yard.B14={docks:[[[154,82.6],[174,82.6],[174,84.8],[154,84.8]]]};
+}
+const rectOf=c=>{const hx=c.l/2,hz=c.w/2;return [[c.x-hx,c.z-hz],[c.x+hx,c.z-hz],[c.x+hx,c.z+hz],[c.x-hx,c.z+hz]];};
+const blockers={};
+if(railsAll.length){
+  for(const id of padIds){
+    const rs=railsAll.filter(r=>r.pad===id);if(!rs.length)continue;
+    // exits run on to the map edge (the blocked strip leaves no way round the end of a track)
+    const list=rs.map(r=>{const pts=r.pts.map(p=>[...p]);if(railNodes.find(n=>n.id===r.from)?.type==='exit')pts.unshift([pts[0][0]+(pts[0][0]>=206?2:-2),pts[0][1]]);return {w:RAIL_BLOCK_HW*2,sw:0,pts};});
+    const regions=[loopsOf(list,false).map(round)];
+    for(const c of (yard[id]?.containers||[]))regions.push([rectOf(c)]);
+    for(const d of (yard[id]?.docks||[]))regions.push([d]);
+    blockers[id]=regions;
+  }
 }
 // walkable regions
 const PIER_OF={B02:'PIER-1'};   // plan.piers ids differ from the pad element names (B-PIER)
@@ -167,22 +198,21 @@ for(const id of padIds){
     regions.push([land[id],...holes]);
   }
   walkable[id]=regions;
-  const pts=regions.flat(2);
+  const pts=regions.flat(2).concat((blockers[id]||[]).flat(2));
   bbox[id]=[Math.min(...pts.map(p=>p[0])),Math.min(...pts.map(p=>p[1])),Math.max(...pts.map(p=>p[0])),Math.max(...pts.map(p=>p[1]))].map(v=>+v.toFixed(3));
 }
 // FENCES: jersey barriers along the boundary of the vehicle-only holes, except where a street's walkable floor lies over the hole (frontage streets at the ramp ends, the overpass deck).
 const fences={};
-if(landHoles.B12){
-  const roadLoops=[];for(const id of padIds)if(walkable[id])walkable[id].forEach((r,i)=>{if(!(land[id]&&i===walkable[id].length-1))roadLoops.push(r);});
-  const onRoad=(x,z)=>roadLoops.some(r=>{let yes=false;for(const l of r){let inside=false;for(let i=0,j=l.length-1;i<l.length;j=i++){const a=l[i],b=l[j];if((a[1]>z)!==(b[1]>z)&&x<(b[0]-a[0])*(z-a[1])/(b[1]-a[1])+a[0])inside=!inside;}if(inside)yes=!yes;}return yes;});
+// Jersey/fence segments along the boundary loops, merged where collinear; skip(x,z,nx,nz) true = leave this metre open (a street's floor lies over the hole, a dock stands there).
+function fenceSegs(loops,skip){
   const segs=[];
-  for(const loop of landHoleLoops('B12')){
+  for(const loop of loops){
     const ar=loop.reduce((s,a,i)=>{const b=loop[(i+1)%loop.length];return s+a[0]*b[1]-b[0]*a[1];},0)/2;
     for(let i=0;i<loop.length;i++){
       const a=loop[i],b=loop[(i+1)%loop.length],L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<.05)continue;
       const nx=(b[1]-a[1])/L*(ar>0?1:-1),nz=-(b[0]-a[0])/L*(ar>0?1:-1);   // outward normal
       const n=Math.max(1,Math.ceil(L)),open=[];
-      for(let k=0;k<n;k++){const t=(k+.5)/n,x=a[0]+(b[0]-a[0])*t,z=a[1]+(b[1]-a[1])*t;open.push(!(onRoad(x+nx*.3,z+nz*.3)&&onRoad(x-nx*.3,z-nz*.3)));}
+      for(let k=0;k<n;k++){const t=(k+.5)/n,x=a[0]+(b[0]-a[0])*t,z=a[1]+(b[1]-a[1])*t;open.push(!skip(x,z,nx,nz));}
       let k=0;while(k<n){if(!open[k]){k++;continue;}let m=k;while(m<n&&open[m])m++;
         const p=[a[0]+(b[0]-a[0])*k/n,a[1]+(b[1]-a[1])*k/n],q=[a[0]+(b[0]-a[0])*m/n,a[1]+(b[1]-a[1])*m/n];
         const last=segs[segs.length-1];
@@ -191,12 +221,25 @@ if(landHoles.B12){
         k=m;}
     }
   }
-  fences.B12=segs;
+  return segs;
+}
+if(landHoles.B12){
+  const roadLoops=[];for(const id of padIds)if(walkable[id])walkable[id].forEach((r,i)=>{if(!(land[id]&&i===walkable[id].length-1))roadLoops.push(r);});
+  const onRoad=(x,z)=>roadLoops.some(r=>{let yes=false;for(const l of r){let inside=false;for(let i=0,j=l.length-1;i<l.length;j=i++){const a=l[i],b=l[j];if((a[1]>z)!==(b[1]>z)&&x<(b[0]-a[0])*(z-a[1])/(b[1]-a[1])+a[0])inside=!inside;}if(inside)yes=!yes;}return yes;});
+  fences.B12=fenceSegs(landHoles.B12?landHoleLoops('B12'):[],(x,z,nx,nz)=>onRoad(x+nx*.3,z+nz*.3)&&onRoad(x-nx*.3,z-nz*.3));
+}
+// Rails: fence along the outer boundary of every blocked strip (container stacks and the dock are solid themselves: no fence where they stand)
+for(const id in blockers){
+  const solid=[...(yard[id]?.containers||[]).map(rectOf),...(yard[id]?.docks||[])];
+  const inBox=(x,z,p)=>x>p[0][0]-.35&&x<p[2][0]+.35&&z>p[0][1]-.35&&z<p[2][1]+.35;
+  const sub=[...(yard[id]?.containers||[]).map(rectOf),...(yard[id]?.docks||[])];
+  fences[id]=fenceSegs(blockers[id][0],(x,z)=>x>212.2||solid.some(p=>inBox(x,z,p)));
 }
 const repOf=p=>{const m=/репутация\s+(\d+)/.exec(plan.meta.phaseInfo[p.phase]||'');return m?+m[1]:0;};
 const outPads=pads.map(p=>{const q={id:p.id,phase:p.phase,group:GROUP[p.id],gateStage:p.gateStage,money:p.money,requires:p.requires,pos:PAD_POS[p.id]||p.pos,name:p.name,...TEXT[p.id]};const rep=p.id==='B03'?25:repOf(p);if(rep)q.rep=rep;return q;});
 const out={version:3,pads:outPads,edges,lots,pier:plan.piers[0].poly,piers,land,surfaces,boundaries,walkable,bbox};
 if(Object.keys(landHoles).length){out.landHoles=landHoles;out.fences=fences;}   // phase 4+ only: older data keeps its exact shape
+if(railsAll.length){out.version=4;out.rails=railsAll;out.railNodes=railNodes;out.stations=stations;out.blockers=blockers;out.yard=yard;}   // phase 5+ only
 const text='// Generated by tools/masterplan/compile-port.mjs --phase='+MAX_PHASE+'; no network assets.\nwindow.MasterplanPortDataV161='+JSON.stringify(out)+';\n';
 const target=new URL('../../assets/masterplan-port-data-v161.js',import.meta.url);
 if(process.argv.includes('--check')){   // tests: the committed data must equal a fresh compile

@@ -1336,9 +1336,9 @@ function productionSpeedMultiplier(){ return (1 + metaLevel('production') * 0.06
 
 const GROUND_HALF = 70;
 // Masterplan additions are opt-in for every save, including legacy saves.
-const masterplanStateV161 = {B01:false, B02:false, B03:false, B04:false, B05:false, B06:false, B07:false, B08:false, B09:false, B10:false, B11:false, B12:false};
+const masterplanStateV161 = {B01:false, B02:false, B03:false, B04:false, B05:false, B06:false, B07:false, B08:false, B09:false, B10:false, B11:false, B12:false, B13:false, B14:false};
 // Which paid steps a step needs (mirrors plan-B.json `requires`; checked in id order so a chain B01 -> B03 -> B04 holds). Missing fields = false (old saves are opt-in).
-const MASTERPLAN_REQUIRES_V161 = {B02:['B01'], B03:['B01'], B04:['B03'], B05:['B03'], B06:['B03'], B07:['B05'], B08:['B07'], B09:['B06','B07'], B10:['B09'], B11:['B10'], B12:['B11']};
+const MASTERPLAN_REQUIRES_V161 = {B02:['B01'], B03:['B01'], B04:['B03'], B05:['B03'], B06:['B03'], B07:['B05'], B08:['B07'], B09:['B06','B07'], B10:['B09'], B11:['B10'], B12:['B11'], B13:['B12'], B14:['B13']};
 function restoreMasterplanV161(data){
   masterplanStateV161.B01 = data?.B01 === true;
   for (const id of Object.keys(masterplanStateV161)) {
@@ -1352,13 +1352,23 @@ function masterplanFloorV161(x,z){
   const D = window.MasterplanPortDataV161;
   if (!D) return false;
   const ring = (poly) => { let yes = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > z) !== (b[1] > z) && x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]) yes = !yes; } return yes; };
+  let on = false;
   for (const id in D.walkable) {
     if (!masterplanStateV161[id]) continue;
     const b = D.bbox[id];
     if (x < b[0] || x > b[2] || z < b[1] || z > b[3]) continue;
-    for (const region of D.walkable[id]) { let yes = false; for (const loop of region) if (ring(loop)) yes = !yes; if (yes) return true; }
+    for (const region of D.walkable[id]) { let yes = false; for (const loop of region) if (ring(loop)) yes = !yes; if (yes) { on = true; break; } }
+    if (on) break;
   }
-  return false;
+  if (!on) return false;
+  // phase 5: tracks, container stacks and the loading dock of a paid rail pad are not floor (same data shape as the walkable regions)
+  if (D.blockers) for (const id in D.blockers) {
+    if (!masterplanStateV161[id]) continue;
+    const b = D.bbox[id];
+    if (x < b[0] || x > b[2] || z < b[1] || z > b[3]) continue;
+    for (const region of D.blockers[id]) { let yes = false; for (const loop of region) if (ring(loop)) yes = !yes; if (yes) return false; }
+  }
+  return true;
 }
 function masterplanAccessV161(x,z,margin=.65){
   if (!masterplanStateV161.B01 || !masterplanFloorV161(x,z)) return false;

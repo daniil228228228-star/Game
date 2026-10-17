@@ -201,6 +201,37 @@
       for(const s of [-1,1])K.box(props,ctx,xc+s*(dw/2+.1),.45,zc,.22,.9,2*cut+1,{color:0xb4b0a4});   // parapets
     }
   }
+  // Phase 5 (data: D.rails axis polylines, D.railNodes, D.yard): ballast bed, two rails per segment, buffer stops at the bumper nodes, container stacks and the loading dock.
+  // Static, no trains. Sleepers are returned as transforms for ONE InstancedMesh. The strip is not walkable (D.blockers) and fenced (D.fences).
+  const RAIL_COLORS=[0xb5472f,0x2f6aa3,0xc0a33a,0x3d7a58,0x8a8f95];
+  function drawRails(ground,props,id){
+    const out=[];
+    for(const r of D.rails.filter(r=>r.pad===id)){
+      let carry=0;
+      for(let i=1;i<r.pts.length;i++){
+        const a=r.pts[i-1],b=r.pts[i],len=Math.hypot(b[0]-a[0],b[1]-a[1]);if(len<.01)continue;
+        const dx=(b[0]-a[0])/len,dz=(b[1]-a[1])/len,yaw=Math.atan2(dx,dz),ex=[a[0]-dx*.06,a[1]-dz*.06],ey=[b[0]+dx*.06,b[1]+dz*.06];
+        line(ground,ex,ey,3.4,.08,.2,0x8d887e);                                       // ballast bed
+        for(const o of [-.7175,.7175])line(props,[ex[0]-dz*o,ex[1]+dx*o],[ey[0]-dz*o,ey[1]+dx*o],.08,.38,.12,0x7b7f84);   // rails (1.435 m gauge)
+        for(let s=carry;s<len;s+=.65)out.push({x:a[0]+dx*s,z:a[1]+dz*s,yaw});
+        carry=((carry-len)%.65+.65)%.65;
+      }
+      const end=D.railNodes.find(n=>n.id===r.to);
+      if(end&&end.type==='bumper'){const a=r.pts[r.pts.length-2],b=r.pts[r.pts.length-1],l=Math.hypot(b[0]-a[0],b[1]-a[1]),yaw=Math.atan2((b[0]-a[0])/l,(b[1]-a[1])/l);
+        K.box(props,ctx,b[0],.6,b[1],2.6,.7,.4,{ry:yaw,color:0xb23a2e});K.box(props,ctx,b[0],.25,b[1],.5,.3,.5,{ry:yaw,color:0x4b5560});}
+    }
+    const y=D.yard&&D.yard[id];
+    for(const [n,c] of ((y&&y.containers)||[]).entries())for(let lv=0;lv<c.levels;lv++){
+      K.box(props,ctx,c.x,1.3+lv*2.62,c.z,c.l,2.59,c.w,{ry:0,color:RAIL_COLORS[(n+lv)%RAIL_COLORS.length]});
+      K.box(props,ctx,c.x,1.3+lv*2.62,c.z,c.l+.04,.12,c.w+.04,{ry:0,color:0x30353a});
+    }
+    for(const d of ((y&&y.docks)||[])){
+      const x0=d[0][0],z0=d[0][1],x1=d[2][0],z1=d[2][1];
+      K.box(props,ctx,(x0+x1)/2,.45,(z0+z1)/2,x1-x0,.9,z1-z0,{color:0xb4b0a4});
+      K.box(props,ctx,(x0+x1)/2,.91,z1-.14,x1-x0,.02,.24,{color:0xe5c24a});         // yellow edge on the track side
+    }
+    return out;
+  }
   function buildPad(p){
     const id=p.id,S=D.surfaces[id],group=new THREE.Group(),surf=p.phase>=3?K.batch(true):null,ground=surf||K.batch(true),props=K.batch(true),cells=new Map(),propColliders=[],lots=lotsOf(id);
     group.name=p.group;group.userData.masterplanV161=true;
@@ -230,11 +261,13 @@
     if(land){polygon(ground,land,-.035,id==='B05'?0x8d9180:p.phase>=3?0x869078:0x768662,(D.landHoles&&D.landHoles[id])||[]);for(let i=0;i<land.length;i++)line(ground,land[i],land[(i+1)%land.length],.18,-1.025,1.96,0x786b54);}
     // phase 4: the M2 in its open cut, the overpass slab and the jersey barriers around every vehicle-only strip (data: edge.trench, edge.overpass, D.fences)
     const trench=edges.find(e=>e.trench);if(trench)drawTrench(ground,props,trench);
+    const railPad=!!(D.rails&&D.rails.some(r=>r.pad===id)),sleepers=railPad?drawRails(ground,props,id):[];
     for(const f of (D.fences&&D.fences[id])||[]){
       const dx=f[2]-f[0],dz=f[3]-f[1],L=Math.hypot(dx,dz);if(L<.05)continue;
       const mx=(f[0]+f[2])/2,mz=(f[1]+f[3])/2,yaw=Math.atan2(dx,dz);
-      K.box(props,ctx,mx,.4,mz,.32,.8,L,{ry:yaw,color:0xa9a59a});
-      if(L>=6)propColliders.push({x:mx,z:mz,hx:.16,hz:L/2,yaw});   // long straight runs also in the collision registry; arcs rely on the walkable polygon alone
+      if(railPad)K.box(props,ctx,mx,.55,mz,.07,1.1,L,{ry:yaw,color:0x59626b});   // phase 5: a thin yard fence along the blocked track strip
+      else K.box(props,ctx,mx,.4,mz,.32,.8,L,{ry:yaw,color:0xa9a59a});
+      if(L>=6)propColliders.push({x:mx,z:mz,hx:railPad?.05:.16,hz:L/2,yaw});   // long straight runs also in the collision registry; arcs rely on the walkable polygon alone
     }
     // parcels: vacant, as in slice 1 (the plan gives them no buildings or income yet), but landscaped by kind with the door path and a sign on the frontage side
     const transforms=[],byEdge={};
@@ -252,6 +285,11 @@
       for(let k=0;k<l.poly.length;k++){const a=l.poly[k],b=l.poly[(k+1)%l.poly.length];transforms.push({x:(a[0]+b[0])/2,z:(a[1]+b[1])/2,length:Math.hypot(b[0]-a[0],b[1]-a[1]),yaw:Math.atan2(b[0]-a[0],b[1]-a[1])});}
     });
     const add=(bt,name,cast)=>{const m=K.toMesh(bt,vcMat(),{cast});if(!m)return null;m.name=p.group+'_'+name;m.userData.v83CollisionIgnore=true;group.add(m);return m;};
+    if(sleepers.length){
+      const mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),mat('sleeper',0x5a4636),sleepers.length),matrix=new THREE.Matrix4(),q=new THREE.Quaternion(),axis=new THREE.Vector3(0,1,0);
+      sleepers.forEach((t,i)=>{q.setFromAxisAngle(axis,t.yaw);matrix.compose(new THREE.Vector3(t.x,.25,t.z),q,new THREE.Vector3(2.6,.14,.26));mesh.setMatrixAt(i,matrix);});
+      mesh.name=p.group+'_sleepers';mesh.userData.v83CollisionIgnore=true;mesh.receiveShadow=true;mesh.frustumCulled=false;group.add(mesh);
+    }
     add(ground,surf?'surface':'ground');for(const [key,bt] of cells)add(bt,'streets_'+key);add(props,'props',true);
     if(transforms.length){
       const mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),mat('plots',0xd7b35c),transforms.length),matrix=new THREE.Matrix4(),q=new THREE.Quaternion(),axis=new THREE.Vector3(0,1,0);
