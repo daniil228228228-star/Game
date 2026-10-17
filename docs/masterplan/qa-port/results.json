@@ -1,0 +1,162 @@
+[
+  {
+    "file": "boot.test.mjs",
+    "code": 0,
+    "seconds": 14.1
+  },
+  {
+    "file": "buildings-physics.test.mjs",
+    "code": 0,
+    "seconds": 178.0
+  },
+  {
+    "file": "bundle.test.mjs",
+    "code": 0,
+    "seconds": 0.4
+  },
+  {
+    "file": "characters-tilt.test.mjs",
+    "code": 0,
+    "seconds": 20.5
+  },
+  {
+    "file": "curve.test.mjs",
+    "code": 0,
+    "seconds": 1.1
+  },
+  {
+    "file": "dead-discs.test.mjs",
+    "code": 0,
+    "seconds": 53.7
+  },
+  {
+    "file": "characters.test.mjs",
+    "code": 0,
+    "seconds": 261.0
+  },
+  {
+    "file": "district-infra.test.mjs",
+    "code": 1,
+    "seconds": 54.8
+  },
+  {
+    "file": "districts.test.mjs",
+    "code": 0,
+    "seconds": 47.4
+  },
+  {
+    "file": "factory-fleet.test.mjs",
+    "code": 1,
+    "seconds": 87.9
+  },
+  {
+    "file": "feel.test.mjs",
+    "code": 0,
+    "seconds": 147.9
+  },
+  {
+    "file": "fresh-start.test.mjs",
+    "code": 0,
+    "seconds": 15.9
+  },
+  {
+    "file": "garages.test.mjs",
+    "code": 0,
+    "seconds": 27.6
+  },
+  {
+    "file": "guidance.test.mjs",
+    "code": 0,
+    "seconds": 12.9
+  },
+  {
+    "file": "house-door.test.mjs",
+    "code": 0,
+    "seconds": 25.8
+  },
+  {
+    "file": "hud.test.mjs",
+    "code": 0,
+    "seconds": 32.0
+  },
+  {
+    "file": "industrial-levels.test.mjs",
+    "code": 0,
+    "seconds": 25.7
+  },
+  {
+    "file": "infra-city.test.mjs",
+    "code": 0,
+    "seconds": 55.7
+  },
+  {
+    "file": "juice.test.mjs",
+    "code": 0,
+    "seconds": 12.4
+  },
+  {
+    "file": "late-game.test.mjs",
+    "code": 0,
+    "seconds": 79.7
+  },
+  {
+    "file": "loading-yards.test.mjs",
+    "code": 0,
+    "seconds": 24.1
+  },
+  {
+    "file": "market-design.test.mjs",
+    "code": 0,
+    "seconds": 23.1
+  },
+  {
+    "file": "market.test.mjs",
+    "code": 0,
+    "seconds": 16.9
+  },
+  {
+    "file": "masterplan-port.test.mjs",
+    "code": 0,
+    "seconds": 54.4
+  },
+  {
+    "file": "nav-pads.test.mjs",
+    "code": 0,
+    "seconds": 12.3
+  },
+  {
+    "file": "office-tower.test.mjs",
+    "code": 0,
+    "seconds": 150.2
+  },
+  {
+    "file": "old-save.test.mjs",
+    "code": 0,
+    "seconds": 40.2
+  },
+  {
+    "file": "pads-visibility.test.mjs",
+    "code": 0,
+    "seconds": 31.7
+  },
+  {
+    "file": "plants.test.mjs",
+    "code": 0,
+    "seconds": 171.0
+  },
+  {
+    "file": "plates.test.mjs",
+    "code": 0,
+    "seconds": 106.8
+  },
+  {
+    "file": "platform-unit.test.mjs",
+    "code": 0,
+    "seconds": 0.4
+  },
+  {
+    "file": "platform.test.mjs",
+    "code": 1,
+    "seconds": 0.4
+  }
+]
