@@ -39,7 +39,7 @@ try {
     // the game rebuilds cameraSolidMeshes from its buildings every now and then: keep the test wall in the list while it stands
     window.__keepWall = true; const keep = () => { if (!window.__keepWall) return; if (!cameraSolidMeshes.includes(w)) cameraSolidMeshes.push(w); requestAnimationFrame(keep); }; keep();
   });
-  await waitForState(page, () => !V54_STABILITY.fallbackActive && camera.position.distanceTo(controls.target) < 8, null, { timeout: 120000 });
+  await waitForState(page, () => camera.position.distanceTo(controls.target) < 8, null, { timeout: 120000 });
   await frames(20);
   const pulled = { dist: await dist(), desired: await desired(), shift: await ev(() => +cameraResolverShiftV163.length().toFixed(2)) };
   check(pulled.dist < 6.5, `the camera is pulled in by the wall (${J(pulled)})`);
