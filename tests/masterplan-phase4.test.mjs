@@ -18,7 +18,7 @@ const J = JSON.stringify;
 const SHOTS = process.env.SHOTS_DIR ? path.resolve(process.env.SHOTS_DIR) : null;
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const IDS = ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B09', 'B10', 'B11', 'B12'];
+const IDS = ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B09', 'B10', 'B11', 'B12', 'B13', 'B14'];   // phase 5 added B13/B14: they stay false in this test
 const P4 = ['mp161South', 'mp161M2'];
 const HASH = { B01: 'b72aec06e08d', B02: 'df807cbb0355', B03: 'fecb9bf1aaaa', B04: '79a2c88d6ea7', B05: '7f9663c3e0b4', B06: 'bca9326a3427', B07: '49df0862c6c3', B08: '02a489d840a2', B09: 'ade4e6f0990b', B10: '73cf7652cb57' };   // phase 1-3 data per pad, must never change
 const FLAGS = (list) => Object.fromEntries(IDS.map((id) => [id, list.includes(id)]));
@@ -63,7 +63,7 @@ const PARTIAL = ['B01', 'B03', 'B05', 'B06', 'B07', 'B09', 'B10'];   // the chai
   const onVehicle = [];
   for (const q of vehicle) for (let i = 1; i < q.pts.length; i++) for (let t = 0; t <= 1; t += .25) { const x = q.pts[i - 1][0] + (q.pts[i][0] - q.pts[i - 1][0]) * t, z = q.pts[i - 1][1] + (q.pts[i][1] - q.pts[i - 1][1]) * t; if (wk(x, z) && !(Math.abs(x - 102) < 5.2 || z > 176 || z < 104.5 || (Math.abs(z - 140) < 5 && x < 33))) onVehicle.push([q.id, +x.toFixed(1), +z.toFixed(1)]); }
   check(vehicle.length === 8 && onVehicle.length === 0, `data: the 4 expressway pieces and 4 ramps are not walkable anywhere except where a street's floor lies over them (${J(onVehicle.slice(0, 4))})`);
-  check(D.pads.length === 12 && D.pads.slice(10).every((p) => p.gateStage === 10 && p.rep === undefined) && J(D.pads.slice(10).map((p) => p.money)) === '[70000,140000]' && J(D.pads.slice(10).map((p) => p.requires)) === '[["B10"],["B11"]]' && D.pads.slice(10).map((p) => p.group).join() === 'mp161South,mp161M2', 'data: B11 / B12: stage 10, no reputation (meta.phaseInfo[4]), plan prices 70000 / 140000, requires B10 / B11, groups mp161South / mp161M2');
+  check(D.pads.length >= 12 && D.pads.slice(10, 12).every((p) => p.gateStage === 10 && p.rep === undefined) && J(D.pads.slice(10, 12).map((p) => p.money)) === '[70000,140000]' && J(D.pads.slice(10, 12).map((p) => p.requires)) === '[["B10"],["B11"]]' && D.pads.slice(10, 12).map((p) => p.group).join() === 'mp161South,mp161M2', 'data: B11 / B12: stage 10, no reputation (meta.phaseInfo[4]), plan prices 70000 / 140000, requires B10 / B11, groups mp161South / mp161M2');
   check(D.lots.filter((l) => l.pad === 'B11').length === 10 && D.lots.filter((l) => l.pad === 'B12').length === 3 && J(D.landHoles) === J({ B12: [[[50, 131], [154, 131], [154, 149], [50, 149]]] }) && D.fences.B12.length > 100 && D.fences.B12.every((f) => f.length === 4), `data: 10 / 3 parcels, the open cut 50..154 x 131..149 (clear span 18 of the overpass), ${D.fences.B12.length} barrier segments`);
   check(e('B-M2-3').trench.depth === 3 && e('B-H-S-2').overpass.over === 'B-M2-3' && D.edges.filter((q) => q.pad === 'B12' && q.cls === 'ramp').every((q) => q.minR === 31.5), 'data: trench depth 3, overpass over B-M2-3, ramps R 31.5');
   const req = {}; for (const p of D.pads) req[p.id] = p.requires;
@@ -129,7 +129,7 @@ await run(async () => {
     await ev(PAGE);
     // (the absolute fresh signature 17/678830722 is asserted by tests/sawmill-area.test.mjs / masterplan-port-verify.test.mjs; here every purchase must leave the live signature untouched, and OLD_SAVE keeps 51/648310607)
     const pre = await ev(() => ({ mp: __mpObjects(), flags: { ...masterplanStateV161 } }));
-    check(pre.mp.length === 0 && Object.keys(pre.flags).length === 12 && Object.values(pre.flags).every((f) => f === false), `fresh game: no object, twelve flags all false (${J(pre.flags)})`);
+    check(pre.mp.length === 0 && Object.keys(pre.flags).length === 14 && Object.values(pre.flags).every((f) => f === false), `fresh game: no object, fourteen flags all false (${J(pre.flags)})`);
     // phase 1-3 floors are bought in the earlier tests; here the chain B11 needs is restored from a save-shaped object (B02, B04, B08 never bought)
     await ev((flags) => { stageIndex = 9; cityState.reputation = 500; CITY_DISTRICTS.forEach((c, i) => cityState.districtRoads[c.id] = { level: i < 2 ? 3 : 1, pendingUntil: 0, roadsBuilt: true }); window.__TYCOON_ROAD_AUDIT_V59__.syncOuter(); restoreMasterplanV161(flags); MasterplanV161.refresh(); refreshIndustrialPadMarkersV118(); }, FLAGS(PARTIAL));
     await ev(() => { window.__charges = []; const o = tryPayResources; tryPayResources = function (c) { const r = o.apply(this, arguments); if (r && c && c.money) window.__charges.push(c.money); return r; }; });
@@ -333,7 +333,7 @@ await run(async () => {
     console.log('standing at the interchange land for 1.5 s: ' + await ev(() => JSON.stringify([player.position.x, player.position.z, MasterplanV161.access(player.position.x, player.position.z)])));
     await ev(() => { save.flush(); });
     const savedFlags = await ev(() => JSON.parse(localStorage.getItem(SAVE_KEY)).masterplanV161);
-    check(Object.keys(savedFlags).length === 12 && savedFlags.B11 === true && savedFlags.B12 === true && savedFlags.B02 === false, `the save has the twelve masterplan flags (${J(savedFlags)})`);
+    check(Object.keys(savedFlags).length === 14 && savedFlags.B11 === true && savedFlags.B12 === true && savedFlags.B02 === false, `the save has the fourteen masterplan flags (${J(savedFlags)})`);
     await reloadGame(g, 5000);
     await ev(PAGE);
     const far = await ev(() => ({ flags: { ...masterplanStateV161 }, x: player.position.x, z: player.position.z }));
@@ -372,7 +372,7 @@ await run(async () => {
   try {
     await ev(PAGE);
     const o = await ev(() => ({ flags: { ...masterplanStateV161 }, mp: __mpObjects(), markers: ['B01', 'B10', 'B11', 'B12'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), sig: __sig(), stage: stageIndex }));
-    check(Object.keys(o.flags).length === 12 && Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: twelve flags false, no object, no pad (${J({ flags: o.flags, mp: o.mp.length, markers: o.markers, stage: o.stage })})`);
+    check(Object.keys(o.flags).length === 14 && Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: fourteen flags false, no object, no pad (${J({ flags: o.flags, mp: o.mp.length, markers: o.markers, stage: o.stage })})`);
     check(o.sig.count === 51 && o.sig.hash === 648310607, `OLD_SAVE road signature stays 51 / 648310607 (${o.sig.count}/${o.sig.hash})`);
     check(await ev(() => !MasterplanV161.access(100, 140) && !MasterplanV161.access(6, 120) && !MasterplanV161.floor(60, 160)), 'OLD_SAVE: no paid floor anywhere (access false)');
     const chain = await ev(() => {
@@ -380,7 +380,7 @@ await run(async () => {
       const all = Object.fromEntries(Object.keys(masterplanStateV161).map((k) => [k, true]));
       return { all: r(all), noB10: r({ ...all, B10: false }), noB11: r({ ...all, B11: false }), noB09: r({ ...all, B09: false }), none: r(null) };
     });
-    check(chain.all === 'B011 B021 B031 B041 B051 B061 B071 B081 B091 B101 B111 B121' && chain.noB10 === 'B011 B021 B031 B041 B051 B061 B071 B081 B091 B100 B110 B120' && chain.noB11 === 'B011 B021 B031 B041 B051 B061 B071 B081 B091 B101 B110 B120' && chain.noB09 === 'B011 B021 B031 B041 B051 B061 B071 B081 B090 B100 B110 B120' && chain.none === 'B010 B020 B030 B040 B050 B060 B070 B080 B090 B100 B110 B120', `restore enforces B09 -> B10 -> B11 -> B12 (${J(chain)})`);
+    check(chain.all === 'B011 B021 B031 B041 B051 B061 B071 B081 B091 B101 B111 B121 B131 B141' && chain.noB10 === 'B011 B021 B031 B041 B051 B061 B071 B081 B091 B100 B110 B120 B130 B140' && chain.noB11 === 'B011 B021 B031 B041 B051 B061 B071 B081 B091 B101 B110 B120 B130 B140' && chain.noB09 === 'B011 B021 B031 B041 B051 B061 B071 B081 B090 B100 B110 B120 B130 B140' && chain.none === 'B010 B020 B030 B040 B050 B060 B070 B080 B090 B100 B110 B120 B130 B140', `restore enforces B09 -> B10 -> B11 -> B12 (${J(chain)})`);
     await ev(() => { stageIndex = 16; cityState.reputation = 500; refreshIndustrialPadMarkersV118(); });
     const later2 = await ev(() => ({ markers: ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B09', 'B10', 'B11', 'B12'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), mp: __mpObjects().length }));
     check(later2.mp === 0 && later2.markers.slice(1).every((m) => !m), `OLD_SAVE at stage 16: no object; B02..B12 stay locked behind B01 (${J(later2.markers)})`);
