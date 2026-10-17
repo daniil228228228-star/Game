@@ -169,12 +169,13 @@
     return {at:(u,v)=>[d[0]+t[0]*u-n[0]*v,d[1]+t[1]*u-n[1]*v],yaw:Math.atan2(-n[0],-n[1]),w:l.w,d:l.d,n};
   }
   function buildPad(p){
-    const id=p.id,S=D.surfaces[id],group=new THREE.Group(),ground=K.batch(true),props=K.batch(true),cells=new Map(),propColliders=[],lots=lotsOf(id);
+    const id=p.id,S=D.surfaces[id],group=new THREE.Group(),surf=p.phase>=3?K.batch(true):null,ground=surf||K.batch(true),props=K.batch(true),cells=new Map(),propColliders=[],lots=lotsOf(id);
     group.name=p.group;group.userData.masterplanV161=true;
-    const cell=(x,z)=>{const key=Math.floor(x/60)+','+Math.floor(z/60);let c=cells.get(key);if(!c){c=K.batch(true);cells.set(key,c);}return c;};
+    const cell=(x,z)=>{if(surf)return surf;const key=Math.floor(x/60)+','+Math.floor(z/60);let c=cells.get(key);if(!c){c=K.batch(true);cells.set(key,c);}return c;};
+    // phase 3+: ground, streets and lane paint are ONE vertex-coloured surface mesh per pad (draw-call budget; the data is still cut into 60 m cells)
     // streets: walk and asphalt triangles come from the data (holes already handled offline); lane paint goes into the cell of its midpoint
     for(const [kind,color] of [['walk',0xc6c1af],['asphalt',0x41474a]])for(const c of S[kind]){
-      let bt=cells.get(c.key);if(!bt){bt=K.batch(true);cells.set(c.key,bt);}
+      let bt=surf||cells.get(c.key);if(!bt){bt=K.batch(true);cells.set(c.key,bt);}
       for(let i=0;i<c.positions.length;i+=9){const P=c.positions;K.tri(bt,ctx,[P[i],P[i+1],P[i+2]],[P[i+3],P[i+4],P[i+5]],[P[i+6],P[i+7],P[i+8]],{color});}
     }
     const edges=D.edges.filter(e=>e.pad===id),others=D.edges.filter(e=>state[e.pad]&&e.pad!==id||e.pad===id);
@@ -209,7 +210,7 @@
       for(let k=0;k<l.poly.length;k++){const a=l.poly[k],b=l.poly[(k+1)%l.poly.length];transforms.push({x:(a[0]+b[0])/2,z:(a[1]+b[1])/2,length:Math.hypot(b[0]-a[0],b[1]-a[1]),yaw:Math.atan2(b[0]-a[0],b[1]-a[1])});}
     });
     const add=(bt,name,cast)=>{const m=K.toMesh(bt,vcMat(),{cast});if(!m)return null;m.name=p.group+'_'+name;m.userData.v83CollisionIgnore=true;group.add(m);return m;};
-    add(ground,'ground');for(const [key,bt] of cells)add(bt,'streets_'+key);add(props,'props',true);
+    add(ground,surf?'surface':'ground');for(const [key,bt] of cells)add(bt,'streets_'+key);add(props,'props',true);
     if(transforms.length){
       const mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),mat('plots',0xd7b35c),transforms.length),matrix=new THREE.Matrix4(),q=new THREE.Quaternion(),axis=new THREE.Vector3(0,1,0);
       transforms.forEach((t,i)=>{q.setFromAxisAngle(axis,t.yaw);matrix.compose(new THREE.Vector3(t.x,.04,t.z),q,new THREE.Vector3(.08,.008,t.length));mesh.setMatrixAt(i,matrix);});

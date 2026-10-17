@@ -1,4 +1,4 @@
-// Compile the paid masterplan slices (plan B) into assets/masterplan-port-data-v161.js.  node tools/masterplan/compile-port.mjs [--phase=2]
+// Compile the paid masterplan slices (plan B) into assets/masterplan-port-data-v161.js.  node tools/masterplan/compile-port.mjs [--phase=3]
 // ONE script for every pad B01..B18: a later phase only raises --phase (and adds its texts/overrides below); the game layer reads everything from the data.
 // Union surfaces once, clip triangles to 60 m cells. Uses the game's contour solver OFFLINE: malformed contours stop the build, never a player's frame.
 //
@@ -23,7 +23,7 @@ const context=vm.createContext({Math,Map,Set,Error});
 vm.runInContext(source.slice(source.indexOf('function insideRoadFootprints('),source.indexOf('let unionLayer=null')),context);
 
 const arg=(name,def)=>{const a=process.argv.find(x=>x.startsWith('--'+name+'='));return a?a.split('=')[1]:def;};
-const MAX_PHASE=+arg('phase',2);
+const MAX_PHASE=+arg('phase',3);
 const pads=plan.pads.filter(p=>p.phase<=MAX_PHASE);
 const padIds=pads.map(p=>p.id);
 // Everything that is a texts/override of a particular pad lives here, so a new phase never touches the game code.
