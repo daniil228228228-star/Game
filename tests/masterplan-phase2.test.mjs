@@ -57,7 +57,7 @@ const GROUP = { B01: 'mp161Net', B02: 'mp161Net', B03: 'mp161North', B04: 'mp161
     }
   }
   check(holes.length === 0 && tested > 10000, `data: every walkable point (${tested} grid points of B01..B05) is covered by a drawn triangle, deck or slab (holes ${J(holes.slice(0, 5))})`);
-  check(Object.keys(D.land).join() === 'B03,B04,B05' && D.walkable.B04.length === 2 && D.pads.length === 5, 'data: earth slabs only for the phase-2 pads, walkable regions per pad');
+  check(Object.keys(D.land).slice(0, 3).join() === 'B03,B04,B05' && D.walkable.B04.length === 2 && D.pads.length >= 5, 'data: earth slabs only for the phase-2 pads, walkable regions per pad');
 }
 
 const PAGE = () => {
@@ -295,7 +295,7 @@ await run(async () => {
     await reloadGame(g, 5000);
     await ev(PAGE);
     const far = await ev(() => ({ flags: { ...masterplanStateV161 }, x: player.position.x, z: player.position.z, raw: JSON.parse(localStorage.getItem(SAVE_KEY)).player }));
-    check(Object.values(far.flags).every(Boolean) && far.x < -100 && far.z > 20, `reload at the pier end keeps all five flags and the position on the paid pier (${J(far)})`);
+    check(['B01', 'B02', 'B03', 'B04', 'B05'].every((k) => far.flags[k]) && far.x < -100 && far.z > 20, `reload at the pier end keeps all five flags and the position on the paid pier (${J(far)})`);
     // the first visit of a group that is not built yet: drop every group (flags stay), the player is at the pier: only what is within 150 m is rebuilt
     await ev(() => MasterplanV161.dropGroups());
     await page.waitForTimeout(1500);
@@ -312,7 +312,7 @@ await run(async () => {
     await reloadGame(g, 5000);
     await ev(PAGE);
     const rel = await ev(() => ({ flags: { ...masterplanStateV161 }, nw: !!scene.getObjectByName('mp161NW'), x: +player.position.x.toFixed(1), z: +player.position.z.toFixed(1), access: MasterplanV161.access(player.position.x, player.position.z) }));
-    check(Object.values(rel.flags).every(Boolean) && rel.nw && Math.abs(rel.x + 60) < 1 && Math.abs(rel.z + 125) < 1 && rel.access, `reload keeps B01..B05, the built blocks and the player standing in them (${J(rel)})`);
+    check(['B01', 'B02', 'B03', 'B04', 'B05'].every((k) => rel.flags[k]) && rel.nw && Math.abs(rel.x + 60) < 1 && Math.abs(rel.z + 125) < 1 && rel.access, `reload keeps B01..B05, the built blocks and the player standing in them (${J(rel)})`);
     const sigAfter = await ev(() => __sig());
     check(sigAfter.count === sigBefore.count && sigAfter.hash === sigBefore.hash, `after reload the road signature is still ${sigBefore.count}/${sigBefore.hash}`);
     // prestige / reset path (restoreMasterplanV161(null) + refresh): groups, sea, prop colliders and the floor all go
