@@ -2062,11 +2062,12 @@ controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
 let lastCameraUserInputAt = -999;
 let cameraUserInteracting = false;
 let desiredCameraDistance = CAM_DEFAULT_DIST;
-// How far resolveCameraObstructionV85 pulled the camera in on the last frame. The zoom the PLAYER chose is the current distance plus this pull:
-// without it every pull near a building became the new wanted zoom (OrbitControls' 'change' fires every frame) and the camera crept inward for ever.
-let cameraPullAmountV163 = 0;
+// resolveCameraObstructionV85 pulls the camera in near solid buildings for ONE frame only: it records the shift it applied and updatePlayer takes it off again
+// before the follow-cam / OrbitControls read the camera. Without that the pulled distance became the wanted zoom (OrbitControls' 'change' fires every
+// frame and copies camera.position into desiredCameraDistance) and the camera crept inward for ever.
+const cameraResolverShiftV163 = new THREE.Vector3();
 function refreshDesiredCameraDistance() {
-  desiredCameraDistance = THREE.MathUtils.clamp(camera.position.distanceTo(controls.target) + cameraPullAmountV163, CAM_MIN_DIST, CAM_MAX_DIST);
+  desiredCameraDistance = THREE.MathUtils.clamp(camera.position.distanceTo(controls.target), CAM_MIN_DIST, CAM_MAX_DIST);
 }
 function markCameraUserInput() {
   lastCameraUserInputAt = performance.now() * 0.001;
@@ -10829,6 +10830,7 @@ function resetCameraBehindPlayer() {
     player.position.z - aimDir.z * Math.sqrt(Math.max(0.25, CAM_DEFAULT_DIST * CAM_DEFAULT_DIST - CAMERA_RESET_HEIGHT * CAMERA_RESET_HEIGHT))
   );
   controls.target.set(player.position.x, PLAYER_EYE_HEIGHT, player.position.z);
+  cameraResolverShiftV163.set(0, 0, 0);
   controls.update();
   markCameraUserInput();
 }
@@ -14382,6 +14384,7 @@ function updatePlayer(dt) {
   // never drifts away, but now also add a smoother recover-to-behind behavior for BOTH touch
   // and keyboard movement, with a short grace period after manual orbiting so the game doesn't
   // fight the player when they're actively adjusting the view.
+  camera.position.sub(cameraResolverShiftV163); cameraResolverShiftV163.set(0, 0, 0);   // last frame's obstruction pull was for rendering only
   const movedX = player.position.x - prevX;
   const movedZ = player.position.z - prevZ;
   camera.position.x += movedX;
@@ -14395,7 +14398,7 @@ function updatePlayer(dt) {
     camOffsetVec.set(0, CAMERA_RESET_HEIGHT, CAM_DEFAULT_DIST);
     currentDistance = camOffsetVec.length();
   }
-  if (cameraUserInteracting) desiredCameraDistance = THREE.MathUtils.clamp(currentDistance + cameraPullAmountV163, CAM_MIN_DIST, CAM_MAX_DIST);
+  if (cameraUserInteracting) desiredCameraDistance = THREE.MathUtils.clamp(currentDistance, CAM_MIN_DIST, CAM_MAX_DIST);
 
   const now = performance.now() * 0.001;
   const joyMag = Math.hypot(joyVec.x, joyVec.z);
@@ -33653,10 +33656,10 @@ function renderPath(group,path,width,role,excludeOwner=null){
   const VERSION='v85-consolidation-repair';
   let cameraSafeDistanceV163=null,cameraBlockedUntilV163=0;
   function resolveCameraObstructionV85Impl(dt=1/60){
-    if(!cameraSolidMeshes?.length){cameraPullAmountV163=0;return;}
+    if(!cameraSolidMeshes?.length)return;
     camEyeTarget.copy(controls.target);
     camToCam.subVectors(camera.position,camEyeTarget);const dist=camToCam.length();
-    if(dist<=CAMERA_OBSTRUCTION_BUFFER+.10){cameraPullAmountV163=0;return;}
+    if(dist<=CAMERA_OBSTRUCTION_BUFFER+.10)return;
     camToCam.divideScalar(dist);cameraRaycaster.set(camEyeTarget,camToCam);cameraRaycaster.near=.10;cameraRaycaster.far=dist;
     const hits=cameraRaycaster.intersectObjects(cameraSolidMeshes,true);
     const now=performance.now(),blocked=hits.length&&hits[0].distance<dist-CAMERA_OBSTRUCTION_BUFFER;
@@ -33665,8 +33668,9 @@ function renderPath(group,path,width,role,excludeOwner=null){
     if(blocked){cameraBlockedUntilV163=now+180;cameraSafeDistanceV163=Math.min(cameraSafeDistanceV163,allowed);}
     else if(now>=cameraBlockedUntilV163)cameraSafeDistanceV163+=(allowed-cameraSafeDistanceV163)*(1-Math.exp(-Math.min(.075,Math.max(0,dt))*5));
     const pulled=Math.min(dist,allowed,cameraSafeDistanceV163);
-    cameraPullAmountV163=Math.max(0,dist-pulled);
+    const freeX=camera.position.x,freeY=camera.position.y,freeZ=camera.position.z;
     camera.position.copy(camEyeTarget).addScaledVector(camToCam,pulled);
+    cameraResolverShiftV163.set(camera.position.x-freeX,camera.position.y-freeY,camera.position.z-freeZ);   // taken off again at the start of the next frame (updatePlayer)
   }
   window.resolveCameraObstructionV85=resolveCameraObstructionV85Impl;
 

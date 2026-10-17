@@ -37,7 +37,7 @@ try {
     scene.add(w); w.updateMatrixWorld(true); cameraSolidMeshes.push(w);
   });
   await frames(120);
-  const pulled = { dist: await dist(), desired: await desired(), pull: await ev(() => (typeof cameraPullAmountV163 === 'undefined' ? -1 : +cameraPullAmountV163.toFixed(2))) };
+  const pulled = { dist: await dist(), desired: await desired(), shift: await ev(() => +cameraResolverShiftV163.length().toFixed(2)) };
   check(pulled.dist < 6.5, `the camera is pulled in by the wall (${J(pulled)})`);
   check(pulled.desired > 12, `the zoom the player chose is NOT overwritten by the pulled distance (desired ${pulled.desired}, was 13)`);
 
