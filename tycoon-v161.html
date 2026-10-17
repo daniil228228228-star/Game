@@ -33360,7 +33360,8 @@ window.__TYCOON_V74_BUILD__={
       const bends=Math.max(0,path.length-2),cost=length+bends*.34;
       candidates.push({path,cost});
     };
-    consider([start,end]);
+    // v161: no free diagonal (see branchCandidates99): straight only when axis-aligned, otherwise right-angle routes
+    if(Math.abs(start.x-end.x)<.03||Math.abs(start.z-end.z)<.03)consider([start,end]);
     consider([start,new THREE.Vector3(start.x,0,end.z),end]);
     consider([start,new THREE.Vector3(end.x,0,start.z),end]);
 
@@ -33889,9 +33890,9 @@ function branchCandidates99(start,end,obs){
     for(let i=1;i<p.length;i++)if(!clearSeg(p[i-1],p[i],obs))return;
     c.push(p);
   };
-  // Prefer a real direct road across open ground.
-  add([start,end]);
-  // If an obstacle blocks it, use one simple dog-leg. The renderer rounds the corner later.
+  // v161 road geometry (2026-10-17, from real practice: streets of a planned town meet at 90 degrees, 75 degrees is the practical floor - FHWA / ITE; see docs/ROAD_STANDARDS_V161.md):
+  // a straight road only when it is already axis-aligned; everything else is ONE right-angle dog-leg (the renderer rounds the corner). Free diagonals made the star of acute junctions.
+  if(Math.abs(start.x-end.x)<.03||Math.abs(start.z-end.z)<.03)add([start,end]);
   add([start,new THREE.Vector3(end.x,0,start.z),end]);
   add([start,new THREE.Vector3(start.x,0,end.z),end]);
   return c;
@@ -33948,7 +33949,7 @@ function plan(i){
   }
 function centerline(i){
   ensureSig();if(centerlineCache.has(i))return centerlineCache.get(i).map(p=>p.clone());
-  const p=smooth(plan(i),.66);centerlineCache.set(i,p.map(x=>x.clone()));return p;
+  const p=smooth(plan(i),1.9);centerlineCache.set(i,p.map(x=>x.clone()));return p;   // v161: corner radius .66 -> 1.9 (a street's curb return is about as large as the street is wide; NACTO: 3-4.5 m on real streets, here the street is 2.6 m)
 }
 
   function nodeKey(p){return `${p.x.toFixed(3)}|${p.z.toFixed(3)}`;}
