@@ -2029,8 +2029,8 @@ const V54_IOS_STABILITY = VISUAL_MOBILE && /iPhone|iPad|iPod/i.test(navigator.us
 const WEBGL_RECOVERY_V164 = sessionStorage.getItem('tycoon3d_v164_webgl_recovery') === '1';
 const DEVICE_CONSTRAINED_V164 = VISUAL_MOBILE && ((navigator.deviceMemory && navigator.deviceMemory <= 4) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) || navigator.connection?.saveData);
 const renderer = new THREE.WebGLRenderer({ antialias: !WEBGL_RECOVERY_V164, powerPreference: 'high-performance' });
-const MAX_RENDER_DPR = Math.min(devicePixelRatio, VISUAL_MOBILE ? (DEVICE_CONSTRAINED_V164 ? 1.25 : 1.5) : 2);
-const MIN_RENDER_DPR = Math.min(MAX_RENDER_DPR,VISUAL_MOBILE ? 0.85 : 1);
+const MAX_RENDER_DPR = Math.min(devicePixelRatio, VISUAL_MOBILE ? (DEVICE_CONSTRAINED_V164 ? 1.5 : 2) : 2);   // 2026-10-17: phones 1.5 -> 2 (an iPhone is dpr 3: 1.2 was 40 % of its pixels, the whole 3D view looked soft)
+const MIN_RENDER_DPR = Math.min(MAX_RENDER_DPR,VISUAL_MOBILE ? 1 : 1);   // was 0.85 on phones: the frame-time governor could push the picture below one render pixel per CSS pixel
 let renderDpr = MAX_RENDER_DPR;
 renderer.setPixelRatio(renderDpr);
 renderer.setSize(innerWidth, innerHeight);
@@ -39498,7 +39498,7 @@ body.v164-context-lost #joyBase,body.v164-context-lost #jumpBtn,body.v164-contex
   }
   function dprBounds(level){
     const pixels=Math.max(1,innerWidth*innerHeight),budget=level==='low'?1300000:level==='balanced'?2200000:3600000;
-    const areaCap=Math.sqrt(budget/pixels),tierCap=level==='low'?(VISUAL_MOBILE ? .95 : 1.15):level==='balanced'?(VISUAL_MOBILE ? 1.2 : 1.55):MAX_RENDER_DPR;
+    const areaCap=Math.sqrt(budget/pixels),tierCap=level==='low'?(VISUAL_MOBILE ? 1.1 : 1.15):level==='balanced'?(VISUAL_MOBILE ? 1.6 : 1.55):MAX_RENDER_DPR;
     return {min:MIN_RENDER_DPR,max:Math.max(MIN_RENDER_DPR,Math.min(MAX_RENDER_DPR,tierCap,areaCap))};
   }
   function applyDpr(avgMs,force=false){
