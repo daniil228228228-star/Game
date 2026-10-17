@@ -23,14 +23,14 @@ const context=vm.createContext({Math,Map,Set,Error});
 vm.runInContext(source.slice(source.indexOf('function insideRoadFootprints('),source.indexOf('let unionLayer=null')),context);
 
 const arg=(name,def)=>{const a=process.argv.find(x=>x.startsWith('--'+name+'='));return a?a.split('=')[1]:def;};
-const MAX_PHASE=+arg('phase',5);
+const MAX_PHASE=+arg('phase',6);
 const pads=plan.pads.filter(p=>p.phase<=MAX_PHASE);
 const padIds=pads.map(p=>p.id);
 const railsAll=MAX_PHASE>=5?plan.rails.filter(r=>padIds.includes(r.pad)):[];
 const railNodes=MAX_PHASE>=5?plan.railNodes.filter(n=>n.phase<=MAX_PHASE):[];
 const stations=MAX_PHASE>=5?plan.stations.filter(s=>padIds.includes(s.pad)):[];
 // Everything that is a texts/override of a particular pad lives here, so a new phase never touches the game code.
-const GROUP={B01:'mp161Net',B02:'mp161Net',B03:'mp161North',B04:'mp161NW',B05:'mp161Park',B06:'mp161Main',B07:'mp161Chord',B08:'mp161ParkE',B09:'mp161East',B10:'mp161Centre',B11:'mp161South',B12:'mp161M2',B13:'mp161Rail',B14:'mp161Siding'};
+const GROUP={B01:'mp161Net',B02:'mp161Net',B03:'mp161North',B04:'mp161NW',B05:'mp161Park',B06:'mp161Main',B07:'mp161Chord',B08:'mp161ParkE',B09:'mp161East',B10:'mp161Centre',B11:'mp161South',B12:'mp161M2',B13:'mp161Rail',B14:'mp161Siding',B15:'mp161Station'};
 const TEXT={
   B01:{icon:'⚓',ru:'Портовая авеню',en:'Port avenue',toast:{ru:'Портовая авеню открыта. Следующий кружок — у причала.',en:'Port avenue open. The next pad is at the quay.'}},
   B02:{icon:'⚓',ru:'Причал и участки порта',en:'Pier and port parcels',toast:{ru:'Причал открыт: пять участков подготовлены к следующим этапам.',en:'Pier open: five parcels reserved for the next phases.'}},
@@ -45,13 +45,14 @@ const TEXT={
   B12:{icon:'🛣️',ru:'М2 и развязка IC-1',en:'M2 and interchange IC-1',toast:{ru:'М2 и развязка IC-1 открыты: магистраль идёт в траншее под Хордой, 3 склада подготовлены.',en:'M2 and interchange IC-1 open: the expressway runs in a trench under the Chord, 3 warehouses prepared.'}},
   B13:{icon:'🚆',ru:'Железная дорога и грузовой парк',en:'Railway and freight yard',toast:{ru:'Железная дорога открыта: два главных пути и грузовой парк, пути за ограждением.',en:'Railway open: two main tracks and a freight yard, tracks behind a fence.'}},
   B14:{icon:'🚆',ru:'Подъездная ветка и склады',en:'Siding and warehouses',toast:{ru:'Подъездная ветка к складам открыта: погрузочная платформа готова.',en:'Siding to the warehouses open: the loading dock is ready.'}},
+  B15:{icon:'🚉',ru:'Южный вокзал',en:'South station',toast:{ru:'Южный вокзал открыт: здание, привокзальная площадь, две платформы и автовокзал.',en:'South station open: the hall, the forecourt, two platforms and the bus station.'}},
   B10:{icon:'🏙️',ru:'Деловой центр',en:'Business centre',toast:{ru:'Деловой центр открыт: 8 площадок подготовлены.',en:'Business centre open: 8 plazas prepared.'}},
 };
 // Purchase circles that are not the plan node: B03 searches a clear spot in the game; B04/B05 plan nodes (-102,-100)/(6,-100) lie on unpaid ground / the avenue,
 // the circle must stand on the floor the player already owns (rule 3: the player can reach every pad): on the paid strip beside each artery's first metre.
 // Phase 3 circles also stand on floor that is ALREADY paid when the pad appears (B06: the old core east of the ring, searched in the game for a clear spot; B07: B05's earth beside the
 // chord start; B08: B07's land beside the chord; B09: B07's land at the avenue crossing; B10: B09's land in the gap between two parcels).
-const PAD_POS={B04:[-3.5,-97.5],B05:[11.5,-97.5],B06:[64,9],B07:[106,-95.4],B08:[106.5,-92],B09:[111,1],B10:[150,8],B11:[14,64],B12:[110,104],B13:[165,52.9],B14:[203,90]};   // phase 5: B13 on B10's land south of the z=48 street (the yard itself is unpaid until bought), B14 on B12's land east of the warehouse parcels   // phase 4: B11 in the old core beside the avenue start (searched in the game), B12 on B07's land beside the chord's end
+const PAD_POS={B04:[-3.5,-97.5],B05:[11.5,-97.5],B06:[64,9],B07:[106,-95.4],B08:[106.5,-92],B09:[111,1],B10:[150,8],B11:[14,64],B12:[110,104],B13:[165,52.9],B14:[203,90],B15:[122,53.2]};   // phase 5: B13 on B10's land south of the z=48 street (the yard itself is unpaid until bought), B14 on B12's land east of the warehouse parcels   // phase 4: B11 in the old core beside the avenue start (searched in the game), B12 on B07's land beside the chord's end
 // Paid earth slab of a pad (the floor between its streets). B03 is the slice-1 rectangle (kept byte for byte); later pads default to the padded bbox of their roads+lots.
 const LAND={
   B03:[[-8,-60],[14,-60],[14,-155],[-8,-155]],
@@ -129,7 +130,7 @@ const surfaces={};
 // B02's mesh set is the WHOLE port (B01+B02 edges) so the two never overlap; every other pad is its own group.
 for(const id of padIds){
   let list=id==='B02'?edges.filter(e=>e.pad==='B01'||e.pad==='B02'):own(id);
-  if(!list.length){if(railsAll.some(r=>r.pad===id))surfaces[id]={walk:[],asphalt:[]};continue;}   // rail pads draw their own track
+  if(!list.length){if(railsAll.some(r=>r.pad===id)||stations.some(q=>q.pad===id))surfaces[id]={walk:[],asphalt:[]};continue;}   // rail / station pads draw their own track and hall
   const extra=EXPRESS_RECTS[id]||[];
   if(extra.length)list=list.filter(e=>!/^B-M2-[1-4]$/.test(e.id));   // M2 at grade = the flat rectangles; the trench piece is drawn by the game
   // the sidewalk-coloured under-layer exists only for streets people walk on (an expressway / ramp has no sidewalk: asphalt alone, half the triangles)
@@ -159,6 +160,12 @@ if(railsAll.length){
     for(const d of (yard[id]?.docks||[]))regions.push([d]);
     blockers[id]=regions;
   }
+}
+// ---- phase 6: stations. The hall and the platforms are solid (blockers, fenced); the forecourt, the bus station and the apron south of the tracks lie on floor that is already paid (B10 / B13 / B12).
+// The plan's pedestrian underpass is not built: the bus station is reached over the floor south of the tracks, so no walkway has to cross the blocked strip.
+for(const st of stations){
+  const regions=[st.building,...(st.platforms||[])].filter(Boolean).map(r=>[r.map(q=>[...q])]);
+  if(regions.length)blockers[st.pad]=regions;
 }
 // walkable regions
 const PIER_OF={B02:'PIER-1'};   // plan.piers ids differ from the pad element names (B-PIER)
@@ -230,6 +237,7 @@ if(landHoles.B12){
 }
 // Rails: fence along the outer boundary of every blocked strip (container stacks and the dock are solid themselves: no fence where they stand)
 for(const id in blockers){
+  if(stations.some(q=>q.pad===id)){fences[id]=blockers[id].flatMap(region=>fenceSegs(region,()=>false));continue;}   // station pads: every region is solid (hall, platforms)
   const solid=[...(yard[id]?.containers||[]).map(rectOf),...(yard[id]?.docks||[])];
   const inBox=(x,z,p)=>x>p[0][0]-.35&&x<p[2][0]+.35&&z>p[0][1]-.35&&z<p[2][1]+.35;
   const sub=[...(yard[id]?.containers||[]).map(rectOf),...(yard[id]?.docks||[])];

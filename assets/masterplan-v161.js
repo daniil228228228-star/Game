@@ -232,6 +232,41 @@
     }
     return out;
   }
+  // Phase 6 (data: D.stations[].building / plaza / platforms / bus): forecourt paving, the station hall with its clock tower, two platforms with canopies and benches, the bus station.
+  // Everything is merged into the pad's own batches; the hall and the platforms are solid (D.blockers, D.fences), the forecourt and the bus station are floor that is already paid.
+  function drawStations(ground,props,id){
+    for(const st of D.stations.filter(q=>q.pad===id)){
+      const rect=r=>({x0:Math.min(...r.map(q=>q[0])),x1:Math.max(...r.map(q=>q[0])),z0:Math.min(...r.map(q=>q[1])),z1:Math.max(...r.map(q=>q[1]))});
+      if(st.plaza){polygon(ground,st.plaza,.03,0xcfc8b4);const r=rect(st.plaza);line(ground,[r.x0,r.z1-.1],[r.x1,r.z1-.1],.2,.035,.01,0x9d9788);}
+      if(st.building){
+        const r=rect(st.building),cx=(r.x0+r.x1)/2,cz=(r.z0+r.z1)/2,w=r.x1-r.x0,d=r.z1-r.z0;
+        K.box(props,ctx,cx,1.9,cz,w,3.8,d,{color:0xe3d9bf});                                // hall walls
+        K.box(props,ctx,cx,3.95,cz,w+1.2,.45,d+1.2,{color:0x6b5a4a});                       // roof with an overhang
+        K.box(props,ctx,cx,5.6,cz,w*.7,.9,d*.7,{color:0x7b6a58});                            // roof lantern
+        K.box(props,ctx,cx,4.6,r.z0+2,4.2,9.2,4,{color:0xd8ccae});                          // clock tower over the entrance
+        K.box(props,ctx,cx,9.4,r.z0+2,4.8,.5,4.6,{color:0x6b5a4a});
+        K.box(props,ctx,cx,7.4,r.z0-.02,2.1,2.1,.14,{color:0xf2eddc});K.box(props,ctx,cx,7.5,r.z0-.1,.12,.8,.08,{color:0x30353a});K.box(props,ctx,cx+.25,7.4,r.z0-.1,.5,.1,.08,{color:0x30353a});   // clock
+        K.box(props,ctx,cx,1.3,r.z0-.05,3.2,2.6,.16,{color:0x3b3f46});                      // doors
+        for(const dx of [-8,-5.5,5.5,8])K.box(props,ctx,cx+dx,1.9,r.z0-.05,1.6,1.5,.12,{color:0x5d7a8c});   // windows
+        K.box(props,ctx,cx,3.1,r.z0-1.4,7,.22,2.8,{color:0x3d5a6b});                        // entrance canopy
+        for(const dx of [-3.2,3.2])K.box(props,ctx,cx+dx,1.5,r.z0-2.6,.2,3,.2,{color:0x3b3f46});
+      }
+      for(const [n,pl] of (st.platforms||[]).entries()){
+        const r=rect(pl),cx=(r.x0+r.x1)/2,cz=(r.z0+r.z1)/2,w=r.x1-r.x0,d=r.z1-r.z0,track=n===0?r.z1:r.z0,away=n===0?-1:1;   // platform 0 is north of the tracks, 1 south of them
+        K.box(props,ctx,cx,.25,cz,w,.5,d,{color:0xb9b4a6});
+        K.box(props,ctx,cx,.51,track-away*.15*-1,w,.02,.3,{color:0xe5c24a});                 // yellow edge on the track side
+        K.box(props,ctx,cx,3.3,cz-away*.2,w+.6,.2,d-.4,{color:0x3d5a6b});                    // canopy roof
+        const back=n===0?r.z0+.4:r.z1-.4;for(let x=r.x0+1;x<=r.x1;x+=6){K.box(props,ctx,x,1.9,back,.2,3.2,.2,{color:0x3b3f46});K.box(props,ctx,x+1.8,.75,back+(n===0?.3:-.3),1.6,.45,.5,{color:0x8a6a4a});}   // poles and benches along the back of the platform
+      }
+      if(st.bus){
+        const r=rect(st.bus);polygon(ground,st.bus,.04,0x41474a);
+        for(let x=r.x0+4;x<r.x1;x+=8)line(ground,[x,r.z0+.6],[x,r.z1-1.4],.12,.05,.01,0xe8e4d4);   // bay separators
+        line(ground,[r.x0,r.z0+.2],[r.x1,r.z0+.2],.2,.05,.01,0xe8e4d4);
+        K.box(props,ctx,(r.x0+r.x1)/2,2.7,r.z1-1,10,.18,2.2,{color:0x3d5a6b});
+        for(const dx of [-4.6,4.6])K.box(props,ctx,(r.x0+r.x1)/2+dx,1.35,r.z1-.2,.16,2.7,.16,{color:0x3b3f46});   // shelter
+      }
+    }
+  }
   function buildPad(p){
     const id=p.id,S=D.surfaces[id],group=new THREE.Group(),surf=p.phase>=3?K.batch(true):null,ground=surf||K.batch(true),props=K.batch(true),cells=new Map(),propColliders=[],lots=lotsOf(id);
     group.name=p.group;group.userData.masterplanV161=true;
@@ -261,13 +296,15 @@
     if(land){polygon(ground,land,-.035,id==='B05'?0x8d9180:p.phase>=3?0x869078:0x768662,(D.landHoles&&D.landHoles[id])||[]);for(let i=0;i<land.length;i++)line(ground,land[i],land[(i+1)%land.length],.18,-1.025,1.96,0x786b54);}
     // phase 4: the M2 in its open cut, the overpass slab and the jersey barriers around every vehicle-only strip (data: edge.trench, edge.overpass, D.fences)
     const trench=edges.find(e=>e.trench);if(trench)drawTrench(ground,props,trench);
-    const railPad=!!(D.rails&&D.rails.some(r=>r.pad===id)),sleepers=railPad?drawRails(ground,props,id):[];
+    const railPad=!!(D.rails&&D.rails.some(r=>r.pad===id)),stationPad=!!(D.stations&&D.stations.some(q=>q.pad===id)),sleepers=railPad?drawRails(ground,props,id):[];
+    if(stationPad)drawStations(ground,props,id);
     for(const f of (D.fences&&D.fences[id])||[]){
       const dx=f[2]-f[0],dz=f[3]-f[1],L=Math.hypot(dx,dz);if(L<.05)continue;
       const mx=(f[0]+f[2])/2,mz=(f[1]+f[3])/2,yaw=Math.atan2(dx,dz);
-      if(railPad)K.box(props,ctx,mx,.55,mz,.07,1.1,L,{ry:yaw,color:0x59626b});   // phase 5: a thin yard fence along the blocked track strip
+      if(stationPad){}   // the hall walls and platform slabs are their own boundary: collider only
+      else if(railPad)K.box(props,ctx,mx,.55,mz,.07,1.1,L,{ry:yaw,color:0x59626b});   // phase 5: a thin yard fence along the blocked track strip
       else K.box(props,ctx,mx,.4,mz,.32,.8,L,{ry:yaw,color:0xa9a59a});
-      if(L>=6)propColliders.push({x:mx,z:mz,hx:railPad?.05:.16,hz:L/2,yaw});   // long straight runs also in the collision registry; arcs rely on the walkable polygon alone
+      if(L>=6)propColliders.push({x:mx,z:mz,hx:railPad||stationPad?.05:.16,hz:L/2,yaw});   // long straight runs also in the collision registry; arcs rely on the walkable polygon alone
     }
     // parcels: vacant, as in slice 1 (the plan gives them no buildings or income yet), but landscaped by kind with the door path and a sign on the frontage side
     const transforms=[],byEdge={};

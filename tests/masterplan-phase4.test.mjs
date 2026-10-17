@@ -21,7 +21,7 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const IDS = ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B09', 'B10', 'B11', 'B12'];
 const P4 = ['mp161South', 'mp161M2'];
 const HASH = { B01: 'b72aec06e08d', B02: 'df807cbb0355', B03: 'fecb9bf1aaaa', B04: '79a2c88d6ea7', B05: '7f9663c3e0b4', B06: 'bca9326a3427', B07: '49df0862c6c3', B08: '02a489d840a2', B09: 'ade4e6f0990b', B10: '73cf7652cb57' };   // phase 1-3 data per pad, must never change
-const FLAGS = (list) => Object.fromEntries([...IDS, 'B13', 'B14'].map((id) => [id, list.includes(id)]));
+const FLAGS = (list) => Object.fromEntries([...IDS, 'B13', 'B14', 'B15', 'B16', 'B17', 'B18'].map((id) => [id, list.includes(id)]));
 const PARTIAL = ['B01', 'B03', 'B05', 'B06', 'B07', 'B09', 'B10'];   // the chain B11 needs (B02, B04, B08 were never bought)
 
 // ---- offline

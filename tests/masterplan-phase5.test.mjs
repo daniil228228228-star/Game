@@ -19,7 +19,7 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const IDS = ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B09', 'B10', 'B11', 'B12', 'B13', 'B14'];
 const P5 = ['mp161Rail', 'mp161Siding'];
 const HASH = { B01: 'b72aec06e08d', B02: 'df807cbb0355', B03: 'fecb9bf1aaaa', B04: '79a2c88d6ea7', B05: '7f9663c3e0b4', B06: 'bca9326a3427', B07: '49df0862c6c3', B08: '02a489d840a2', B09: 'ade4e6f0990b', B10: '73cf7652cb57', B11: '54615d10db48', B12: '0682bf34c3d7' };   // phase 1-4 data per pad, must never change
-const FLAGS = (list) => Object.fromEntries(IDS.map((id) => [id, list.includes(id)]));
+const FLAGS = (list) => Object.fromEntries([...IDS, 'B15', 'B16', 'B17', 'B18'].map((id) => [id, list.includes(id)]));
 const PARTIAL = ['B01', 'B03', 'B05', 'B06', 'B07', 'B09', 'B10', 'B11', 'B12'];   // the chain B13 needs (B02, B04, B08 were never bought)
 
 // ---- offline
@@ -39,7 +39,7 @@ const PARTIAL = ['B01', 'B03', 'B05', 'B06', 'B07', 'B09', 'B10', 'B11', 'B12'];
   check(Object.keys(HASH).every((id) => hash(id) === HASH[id]), `data: B01..B12 compiled data byte-identical to phase 4 (${J(Object.keys(HASH).map(hash))})`);
   const inPoly = (x, z, poly) => { let y = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > z) !== (b[1] > z) && x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]) y = !y; } return y; };
   const inRegion = (x, z, loops) => { let y = false; for (const l of loops) if (inPoly(x, z, l)) y = !y; return y; };
-  check(D.pads.length === 14 && D.pads.slice(12).every((p) => p.gateStage === 11 && p.rep === undefined) && J(D.pads.slice(12).map((p) => p.money)) === '[210000,105000]' && J(D.pads.slice(12).map((p) => p.requires)) === '[["B12"],["B13"]]' && J(D.pads.slice(12).map((p) => p.group)) === J(P5), 'data: B13 / B14: stage 11, no reputation, plan prices 210000 / 105000, requires B12 / B13, groups mp161Rail / mp161Siding');
+  check(D.pads.length >= 14 && D.pads.slice(12, 14).every((p) => p.gateStage === 11 && p.rep === undefined) && J(D.pads.slice(12, 14).map((p) => p.money)) === '[210000,105000]' && J(D.pads.slice(12, 14).map((p) => p.requires)) === '[["B12"],["B13"]]' && J(D.pads.slice(12, 14).map((p) => p.group)) === J(P5), 'data: B13 / B14: stage 11, no reputation, plan prices 210000 / 105000, requires B12 / B13, groups mp161Rail / mp161Siding');
   check(D.rails.length === 10 && D.rails.every((r) => r.level === 0 && (r.minR === null || r.minR >= 40)) && D.railNodes.length === 12 && D.stations.length === 2 && D.rails.filter((r) => r.pad === 'B13').length === 8 && D.rails.filter((r) => r.pad === 'B14').length === 2, 'data: 10 track pieces (8 + 2), level 0, curves R >= 40, 12 rail nodes, 2 stations (ST-FRT, ST-WH)');
   check(D.lots.filter((l) => l.pad >= 'B13').length === 0 && D.edges.filter((e) => e.pad >= 'B13').length === 0, 'data: phase 5 has no street edges and no parcels (the plan gives B13 / B14 only track)');
   // every track point is a hole of the floor (blocker) and the blockers cover the whole track strip
@@ -112,7 +112,7 @@ await run(async () => {
   try {
     await ev(PAGE);
     const pre = await ev(() => ({ mp: __mpObjects(), flags: { ...masterplanStateV161 } }));
-    check(pre.mp.length === 0 && Object.keys(pre.flags).length === 14 && Object.values(pre.flags).every((f) => f === false), `fresh game: no object, fourteen flags all false (${J(pre.flags)})`);
+    check(pre.mp.length === 0 && Object.keys(pre.flags).length >= 14 && Object.values(pre.flags).every((f) => f === false), `fresh game: no object, fourteen flags all false (${J(pre.flags)})`);
     // the chain B13 needs is restored from a save-shaped object (B02, B04, B08 never bought)
     await ev((flags) => { stageIndex = 10; cityState.reputation = 500; CITY_DISTRICTS.forEach((c, i) => cityState.districtRoads[c.id] = { level: i < 2 ? 3 : 1, pendingUntil: 0, roadsBuilt: true }); window.__TYCOON_ROAD_AUDIT_V59__.syncOuter(); restoreMasterplanV161(flags); MasterplanV161.refresh(); refreshIndustrialPadMarkersV118(); }, FLAGS(PARTIAL));
     await ev(() => { window.__charges = []; const o = tryPayResources; tryPayResources = function (c) { const r = o.apply(this, arguments); if (r && c && c.money) window.__charges.push(c.money); return r; }; });
@@ -292,7 +292,7 @@ await run(async () => {
     await page.waitForTimeout(1500);
     await ev(() => { save.flush(); });
     const savedFlags = await ev(() => JSON.parse(localStorage.getItem(SAVE_KEY)).masterplanV161);
-    check(Object.keys(savedFlags).length === 14 && savedFlags.B13 === true && savedFlags.B14 === true && savedFlags.B02 === false, `the save has the fourteen masterplan flags (${J(savedFlags)})`);
+    check(Object.keys(savedFlags).length >= 14 && savedFlags.B13 === true && savedFlags.B14 === true && savedFlags.B02 === false, `the save has the fourteen masterplan flags (${J(savedFlags)})`);
     await reloadGame(g, 5000);
     await ev(PAGE);
     const far = await ev(() => ({ flags: { ...masterplanStateV161 }, x: player.position.x, z: player.position.z }));
@@ -326,11 +326,11 @@ await run(async () => {
   try {
     await ev(PAGE);
     const o = await ev(() => ({ flags: { ...masterplanStateV161 }, mp: __mpObjects(), markers: ['B01', 'B12', 'B13', 'B14'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), sig: __sig(), stage: stageIndex }));
-    check(Object.keys(o.flags).length === 14 && Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: fourteen flags false, no object, no pad (${J({ flags: o.flags, mp: o.mp.length, markers: o.markers, stage: o.stage })})`);
+    check(Object.keys(o.flags).length >= 14 && Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: fourteen flags false, no object, no pad (${J({ flags: o.flags, mp: o.mp.length, markers: o.markers, stage: o.stage })})`);
     check(o.sig.count === 51 && o.sig.hash === 648310607, `OLD_SAVE road signature stays 51 / 648310607 (${o.sig.count}/${o.sig.hash})`);
     check(await ev(() => !MasterplanV161.access(165, 60) && !MasterplanV161.floor(165, 60)), 'OLD_SAVE: no paid floor anywhere (access false)');
     const chain = await ev(() => {
-      const r = (d) => { restoreMasterplanV161(d); return Object.entries(masterplanStateV161).slice(10).map(([k, v]) => k + (v ? '1' : '0')).join(' '); };
+      const r = (d) => { restoreMasterplanV161(d); return Object.entries(masterplanStateV161).slice(10, 14).map(([k, v]) => k + (v ? '1' : '0')).join(' '); };
       const all = Object.fromEntries(Object.keys(masterplanStateV161).map((k) => [k, true]));
       return { all: r(all), noB12: r({ ...all, B12: false }), noB13: r({ ...all, B13: false }), none: r(null) };
     });
