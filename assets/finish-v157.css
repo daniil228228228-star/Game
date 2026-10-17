@@ -1,0 +1,15 @@
+/* Compact cargo HUD and legible controls within the existing game layout. */
+#hud [hidden]{display:none!important}
+#manualCargoStatV119{display:none!important}
+#actionPrompt{max-width:calc(100vw - 32px);box-sizing:border-box;font-size:clamp(14px,3.8vw,18px)!important;line-height:1.35!important;overflow-wrap:anywhere}
+#actionBtn{min-height:56px!important;font-size:clamp(16px,4.1vw,20px)!important;line-height:1.25!important;white-space:normal!important;touch-action:manipulation}
+#actionBtn:focus-visible{outline:3px solid #f5d58d!important;outline-offset:4px}
+#carryRouteV139{box-sizing:border-box;max-width:calc(100vw - 32px)}
+#carryRouteV139 :is(b,.v139Title){font-size:14px!important;line-height:1.35!important;overflow-wrap:anywhere}
+.v150-eyebrow{font-size:12px;letter-spacing:.07em}
+.v150-route-copy :is(span,small),.v150-route-count,.v150-route button{font-size:14px}
+.v150-route-note{font-size:15px;line-height:1.5}
+.v30Panel input,.v30Panel select{font-size:16px!important;min-height:44px}
+.v30Panel button{touch-action:manipulation}
+@media(max-width:700px){.v150-route-count{font-size:14px}.v150-route{gap:10px}}
+@media(prefers-reduced-motion:reduce){#actionBtn,#carryRouteV139{transition:none!important;animation:none!important}}
