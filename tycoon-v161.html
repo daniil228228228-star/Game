@@ -1336,9 +1336,9 @@ function productionSpeedMultiplier(){ return (1 + metaLevel('production') * 0.06
 
 const GROUND_HALF = 70;
 // Masterplan additions are opt-in for every save, including legacy saves.
-const masterplanStateV161 = {B01:false, B02:false, B03:false, B04:false, B05:false, B06:false, B07:false, B08:false, B09:false, B10:false};
+const masterplanStateV161 = {B01:false, B02:false, B03:false, B04:false, B05:false, B06:false, B07:false, B08:false, B09:false, B10:false, B11:false, B12:false};
 // Which paid steps a step needs (mirrors plan-B.json `requires`; checked in id order so a chain B01 -> B03 -> B04 holds). Missing fields = false (old saves are opt-in).
-const MASTERPLAN_REQUIRES_V161 = {B02:['B01'], B03:['B01'], B04:['B03'], B05:['B03'], B06:['B03'], B07:['B05'], B08:['B07'], B09:['B06','B07'], B10:['B09']};
+const MASTERPLAN_REQUIRES_V161 = {B02:['B01'], B03:['B01'], B04:['B03'], B05:['B03'], B06:['B03'], B07:['B05'], B08:['B07'], B09:['B06','B07'], B10:['B09'], B11:['B10'], B12:['B11']};
 function restoreMasterplanV161(data){
   masterplanStateV161.B01 = data?.B01 === true;
   for (const id of Object.keys(masterplanStateV161)) {

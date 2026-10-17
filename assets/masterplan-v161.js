@@ -41,7 +41,7 @@
     return {x:THREE.MathUtils.clamp(x,-GROUND_HALF+margin,GROUND_HALF-margin),z:THREE.MathUtils.clamp(z,-GROUND_HALF+margin,GROUND_HALF-margin)};
   }
   function addBatch(bt,key,color,name){if(!bt.pos.length)return;const mesh=K.toMesh(bt,mat(key,color));mesh.name=name;mesh.receiveShadow=true;mesh.userData.v83CollisionIgnore=true;root.add(mesh);return mesh;}
-  function polygon(bt,poly,y,color){const p=poly.map(q=>new THREE.Vector2(q[0],q[1]));for(const t of THREE.ShapeUtils.triangulateShape(p,[])){let a=poly[t[0]],b=poly[t[1]],c=poly[t[2]];if((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])>0)[b,c]=[c,b];K.tri(bt,ctx,[a[0],y,a[1]],[b[0],y,b[1]],[c[0],y,c[1]],color===undefined?{}:{color});}}
+  function polygon(bt,poly,y,color,holes=[]){const p=poly.map(q=>new THREE.Vector2(q[0],q[1])),all=poly.concat(...holes);for(const t of THREE.ShapeUtils.triangulateShape(p,holes.map(h=>h.map(q=>new THREE.Vector2(q[0],q[1]))))){let a=all[t[0]],b=all[t[1]],c=all[t[2]];if((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])>0)[b,c]=[c,b];K.tri(bt,ctx,[a[0],y,a[1]],[b[0],y,b[1]],[c[0],y,c[1]],color===undefined?{}:{color});}}
   function line(bt,a,b,width,y,height=.01,color){const dx=b[0]-a[0],dz=b[1]-a[1],length=Math.hypot(dx,dz);if(length<.001)return;K.box(bt,ctx,(a[0]+b[0])/2,y,(a[1]+b[1])/2,width,height,length,color===undefined?{ry:Math.atan2(dx,dz)}:{ry:Math.atan2(dx,dz),color});}
   function syncColliders(){const api=window.__TYCOON_V83_COLLISIONS__;if(!api)return;syncPadColliders(api);if(!root)return;api.unregisterOwner(root);for(const b of barriers)api.register({owner:root,category:'decor',label:'mp161:guardrail',shape:'obb',pos:new THREE.Vector3(b.x,0,b.z),hx:.065,hz:b.length/2,yaw:b.yaw,flags:{player:true,agent:true,placement:false,camera:false}});}
   // The decorative backdrop (24 hill spheres r 76-87 m, 30 skyline boxes, tagged userData.v161Backdrop by the core) stands exactly where the paid avenues cross r 70-100:
@@ -161,12 +161,45 @@
     // phase 3: residential blocks (denser lawn, blue sign) and the business centre (paved plaza parcels with a planter and street lamps; no building implies a function)
     'res-mid':{ground:[0x93a67a,0x8a9d73],path:0xd6cfbb,sign:0x4c78b0,tree:true},
     cbd:{ground:[0xb4b2a8,0xaeaca2],path:0xe2deca,sign:0x7a6bb5,tree:false,planter:true},
+    // phase 4: mixed parcels along South street (plain, amber sign) and the three warehouse parcels of the interchange frontage (grey yard, orange stripes)
+    mixed:{ground:[0x9fa98c,0x98a285],path:0xd2c9b4,sign:0xc0873a,tree:false},
+    warehouse:{ground:[0xa6a49c,0xa09e96],path:0xc9c4b4,sign:0x8a6f4a,stripes:0xe5c24a,tree:false},
     _:{ground:[0x9aa88a,0x93a184],path:0xcfc7b4,sign:0x8a8f99,tree:false},
   };
   function lotFrame(l){
     const n=l.normal,t=[-n[1],n[0]],d=l.door;
     // u along the street (centred on the door), v into the lot (away from the street)
     return {at:(u,v)=>[d[0]+t[0]*u-n[0]*v,d[1]+t[1]*u-n[1]*v],yaw:Math.atan2(-n[0],-n[1]),w:l.w,d:l.d,n};
+  }
+  // A quad whose front face looks along (nx,ny,nz) (the winding is decided here, the caller only lists the four corners).
+  function quadFacing(bt,a,b,c,d,n,color){
+    const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2],vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2];
+    const dot=(uy*vz-uz*vy)*n[0]+(uz*vx-ux*vz)*n[1]+(ux*vy-uy*vx)*n[2];
+    if(dot<0)[b,d]=[d,b];
+    K.tri(bt,ctx,a,b,c,{color});K.tri(bt,ctx,a,c,d,{color});
+  }
+  // M2 in its open cut (pad B12): floor along the plan's profile (depth 3 m, 7 % grade), concrete shoulders, retaining walls at the clear span of the overpass, lane dashes on the
+  // sloping floor, and the overpass (level 0) as a slab across the cut. Walls and floor are visible down to the trench bottom; the sea plane has a hole here (refreshSea).
+  function drawTrench(g,props,e){
+    const prof=e.trench.profile,zc=e.pts[0][1],hw=e.w/2,over=D.edges.find(o=>o.overpass&&o.overpass.over===e.id),cut=over?over.overpass.clearSpan/2:hw+2,top=0;
+    const lo=Math.min(...prof.map(q=>q[0])),hi=Math.max(...prof.map(q=>q[0]));
+    const yAt=x=>{for(let i=1;i<prof.length;i++){const a=prof[i-1],b=prof[i];if(x>=Math.min(a[0],b[0])-1e-6&&x<=Math.max(a[0],b[0])+1e-6)return a[1]+(b[1]-a[1])*(x-a[0])/(b[0]-a[0]);}return 0;};
+    const xs=[];for(let x=lo;x<hi;x+=2)xs.push(x);xs.push(hi);for(const q of prof)if(!xs.includes(q[0]))xs.push(q[0]);xs.sort((a,b)=>a-b);
+    const UP=[0,1,0];
+    for(let i=1;i<xs.length;i++){
+      const x0=xs[i-1],x1=xs[i],y0=yAt(x0),y1=yAt(x1);
+      quadFacing(g,[x0,y0+.02,zc-hw],[x1,y1+.02,zc-hw],[x1,y1+.02,zc+hw],[x0,y0+.02,zc+hw],UP,0x41474a);
+      for(const s of [-1,1]){
+        quadFacing(g,[x0,y0+.015,zc+s*hw],[x1,y1+.015,zc+s*hw],[x1,y1+.015,zc+s*cut],[x0,y0+.015,zc+s*cut],UP,0x8c8f88);
+        quadFacing(g,[x0,y0,zc+s*cut],[x1,y1,zc+s*cut],[x1,top,zc+s*cut],[x0,top,zc+s*cut],[0,0,-s],0x9b978b);
+      }
+      if(i%2===0)for(const o of (e.lanes===4?[-e.w/4,0,e.w/4]:[0]))quadFacing(g,[x0,y0+.04,zc+o-.045],[x1,y1+.04,zc+o-.045],[x1,y1+.04,zc+o+.045],[x0,y0+.04,zc+o+.045],UP,0xd8d3b7);
+    }
+    if(over){
+      const xc=over.pts[0][0],dw=over.overpass.deckW;
+      K.box(g,ctx,xc,-.33,zc,dw,.66,2*cut+1.2,{color:0x8d8a80});                                    // deck slab: top at y 0, the paved street lies on it
+      for(const s of [-1,1])K.box(props,ctx,xc+s*(dw/2+.1),.45,zc,.22,.9,2*cut+1,{color:0xb4b0a4});   // parapets
+    }
   }
   function buildPad(p){
     const id=p.id,S=D.surfaces[id],group=new THREE.Group(),surf=p.phase>=3?K.batch(true):null,ground=surf||K.batch(true),props=K.batch(true),cells=new Map(),propColliders=[],lots=lotsOf(id);
@@ -184,6 +217,7 @@
       const ex=e.pts[1][0]-e.pts[0][0],ez=e.pts[1][1]-e.pts[0][1],el=Math.hypot(ex,ez);if(Math.abs(dx*ez-dz*ex)/(len*el)<.5)continue;
       if(Math.abs((x-a[0])*dz-(z-a[1])*dx)/len<o.w/2-.1)return true;}}return false;};
     for(const e of edges){let traveled=0;
+      if(e.cls==='ramp'||e.trench)continue;   // one-way ramps carry no centre dashes; the trench floor draws its own
       for(let i=1;i<e.pts.length;i++){const a=e.pts[i-1],b=e.pts[i],len=Math.hypot(b[0]-a[0],b[1]-a[1]),dx=(b[0]-a[0])/len,dz=(b[1]-a[1])/len;
         const dividers=e.lanes===4?[-e.w/4,0,e.w/4]:[0];
         for(let s=0;s<len;s+=.5){if((traveled+s)%5>2)continue;const end=Math.min(s+.46,len),mx=a[0]+dx*(s+end)/2,mz=a[1]+dz*(s+end)/2;if(crossing(mx,mz,e))continue;
@@ -193,7 +227,15 @@
     }
     // paid earth slab with its embankment (a foundation down to the water, not a floating plane); the wall top sits 1 cm under the slab so the two never fight
     const land=D.land[id];
-    if(land){polygon(ground,land,-.035,id==='B05'?0x8d9180:p.phase>=3?0x869078:0x768662);for(let i=0;i<land.length;i++)line(ground,land[i],land[(i+1)%land.length],.18,-1.025,1.96,0x786b54);}
+    if(land){polygon(ground,land,-.035,id==='B05'?0x8d9180:p.phase>=3?0x869078:0x768662,(D.landHoles&&D.landHoles[id])||[]);for(let i=0;i<land.length;i++)line(ground,land[i],land[(i+1)%land.length],.18,-1.025,1.96,0x786b54);}
+    // phase 4: the M2 in its open cut, the overpass slab and the jersey barriers around every vehicle-only strip (data: edge.trench, edge.overpass, D.fences)
+    const trench=edges.find(e=>e.trench);if(trench)drawTrench(ground,props,trench);
+    for(const f of (D.fences&&D.fences[id])||[]){
+      const dx=f[2]-f[0],dz=f[3]-f[1],L=Math.hypot(dx,dz);if(L<.05)continue;
+      const mx=(f[0]+f[2])/2,mz=(f[1]+f[3])/2,yaw=Math.atan2(dx,dz);
+      K.box(props,ctx,mx,.4,mz,.32,.8,L,{ry:yaw,color:0xa9a59a});
+      if(L>=6)propColliders.push({x:mx,z:mz,hx:.16,hz:L/2,yaw});   // long straight runs also in the collision registry; arcs rely on the walkable polygon alone
+    }
     // parcels: vacant, as in slice 1 (the plan gives them no buildings or income yet), but landscaped by kind with the door path and a sign on the frontage side
     const transforms=[],byEdge={};
     lots.forEach((l,i)=>{
@@ -231,9 +273,11 @@
   function refreshSea(){
     const want=PHASE_PADS.some(p=>state[p.id]);
     if(!want){if(sea){scene.remove(sea);sea.geometry.dispose();sea=null;}return;}
-    if(sea)return;
-    const bt=K.batch();polygon(bt,[[-420,-420],[420,-420],[420,420],[-420,420]],-.36);
-    sea=K.toMesh(bt,mat('water',0x5896ac));sea.name='mp161Sea';sea.userData.v83CollisionIgnore=true;scene.add(sea);
+    const holes=state.B12&&D.landHoles&&D.landHoles.B12||[];   // the M2 trench goes below the water line: the sea plane is open above it
+    if(sea&&sea.userData.holes===holes.length)return;
+    if(sea){scene.remove(sea);sea.geometry.dispose();sea=null;}
+    const bt=K.batch();polygon(bt,[[-420,-420],[420,-420],[420,420],[-420,420]],-.36,undefined,holes);
+    sea=K.toMesh(bt,mat('water',0x5896ac));sea.userData.holes=holes.length;sea.name='mp161Sea';sea.userData.v83CollisionIgnore=true;scene.add(sea);
   }
   function refreshPhasePads(){
     for(const p of PHASE_PADS){
@@ -281,9 +325,9 @@
       }
       return new THREE.Vector3(6,0,-57.1);
     }
-    if(p.id==='B06'){
+    if(p.id==='B06'||p.id==='B11'){
       // The avenue starts at the ring; the circle stands in the old core beside its first metres (free of trees and colliders), never on unpaid water.
-      for(const [x,z] of [p.pos,[64,-9],[66,10.5],[66,-10.5],[62.5,11],[62.5,-11],[67,8.5],[67,-8.5]]){
+      for(const [x,z] of p.id==='B06'?[p.pos,[64,-9],[66,10.5],[66,-10.5],[62.5,11],[62.5,-11],[67,8.5],[67,-8.5]]:[p.pos,[-5,64],[16,66],[-7,66],[17,62.5],[-8,62.5],[20,64],[-11,64]]){
         if(sourceTrees.some(t=>t?.mesh&&Math.hypot(x-t.mesh.position.x,z-t.mesh.position.z)<TREE_INTERACT_RADIUS+1))continue;
         if(gatherPhysicsCircles().some(c=>Math.hypot(x-c.pos.x,z-c.pos.z)<c.radius+1))continue;
         return new THREE.Vector3(x,0,z);
