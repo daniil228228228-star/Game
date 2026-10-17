@@ -44,7 +44,7 @@ const PARTIAL = ['B01', 'B03', 'B05', 'B06', 'B07', 'B09', 'B10', 'B11', 'B12'];
   check(deck.length === 0 && !wk(20, 200) && !wk(-8, 200) && wk(6, 224) && wk(-20, 220) && wk(60, 220), `data: the bridge street is floor from z 180 to 220 (missing ${J(deck)}), the water beside it is not, the south bank is`);
   // quay: the street and the parcels are floor, the sea beyond r 118 is not
   const quay = []; for (const e of D.edges.filter((e) => e.pad === 'B16')) for (const q of e.pts) if (!wk(q[0], q[1])) quay.push(q);
-  check(quay.length === 0 && !wk(-125, 40) && !wk(-100, 100), `data: every quay axis point is floor (${J(quay.slice(0, 3))}), the sea beyond the quay is not`);
+  check(quay.length === 0 && !wk(-60, 125) && !wk(-110, 95), `data: every quay axis point is floor (${J(quay.slice(0, 3))}), the sea beyond the quay is not`);
   // flood fill: all new floor is one piece with the old floor (start inside the old core east of the ring)
   const seen = new Set(['40,0']), q = [[40, 0]];
   while (q.length) { const [x, z] = q.pop(); for (const [dx, dz] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) { const k = (x + dx) + ',' + (z + dz); if (seen.has(k)) continue; if (!(Math.hypot(x + dx, z + dz) < 69 || wk(x + dx, z + dz))) continue; seen.add(k); q.push([x + dx, z + dz]); } }

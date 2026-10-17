@@ -2,6 +2,7 @@
 //   dist/tycoon-v161-zero.html   a new game from nothing (every localStorage key renamed tycoon3d* -> tycoon3dzero*, so it never reads or overwrites the real save)
 //   dist/tycoon-v161-full.html   the fully built city (tools/showcase-save-v161.json, made by tools/make-showcase-save-v161.mjs) seeded on the first open
 //                                 (keys renamed tycoon3d* -> tycoon3dfull*; open it with ?reset=1 to put the showcase city back)
+// The seeded save also gets every masterplan pad B01-B18 (the pads do not touch any other save field).
 // Both are the normal standalone build with a different key prefix, so nothing else differs from the game.
 //   node tools/build-variants-v161.mjs [--out dist]
 import fs from 'node:fs';
@@ -31,7 +32,7 @@ if (!fs.existsSync(seedFile)) throw new Error('run tools/make-showcase-save-v161
 const seed = JSON.parse(fs.readFileSync(seedFile, 'utf8'));
 const P = 'tycoon3dfull';
 const seeder = `<script>(function(){try{var P=${JSON.stringify(P)},seed=${JSON.stringify(seed)},reset=/[?&]reset=1/.test(location.search);
-if(reset||!localStorage.getItem(P+'_save_v3')){for(var k in seed){var v=seed[k];if(k==='tycoon3d_save_v3'){try{var o=JSON.parse(v);o.savedAt=Date.now();v=JSON.stringify(o);}catch(e){}}localStorage.setItem(k.replace('tycoon3d',P),v);}}
+if(reset||!localStorage.getItem(P+'_save_v3')){for(var k in seed){var v=seed[k];if(k==='tycoon3d_save_v3'){try{var o=JSON.parse(v);o.savedAt=Date.now();var m={};for(var n=1;n<=18;n++)m['B'+(n<10?'0':'')+n]=true;o.masterplanV161=m;v=JSON.stringify(o);}catch(e){}}localStorage.setItem(k.replace('tycoon3d',P),v);}}
 }catch(e){}})();</script>`;
 let full = rename(html, P);
 const headAt = full.indexOf('<head>');
