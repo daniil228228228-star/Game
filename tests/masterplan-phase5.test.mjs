@@ -40,7 +40,7 @@ const PARTIAL = ['B01', 'B03', 'B05', 'B06', 'B07', 'B09', 'B10', 'B11', 'B12'];
   const inPoly = (x, z, poly) => { let y = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > z) !== (b[1] > z) && x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]) y = !y; } return y; };
   const inRegion = (x, z, loops) => { let y = false; for (const l of loops) if (inPoly(x, z, l)) y = !y; return y; };
   check(D.pads.length === 14 && D.pads.slice(12).every((p) => p.gateStage === 11 && p.rep === undefined) && J(D.pads.slice(12).map((p) => p.money)) === '[210000,105000]' && J(D.pads.slice(12).map((p) => p.requires)) === '[["B12"],["B13"]]' && J(D.pads.slice(12).map((p) => p.group)) === J(P5), 'data: B13 / B14: stage 11, no reputation, plan prices 210000 / 105000, requires B12 / B13, groups mp161Rail / mp161Siding');
-  check(D.rails.length === 8 && D.rails.every((r) => r.level === 0 && (r.minR === null || r.minR >= 40)) && D.railNodes.length === 12 && D.stations.length === 2 && D.rails.filter((r) => r.pad === 'B13').length === 6 && D.rails.filter((r) => r.pad === 'B14').length === 2, 'data: 8 track pieces (6 + 2), level 0, curves R >= 40, 12 rail nodes, 2 stations (ST-FRT, ST-WH)');
+  check(D.rails.length === 10 && D.rails.every((r) => r.level === 0 && (r.minR === null || r.minR >= 40)) && D.railNodes.length === 12 && D.stations.length === 2 && D.rails.filter((r) => r.pad === 'B13').length === 8 && D.rails.filter((r) => r.pad === 'B14').length === 2, 'data: 10 track pieces (8 + 2), level 0, curves R >= 40, 12 rail nodes, 2 stations (ST-FRT, ST-WH)');
   check(D.lots.filter((l) => l.pad >= 'B13').length === 0 && D.edges.filter((e) => e.pad >= 'B13').length === 0, 'data: phase 5 has no street edges and no parcels (the plan gives B13 / B14 only track)');
   // every track point is a hole of the floor (blocker) and the blockers cover the whole track strip
   const blockedAt = (x, z) => Object.keys(D.blockers).some((id) => inPoly(x, z, D.bbox[id] ? [[D.bbox[id][0], D.bbox[id][1]], [D.bbox[id][2], D.bbox[id][1]], [D.bbox[id][2], D.bbox[id][3]], [D.bbox[id][0], D.bbox[id][3]]] : []) && D.blockers[id].some((r) => inRegion(x, z, r)));
@@ -177,7 +177,7 @@ await run(async () => {
     console.log('phase 5 groups (meshes / instanced / triangles): ' + J(P5.map((n) => [n, meshInfo[n] && meshInfo[n].meshes, meshInfo[n] && meshInfo[n].inst, meshInfo[n] && meshInfo[n].tris])));
     check(P5.every((n) => meshInfo[n] && meshInfo[n].bad.length === 0 && !meshInfo[n].rootRoad && meshInfo[n].names.every((x) => !x || x.startsWith('mp161'))), `group names are mp161*, no 'road' in any name, v83CollisionIgnore on every mesh, no road tag (${J(P5.map((n) => meshInfo[n] && meshInfo[n].bad))})`);
     check(P5.every((n) => meshInfo[n].sleepers === 1 && meshInfo[n].inst === 1 && meshInfo[n].meshes <= 4), `meshes merged: ${J(P5.map((n) => meshInfo[n].meshes))}, one sleeper InstancedMesh per pad`);
-    const sl = await ev(() => P5.map((n) => { const m = scene.getObjectByName(n + '_sleepers'); return m && m.count; }), );
+    const sl = await ev((P5) => P5.map((n) => { const m = scene.getObjectByName(n + '_sleepers'); return m && m.count; }), P5);
     check(sl.every((n) => n > 50), `sleepers drawn as one InstancedMesh per pad (${J(sl)})`);
 
     // ---- walkable floor: seams, tracks not walkable
@@ -195,7 +195,7 @@ await run(async () => {
       const stacks = D.yard.B13.containers.map((c) => MasterplanV161.access(c.x, c.z)), dock = MasterplanV161.access(164, 83.7);
       return { bad, n: tot.n, stacks, dock };
     });
-    check(tracks.n > 100 && tracks.bad.length === 0 && tracks.stacks.every((v) => v === false) && tracks.dock === false, `not walkable: ${tracks.n} points along all 8 track pieces, 6 container stacks, the dock (${J(tracks)})`);
+    check(tracks.n > 100 && tracks.bad.length === 0 && tracks.stacks.every((v) => v === false) && tracks.dock === false, `not walkable: ${tracks.n} points along all 10 track pieces, 6 container stacks, the dock (${J(tracks)})`);
 
     // ---- pushes in 8 directions at every edge of the rail floor, through the real updatePlayer
     const starts = {
@@ -335,7 +335,7 @@ await run(async () => {
     });
     check(chain.all === 'B111 B121 B131 B141' && chain.noB12 === 'B111 B120 B130 B140' && chain.noB13 === 'B111 B121 B130 B140' && chain.none === 'B110 B120 B130 B140', `restore chain B12 -> B13 -> B14 (${J(chain)})`);
     await ev(() => { stageIndex = 16; cityState.reputation = 500; refreshIndustrialPadMarkersV118(); });
-    const later = await ev(() => ({ markers: IDS.map((id) => industrialPadMarkersV118.has('mp161-' + id)), mp: __mpObjects().length }));
+    const later = await ev((IDS) => ({ markers: IDS.map((id) => industrialPadMarkersV118.has('mp161-' + id)), mp: __mpObjects().length }), IDS);
     check(later.mp === 0 && later.markers.slice(1).every((m) => !m), `OLD_SAVE at stage 16: no object; B02..B14 stay locked behind B01 (${J(later.markers)})`);
     check(g.errors.length === 0, `OLD_SAVE: no console/page errors (${J(g.errors.slice(0, 4))})`);
   } finally { await g.close(); }
