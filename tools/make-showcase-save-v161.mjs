@@ -16,7 +16,8 @@ try {
   const ALL = Object.fromEntries(Array.from({ length: 14 }, (_, i) => ['B' + String(i + 1).padStart(2, '0'), true]));
   await ev((all) => { restoreMasterplanV161(all); MasterplanV161.refresh(); }, ALL);
   let last = '';
-  for (let round = 0; round < 24; round++) {
+  let same = 0;
+  for (let round = 0; round < 45; round++) {
     const state = await ev(() => {
       money = 1e12; planks = 5000; concrete = 500; metal = 500; cityState.reputation = Math.max(cityState.reputation, 1000);
       const ids = CITY_DISTRICTS.map((c) => c.id), tried = [];
@@ -44,11 +45,13 @@ try {
         infra: ids.map((id) => districtInfrastructureCount(id)), commerce: ids.map((id) => commercialLevel(id)),
         plants: [window.__TYCOON_V42__.state.powerPlantLevel, window.__TYCOON_V42__.state.waterPlantLevel],
         housing: Object.values(cityState.housing).map((h) => h.apartmentBlockBuilt ? 1 : 0),
+        errors: tried.slice(0, 4),
       });
     });
     console.log('round', round, state);
     await g.page.waitForTimeout(7000);
-    if (state === last && round > 6) break;
+    same = state === last ? same + 1 : 0;
+    if (same >= 5) break;   // nothing changed for five rounds (35 s): everything the game allows is built
     last = state;
   }
   await ev(() => { money = 5e8; planks = 5000; concrete = 500; metal = 500; player.position.set(0, 0, 8); save.flush(); });
