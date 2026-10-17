@@ -220,7 +220,7 @@ await run(async () => {
     const starts = {
       core: [[66, 0], [66.5, 8], [64, -9], [70.5, 4]],
       main: [[80, 0], [95, 4], [84, -6.5], [84, 6.5]],
-      chord: [[102, 60], [102, 104], [96, 50], [112, 100], [112, -90], [96, -120]],
+      chord: [[96, -120], [112, -90], [102, 60], [102, 104], [96, 50], [112, 100]],
       parkE: [[204, -125], [150, -154], [120, -154], [150, -70], [185, -153], [200, -70], [135, -70], [170, -72]],
       strips: [[150, 52], [200, 52], [135, 52], [165, 50], [183, 50], [204, 20]],
       east: [[204, -30], [130, -64], [160, 14], [204, -64], [120, -64]],
@@ -308,10 +308,14 @@ await run(async () => {
     }
 
     // ---- persistence + first visit
-    await ev(() => { player.position.set(150, 0, 30); playerVelocity.set(0, 0, 0); save.flush(); });
+    await ev(() => { player.position.set(150, 0, 30); playerVelocity.set(0, 0, 0); });
+    await page.waitForTimeout(1500);
+    console.log('standing at the centre for 1.5 s: ' + await ev(() => JSON.stringify([player.position.x, player.position.z, MasterplanV161.access(player.position.x, player.position.z)])));
+    await ev(() => { save.flush(); });
     console.log('saved player: ' + await ev(() => localStorage.getItem(SAVE_KEY).match(/"player":\{[^}]*\}/)[0]));
     await reloadGame(g, 5000);
     await ev(PAGE);
+    console.log('after reload: ' + await ev(() => JSON.stringify({ pos: [player.position.x, player.position.z], access: masterplanAccessV161(150, 30), floor: masterplanFloorV161(150, 30), stage: stageIndex, saved: JSON.parse(localStorage.getItem(SAVE_KEY)).player, raw: JSON.parse(knownSaveRawV64).player })));
     const far = await ev(() => ({ flags: { ...masterplanStateV161 }, x: player.position.x, z: player.position.z }));
     const wantFlags = J({ B01: true, B02: true, B03: true, B04: false, B05: true, B06: true, B07: true, B08: true, B09: true, B10: true });
     check(J(far.flags) === wantFlags && far.x > 140 && far.z > 25, `reload keeps the flags (B04 was never bought) and the position in the business centre (${J(far)})`);

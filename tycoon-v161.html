@@ -1368,6 +1368,7 @@ function masterplanAccessV161(x,z,margin=.65){
 }
 function clampPlayerBoundsV161(x,z,margin=1){
   if(window.MasterplanV161)return window.MasterplanV161.clamp(x,z,margin);
+  if(masterplanStateV161.B01&&(Math.abs(x)>GROUND_HALF-margin||Math.abs(z)>GROUND_HALF-margin)&&masterplanAccessV161(x,z))return {x,z};   // layer not loaded yet (boot): the paid floor is data, keep a saved spot on it
   return {x:THREE.MathUtils.clamp(x,-GROUND_HALF+margin,GROUND_HALF-margin),z:THREE.MathUtils.clamp(z,-GROUND_HALF+margin,GROUND_HALF-margin)};
 }
 const PLAYER_SPEED = 5.9;       // v131: calmer, more controllable world-scale movement
@@ -13685,7 +13686,7 @@ function load() {
         const paidPort = masterplanStateV161.B01 && Number.isFinite(savedX) && Number.isFinite(savedZ) && Math.max(Math.abs(savedX), Math.abs(savedZ)) > GROUND_HALF - 2 && masterplanAccessV161(savedX, savedZ);
         player.position.set(paidPort ? savedX : THREE.MathUtils.clamp(savedX,-GROUND_HALF+2,GROUND_HALF-2),0,paidPort ? savedZ : THREE.MathUtils.clamp(savedZ,-GROUND_HALF+2,GROUND_HALF-2));
       }
-      const safe = !window.MasterplanV161 && masterplanStateV161.B01 && (player.position.x < -68 || (masterplanStateV161.B03 && player.position.z < -68)) ? {x:player.position.x,z:player.position.z} : nearestSafePlayerPosition(player.position);
+      const safe = !window.MasterplanV161 && masterplanStateV161.B01 && masterplanAccessV161(player.position.x, player.position.z) ? {x:player.position.x,z:player.position.z} : nearestSafePlayerPosition(player.position);
       player.position.x = safe.x;
       player.position.z = safe.z;
     }
