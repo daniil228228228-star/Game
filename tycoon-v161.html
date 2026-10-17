@@ -33299,9 +33299,9 @@ window.__TYCOON_V74_BUILD__={
     const clip=(p,q)=>{if(Math.abs(p)<1e-9)return q>=0;const r=q/p;if(p<0){if(r>t1)return false;if(r>t0)t0=r;}else{if(r<t0)return false;if(r<t1)t1=r;}return true;};
     return clip(-dx,A.x+hx)&&clip(dx,hx-A.x)&&clip(-dz,A.z+hz)&&clip(dz,hz-A.z)&&t1>=t0;
   }
-  function segmentBlocked(a,b,halfWidth,excludeOwner=null,extraEntries=[]){
+  function segmentBlocked(a,b,halfWidth,excludeOwner=null,extraEntries=[],preset=null){
     const pad=halfWidth+.28;
-    const all=[...hardRoadEntries(excludeOwner),...extraEntries];
+    const all=preset||[...hardRoadEntries(excludeOwner),...extraEntries];   // v161 perf: a plan passes ONE prebuilt list (it used to rebuild it, O(registry), for every segment of every candidate path)
     for(const e of all){
       if(!e?.pos)continue;
       if(e.shape==='obb'){
@@ -33310,8 +33310,8 @@ window.__TYCOON_V74_BUILD__={
     }
     return null;
   }
-  function pathClear(path,halfWidth,excludeOwner=null,extraEntries=[]){
-    return path.length>=2&&path.every((p,i)=>i===0||!segmentBlocked(path[i-1],p,halfWidth,excludeOwner,extraEntries));
+  function pathClear(path,halfWidth,excludeOwner=null,extraEntries=[],preset=null){
+    return path.length>=2&&path.every((p,i)=>i===0||!segmentBlocked(path[i-1],p,halfWidth,excludeOwner,extraEntries,preset));
   }
   function compress(path){
     const out=[];
@@ -33327,10 +33327,29 @@ window.__TYCOON_V74_BUILD__={
   }
   function planOrthogonal(start,end,halfWidth=.76,excludeOwner=null,extraEntries=[]){
     const candidates=[];
+    const preset=[...hardRoadEntries(excludeOwner),...extraEntries];
+    // v161 perf: per-plan precomputation (sin/cos of every OBB once, a bounding-circle reject before the exact clip): the same answers as segmentBlocked, orders of magnitude fewer operations in a full city
+    const padW=halfWidth+.28,prep=preset.filter(e=>e?.pos).map(e=>{const obb=e.shape==='obb',y=Number(e.yaw)||0,hx=(e.hx||e.radius||0)+padW,hz=(e.hz||e.radius||0)+padW;
+      return {e,x:e.pos.x,z:e.pos.z,obb,sy:Math.sin(y),cy:Math.cos(y),hx,hz,R2:hx*hx+hz*hz,r:(Number(e.radius)||0)+padW};});
+    const blockedFast=(a,b)=>{
+      const vx=b.x-a.x,vz=b.z-a.z,l2=vx*vx+vz*vz;
+      for(const q of prep){
+        const t=l2?Math.max(0,Math.min(1,((q.x-a.x)*vx+(q.z-a.z)*vz)/l2)):0,ex=q.x-(a.x+vx*t),ez=q.z-(a.z+vz*t),d2=ex*ex+ez*ez;
+        if(q.obb){
+          if(d2>q.R2)continue;
+          const ax=a.x-q.x,az=a.z-q.z,bx=b.x-q.x,bz=b.z-q.z,Ax=ax*q.cy-az*q.sy,Az=ax*q.sy+az*q.cy,Bx=bx*q.cy-bz*q.sy,Bz=bx*q.sy+bz*q.cy;
+          let t0=0,t1=1;const dx=Bx-Ax,dz=Bz-Az;
+          const clip=(p,qq)=>{if(Math.abs(p)<1e-9)return qq>=0;const r=qq/p;if(p<0){if(r>t1)return false;if(r>t0)t0=r;}else{if(r<t0)return false;if(r<t1)t1=r;}return true;};
+          if(clip(-dx,Ax+q.hx)&&clip(dx,q.hx-Ax)&&clip(-dz,Az+q.hz)&&clip(dz,q.hz-Az)&&t1>=t0)return q.e;
+        }else if(Math.sqrt(d2)<q.r)return q.e;
+      }
+      return null;
+    };
+    const pathClearFast=path=>path.length>=2&&path.every((p,i)=>i===0||!blockedFast(path[i-1],p));
     const consider=pts=>{
       const path=compress(pts);
       if(path.some(p=>Math.abs(p.x)>GROUND_HALF-2.2||Math.abs(p.z)>GROUND_HALF-2.2))return;
-      if(!pathClear(path,halfWidth,excludeOwner,extraEntries))return;
+      if(!pathClearFast(path))return;
       const length=path.reduce((n,p,i)=>n+(i?p.distanceTo(path[i-1]):0),0);
       const bends=Math.max(0,path.length-2),cost=length+bends*.34;
       candidates.push({path,cost});
@@ -33339,7 +33358,7 @@ window.__TYCOON_V74_BUILD__={
     consider([start,new THREE.Vector3(start.x,0,end.z),end]);
     consider([start,new THREE.Vector3(end.x,0,start.z),end]);
 
-    const blockers=[...hardRoadEntries(excludeOwner),...extraEntries].filter(e=>e?.pos);
+    const blockers=preset.filter(e=>e?.pos);
     const corridor=Math.max(12,start.distanceTo(end)*.72+7),xs=new Set(),zs=new Set();
     for(const e of blockers){
       const d=Math.min(e.pos.distanceTo(start),e.pos.distanceTo(end));if(d>corridor)continue;
@@ -33386,10 +33405,12 @@ window.__TYCOON_V74_BUILD__={
     const r=registryValues().filter(e=>['building','cityBuilding','cityPlot','base','special','industrial'].includes(e.category));
     return r.map(e=>`${e.id}:${e.pos.x.toFixed(1)},${e.pos.z.toFixed(1)},${(e.radius||0).toFixed(1)}`).sort().join('|')+`|stage:${stageIndex}`;
   }
-  let lastConnectorSig='';
+  let lastConnectorSig='',lastConnectorSigAt=0;
   const oldDistrictConnector=districtInfrastructureConnectorPathV37;
   districtInfrastructureConnectorPathV37=function(id){
-    const sig=connectorSignature();if(sig!==lastConnectorSig){lastConnectorSig=sig;connectorCache.clear();}
+    // v161 perf: the signature (every registry entry stringified + sorted) was rebuilt on EVERY call, and the shuttles call this every frame: once a second is enough
+    const nowSig=performance.now();if(connectorCache.has(id)&&nowSig-lastConnectorSigAt<1000)return connectorCache.get(id).map(p=>p.clone());
+    lastConnectorSigAt=nowSig;const sig=connectorSignature();if(sig!==lastConnectorSig){lastConnectorSig=sig;connectorCache.clear();}
     if(connectorCache.has(id))return connectorCache.get(id).map(p=>p.clone());
     const start=districtConnectorStart(id),end=infrastructureCornerV37(id);if(!start||!end)return oldDistrictConnector(id);
     const lv=Math.max(1,districtRoadLevelV37(id)),w=window.__TYCOON_ROAD_SPECS_V59__?.widths?.arterial?.[lv]||2.84;
