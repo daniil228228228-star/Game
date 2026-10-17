@@ -2080,7 +2080,8 @@ controls.addEventListener('start', () => { cameraUserInteracting = true; markCam
 controls.addEventListener('end', () => { cameraUserInteracting = false; markCameraUserInput(); });
 controls.addEventListener('change', () => {
   if (cameraUserInteracting) lastCameraUserInputAt = performance.now() * 0.001;
-  refreshDesiredCameraDistance();
+  // only the player's own gesture (and its damping tail) may change the wanted zoom: the follow-cam and the obstruction pull also fire 'change'
+  if (cameraUserInteracting || performance.now() * 0.001 - lastCameraUserInputAt < 1.0) refreshDesiredCameraDistance();
 });
 controls.rotateSpeed = VISUAL_MOBILE ? 0.75 : 0.9;   // a full-screen swipe was a full turn: too jumpy for a thumb
 controls.zoomSpeed = 0.9;
