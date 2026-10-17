@@ -60,7 +60,7 @@ const LAND={
   B09:[[118,-66],[206,-66],[206,16],[118,16]],        // z=-52 and z=0 avenues, the blocks between
   B10:[[118,16],[206,16],[206,54],[118,54]],          // z=48 street and the southern halves of the two business blocks
   // Phase 4 (south; the estuary starts at z 192, the floors stop at z 188). B11: avenue x 6 (z 58..188), South street z 100 with its parcels (to x 106), the M2 arterial z 140 (to x 32, where the expressway hole begins). B12: everything between x 26 and the map edge 212
-  B11:[[-4,58],[16,58],[16,88],[106,88],[106,105],[16,105],[16,134],[32,134],[32,146],[16,146],[16,188],[-4,188]],
+  B11:[[-4,58],[16,58],[16,88],[106,88],[106,104],[16,104],[16,134],[32,134],[32,146],[16,146],[16,188],[-4,188]],
   B12:[[26,88],[212,88],[212,188],[26,188]],
 };
 // Holes of a slab that are NOT earth: the open cut of the M2 trench (clear span 18 m of the overpass; the walls, the floor and the bridge are drawn by the game from the trench profile)
