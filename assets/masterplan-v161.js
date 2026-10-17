@@ -164,6 +164,9 @@
     // phase 4: mixed parcels along South street (plain, amber sign) and the three warehouse parcels of the interchange frontage (grey yard, orange stripes)
     mixed:{ground:[0x9fa98c,0x98a285],path:0xd2c9b4,sign:0xc0873a,tree:false},
     warehouse:{ground:[0xa6a49c,0xa09e96],path:0xc9c4b4,sign:0x8a6f4a,stripes:0xe5c24a,tree:false},
+    // phase 7 / 8: waterfront parcels (paved promenade with planters and lamps) and the sports parcels of the south shore (turf with mowing stripes and pitch markings)
+    waterfront:{ground:[0xc9c2ae,0xc2bba7],path:0xe2deca,sign:0x2f7fa0,tree:false,planter:true},
+    sport:{ground:[0x78b25a,0x72ab55],path:0xd2c9b4,sign:0x3f8f6a,tree:false,stripes:0x8ec26e,pitch:true},
     _:{ground:[0x9aa88a,0x93a184],path:0xcfc7b4,sign:0x8a8f99,tree:false},
   };
   function lotFrame(l){
@@ -267,6 +270,14 @@
       }
     }
   }
+  // Phase 8 (data: edge.bridge {s0,s1,span}): the deck slab under the street, parapets and piers in the water. The street itself is the walkable floor; the floor stays flat y = 0.
+  function drawBridge(ground,props,e){
+    const a=e.pts[0],b=e.pts[e.pts.length-1],L=Math.hypot(b[0]-a[0],b[1]-a[1]),dx=(b[0]-a[0])/L,dz=(b[1]-a[1])/L,yaw=Math.atan2(dx,dz),hw=e.w/2+e.sw,len=e.bridge.s1-e.bridge.s0;
+    const at=(s)=>[a[0]+dx*s,a[1]+dz*s],mid=at((e.bridge.s0+e.bridge.s1)/2);
+    K.box(ground,ctx,mid[0],-.33,mid[1],2*hw+.4,.66,len,{ry:yaw,color:0x8d8a80});
+    for(const side of [-1,1]){const c=at((e.bridge.s0+e.bridge.s1)/2);K.box(props,ctx,c[0]-dz*side*(hw+.1),.45,c[1]+dx*side*(hw+.1),.22,.9,len,{ry:yaw,color:0xb4b0a4});}
+    for(let s=e.bridge.s0+4;s<e.bridge.s1;s+=8){const c=at(s);for(const side of [-1,1])K.box(props,ctx,c[0]-dz*side*(hw-1),-1.9,c[1]+dx*side*(hw-1),1.4,3.4,1.4,{ry:yaw,color:0x7d7a72});}
+  }
   function buildPad(p){
     const id=p.id,S=D.surfaces[id],group=new THREE.Group(),surf=p.phase>=3?K.batch(true):null,ground=surf||K.batch(true),props=K.batch(true),cells=new Map(),propColliders=[],lots=lotsOf(id);
     group.name=p.group;group.userData.masterplanV161=true;
@@ -298,6 +309,7 @@
     const trench=edges.find(e=>e.trench);if(trench)drawTrench(ground,props,trench);
     const railPad=!!(D.rails&&D.rails.some(r=>r.pad===id)),stationPad=!!(D.stations&&D.stations.some(q=>q.pad===id)),sleepers=railPad?drawRails(ground,props,id):[];
     if(stationPad)drawStations(ground,props,id);
+    for(const e of edges)if(e.bridge)drawBridge(ground,props,e);
     for(const f of (D.fences&&D.fences[id])||[]){
       const dx=f[2]-f[0],dz=f[3]-f[1],L=Math.hypot(dx,dz);if(L<.05)continue;
       const mx=(f[0]+f[2])/2,mz=(f[1]+f[3])/2,yaw=Math.atan2(dx,dz);
@@ -313,6 +325,12 @@
       K.box(ground,ctx,c[0],-.01,c[1],f.w-.5,.06,f.d-.5,{ry:f.yaw,color:st.ground[i%2],skip:[3]});
       const pc=f.at(0,1.3);K.box(ground,ctx,pc[0],.02,pc[1],1.2,.02,2.6,{ry:f.yaw,color:st.path});
       if(st.stripes){for(const u of [-f.w/4,f.w/4]){const sc=f.at(u,f.d/2+.6);K.box(ground,ctx,sc[0],.03,sc[1],.12,.02,f.d-3,{ry:f.yaw,color:st.stripes});}}
+      if(st.pitch){   // white pitch outline, halfway line, centre circle (ring of segments) and a low stand along the far side
+        const w=f.w-4,d=f.d-5,mk=(u0,v0,u1,v1)=>{const a=f.at(u0,v0),b=f.at(u1,v1);line(ground,a,b,.14,.05,.01,0xf2f0e4);};
+        mk(-w/2,3,w/2,3);mk(-w/2,3+d,w/2,3+d);mk(-w/2,3,-w/2,3+d);mk(w/2,3,w/2,3+d);mk(-w/2,3+d/2,w/2,3+d/2);
+        for(let k=0;k<12;k++){const a0=k*Math.PI/6,a1=(k+1)*Math.PI/6;mk(Math.cos(a0)*3.2,3+d/2+Math.sin(a0)*3.2,Math.cos(a1)*3.2,3+d/2+Math.sin(a1)*3.2);}
+        const sc=f.at(0,f.d-.9);K.box(props,ctx,sc[0],.5,sc[1],f.w-1,1,1.2,{ry:f.yaw,color:0x4c78b0});K.box(props,ctx,sc[0],1.1,sc[1],f.w-1,.18,1.5,{ry:f.yaw,color:0x3b4b5e});
+      }
       const post=f.at(.95*side*-1,.55);K.box(props,ctx,post[0],.55,post[1],.07,1.1,.07,{ry:f.yaw,color:0x59626b});
       K.box(props,ctx,post[0],1.05,post[1],.55,.34,.04,{ry:f.yaw,color:st.sign});
       if(st.tree&&idx%2===0){const q=f.at(side*(f.w/2-.8),.8);K.cyl(props,ctx,q[0],0,q[1],.13,.09,1.5,5,{color:0x6b4a2f});K.blob(props,ctx,q[0],2.1,q[1],1.1,.95,1.1,1,{color:[0x4f8a45,0x5b9650,0x437a3d][i%3]});K.blob(props,ctx,q[0],2.9,q[1],.65,.55,.65,1,{color:0x5f9e53});propColliders.push({x:q[0],z:q[1],hx:.16,hz:.16,yaw:0});}

@@ -23,14 +23,14 @@ const context=vm.createContext({Math,Map,Set,Error});
 vm.runInContext(source.slice(source.indexOf('function insideRoadFootprints('),source.indexOf('let unionLayer=null')),context);
 
 const arg=(name,def)=>{const a=process.argv.find(x=>x.startsWith('--'+name+'='));return a?a.split('=')[1]:def;};
-const MAX_PHASE=+arg('phase',6);
+const MAX_PHASE=+arg('phase',8);
 const pads=plan.pads.filter(p=>p.phase<=MAX_PHASE);
 const padIds=pads.map(p=>p.id);
 const railsAll=MAX_PHASE>=5?plan.rails.filter(r=>padIds.includes(r.pad)):[];
 const railNodes=MAX_PHASE>=5?plan.railNodes.filter(n=>n.phase<=MAX_PHASE):[];
 const stations=MAX_PHASE>=5?plan.stations.filter(s=>padIds.includes(s.pad)):[];
 // Everything that is a texts/override of a particular pad lives here, so a new phase never touches the game code.
-const GROUP={B01:'mp161Net',B02:'mp161Net',B03:'mp161North',B04:'mp161NW',B05:'mp161Park',B06:'mp161Main',B07:'mp161Chord',B08:'mp161ParkE',B09:'mp161East',B10:'mp161Centre',B11:'mp161South',B12:'mp161M2',B13:'mp161Rail',B14:'mp161Siding',B15:'mp161Station'};
+const GROUP={B01:'mp161Net',B02:'mp161Net',B03:'mp161North',B04:'mp161NW',B05:'mp161Park',B06:'mp161Main',B07:'mp161Chord',B08:'mp161ParkE',B09:'mp161East',B10:'mp161Centre',B11:'mp161South',B12:'mp161M2',B13:'mp161Rail',B14:'mp161Siding',B15:'mp161Station',B16:'mp161Quay',B17:'mp161Bridge',B18:'mp161Shore'};
 const TEXT={
   B01:{icon:'⚓',ru:'Портовая авеню',en:'Port avenue',toast:{ru:'Портовая авеню открыта. Следующий кружок — у причала.',en:'Port avenue open. The next pad is at the quay.'}},
   B02:{icon:'⚓',ru:'Причал и участки порта',en:'Pier and port parcels',toast:{ru:'Причал открыт: пять участков подготовлены к следующим этапам.',en:'Pier open: five parcels reserved for the next phases.'}},
@@ -46,13 +46,16 @@ const TEXT={
   B13:{icon:'🚆',ru:'Железная дорога и грузовой парк',en:'Railway and freight yard',toast:{ru:'Железная дорога открыта: два главных пути и грузовой парк, пути за ограждением.',en:'Railway open: two main tracks and a freight yard, tracks behind a fence.'}},
   B14:{icon:'🚆',ru:'Подъездная ветка и склады',en:'Siding and warehouses',toast:{ru:'Подъездная ветка к складам открыта: погрузочная платформа готова.',en:'Siding to the warehouses open: the loading dock is ready.'}},
   B15:{icon:'🚉',ru:'Южный вокзал',en:'South station',toast:{ru:'Южный вокзал открыт: здание, привокзальная площадь, две платформы и автовокзал.',en:'South station open: the hall, the forecourt, two platforms and the bus station.'}},
+  B16:{icon:'⚓',ru:'Набережная ЮЗ',en:'South-west quay',toast:{ru:'Набережная ЮЗ открыта: проезд вдоль воды от порта до Южного проспекта, 10 участков подготовлены.',en:'South-west quay open: a waterside road from the port to South avenue, 10 parcels prepared.'}},
+  B17:{icon:'🌉',ru:'Южный мост',en:'South bridge',toast:{ru:'Южный мост открыт: Южный проспект пересёк эстуарий.',en:'South bridge open: South avenue crosses the estuary.'}},
+  B18:{icon:'🏟️',ru:'Южный берег: стадион',en:'South shore: stadium',toast:{ru:'Южный берег открыт: стадион и парк на другом берегу.',en:'South shore open: the stadium and the park across the river.'}},
   B10:{icon:'🏙️',ru:'Деловой центр',en:'Business centre',toast:{ru:'Деловой центр открыт: 8 площадок подготовлены.',en:'Business centre open: 8 plazas prepared.'}},
 };
 // Purchase circles that are not the plan node: B03 searches a clear spot in the game; B04/B05 plan nodes (-102,-100)/(6,-100) lie on unpaid ground / the avenue,
 // the circle must stand on the floor the player already owns (rule 3: the player can reach every pad): on the paid strip beside each artery's first metre.
 // Phase 3 circles also stand on floor that is ALREADY paid when the pad appears (B06: the old core east of the ring, searched in the game for a clear spot; B07: B05's earth beside the
 // chord start; B08: B07's land beside the chord; B09: B07's land at the avenue crossing; B10: B09's land in the gap between two parcels).
-const PAD_POS={B04:[-3.5,-97.5],B05:[11.5,-97.5],B06:[64,9],B07:[106,-95.4],B08:[106.5,-92],B09:[111,1],B10:[150,8],B11:[14,64],B12:[110,104],B13:[165,52.9],B14:[203,90],B15:[122,53.2]};   // phase 5: B13 on B10's land south of the z=48 street (the yard itself is unpaid until bought), B14 on B12's land east of the warehouse parcels   // phase 4: B11 in the old core beside the avenue start (searched in the game), B12 on B07's land beside the chord's end
+const PAD_POS={B04:[-3.5,-97.5],B05:[11.5,-97.5],B06:[64,9],B07:[106,-95.4],B08:[106.5,-92],B09:[111,1],B10:[150,8],B11:[14,64],B12:[110,104],B13:[165,52.9],B14:[203,90],B15:[122,53.2],B16:[-2.5,98],B17:[10,184],B18:[10,218]};   // phase 5: B13 on B10's land south of the z=48 street (the yard itself is unpaid until bought), B14 on B12's land east of the warehouse parcels   // phase 4: B11 in the old core beside the avenue start (searched in the game), B12 on B07's land beside the chord's end
 // Paid earth slab of a pad (the floor between its streets). B03 is the slice-1 rectangle (kept byte for byte); later pads default to the padded bbox of their roads+lots.
 const LAND={
   B03:[[-8,-60],[14,-60],[14,-155],[-8,-155]],
@@ -70,6 +73,11 @@ const LAND={
   B12:[[26,88],[212,88],[212,188],[26,188]],
   // Phase 5 (railway). One slab for the freight yard, the two main tracks and the siding zone, between B10 (z 54) and B12 (z 88); the tracks themselves are BLOCKERS (not walkable), see below
   B13:[[108,52],[212,52],[212,90],[108,90]],
+  // Phase 7 (quay): the sector between the ring (r 62) and the west shore (r 117 = the plan's land edge r 120 less the embankment) from South street's end (angle 103) to the port hub (153), joined to B11's slab on the east.
+  B16:(()=>{const pt=(r,a)=>[+(r*Math.cos(a*Math.PI/180)).toFixed(3),+(r*Math.sin(a*Math.PI/180)).toFixed(3)],out=[[16,60],[16,116]];for(let a=103;a<=153;a+=2)out.push(pt(117,a));for(let a=153;a>=103;a-=2)out.push(pt(62,a));return out;})(),
+  // Phase 8: the south bank (the estuary is z 192..212; the bridge street of B17 is the only floor over the water, B17 owns no slab: null)
+  B17:null,
+  B18:[[-26,212],[70,212],[70,240],[-26,240]],
 };
 // Holes of a slab that are NOT earth: the open cut of the M2 trench (clear span 18 m of the overpass; the walls, the floor and the bridge are drawn by the game from the trench profile)
 const cutOf=()=>{const o=plan.edges.find(e=>e.overpass&&e.phase<=MAX_PHASE);if(!o)return null;const t=plan.edges.find(e=>e.id===o.overpass.over);const [x0,x1]=[Math.min(...t.trench.profile.map(q=>q[0])),Math.max(...t.trench.profile.map(q=>q[0]))],zc=t.pts[0][1],h=o.overpass.clearSpan/2;return {edge:t.id,rect:[[x0,zc-h],[x1,zc-h],[x1,zc+h],[x0,zc+h]],x0,x1,zc,h};};
@@ -173,6 +181,7 @@ const piers={};for(const id of padIds)if(PIER_OF[id])piers[id]=plan.piers.find(q
 const lots=plan.lots.filter(l=>padIds.includes(l.pad));
 const land={};
 for(const id of padIds){
+  if(id in LAND&&LAND[id]===null)continue;   // no slab (the floor is the street itself, e.g. a bridge)
   if(LAND[id]){land[id]=LAND[id];continue;}
   if(pads.find(p=>p.id===id).phase<2)continue;   // slice 1 (port) has no earth slab: its floor is the drawn streets, pier and decks only
   const es=own(id);if(!es.length)continue;
