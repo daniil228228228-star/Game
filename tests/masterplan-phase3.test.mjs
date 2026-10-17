@@ -281,7 +281,8 @@ await run(async () => {
     const budget = [];
     for (const [name, x, z] of [['ring junction (64,0)', 64, 0], ['avenue/chord crossing (102,0)', 102, 0], ['avenue east (150,0)', 150, 0], ['centre (150,40)', 150, 40], ['chord north (102,-90)', 102, -90], ['park east (150,-125)', 150, -125], ['B05 junction (6,-100)', 6, -100], ['east end (190,-10)', 190, -10]]) {
       await ev(([x, z]) => { player.position.set(x, 0, z); playerVelocity.set(0, 0, 0); }, [x, z]);
-      await page.waitForTimeout(1500);
+      await page.waitForTimeout(2500);
+      await ev(() => __frame()); await ev(() => __frame());   // let the shadow map / lazy builds of the teleport settle: the first frame after a jump counts shadow casters twice
       const all = await ev(() => __frame());
       const delta = await ev(async (P3) => {
         const mp = []; scene.children.forEach((o) => { if (o.userData && o.userData.masterplanV161 || o.name === 'mp161Sea') mp.push(o); });
