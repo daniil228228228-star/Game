@@ -5,7 +5,7 @@
 //   * desiredCameraDistance (the zoom the player chose) survives the pull,
 //   * the camera returns to it once the way is free,
 //   * a double tap / double click on the canvas brings the zoom back to CAM_DEFAULT_DIST.
-import { openGame, check } from './lib/harness.mjs';
+import { openGame, check, waitForState } from './lib/harness.mjs';
 
 const J = JSON.stringify;
 const g = await openGame({ save: 'clear', waitMs: 5000 });
@@ -24,6 +24,7 @@ try {
     controls.update();
     markCameraUserInput();
   });
+  await waitForState(page, () => !V54_STABILITY.fallbackActive, null, { timeout: 40000 });
   await frames(40);
   const base = { dist: await dist(), desired: await desired() };
   check(Math.abs(base.desired - 13) < .6 && Math.abs(base.dist - 13) < 1.2, `start: the chosen zoom of 13 m holds in open ground (${J(base)})`);
@@ -38,7 +39,8 @@ try {
     // the game rebuilds cameraSolidMeshes from its buildings every now and then: keep the test wall in the list while it stands
     window.__keepWall = true; const keep = () => { if (!window.__keepWall) return; if (!cameraSolidMeshes.includes(w)) cameraSolidMeshes.push(w); requestAnimationFrame(keep); }; keep();
   });
-  await frames(120);
+  await waitForState(page, () => !V54_STABILITY.fallbackActive && camera.position.distanceTo(controls.target) < 8, null, { timeout: 40000 });
+  await frames(20);
   const pulled = { dist: await dist(), desired: await desired(), shift: await ev(() => +cameraResolverShiftV163.length().toFixed(2)) };
   check(pulled.dist < 6.5, `the camera is pulled in by the wall (${J(pulled)})`);
   check(pulled.desired > 12, `the zoom the player chose is NOT overwritten by the pulled distance (desired ${pulled.desired}, was 13)`);
@@ -53,14 +55,16 @@ try {
 
   // the wall goes away: the camera must come back to 13 m by itself
   await ev(() => { window.__keepWall = false; const w = scene.getObjectByName('__testCameraWall'); const i = cameraSolidMeshes.indexOf(w); if (i >= 0) cameraSolidMeshes.splice(i, 1); scene.remove(w); });
-  await frames(240);
+  await waitForState(page, () => !V54_STABILITY.fallbackActive && camera.position.distanceTo(controls.target) > 11.5, null, { timeout: 40000 });
+  await frames(10);
   const back = { dist: await dist(), desired: await desired() };
   check(back.dist > 11.5, `after the wall is gone the camera returns to the chosen distance (${J(back)})`);
 
   // double tap on the canvas = zoom back to the default distance
   const box = await ev(() => { const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + r.width * 0.5, y: r.top + r.height * 0.35 }; });
   await page.mouse.dblclick(box.x, box.y);
-  await frames(240);
+  await waitForState(page, () => !V54_STABILITY.fallbackActive && Math.abs(desiredCameraDistance - CAM_DEFAULT_DIST) < .3 && camera.position.distanceTo(controls.target) < 10.5, null, { timeout: 40000 });
+  await frames(10);
   const dbl = { dist: await dist(), desired: await desired(), want: await ev(() => CAM_DEFAULT_DIST) };
   check(Math.abs(dbl.desired - dbl.want) < .3 && Math.abs(dbl.dist - dbl.want) < 1.2, `double tap / double click resets the zoom to the default distance (${J(dbl)})`);
 
