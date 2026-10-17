@@ -32752,6 +32752,7 @@ window.__TYCOON_V74_BUILD__={
   function flagsFor(category,overrides={}){
     return Object.assign({player:false,agent:false,camera:false,placement:false},CATEGORIES[category]||{},overrides||{});
   }
+  let registryRevV161=0;
   function register(entry){
     if(!entry)return null;
     const id=entry.id||`v83:${seq++}`;
@@ -32770,7 +32771,7 @@ window.__TYCOON_V74_BUILD__={
     }
     // v161 (2026-10-10 (13)): land-plot / district colliders carry plain {x,z} positions; every consumer (e.pos.distanceTo in the agent / route queries) needs a Vector3 -> "e.pos.distanceTo is not a function" page errors once a plot is owned
     if(entry.pos&&!entry.pos.isVector3)entry.pos=new THREE.Vector3(Number(entry.pos.x)||0,0,Number(entry.pos.z)||0);
-    registry.set(id,entry);
+    registry.set(id,entry);registryRevV161++;
     if(entry.owner && typeof entry.owner==='object'){
       let ids=ownerIds.get(entry.owner);if(!ids){ids=new Set();ownerIds.set(entry.owner,ids);}ids.add(id);
     }
@@ -32778,11 +32779,11 @@ window.__TYCOON_V74_BUILD__={
   }
   function unregisterOwner(owner){
     const ids=owner&&ownerIds.get(owner);if(!ids)return;
-    for(const id of ids)registry.delete(id);
+    for(const id of ids)registry.delete(id);registryRevV161++;
     ownerIds.delete(owner);
   }
   function clearStatic(){
-    registry.clear();
+    registry.clear();registryRevV161++;
     ownerIds=new WeakMap();
     // IDs stay monotonic across rebuilds so a stale owner can never delete a newly reused ID.
   }
@@ -33243,7 +33244,8 @@ window.__TYCOON_V74_BUILD__={
   else setTimeout(boot,520);
 
   window.__TYCOON_V83_COLLISIONS__={
-    version:VERSION,registry,rebuild:rebuildStatic,run:audit,
+    version:VERSION,registry,rebuild:rebuildStatic,run:audit,rev:()=>registryRevV161,   // v161: bumped on every register / unregister / clear (cheap cache key for the road planners)
+
     register,unregisterOwner,registerRoot,registerCircle,
     query:(mode='placement')=>entriesFor(mode,{ignoreVehicles:mode==='placement'||mode==='camera'}),
     overlap:placementOverlap
@@ -33405,12 +33407,13 @@ window.__TYCOON_V74_BUILD__={
     const r=registryValues().filter(e=>['building','cityBuilding','cityPlot','base','special','industrial'].includes(e.category));
     return r.map(e=>`${e.id}:${e.pos.x.toFixed(1)},${e.pos.z.toFixed(1)},${(e.radius||0).toFixed(1)}`).sort().join('|')+`|stage:${stageIndex}`;
   }
-  let lastConnectorSig='',lastConnectorSigAt=0;
+  let lastConnectorSig='',lastConnectorRevKey='';
   const oldDistrictConnector=districtInfrastructureConnectorPathV37;
   districtInfrastructureConnectorPathV37=function(id){
-    // v161 perf: the signature (every registry entry stringified + sorted) was rebuilt on EVERY call, and the shuttles call this every frame: once a second is enough
-    const nowSig=performance.now();if(connectorCache.has(id)&&nowSig-lastConnectorSigAt<1000)return connectorCache.get(id).map(p=>p.clone());
-    lastConnectorSigAt=nowSig;const sig=connectorSignature();if(sig!==lastConnectorSig){lastConnectorSig=sig;connectorCache.clear();}
+    // v161 perf: the signature (every registry entry stringified + sorted) was rebuilt on EVERY call, and the shuttles call this every frame. It can only change when the registry
+    // was written to (revision counter) or the stage moved, so it is recomputed exactly then: same answers, no per-frame cost.
+    const revKey=(window.__TYCOON_V83_COLLISIONS__?.rev?.()??-1)+'|'+stageIndex;
+    if(revKey!==lastConnectorRevKey||!connectorCache.has(id)){lastConnectorRevKey=revKey;const sig=connectorSignature();if(sig!==lastConnectorSig){lastConnectorSig=sig;connectorCache.clear();}}
     if(connectorCache.has(id))return connectorCache.get(id).map(p=>p.clone());
     const start=districtConnectorStart(id),end=infrastructureCornerV37(id);if(!start||!end)return oldDistrictConnector(id);
     const lv=Math.max(1,districtRoadLevelV37(id)),w=window.__TYCOON_ROAD_SPECS_V59__?.widths?.arterial?.[lv]||2.84;
