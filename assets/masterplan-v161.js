@@ -56,6 +56,21 @@
     }
     return best;
   }
+  // Decorative scenery (bushes / rocks / trees scattered in the old core) that stands on a phase-3 street (only B06 reaches into the core) is retired through the core's own
+  // road-conflict flag while that street is paid and restored when it is not. Earlier pads keep their behaviour.
+  let scenery=null;
+  function syncScenery(){
+    if(!scenery){scenery=[];for(const o of scene.children)if(o.userData&&o.userData.v64RandomScenery)scenery.push(o);}
+    for(const o of scenery){
+      let hit=false;
+      if(o.userData.v161MpRetired||!o.userData.v84HiddenRoadConflict&&!o.userData.v64HiddenRoadConflict&&o.visible!==false)
+        for(const e of D.edges){if(e.pad<'B06'||!state[e.pad])continue;const hw=e.w/2+e.sw+.5;
+          for(let i=1;i<e.pts.length&&!hit;i++){const q=nearest(o.position.x,o.position.z,e.pts[i-1],e.pts[i]);if(Math.hypot(o.position.x-q[0],o.position.z-q[1])<hw)hit=true;}
+          if(hit)break;}
+      if(hit&&!o.userData.v161MpRetired){o.userData.v161MpRetired=true;o.userData.v84HiddenRoadConflict=true;o.visible=false;}
+      else if(!hit&&o.userData.v161MpRetired){o.userData.v161MpRetired=false;delete o.userData.v84HiddenRoadConflict;o.visible=true;}
+    }
+  }
   let backdrop=null;
   function syncBackdrop(){
     if(!backdrop){backdrop=[];scene.traverse(o=>{if(o.userData&&o.userData.v161Backdrop)backdrop.push(o);});}
@@ -65,7 +80,7 @@
   }
   function clear(){if(root){window.__TYCOON_V83_COLLISIONS__?.unregisterOwner(root);scene.remove(root);root.traverse(o=>{if(o.geometry)o.geometry.dispose();});root=null;}barriers.length=0;signature='';}
   function refresh(){
-    syncBackdrop();
+    syncBackdrop();syncScenery();
     refreshNorth();
     refreshPhasePads();
     const want=state.B02?'B02':state.B01?'B01':'';
@@ -143,6 +158,9 @@
   const LOT_STYLE={
     'res-low':{ground:[0x86a863,0x7aa05b],path:0xd2c9b4,sign:0x3f8f6a,tree:true},
     'industry-light':{ground:[0xa6a49c,0xa09e96],path:0xc9c4b4,sign:0xe08f2a,stripes:0xe5c24a,tree:false},
+    // phase 3: residential blocks (denser lawn, blue sign) and the business centre (paved plaza parcels with a planter and street lamps; no building implies a function)
+    'res-mid':{ground:[0x93a67a,0x8a9d73],path:0xd6cfbb,sign:0x4c78b0,tree:true},
+    cbd:{ground:[0xb4b2a8,0xaeaca2],path:0xe2deca,sign:0x7a6bb5,tree:false,planter:true},
     _:{ground:[0x9aa88a,0x93a184],path:0xcfc7b4,sign:0x8a8f99,tree:false},
   };
   function lotFrame(l){
@@ -174,7 +192,7 @@
     }
     // paid earth slab with its embankment (a foundation down to the water, not a floating plane); the wall top sits 1 cm under the slab so the two never fight
     const land=D.land[id];
-    if(land){polygon(ground,land,-.035,id==='B05'?0x8d9180:0x768662);for(let i=0;i<land.length;i++)line(ground,land[i],land[(i+1)%land.length],.18,-1.025,1.96,0x786b54);}
+    if(land){polygon(ground,land,-.035,id==='B05'?0x8d9180:p.phase>=3?0x869078:0x768662);for(let i=0;i<land.length;i++)line(ground,land[i],land[(i+1)%land.length],.18,-1.025,1.96,0x786b54);}
     // parcels: vacant, as in slice 1 (the plan gives them no buildings or income yet), but landscaped by kind with the door path and a sign on the frontage side
     const transforms=[],byEdge={};
     lots.forEach((l,i)=>{
@@ -185,8 +203,9 @@
       const post=f.at(.95*side*-1,.55);K.box(props,ctx,post[0],.55,post[1],.07,1.1,.07,{ry:f.yaw,color:0x59626b});
       K.box(props,ctx,post[0],1.05,post[1],.55,.34,.04,{ry:f.yaw,color:st.sign});
       if(st.tree&&idx%2===0){const q=f.at(side*(f.w/2-.8),.8);K.cyl(props,ctx,q[0],0,q[1],.13,.09,1.5,5,{color:0x6b4a2f});K.blob(props,ctx,q[0],2.1,q[1],1.1,.95,1.1,1,{color:[0x4f8a45,0x5b9650,0x437a3d][i%3]});K.blob(props,ctx,q[0],2.9,q[1],.65,.55,.65,1,{color:0x5f9e53});propColliders.push({x:q[0],z:q[1],hx:.16,hz:.16,yaw:0});}
-      if(idx%(st.tree?4:2)===1){const q=f.at(side*(f.w/2-.45),.45);K.cyl(props,ctx,q[0],0,q[1],.06,.045,4.2,5,{color:0x4b5560});
-        const arm=f.at(side*(f.w/2-.45),1.0);K.box(props,ctx,(q[0]+arm[0])/2,4.18,(q[1]+arm[1])/2,.06,.06,.7,{ry:f.yaw,color:0x4b5560});K.box(props,ctx,arm[0],4.1,arm[1],.3,.1,.22,{ry:f.yaw,color:0xf0e6c0});propColliders.push({x:q[0],z:q[1],hx:.07,hz:.07,yaw:0});}
+      if(st.planter){const q=f.at(side*(f.w/2-.9),.9);K.box(props,ctx,q[0],.22,q[1],.9,.44,.9,{ry:f.yaw,color:0x8f8b80});K.box(props,ctx,q[0],.5,q[1],.74,.12,.74,{ry:f.yaw,color:0x4f8a45});propColliders.push({x:q[0],z:q[1],hx:.45,hz:.45,yaw:f.yaw});}
+      if(idx%(st.tree?4:2)===1){const q=f.at((st.planter?-1:1)*side*(f.w/2-.45),.45);K.cyl(props,ctx,q[0],0,q[1],.06,.045,4.2,5,{color:0x4b5560});
+        const arm=f.at((st.planter?-1:1)*side*(f.w/2-.45),1.0);K.box(props,ctx,(q[0]+arm[0])/2,4.18,(q[1]+arm[1])/2,.06,.06,.7,{ry:f.yaw,color:0x4b5560});K.box(props,ctx,arm[0],4.1,arm[1],.3,.1,.22,{ry:f.yaw,color:0xf0e6c0});propColliders.push({x:q[0],z:q[1],hx:.07,hz:.07,yaw:0});}
       for(let k=0;k<l.poly.length;k++){const a=l.poly[k],b=l.poly[(k+1)%l.poly.length];transforms.push({x:(a[0]+b[0])/2,z:(a[1]+b[1])/2,length:Math.hypot(b[0]-a[0],b[1]-a[1]),yaw:Math.atan2(b[0]-a[0],b[1]-a[1])});}
     });
     const add=(bt,name,cast)=>{const m=K.toMesh(bt,vcMat(),{cast});if(!m)return null;m.name=p.group+'_'+name;m.userData.v83CollisionIgnore=true;group.add(m);return m;};
@@ -212,7 +231,7 @@
     const want=PHASE_PADS.some(p=>state[p.id]);
     if(!want){if(sea){scene.remove(sea);sea.geometry.dispose();sea=null;}return;}
     if(sea)return;
-    const bt=K.batch();polygon(bt,[[-420,-420],[420,-420],[420,-56],[-420,-56]],-.36);
+    const bt=K.batch();polygon(bt,[[-420,-420],[420,-420],[420,420],[-420,420]],-.36);
     sea=K.toMesh(bt,mat('water',0x5896ac));sea.name='mp161Sea';sea.userData.v83CollisionIgnore=true;scene.add(sea);
   }
   function refreshPhasePads(){
@@ -260,6 +279,15 @@
         return new THREE.Vector3(x,0,z);
       }
       return new THREE.Vector3(6,0,-57.1);
+    }
+    if(p.id==='B06'){
+      // The avenue starts at the ring; the circle stands in the old core beside its first metres (free of trees and colliders), never on unpaid water.
+      for(const [x,z] of [p.pos,[64,-9],[66,10.5],[66,-10.5],[62.5,11],[62.5,-11],[67,8.5],[67,-8.5]]){
+        if(sourceTrees.some(t=>t?.mesh&&Math.hypot(x-t.mesh.position.x,z-t.mesh.position.z)<TREE_INTERACT_RADIUS+1))continue;
+        if(gatherPhysicsCircles().some(c=>Math.hypot(x-c.pos.x,z-c.pos.z)<c.radius+1))continue;
+        return new THREE.Vector3(x,0,z);
+      }
+      return new THREE.Vector3(p.pos[0],0,p.pos[1]);
     }
     if(p.id!=='B01')return new THREE.Vector3(p.pos[0],0,p.pos[1]);
     // The plan node sits on the ring; a harvesting radius there can own the button.

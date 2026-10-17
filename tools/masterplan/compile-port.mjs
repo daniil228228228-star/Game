@@ -27,29 +27,43 @@ const MAX_PHASE=+arg('phase',2);
 const pads=plan.pads.filter(p=>p.phase<=MAX_PHASE);
 const padIds=pads.map(p=>p.id);
 // Everything that is a texts/override of a particular pad lives here, so a new phase never touches the game code.
-const GROUP={B01:'mp161Net',B02:'mp161Net',B03:'mp161North',B04:'mp161NW',B05:'mp161Park'};
+const GROUP={B01:'mp161Net',B02:'mp161Net',B03:'mp161North',B04:'mp161NW',B05:'mp161Park',B06:'mp161Main',B07:'mp161Chord',B08:'mp161ParkE',B09:'mp161East',B10:'mp161Centre'};
 const TEXT={
   B01:{icon:'⚓',ru:'Портовая авеню',en:'Port avenue',toast:{ru:'Портовая авеню открыта. Следующий кружок — у причала.',en:'Port avenue open. The next pad is at the quay.'}},
   B02:{icon:'⚓',ru:'Причал и участки порта',en:'Pier and port parcels',toast:{ru:'Причал открыт: пять участков подготовлены к следующим этапам.',en:'Pier open: five parcels reserved for the next phases.'}},
   B03:{icon:'🛣️',ru:'Северный проспект',en:'North avenue',toast:{ru:'Северный проспект открыт. Подготовлены три участка.',en:'North avenue open. Three parcels prepared.'}},
   B04:{icon:'🏘️',ru:'Северо-западные кварталы',en:'North-west blocks',toast:{ru:'Северо-западные кварталы открыты: 35 участков под жильё подготовлены.',en:'North-west blocks open: 35 housing parcels prepared.'}},
   B05:{icon:'🏭',ru:'Промпарк и Северная магистраль',en:'Industrial park and Northern artery',toast:{ru:'Промпарк открыт: 8 промышленных участков подготовлены.',en:'Industrial park open: 8 industrial parcels prepared.'}},
+  B06:{icon:'🛣️',ru:'Главный проспект (к Хорде)',en:'Main avenue (to the Chord)',toast:{ru:'Главный проспект открыт до Восточной хорды.',en:'Main avenue open up to the Eastern chord.'}},
+  B07:{icon:'🛣️',ru:'Восточная хорда (север)',en:'Eastern chord (north)',toast:{ru:'Восточная хорда открыта: 6 участков подготовлены.',en:'Eastern chord open: 6 parcels prepared.'}},
+  B08:{icon:'🏭',ru:'Промпарк (восток) и окружная',en:'Industrial park (east) and ring street',toast:{ru:'Восточный промпарк открыт: 35 участков подготовлены.',en:'East industrial park open: 35 parcels prepared.'}},
+  B09:{icon:'🏘️',ru:'Главный проспект (восток), жилые кварталы',en:'Main avenue (east), housing blocks',toast:{ru:'Восточные кварталы открыты: 33 участка подготовлены.',en:'East blocks open: 33 parcels prepared.'}},
+  B10:{icon:'🏙️',ru:'Деловой центр',en:'Business centre',toast:{ru:'Деловой центр открыт: 8 площадок подготовлены.',en:'Business centre open: 8 plazas prepared.'}},
 };
 // Purchase circles that are not the plan node: B03 searches a clear spot in the game; B04/B05 plan nodes (-102,-100)/(6,-100) lie on unpaid ground / the avenue,
 // the circle must stand on the floor the player already owns (rule 3: the player can reach every pad): on the paid strip beside each artery's first metre.
-const PAD_POS={B04:[-3.5,-97.5],B05:[11.5,-97.5]};
+// Phase 3 circles also stand on floor that is ALREADY paid when the pad appears (B06: the old core east of the ring, searched in the game for a clear spot; B07: B05's earth beside the
+// chord start; B08: B07's land beside the chord; B09: B07's land at the avenue crossing; B10: B09's land in the gap between two parcels).
+const PAD_POS={B04:[-3.5,-97.5],B05:[11.5,-97.5],B06:[64,9],B07:[106,-95.4],B08:[106.5,-92],B09:[111,1],B10:[150,8]};
 // Paid earth slab of a pad (the floor between its streets). B03 is the slice-1 rectangle (kept byte for byte); later pads default to the padded bbox of their roads+lots.
 const LAND={
   B03:[[-8,-60],[14,-60],[14,-155],[-8,-155]],
   B04:[[-108,-155],[-8,-155],[-8,-94],[-108,-94]],   // NW1+NW2 west of the strip: streets x -102..-48, z -148/-100 (+walk 5.2 m), lots, coast z -155 like the strip
   B05:[[14,-155],[108,-155],[108,-94],[14,-94]],     // NE1+NE2 east of the strip, up to the cap of N21 (102,-100)
+  // Phase 3 (east). Slabs may overlap each other (same colour, same height: invisible), never leave a hole between two pads that can be bought in the planned order.
+  B06:[[60,-8],[110,-8],[110,8],[60,8]],              // main avenue z 0 from the ring (60.2) to the Chord (+ its cap 6.1)
+  B07:[[94,-94],[118,-94],[118,108],[94,108]],        // Chord x 102 from B05's land (z -94) to its stub z 100 (+cap) with the parcels east of it (x <= 115.6)
+  // Industrial park east: R1+R2 (z -155..-66) and the strips of its x=150 / x=198 collectors down to z 52 (their parcels), a comb: the blocks between belong to B09/B10
+  B08:[[108,-155],[206,-155],[206,52],[181,52],[181,-66],[167,-66],[167,52],[133,52],[133,-66],[118,-66],[118,-94],[108,-94]],
+  B09:[[118,-66],[206,-66],[206,16],[118,16]],        // z=-52 and z=0 avenues, the blocks between
+  B10:[[118,16],[206,16],[206,54],[118,54]],          // z=48 street and the southern halves of the two business blocks
 };
 
 const edgesAll=plan.edges.filter(e=>padIds.includes(e.pad));
 const edges=edgesAll.map(e=>({...e}));
 // The first 4.1 m of B-PORT / B-N-1 lie over the existing ring. Keep the frozen ring itself untouched.
 for(let i=0;i<edges.length;i++){
-  if(edges[i].id==='B-PORT'||edges[i].id==='B-N-1'){const p=edges[i].pts[0];edges[i]={...edges[i],pts:edges[i].pts.map((q,j)=>j?q:[p[0]*60.2/Math.hypot(...p),p[1]*60.2/Math.hypot(...p)])};}
+  if(edges[i].id==='B-PORT'||edges[i].id==='B-N-1'||edges[i].id==='B-MAIN-1'){const p=edges[i].pts[0];edges[i]={...edges[i],pts:edges[i].pts.map((q,j)=>j?q:[p[0]*60.2/Math.hypot(...p),p[1]*60.2/Math.hypot(...p)])};}
 }
 function footprints(list,walk){
   const out=[];
