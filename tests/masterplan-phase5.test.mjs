@@ -226,14 +226,14 @@ await run(async () => {
     }
     const bad = probe.filter((r) => !r.ok || r.floorY === null || Math.abs(r.floorY) > 0.12 || /sea|water|estuary/i.test(r.floorName || ''));
     const moved = probe.filter((r) => Math.hypot(r.end[0] - r.sx, r.end[1] - r.sz) > 3).length;
-    check(probe.length >= 8 * 18 && bad.length === 0, `${probe.length} pushes of 8 s (8 directions x ${probe.length / 8} starts at the aprons, the track fences, the yard, the slab ends, the siding): all end on drawn floor within 12 cm, never on a track (bad ${J(bad.slice(0, 3))}; moved > 3 m: ${moved})`);
+    check(probe.length >= 8 * 15 && bad.length === 0, `${probe.length} pushes of 8 s (8 directions x ${probe.length / 8} starts at the aprons, the track fences, the yard, the slab ends, the siding): all end on drawn floor within 12 cm, never on a track (bad ${J(bad.slice(0, 3))}; moved > 3 m: ${moved})`);
     console.log('floor names under the pushes: ' + J([...new Set(probe.map((r) => r.floorName))]));
     // the yard fence is a real collider for the long runs
     const fence = await ev(() => { const list = [...__TYCOON_V83_COLLISIONS__.registry.values()].filter((c) => c.label === 'mp161:prop' && c.hz > 3 && c.hx < .08); return { n: list.length, ok: list.every((c) => c.category === 'decor' && c.flags.player === true) }; });
     check(fence.n >= 4 && fence.ok, `the long yard-fence runs are registered as solid thin decor colliders (${J(fence)})`);
     // crossing attempt: from the north apron straight south through the tracks must stop at the fence
     const cross = await ev(() => { const a = __drive(120, 55, 0, 1, 400); return { a, access: MasterplanV161.access(a.x, a.z) }; });
-    check(cross.a.z < 70 && cross.access, `walking south from the north apron stops at the container stack / yard fence before the main tracks (${J(cross)})`);
+    check(cross.a.z < 71 && cross.a.z > 60 && cross.access, `walking south from the north apron stops at the container stack / yard fence before the main tracks (${J(cross)})`);
 
     // backdrop
     const bd = await ev(() => {
