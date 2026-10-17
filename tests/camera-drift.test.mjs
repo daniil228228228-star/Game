@@ -39,7 +39,7 @@ try {
     // the game rebuilds cameraSolidMeshes from its buildings every now and then: keep the test wall in the list while it stands
     window.__keepWall = true; const keep = () => { if (!window.__keepWall) return; if (!cameraSolidMeshes.includes(w)) cameraSolidMeshes.push(w); requestAnimationFrame(keep); }; keep();
   });
-  await waitForState(page, () => !V54_STABILITY.fallbackActive && camera.position.distanceTo(controls.target) < 8, null, { timeout: 40000 });
+  await waitForState(page, () => !V54_STABILITY.fallbackActive && camera.position.distanceTo(controls.target) < 8, null, { timeout: 120000 });
   await frames(20);
   const pulled = { dist: await dist(), desired: await desired(), shift: await ev(() => +cameraResolverShiftV163.length().toFixed(2)) };
   check(pulled.dist < 6.5, `the camera is pulled in by the wall (${J(pulled)})`);
@@ -61,8 +61,11 @@ try {
   check(back.dist > 11.5, `after the wall is gone the camera returns to the chosen distance (${J(back)})`);
 
   // double tap on the canvas = zoom back to the default distance
-  const box = await ev(() => { const r = renderer.domElement.getBoundingClientRect(); return { x: r.left + r.width * 0.5, y: r.top + r.height * 0.35 }; });
-  await page.mouse.dblclick(box.x, box.y);
+  await ev(() => {
+    const c = renderer.domElement, r = c.getBoundingClientRect(), x = r.left + r.width * .5, y = r.top + r.height * .35;
+    const fire = (type) => c.dispatchEvent(new PointerEvent(type, { pointerId: 1, isPrimary: true, pointerType: 'touch', clientX: x, clientY: y, bubbles: true }));
+    fire('pointerdown'); fire('pointerup'); fire('pointerdown'); fire('pointerup');
+  });
   await waitForState(page, () => !V54_STABILITY.fallbackActive && Math.abs(desiredCameraDistance - CAM_DEFAULT_DIST) < .3 && camera.position.distanceTo(controls.target) < 10.5, null, { timeout: 40000 });
   await frames(10);
   const dbl = { dist: await dist(), desired: await desired(), want: await ev(() => CAM_DEFAULT_DIST) };

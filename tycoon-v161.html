@@ -2066,8 +2066,11 @@ let desiredCameraDistance = CAM_DEFAULT_DIST;
 // before the follow-cam / OrbitControls read the camera. Without that the pulled distance became the wanted zoom (OrbitControls' 'change' fires every
 // frame and copies camera.position into desiredCameraDistance) and the camera crept inward for ever.
 const cameraResolverShiftV163 = new THREE.Vector3();
+const cameraFreePosTmpV163 = new THREE.Vector3();
 function refreshDesiredCameraDistance() {
-  desiredCameraDistance = THREE.MathUtils.clamp(camera.position.distanceTo(controls.target), CAM_MIN_DIST, CAM_MAX_DIST);
+  // pointer events arrive between frames, while the camera still stands where the obstruction resolver put it: measure the free (unpulled) position
+  cameraFreePosTmpV163.copy(camera.position).sub(cameraResolverShiftV163);
+  desiredCameraDistance = THREE.MathUtils.clamp(cameraFreePosTmpV163.distanceTo(controls.target), CAM_MIN_DIST, CAM_MAX_DIST);
 }
 function markCameraUserInput() {
   lastCameraUserInputAt = performance.now() * 0.001;
