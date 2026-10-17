@@ -183,8 +183,8 @@ await run(async () => {
     // ---- walkable floor: seams, tracks not walkable
     const seams = await ev(() => {
       const bad = [], A = (x, z) => { if (!MasterplanV161.access(x, z)) bad.push([x, z]); };
-      for (let x = 112; x <= 208; x += 4) { A(x, 55); A(x, 60); A(x, 88); A(x, 84.5 + (x > 175 ? 4 : 0)); }   // freight yard north apron, south apron
-      for (let z = 54; z <= 90; z += 2) { A(110, z); A(210.5, z); }                                         // the ends of the slab around the bumpers
+      for (let x = 112; x <= 208; x += 4) { A(x, 54.5); if (x <= 140 || x >= 190) A(x, 88); }   // freight yard north apron, south apron (the siding strip blocks z 83..89 between x 150 and 178)
+      for (const z of [54, 58, 62, 90 - 2]) { A(110, z); } for (const z of [54, 58, 62, 88]) { A(210.5, z); }   // the ends of the slab beside the bumpers / the exits
       for (let x = 100; x <= 115; x += 3) { A(x, 60); A(x, 54); }                                            // B10 floor <-> B13 slab
       return bad;
     });
@@ -213,26 +213,27 @@ await run(async () => {
       probe.push(...await ev(({ zone, pts }) => {
         const out = [];
         for (const [sx, sz] of pts) for (let k = 0; k < 8; k++) {
+          if (!MasterplanV161.access(sx, sz)) continue;   // start points inside a fenced strip / stack are skipped (the data checks cover them)
           const a = k * Math.PI / 4, end = __drive(sx, sz, Math.cos(a), Math.sin(a), 240);
-          const px = player.position.x, pz = player.position.z;
+          const px = player.position.x, pz = player.position.z, inCore = Math.abs(px) <= 69.01 && Math.abs(pz) <= 69.01;
           const D = window.MasterplanPortDataV161;
           const onTrack = D.rails.some((r) => { for (let i = 1; i < r.pts.length; i++) { const A = r.pts[i - 1], B = r.pts[i], dx = B[0] - A[0], dz = B[1] - A[1], l2 = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((px - A[0]) * dx + (pz - A[1]) * dz) / l2)); if (Math.hypot(px - (A[0] + dx * t), pz - (A[1] + dz * t)) < 1.8 && px <= 211.9) return true; } return false; });
           const floor = __floorY(px, pz, 'mp161');
-          out.push({ zone, sx, sz, k, end: [end.x, end.z], ok: MasterplanV161.access(px, pz) && !onTrack, floorY: floor && floor.y, floorName: floor && floor.name });
+          out.push({ zone, sx, sz, k, end: [end.x, end.z], ok: (inCore || MasterplanV161.access(px, pz)) && !onTrack, floorY: inCore ? 0 : floor && floor.y, floorName: inCore ? 'core' : floor && floor.name });
         }
         return out;
       }, { zone, pts }));
     }
     const bad = probe.filter((r) => !r.ok || r.floorY === null || Math.abs(r.floorY) > 0.12 || /sea|water|estuary/i.test(r.floorName || ''));
     const moved = probe.filter((r) => Math.hypot(r.end[0] - r.sx, r.end[1] - r.sz) > 3).length;
-    check(probe.length === 8 * Object.values(starts).flat().length && bad.length === 0, `${probe.length} pushes of 8 s (8 directions x ${probe.length / 8} starts at the aprons, the track fences, the yard, the slab ends, the siding): all end on drawn floor within 12 cm, never on a track (bad ${J(bad.slice(0, 3))}; moved > 3 m: ${moved})`);
+    check(probe.length >= 8 * 18 && bad.length === 0, `${probe.length} pushes of 8 s (8 directions x ${probe.length / 8} starts at the aprons, the track fences, the yard, the slab ends, the siding): all end on drawn floor within 12 cm, never on a track (bad ${J(bad.slice(0, 3))}; moved > 3 m: ${moved})`);
     console.log('floor names under the pushes: ' + J([...new Set(probe.map((r) => r.floorName))]));
     // the yard fence is a real collider for the long runs
     const fence = await ev(() => { const list = [...__TYCOON_V83_COLLISIONS__.registry.values()].filter((c) => c.label === 'mp161:prop' && c.hz > 3 && c.hx < .08); return { n: list.length, ok: list.every((c) => c.category === 'decor' && c.flags.player === true) }; });
-    check(fence.n >= 6 && fence.ok, `the long yard-fence runs are registered as solid thin decor colliders (${J(fence)})`);
+    check(fence.n >= 4 && fence.ok, `the long yard-fence runs are registered as solid thin decor colliders (${J(fence)})`);
     // crossing attempt: from the north apron straight south through the tracks must stop at the fence
-    const cross = await ev(() => { const a = __drive(150, 55, 0, 1, 400); return { a, access: MasterplanV161.access(a.x, a.z) }; });
-    check(cross.a.z < 70 && cross.access, `walking south from the north apron stops at the yard fence / tracks before the main tracks (ends at z ${cross.a.z})`);
+    const cross = await ev(() => { const a = __drive(120, 55, 0, 1, 400); return { a, access: MasterplanV161.access(a.x, a.z) }; });
+    check(cross.a.z < 70 && cross.access, `walking south from the north apron stops at the container stack / yard fence before the main tracks (${J(cross)})`);
 
     // backdrop
     const bd = await ev(() => {

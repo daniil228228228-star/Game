@@ -75,7 +75,7 @@ export async function openGame({ save, url, waitMs = 4000 } = {}) {
       } catch (_) {}
     }, { key: SAVE_KEY, value: save === 'clear' ? null : save });
   }
-  await page.goto(gameUrl, { waitUntil: 'load' });
+  await page.goto(gameUrl, { waitUntil: 'load', timeout: 90000 });
   if (waitMs) await page.waitForTimeout(waitMs);
   async function close() {
     await browser.close();
@@ -88,7 +88,7 @@ export async function openGame({ save, url, waitMs = 4000 } = {}) {
 // Returns the console errors that appeared during this load only.
 export async function reloadGame(g, waitMs = 4000) {
   const before = g.errors.length;
-  await g.page.reload({ waitUntil: 'load' });
+  await g.page.reload({ waitUntil: 'load', timeout: 90000 });
   if (waitMs) await g.page.waitForTimeout(waitMs);
   return g.errors.slice(before);
 }
