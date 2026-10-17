@@ -39498,9 +39498,10 @@ body.v164-context-lost #joyBase,body.v164-context-lost #jumpBtn,body.v164-contex
     return ru?'Авто':'Auto';
   }
   function shadowFor(level){
-    if(level==='low')return VISUAL_MOBILE?512:1024;
-    if(level==='balanced')return 1024;
-    return VISUAL_MOBILE?1024:2048;
+    // 2026-10-17: the shadow frustum is 144 m wide, so 1024 texels are 14 cm each (soft, swimming edges on a phone). Capable devices get 2048 (7 cm), weak ones one step less.
+    if(level==='low')return VISUAL_MOBILE?1024:1024;
+    if(level==='balanced')return DEVICE_CONSTRAINED_V164?1024:2048;
+    return 2048;
   }
   function applyShadow(level,force=false){ // v161 anti-shimmer kept under the adaptive map: normalBias >= half a texel (GROUND_HALF/size m), 0.09..0.12
     const now=performance.now(),size=shadowFor(level);
