@@ -34455,7 +34455,13 @@ function roadUnionContours(footprints){
       const next=(outgoing.get(e.kb)||[]).filter(x=>!used.has(x));if(!next.length)break;
       const d=sub(e.b,e.a);next.sort((a,b)=>{const da=sub(a.b,a.a),db=sub(b.b,b.a);return Math.atan2(cross(d,db),d.x*db.x+d.z*db.z)-Math.atan2(cross(d,da),d.x*da.x+d.z*da.z);});e=next[0];
     }
-    if(!closed)throw new Error('Open road union contour');
+    if(!closed){
+      // 2026-10-17: a dangling sliver (T-junction fill degeneracy: 4 edges, ~0.4 m, seen at the core hub (9.07, 5.44) while the stage planner lays roads for a stage jump) is not a contour: ignore it; a real open contour (> 1.5 m) still throws.
+      let len=0;for(let i=1;i<loop.length;i++)len+=Math.hypot(loop[i].x-loop[i-1].x,loop[i].z-loop[i-1].z);
+      if(loop.length>=2){const a=loop[loop.length-1],b=loop[0];len+=Math.hypot(a.x-b.x,a.z-b.z);}
+      if(len<1.5)continue;
+      throw new Error('Open road union contour');
+    }
     if(loop.length>=3)loops.push(loop);
   }
   return loops;
