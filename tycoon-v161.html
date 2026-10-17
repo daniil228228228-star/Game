@@ -19921,6 +19921,10 @@ body{color:var(--v43-text);-webkit-font-smoothing:antialiased;text-rendering:opt
       const mats=Array.isArray(o.material)?o.material:[o.material];
       mats.forEach(m=>{
         if(!m) return;
+        // v161: once per material. Every call used to shave 6 % off the roughness (and add 12 % metalness) of a SHARED material again, and the rebuild paths call this over and over:
+        // after a few dozen calls the asphalt of a big city was a mirror (roughness 0.22) and the sun showed on it as a blown-out white wedge.
+        if(m.userData&&m.userData.v43Polished){ if(m.map){ m.map.anisotropy=Math.max(m.map.anisotropy||1, typeof TEXTURE_ANISOTROPY!=='undefined'?TEXTURE_ANISOTROPY:4); } return; }
+        if(m.userData) m.userData.v43Polished=true;
         if('roughness' in m && m.roughness>0.24) m.roughness=Math.max(.22,m.roughness*.94);
         if('metalness' in m) m.metalness=Math.min(.24,(m.metalness||0)*1.12 + 0.01);
         if('envMapIntensity' in m) m.envMapIntensity=Math.max(0.6,m.envMapIntensity||0.75);
