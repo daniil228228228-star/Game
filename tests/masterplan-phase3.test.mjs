@@ -61,9 +61,9 @@ const HASH05 = { B01: 'b72aec06e08d', B02: 'df807cbb0355', B03: 'fecb9bf1aaaa', 
   const req = {}; for (const p of D.pads) req[p.id] = p.requires;
   const chain = (id, seen = new Set()) => { if (seen.has(id)) return seen; seen.add(id); (req[id] || []).forEach((r) => chain(r, seen)); return seen; };
   const bad = [];
-  for (const l of D.lots.filter((l) => l.pad >= 'B06')) for (const q of [...l.poly, l.door]) { if (![...chain(l.pad)].some((id) => D.land[id] && inPoly(q[0], q[1], D.land[id]))) bad.push([l.id, l.pad, q]); }
-  check(bad.length === 0 && D.lots.filter((l) => l.pad >= 'B06').length === 82, `data: all 82 phase-3 parcels (corners and doors) stand on land of their pad or of a pad it requires (${J(bad.slice(0, 3))})`);
-  check(D.pads.length === 10 && D.pads.slice(5).every((p) => p.gateStage === 8 && p.rep === 60) && J(D.pads.slice(5).map((p) => p.money)) === '[19200,28800,33600,38400,48000]' && Object.keys(D.land).join() === 'B03,B04,B05,B06,B07,B08,B09,B10', 'data: phase-3 pads: stage 8, reputation 60 (meta.phaseInfo), plan prices, land slabs');
+  for (const l of D.lots.filter((l) => l.pad >= 'B06' && l.pad <= 'B10')) for (const q of [...l.poly, l.door]) { if (![...chain(l.pad)].some((id) => D.land[id] && inPoly(q[0], q[1], D.land[id]))) bad.push([l.id, l.pad, q]); }
+  check(bad.length === 0 && D.lots.filter((l) => l.pad >= 'B06' && l.pad <= 'B10').length === 82, `data: all 82 phase-3 parcels (corners and doors) stand on land of their pad or of a pad it requires (${J(bad.slice(0, 3))})`);
+  check(D.pads.length >= 10 && D.pads.slice(5, 10).every((p) => p.gateStage === 8 && p.rep === 60) && J(D.pads.slice(5, 10).map((p) => p.money)) === '[19200,28800,33600,38400,48000]' && Object.keys(D.land).join().startsWith('B03,B04,B05,B06,B07,B08,B09,B10'), 'data: phase-3 pads: stage 8, reputation 60 (meta.phaseInfo), plan prices, land slabs');
 }
 
 const PAGE = () => {
@@ -121,7 +121,7 @@ await run(async () => {
     await ev(PAGE);
     const sig0 = await ev(() => __sig());
     const pre = await ev(() => ({ mp: __mpObjects(), markers: ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B09', 'B10'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), flags: { ...masterplanStateV161 } }));
-    check(pre.mp.length === 0 && pre.markers.every((m) => !m) && Object.keys(pre.flags).length === 10 && Object.values(pre.flags).every((f) => f === false), `fresh game: no object, no pad, ten flags all false (${J(pre.flags)})`);
+    check(pre.mp.length === 0 && pre.markers.every((m) => !m) && Object.keys(pre.flags).length >= 10 && Object.values(pre.flags).every((f) => f === false), `fresh game: no object, no pad, the flags all false (${J(pre.flags)})`);
     await ev(() => { stageIndex = 4; CITY_DISTRICTS.forEach((c, i) => cityState.districtRoads[c.id] = { level: i < 2 ? 3 : 1, pendingUntil: 0, roadsBuilt: true }); window.__TYCOON_ROAD_AUDIT_V59__.syncOuter(); refreshIndustrialPadMarkersV118(); });
     await ev(() => { window.__charges = []; const o = tryPayResources; tryPayResources = function (c) { const r = o.apply(this, arguments); if (r && c && c.money) window.__charges.push(c.money); return r; }; });
     const sigBefore = await ev(() => __sig());
@@ -318,7 +318,7 @@ await run(async () => {
     console.log('after reload: ' + await ev(() => JSON.stringify({ pos: [player.position.x, player.position.z], access: masterplanAccessV161(150, 30), floor: masterplanFloorV161(150, 30), stage: stageIndex, saved: JSON.parse(localStorage.getItem(SAVE_KEY)).player, raw: JSON.parse(knownSaveRawV64).player })));
     const far = await ev(() => ({ flags: { ...masterplanStateV161 }, x: player.position.x, z: player.position.z }));
     const wantFlags = J({ B01: true, B02: true, B03: true, B04: false, B05: true, B06: true, B07: true, B08: true, B09: true, B10: true });
-    check(J(far.flags) === wantFlags && far.x > 140 && far.z > 25, `reload keeps the flags (B04 was never bought) and the position in the business centre (${J(far)})`);
+    check(J(Object.fromEntries(Object.entries(far.flags).slice(0, 10))) === wantFlags && far.x > 140 && far.z > 25, `reload keeps the flags (B04 was never bought) and the position in the business centre (${J(far)})`);
     await ev(() => MasterplanV161.dropGroups());
     await page.waitForTimeout(1500);
     const lazy = await ev(() => Object.fromEntries(['mp161Net', 'mp161North', 'mp161Park', 'mp161Main', 'mp161Chord', 'mp161ParkE', 'mp161East', 'mp161Centre', 'mp161Sea'].map((n) => [n, !!scene.getObjectByName(n)])));
@@ -353,11 +353,11 @@ await run(async () => {
   try {
     await ev(PAGE);
     const o = await ev(() => ({ flags: { ...masterplanStateV161 }, mp: __mpObjects(), markers: ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B09', 'B10'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), sig: __sig(), stage: stageIndex }));
-    check(Object.keys(o.flags).length === 10 && Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: ten flags false, no object, no pad (${J({ flags: o.flags, mp: o.mp.length, markers: o.markers, stage: o.stage })})`);
+    check(Object.keys(o.flags).length >= 10 && Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: ten flags false, no object, no pad (${J({ flags: o.flags, mp: o.mp.length, markers: o.markers, stage: o.stage })})`);
     check(o.sig.count === 51 && o.sig.hash === 648310607, `OLD_SAVE road signature stays 51 / 648310607 (${o.sig.count}/${o.sig.hash})`);
     check(await ev(() => !MasterplanV161.access(130, -100) && !MasterplanV161.access(100, 0) && !MasterplanV161.floor(150, 0)), 'OLD_SAVE: no paid floor anywhere (access false)');
     const chain = await ev(() => {
-      const r = (d) => { restoreMasterplanV161(d); return Object.entries(masterplanStateV161).map(([k, v]) => k + (v ? '1' : '0')).join(' '); };
+      const r = (d) => { restoreMasterplanV161(d); return Object.entries(masterplanStateV161).slice(0, 10).map(([k, v]) => k + (v ? '1' : '0')).join(' '); };   // phase 4 adds B11 / B12 (tests/masterplan-phase4.test.mjs)
       const all = { B01: true, B02: true, B03: true, B04: true, B05: true, B06: true, B07: true, B08: true, B09: true, B10: true };
       return { all: r(all), noB05: r({ ...all, B05: false }), noB06: r({ ...all, B06: false }), noB07: r({ ...all, B07: false }), noB03: r({ ...all, B03: false }), none: r(null) };
     });
