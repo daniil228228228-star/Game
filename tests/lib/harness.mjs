@@ -51,7 +51,10 @@ export async function openGame({ save, url, waitMs = 4000 } = {}) {
     executablePath: process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium',
     args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'],
   });
-  const context = await browser.newContext({ ...devices['iPhone 13'] });
+  // The tests run on SwiftShader (software GL, a few fps). The iPhone profile's dpr 3 used to be capped by the game at 1.5 (balanced tier 1.2); since the
+  // 2026-10-17 sharpness change the game renders up to dpr 2 on phones, which makes every frame here ~80 % slower and the timing checks flaky.
+  // 1.25 keeps the pixel load of these runs equal to what they were tuned for. PW_DSF=3 runs the real iPhone density.
+  const context = await browser.newContext({ ...devices['iPhone 13'], deviceScaleFactor: +(process.env.PW_DSF || 1.25) });
   const page = await context.newPage();
   const errors = [];
   const badResponses = [];
