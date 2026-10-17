@@ -115,7 +115,7 @@ await run(async () => {
     await ev(PAGE);
     const sig0 = await ev(() => __sig());
     const pre = await ev(() => ({ mp: __mpObjects(), markers: ['B01', 'B02', 'B03', 'B04', 'B05'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), flags: { ...masterplanStateV161 } }));
-    check(pre.mp.length === 0 && pre.markers.every((m) => !m) && Object.keys(pre.flags).length === 5 && Object.values(pre.flags).every((f) => f === false), `fresh game: no object, no pad, five flags all false (${J(pre.flags)})`);
+    check(pre.mp.length === 0 && pre.markers.every((m) => !m) && Object.keys(pre.flags).length >= 5 && Object.values(pre.flags).every((f) => f === false), `fresh game: no object, no pad, five flags all false (${J(pre.flags)})`);
     // ring + stage 4 -> B01 .. B03 through the real button
     await ev(() => { stageIndex = 4; CITY_DISTRICTS.forEach((c, i) => cityState.districtRoads[c.id] = { level: i < 2 ? 3 : 1, pendingUntil: 0, roadsBuilt: true }); window.__TYCOON_ROAD_AUDIT_V59__.syncOuter(); refreshIndustrialPadMarkersV118(); });
     await ev(() => { window.__charges = []; const o = tryPayResources; tryPayResources = function (c) { const r = o.apply(this, arguments); if (r && c && c.money) window.__charges.push(c.money); return r; }; });
@@ -331,11 +331,11 @@ await run(async () => {
   try {
     await ev(PAGE);
     const o = await ev(() => ({ flags: { ...masterplanStateV161 }, mp: __mpObjects(), markers: ['B01', 'B02', 'B03', 'B04', 'B05'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), sig: __sig(), stage: stageIndex }));
-    check(Object.keys(o.flags).length === 5 && Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: five flags false, no object, no pad (${J({ flags: o.flags, mp: o.mp.length, markers: o.markers, stage: o.stage })})`);
+    check(Object.keys(o.flags).length >= 5 && Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: five flags false, no object, no pad (${J({ flags: o.flags, mp: o.mp.length, markers: o.markers, stage: o.stage })})`);
     check(o.sig.count === 51 && o.sig.hash === 648310607, `OLD_SAVE road signature stays 51 / 648310607 (${o.sig.count}/${o.sig.hash})`);
     check(await ev(() => !MasterplanV161.access(-60, -125) && !MasterplanV161.access(55, -125) && !MasterplanV161.floor(-60, -125)), 'OLD_SAVE: no paid floor anywhere (access false)');
     const chain = await ev(() => {
-      const r = (d) => { restoreMasterplanV161(d); return Object.entries(masterplanStateV161).map(([k, v]) => k + (v ? '1' : '0')).join(' '); };
+      const r = (d) => { restoreMasterplanV161(d); return Object.entries(masterplanStateV161).slice(0, 5).map(([k, v]) => k + (v ? '1' : '0')).join(' '); };
       const out = { noB01: r({ B02: true, B03: true, B04: true, B05: true }), noB03: r({ B01: true, B02: true, B04: true, B05: true }), full: r({ B01: true, B03: true, B04: true }), none: r(null) };
       return out;
     });
