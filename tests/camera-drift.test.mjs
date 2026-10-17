@@ -34,7 +34,9 @@ try {
     const w = new THREE.Mesh(new THREE.BoxGeometry(60, 40, 1.2), new THREE.MeshBasicMaterial());
     w.name = '__testCameraWall';
     const c = controls.target.clone().addScaledVector(dir, 4.5); w.position.set(c.x, 10, c.z); w.rotation.y = Math.atan2(dir.x, dir.z);
-    scene.add(w); w.updateMatrixWorld(true); cameraSolidMeshes.push(w);
+    scene.add(w); w.updateMatrixWorld(true);
+    // the game rebuilds cameraSolidMeshes from its buildings every now and then: keep the test wall in the list while it stands
+    window.__keepWall = true; const keep = () => { if (!window.__keepWall) return; if (!cameraSolidMeshes.includes(w)) cameraSolidMeshes.push(w); requestAnimationFrame(keep); }; keep();
   });
   await frames(120);
   const pulled = { dist: await dist(), desired: await desired(), shift: await ev(() => +cameraResolverShiftV163.length().toFixed(2)) };
@@ -50,7 +52,7 @@ try {
   check(touched.desired > 12, `a touch while pulled in keeps the chosen zoom (${J(touched)})`);
 
   // the wall goes away: the camera must come back to 13 m by itself
-  await ev(() => { const w = scene.getObjectByName('__testCameraWall'); const i = cameraSolidMeshes.indexOf(w); if (i >= 0) cameraSolidMeshes.splice(i, 1); scene.remove(w); });
+  await ev(() => { window.__keepWall = false; const w = scene.getObjectByName('__testCameraWall'); const i = cameraSolidMeshes.indexOf(w); if (i >= 0) cameraSolidMeshes.splice(i, 1); scene.remove(w); });
   await frames(240);
   const back = { dist: await dist(), desired: await desired() };
   check(back.dist > 11.5, `after the wall is gone the camera returns to the chosen distance (${J(back)})`);
