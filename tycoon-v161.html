@@ -1620,6 +1620,7 @@ const hiddenCameraFoliage = [];
 function refreshCameraSolidMeshes() {
   cameraSolidMeshes.length = 0;
   for (const b of buildings) if (!b.underConstruction && b.mesh) cameraSolidMeshes.push(b.mesh);
+  if (window.PlanCV161) for (const m of window.PlanCV161.deckMeshes()) cameraSolidMeshes.push(m);   // plan C: walls / decks / ramps of the city are solid for the camera
 }
 function registerCameraFoliage(root) {
   if (!root || cameraFoliageRoots.includes(root)) return;

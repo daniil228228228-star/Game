@@ -321,7 +321,7 @@ await run(async () => {
     await ev(() => { PlanCV161.R_BUILD = 128; PlanCV161.R_KEEP = 190; });
     // real phone view (the game's own camera), day and night, at every structure type
     if (SHOTS) {
-      const spots = [['circus', 11, -11, 0], ['signal', 0, 112, 0], ['ring-n7', -232, -146, 0], ['I1-deck', 40, -240, 0], ['I1-under', 0, -222, 0], ['I2', 250, -30, 0], ['I3', 250, -200, 0], ['I4-bridge', 252, 140, 0], ['rail-under', -160, -112, 0], ['footbridge', 123.6, -14, 0], ['river-bridge', -190, 0, 0], ['station', -40, -100, 0], ['port', 120, 150, 0]];
+      const spots = [['circus', 11, -11, 0], ['signal', 0, 112, 0], ['ring-n7', -232, -146, 0], ['I1-deck', 40, -240, 0], ['I1-under', 0, -222, 0], ['I2', 250, -30, 0], ['I3', 250, -200, 0], ['I4-bridge', 262, 180, 0], ['rail-under', -160, -112, 0], ['footbridge', 131, -9, 0], ['river-bridge', -190, 0, 0], ['station', -40, -100, 0], ['port', 120, 150, 0]];
       for (const night of [false, true]) {
         await ev((n) => { try { __TYCOON_V40__.setTime(n ? 22 : 12); } catch (_) {} }, night);
         for (const [name, x, z] of spots) {

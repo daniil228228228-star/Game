@@ -35,10 +35,14 @@
   function buildCell(cx, cz) {
     const key = cx + ',' + cz, data = D.cells[key];
     if (!data) return null;
-    const pos = [], nor = [], col = [];
-    const v = (x, y, z, nx, ny, nz, c) => { pos.push(x, y, z); nor.push(nx, ny, nz); col.push(c.r, c.g, c.b); };
+    let pos = [], nor = [], col = [];
+    const dpos = [], dnor = [], dcol = [];
+    let cur = 0;
+    let tone = 1;   // the sun + ACES wash light colours out: grass and landscape are drawn 20 % darker than their palette entry
+    const v = (x, y, z, nx, ny, nz, c) => { const P = cur ? dpos : pos, Nn = cur ? dnor : nor, C = cur ? dcol : col; P.push(x, y, z); Nn.push(nx, ny, nz); C.push(c.r * tone, c.g * tone, c.b * tone); };
     for (const layer of ['g', 'r', 'p', 'd']) {
       const L = data[layer]; if (!L) continue;
+      cur = layer === 'd' ? 1 : 0; tone = layer === 'g' ? 0.8 : 1;
       const dv = L.v;
       if (dv) for (let i = 0; i < dv.length; i += 10) {
         const c = lin[dv[i + 9]];
@@ -76,29 +80,36 @@
         v(x0, y0, z0, nx, 0, nz, c); v(x1, y1, z1, nx, 0, nz, c); v(x0, y1, z0, nx, 0, nz, c);
       }
     }
-    if (!pos.length) return null;
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    g.boundingBox = new THREE.Box3(new THREE.Vector3(cx * CELL, -3, cz * CELL), new THREE.Vector3((cx + 1) * CELL, 8, (cz + 1) * CELL));
-    g.boundingSphere = new THREE.Sphere(new THREE.Vector3((cx + 0.5) * CELL, 2, (cz + 0.5) * CELL), CELL * 0.8);
-    const mesh = new THREE.Mesh(g, mat);
-    mesh.name = 'planC_' + key; mesh.receiveShadow = true; mesh.castShadow = false; mesh.matrixAutoUpdate = false;
-    mesh.userData.v83CollisionIgnore = true; mesh.userData.planCCell = key; mesh.userData.v152Skip = true;
-    return mesh;
+    const mk = (P, Nn, C, name, solid) => {
+      if (!P.length) return null;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(Nn, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+      g.boundingBox = new THREE.Box3(new THREE.Vector3(cx * CELL, -3, cz * CELL), new THREE.Vector3((cx + 1) * CELL, 8, (cz + 1) * CELL));
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3((cx + 0.5) * CELL, 2, (cz + 0.5) * CELL), CELL * 0.8);
+      const mesh = new THREE.Mesh(g, mat);
+      mesh.name = name; mesh.receiveShadow = true; mesh.castShadow = !!solid; mesh.matrixAutoUpdate = false;
+      mesh.userData.v83CollisionIgnore = true; mesh.userData.planCCell = key; mesh.userData.v152Skip = true; mesh.userData.planCSolid = !!solid;
+      return mesh;
+    };
+    const ground = mk(pos, nor, col, 'planC_' + key, false), decks = mk(dpos, dnor, dcol, 'planCd_' + key, true);
+    if (!ground && !decks) return null;
+    return { ground, decks };
   }
   function addCell(cx, cz) {
     const key = cx + ',' + cz;
     if (cells.has(key)) return false;
-    const mesh = buildCell(cx, cz);
-    cells.set(key, { mesh, cx, cz });
-    if (mesh) { root.add(mesh); mesh.updateMatrix(); }
+    const built = buildCell(cx, cz);
+    cells.set(key, { mesh: built && built.ground, decks: built && built.decks, cx, cz });
+    if (built) for (const m of [built.ground, built.decks]) if (m) { root.add(m); m.updateMatrix(); }
+    if (built && built.decks && typeof cameraSolidMeshes !== 'undefined' && Array.isArray(cameraSolidMeshes)) if (!cameraSolidMeshes.includes(built.decks)) cameraSolidMeshes.push(built.decks);   // the camera never goes through a wall / deck of the city
     return true;
   }
   function dropCell(key) {
     const c = cells.get(key); if (!c) return;
-    if (c.mesh) { root.remove(c.mesh); c.mesh.geometry.dispose(); }
+    for (const m of [c.mesh, c.decks]) if (m) { root.remove(m); m.geometry.dispose(); }
+    if (c.decks && typeof cameraSolidMeshes !== 'undefined' && Array.isArray(cameraSolidMeshes)) { const i = cameraSolidMeshes.indexOf(c.decks); if (i >= 0) cameraSolidMeshes.splice(i, 1); }
     cells.delete(key);
   }
 
@@ -192,9 +203,10 @@
     return n;
   }
   api.ensureNear = ensureNear;
+  api.deckMeshes = () => [...cells.values()].map((c) => c.decks).filter(Boolean);
   api.dropAll = () => { for (const k of [...cells.keys()]) dropCell(k); rebuildFurniture(); };
   api.refresh = (force) => { if (force) api.dropAll(); ensureNear(player.position.x, player.position.z); };
-  api.stats = () => { let meshes = 0, tris = 0; for (const c of cells.values()) if (c.mesh) { meshes++; tris += c.mesh.geometry.attributes.position.count / 3; } return { cells: cells.size, meshes, tris, furniture: { ...api.furniture } }; };
+  api.stats = () => { let meshes = 0, tris = 0; for (const c of cells.values()) for (const m of [c.mesh, c.decks]) if (m) { meshes++; tris += m.geometry.attributes.position.count / 3; } return { cells: cells.size, meshes, tris, furniture: { ...api.furniture } }; };
   // the walkable floor: slide along the edge of the water like the plan B layer
   const SLIDE_STEP = 2;
   api.floor = D.floor; api.access = D.access;
