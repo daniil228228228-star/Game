@@ -13,7 +13,7 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
 
 // 1. signal spacing along each street line
 {
-  const sig = P.junctions.filter((j) => j.type === 'signal'), bad = [], seen = [];
+  const sig = P.junctions.filter((j) => j.type === 'signal'), bad = [], seen = [], accepted = [];
   for (const axis of [0, 1]) {
     const groups = new Map();
     for (const j of sig) { const k = j.at[1 - axis]; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(j); }
@@ -27,11 +27,12 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
         const terms = (a.terminal ? 1 : 0) + (b.terminal ? 1 : 0), cls = between[0].cls;
         const min = terms === 2 ? 36 : terms === 1 ? 50 : inner(a.at[0], a.at[1]) && inner(b.at[0], b.at[1]) ? 80 : 160;
         seen.push(d);
+        if (d < min && (a.big || b.big)) { accepted.push(`${a.at}->${b.at} ${d} < ${min}`); continue; }   // I2 is at grade by the owner's decision (2026-10-18): a documented deviation, listed in the detail
         if (d < min) bad.push(`${a.at}->${b.at} ${d} < ${min} (${cls}${terms ? ', ramp terminal' : ''})`);
       }
     }
   }
-  check('signal spacing (downtown >= 80, outside >= 160, ramp terminals >= 36, terminal-to-signal >= 50)', !bad.length, bad.length ? bad.join('; ') : `${seen.length} pairs, min ${Math.min(...seen)} m`);
+  check('signal spacing (downtown >= 80, outside >= 160, ramp terminals >= 36, terminal-to-signal >= 50)', !bad.length, (bad.length ? bad.join('; ') : `${seen.length} pairs, min ${Math.min(...seen)} m`) + (accepted.length ? ` | accepted deviations at I2 (owner-mandated at-grade crossing): ${accepted.join(', ')}` : ''));
 }
 // 2. block length
 {
@@ -151,8 +152,8 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
 }
 // 11. motorway access only by interchanges (no junctions, signals or stops on M1 / M2)
 {
-  const bad = P.junctions.filter((j) => j.classes.includes('motorway'));
-  check('motorways have no at-grade junctions or signals', !bad.length, bad.length ? bad.map((j) => j.at).join('; ') : `${P.interchanges.length} interchanges (${P.interchanges.map((i) => i.kind).join(', ')})`);
+  const bad = P.junctions.filter((j) => j.classes.includes('motorway') && !j.big), atGrade = P.junctions.filter((j) => j.classes.includes('motorway') && j.big);
+  check('motorways have no at-grade junctions or signals (except I2, the owner-mandated crossing)', !bad.length, bad.length ? bad.map((j) => j.at).join('; ') : `${P.interchanges.length} interchanges (${P.interchanges.map((i) => i.kind).join(', ')}); at-grade: ${atGrade.map((j) => j.at).join(' ')}`);
 }
 
 if (process.argv.includes('--json')) console.log(JSON.stringify(results, null, 1));

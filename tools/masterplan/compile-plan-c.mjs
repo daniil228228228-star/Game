@@ -200,7 +200,7 @@ function smoothFn(fn, lo, hi, step = 2, k = 2) {
   return (v) => { const t = Math.max(0, Math.min(n - 1e-9, (v - lo) / step)), i = Math.floor(t), f = t - i; return arr[i] * (1 - f) + arr[i + 1] * f; };
 }
 const trap = (d) => Math.max(0, Math.min(DECKH, DECKH - SLOPE * Math.max(0, d - FLATH)));
-const hM1 = smoothFn((x) => trap(Math.abs(x)), -330, 390), hM2 = smoothFn((z) => Math.max(trap(Math.abs(z - M1_Z)), trap(Math.abs(z))), -390, 100);
+const hM1 = smoothFn((x) => trap(Math.abs(x)), -330, 390), hM2 = smoothFn((z) => trap(Math.abs(z - M1_Z)), -390, 100);   // M2 rises only over M1 (I3); it is at ground level well before the at-grade crossing I2 (z -150 .. 88)
 const intervalsAbove = (fn, lo, hi, th) => { const out = []; let a = null; for (let v = lo; v <= hi + 1e-9; v += 1) { const on = fn(v) > th; if (on && a == null) a = v; if (!on && a != null) { out.push([a, v]); a = null; } } if (a != null) out.push([a, hi]); return out; };
 // Include the COMPLETE rounded toe, not only heights > 25 cm. Otherwise the
 // flat asphalt stops at an elevated, uncapped edge: a visible grass slit.
@@ -208,15 +208,16 @@ const deckIntervals = (fn, lo, hi) => intervalsAbove(fn, lo, hi, 1e-6).map(([a, 
 const M1_UP = deckIntervals(hM1, -300, 370), M2_UP = deckIntervals(hM2, -370, 88);
 // raster cuts: the ground surface of a motorway disappears where its deck stands on a causeway (the crossing road keeps its own surface under the deck)
 function cutsOf(e) {
+  if (e.split) return [[-1e4, 1e4]];   // I2: the straight street is replaced by the split carriageways round the islands
   if (e.cls !== 'motorway') return [];
   return e.ref === 'M1' ? M1_UP : e.ref === 'M2' ? M2_UP : [];
 }
 // old flat-crossing intervals, still used to keep lamps / trees away from the crossings
 function furnCuts(e) {
   const cuts = [];
+  if (e.split) cuts.push([-1e4, 1e4]);
   if (e.underRail != null && e.dir === 'z') cuts.push([e.underRail - 7, e.underRail + 7]);
   if (e.underMotorway === 'M1') cuts.push([M1_Z - MW - 0.8, M1_Z + MW + 0.8]);
-  if (e.underMotorway === 'M2') cuts.push([M2_X - MW - 0.8, M2_X + MW + 0.8]);
   if (e.underRamps === 'I4') cuts.push([M2_X - MW - 6, M2_X + MW + 6]);
   return cuts;
 }
@@ -231,6 +232,7 @@ const shapes = [];   // {x0,z0,x1,z1,type}
 const PRIO = { walk: 1, asph: 2, med: 3 };
 const addShape = (x0, z0, x1, z1, type) => { if (x1 - x0 > 1e-4 && z1 - z0 > 1e-4) shapes.push({ x0: R3(x0), z0: R3(z0), x1: R3(x1), z1: R3(z1), type }); };
 const roundAt = (nodeId) => { const j = J.get(nodeId); return j && j.type === 'roundabout' ? j : null; };
+const mTrim = (id) => { const n = N.get(id); return n.legs.length > 1 ? (n.x === M2_X && n.z === 0 ? 12 : 1) : 0; };   // the motorway median ends 12 m before the I2 crossing (zebra, stop line)
 const edgeSpan = (e) => {   // along-axis span of the carriageway/sidewalk, trimmed to the chord of a roundabout
   const a = N.get(e.a), b = N.get(e.b), ax = e.dir === 'x' ? 0 : 1, lo = Math.min(a.x * (1 - ax) + a.z * ax, b.x * (1 - ax) + b.z * ax), hi = Math.max(a.x * (1 - ax) + a.z * ax, b.x * (1 - ax) + b.z * ax);
   const lowNode = (a.x * (1 - ax) + a.z * ax) <= (b.x * (1 - ax) + b.z * ax) ? e.a : e.b, highNode = lowNode === e.a ? e.b : e.a;
@@ -248,7 +250,7 @@ for (const e of PLAN.edges) {
   if (cl.median > 0) {
     const t0 = trimAt(s.lowNode, e), t1 = trimAt(s.highNode, e), mh = cl.median / 2;
     const lo0 = Math.min(e.dir === 'x' ? a.x : a.z, e.dir === 'x' ? N.get(e.b).x : N.get(e.b).z), hi0 = Math.max(e.dir === 'x' ? a.x : a.z, e.dir === 'x' ? N.get(e.b).x : N.get(e.b).z);
-    const mlo = e.cls === 'motorway' ? lo0 + (N.get(s.lowNode).legs.length > 1 ? 1 : 0) : lo0 + t0, mhi = e.cls === 'motorway' ? hi0 - (N.get(s.highNode).legs.length > 1 ? 1 : 0) : hi0 - t1;
+    const mlo = e.cls === 'motorway' ? lo0 + mTrim(s.lowNode) : lo0 + t0, mhi = e.cls === 'motorway' ? hi0 - mTrim(s.highNode) : hi0 - t1;
     if (mhi - mlo > 1) for (const [lo, hi] of subtractIntervals(mlo, mhi, cuts)) put(lo, hi, -mh, mh, e.cls === 'motorway' ? 'medM' : 'med');
   }
 }
@@ -393,7 +395,7 @@ for (const e of PLAN.edges) {
   const lowNode = (ax === 'x' ? a.x <= b.x : a.z <= b.z) ? e.a : e.b, highNode = lowNode === e.a ? e.b : e.a;
   const c = ax === 'x' ? a.z : a.x;
   const mo = e.cls === 'motorway';
-  const t0 = mo ? 1 : trimAt(lowNode, e), t1 = mo ? 1 : trimAt(highNode, e);
+  const t0 = mo ? Math.max(1, mTrim(lowNode)) : trimAt(lowNode, e), t1 = mo ? Math.max(1, mTrim(highNode)) : trimAt(highNode, e);
   const lo = lo0 + t0, hi = hi0 - t1;
   if (hi - lo < 1) continue;
   const parts = subtractIntervals(lo, hi, cuts);
@@ -438,7 +440,7 @@ for (const cr of PLAN.crossings) {
   if (cr.arm) {
     const j = J.get(cr.id.split('-')[0]); if (!j) continue;
     const dir = cr.arm, cross = j.arms.filter((a) => (a.dir[0] !== 0) !== (dir[0] !== 0)).map((a) => hw(a.cls));
-    const along = cr.setback != null ? cr.setback : (cross.length ? Math.max(...cross) : 0) + 2.2;
+    const along = cr.setback != null ? cr.setback : Math.max(cross.length ? Math.max(...cross) : 0, j.boxZ || 0) + 2.2;
     const arm = j.arms.find((a) => a.dir[0] === dir[0] && a.dir[1] === dir[1]);
     if (!arm) continue;
     zebra(j.at, dir, along, cr.cls, cr.kind === 'ped-signal' ? 1.4 : 1.1);
@@ -467,14 +469,15 @@ for (const j of PLAN.junctions) {
       }
     }
   } else if (j.type === 'signal') {
-    const hx = Math.max(...j.arms.filter((a) => a.dir[0] === 0).map((a) => hw(a.cls)), j.terminal ? 1.0 : 0), hz = Math.max(...j.arms.filter((a) => a.dir[1] === 0).map((a) => hw(a.cls)), j.terminal ? 1.0 : 0);
+    const hx = Math.max(...j.arms.filter((a) => a.dir[0] === 0).map((a) => hw(a.cls)), j.terminal ? 1.0 : 0), hz = Math.max(...j.arms.filter((a) => a.dir[1] === 0).map((a) => hw(a.cls)), j.terminal ? 1.0 : 0, j.boxZ || 0);
     for (const a of j.arms) {
       const w = hw(a.cls), along = (a.dir[0] !== 0 ? hx : hz) + 2.2;
       if (!PLAN.crossings.some((cr) => cr.id.startsWith(j.id + '-') && cr.arm && cr.arm[0] === a.dir[0] && cr.arm[1] === a.dir[1])) zebra(c, a.dir, along, a.cls, 1.4);
-      if (a.cls === 'arterial' || a.cls === 'collector') stopLine(c, a.dir, along + 1.7, a.cls);
-      if (a.cls === 'arterial') for (let k = 0; k < 2; k++) arrow(c, a.dir, along + 6.5, CLS.arterial.median / 2 + CLS.arterial.lane * (k + 0.5));
+      if (a.cls === 'arterial' || a.cls === 'collector' || a.cls === 'motorway') stopLine(c, a.dir, along + 1.7, a.cls);
+      if (a.cls === 'arterial' || a.cls === 'motorway') for (let k = 0; k < 2; k++) arrow(c, a.dir, along + 6.5, CLS[a.cls].median / 2 + CLS[a.cls].lane * (k + 0.5));
       const r = [a.dir[1], -a.dir[0]];
       furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) + r[0] * (w + 0.55), c[1] + a.dir[1] * (along + 1.2) + r[1] * (w + 0.55), yawOf(a.dir)]);
+      if (CLS[a.cls].median > 0) furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) - r[0] * (CLS[a.cls].median / 2 + 0.45), c[1] + a.dir[1] * (along + 1.2) - r[1] * (CLS[a.cls].median / 2 + 0.45), yawOf(a.dir)]);   // second head on the median: two per approach
     }
   } else if (j.type === 'roundabout') {
     for (const a of j.arms) {
@@ -482,6 +485,68 @@ for (const j of PLAN.junctions) {
       furniture.pole.push([c[0] + a.dir[0] * (j.R + 1.2) + r[0] * (hw(a.cls) + 0.5), c[1] + a.dir[1] * (j.R + 1.2) + r[1] * (hw(a.cls) + 0.5), yawOf(a.dir), SIGN.yield]);
     }
     furniture.pole.push([c[0] + (j.R >= 12 ? 3.2 : 0), c[1], 0, SIGN.round]);
+  }
+}
+// ---- 5b. I2: the street splits into two one-way carriageways round a green island on each side of the main road (the Svetlanovskaya Square scheme, simplified).
+// West island: oval (round tip away from the crossing), east island: rounded rectangle; carriageway band 4.8 m = 2 lanes of 2.4, island half width 6, sidewalks outside,
+// the band ends square at the M2 edge with 7 m kerb returns (right-turn corners), zebra + signal heads on every branch, stop line + arrows + lane dashes on the inbound one.
+const SPLIT = { hz: 6, band: 4.8, walk: 1.8, R: 7 }, islandsOut = [];
+{
+  const xm = M2_X, mw = MW;
+  const rr = (xa, xb, hz, rcs, d, n = 8) => {   // rounded-rectangle outline, CCW from the right-bottom side; corner order TR, TL, BL, BR; offset d
+    const cs = [[xb, hz, 0], [xa, hz, 90], [xa, -hz, 180], [xb, -hz, 270]], out = [];
+    cs.forEach(([cx, cz, a0], k) => { const r = rcs[k], ccx = cx + (cx === xb ? -r : r), ccz = cz + (cz === hz ? -r : r); for (let i = 0; i <= n; i++) { const t = (a0 + 90 * i / n) * Math.PI / 180; out.push([ccx + Math.cos(t) * (r + d), ccz + Math.sin(t) * (r + d)]); } });
+    return out;
+  };
+  const strip = (A, B, y, ci, keep = () => true) => { for (let i = 0; i < A.length; i++) { const j = (i + 1) % A.length; if (!keep([(A[i][0] + A[j][0] + B[i][0] + B[j][0]) / 4, (A[i][1] + A[j][1] + B[i][1] + B[j][1]) / 4])) continue; emitTri('r', A[i], B[i], A[j], y, ci); emitTri('r', B[i], B[j], A[j], y, ci); } };
+  const wall = (A, y0, y1, ci, keep = () => true) => { for (let i = 0; i < A.length; i++) { const j = (i + 1) % A.length; if (keep([(A[i][0] + A[j][0]) / 2, (A[i][1] + A[j][1]) / 2])) emitWall(A[i][0], A[i][1], A[j][0], A[j][1], y0, y1, ci); } };
+  for (const side of [-1, 1]) {   // -1 west, +1 east
+    const nose = xm + side * (mw + SPLIT.band + 0.1 - 0.0) - side * 0.0, farX = side < 0 ? 212 : 286;   // island end on the crossing side / the far end
+    const edgeM = xm + side * mw, noseX = edgeM + side * SPLIT.band;     // x of the island nose: one band width from the M2 edge
+    const xa = Math.min(noseX, farX), xb = Math.max(noseX, farX), hz = SPLIT.hz;
+    const small = 0.6, far = side < 0 ? 6 : 3;
+    const rcs = side < 0 ? [small, far, far, small] : [far, small, small, far];   // TR, TL, BL, BR
+    const inner = rr(xa, xb, hz, rcs, 0), outerB = rr(xa, xb, hz, rcs.map((r, k) => (side < 0 ? (k === 0 || k === 3) : (k === 1 || k === 2)) ? 0.01 : r), SPLIT.band, 8);
+    // outer outline: sharp corners on the crossing side
+    const outer = outerB;
+    const nearM = (q) => Math.abs(q[0] - edgeM) < SPLIT.R + 0.6, tipStub = (q) => (side < 0 ? q[0] < farX + 1 : q[0] > farX - 1) && Math.abs(q[1]) < hw('arterial') + CLS.arterial.sidewalk + 0.3;
+    strip(inner, outer, H.asph, CI.asph);
+    // sidewalk ring outside the band (not at the street stub, not at the corners)
+    const outer2 = rr(xa, xb, hz, rcs.map((r, k) => (side < 0 ? (k === 0 || k === 3) : (k === 1 || k === 2)) ? 0.01 : r), SPLIT.band + SPLIT.walk, 8);
+    strip(outer, outer2, H.walk, CI.walk, (q) => !nearM(q) && !tipStub(q));
+    wall(outer, H.asph, H.walk, CI.kerb, (q) => !nearM(q) && !tipStub(q));
+    // island: kerb, rim, lawn
+    wall(inner, H.asph, H.island + 0.03, CI.kerb);
+    const c0 = [(xa + xb) / 2, 0];
+    for (let i = 0; i < inner.length; i++) { const j = (i + 1) % inner.length; emitTri('r', c0, inner[i], inner[j], H.island + 0.03, CI.islandC); }
+    const lawn = rr(xa, xb, hz, rcs, -0.7);
+    for (let i = 0; i < lawn.length; i++) { const j = (i + 1) % lawn.length; emitTri('r', c0, lawn[i], lawn[j], H.island + 0.035, CI.islandL); }
+    islandsOut.push({ side, poly: inner.map((q) => [R2(q[0]), R2(q[1])]), outer: outer.map((q) => [R2(q[0]), R2(q[1])]) });
+    // kerb returns at the crossing: asphalt fillets between the band edge and the M2 edge
+    for (const sz of [-1, 1]) {
+      const K = [edgeM, sz * (hz + SPLIT.band)], Rr = SPLIT.R, O = [edgeM + side * Rr, sz * (hz + SPLIT.band + Rr)], arc = [];
+      for (let k = 0; k <= 12; k++) { const t = k / 12 * Math.PI / 2; arc.push([O[0] - side * Rr * Math.sin(t), O[1] - sz * Rr * Math.cos(t)]); }
+      for (let k = 0; k + 1 < arc.length; k++) { emitTri('r', K, arc[k], arc[k + 1], H.asph, CI.asph); emitWall(arc[k][0], arc[k][1], arc[k + 1][0], arc[k + 1][1], H.asph, H.walk, CI.kerb); }
+    }
+    // markings: zebra on both branches, stop line + arrows + lane dashes on the inbound one (west: south branch eastbound, east: north branch westbound)
+    const inSz = side < 0 ? 1 : -1, zx = noseX - side * 3.2, sx = noseX - side * 6.0;
+    for (const sz of [-1, 1]) {
+      const z0 = sz * hz, z1 = sz * (hz + SPLIT.band), lo = Math.min(z0, z1), hi = Math.max(z0, z1);
+      for (let z = lo + 0.45; z < hi - 0.3; z += 0.9) emitRect('p', 'q', zx - 1.1, z - 0.22, zx + 1.1, z + 0.22, H.paint, CI.white);
+      if (sz === inSz) {
+        emitRect('p', 'q', sx - 0.2, lo + 0.1, sx + 0.2, hi - 0.1, H.paint, CI.white);
+        const zc = sz * (hz + SPLIT.band / 2), x0 = Math.min(sx - side * 1.5, farX + side * 8), x1 = Math.max(sx - side * 1.5, farX + side * 8);
+        dashed('x', zc, Math.min(x0, x1), Math.max(x0, x1), 0.18, 1.0, 1.4, H.paint, CI.white);
+        for (const lat of [-1, 1]) arrow([sx - side * 12, zc + lat * 1.2], [-side, 0], 0, 0);
+        furniture.sig.push([sx - side * 0.8, sz * (hz + SPLIT.band + 0.7), yawOf([-side, 0])], [sx - side * 0.8, sz * (hz - 0.7), yawOf([-side, 0])]);
+      } else {
+        for (const lat of [-1, 1]) arrow([sx + side * 4, sz * (hz + SPLIT.band / 2) + lat * 1.2], [side, 0], 0, 0);
+      }
+    }
+    // furniture on the island: lamps along the axis, a few trees
+    for (const t of [0.22, 0.5, 0.78]) furniture.lamp.push([R2(xa + (xb - xa) * t), 0, 0]);
+    for (const [t, zz] of [[0.14, 0], [0.34, 2.4], [0.34, -2.4], [0.66, 2.4], [0.66, -2.4], [0.86, 0]]) { const px = xa + (xb - xa) * t; cellOf(Math.floor(px / CELL), Math.floor(zz / CELL)).f.tree.push(R2(px), R2(zz), R2(0.9 + 0.2 * Math.abs(Math.sin(px))), R2(Math.abs(Math.cos(px * 3))));
+    }
   }
 }
 for (const cr of PLAN.crossings) if (cr.kind === 'ped-signal-midblock') {
@@ -815,7 +880,7 @@ function sampleAxis(axis, c, lo, hi, hfn, step = 3, extra = []) {
   return [...vs].sort((a, b) => a - b).map((v) => axis === 'x' ? [v, c, hfn(v)] : [c, v, hfn(v)]);
 }
 // motorway causeways
-const MOTOR_CROSS = { M1: [0], M2: [M1_Z, 0] };   // axis coordinates where another road passes underneath
+const MOTOR_CROSS = { M1: [0], M2: [M1_Z] };   // axis coordinates where another road passes underneath
 for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z', M2_X, M2_UP, hM2]]) for (const [a, b] of up) {
   const pts = sampleAxis(axis, c, a, b, hfn, 3, MOTOR_CROSS[ref].flatMap((v) => [v - 7.4, v + 7.4])), S = arcLen(pts), s0 = axis === 'x' ? pts[0][0] : pts[0][1];
   const crossings = MOTOR_CROSS[ref].map((v) => [v - 7.4 - s0, v + 7.4 - s0]).filter(([x0, x1]) => x1 > 0 && x0 < S[S.length - 1]).map(([x0, x1]) => [Math.max(0, x0), Math.min(S[S.length - 1], x1)]);
@@ -1096,7 +1161,7 @@ const graph = {
   minis: minisOut.map((r) => [r.id, r.at[0], r.at[1], r.R, r.Ri]),
   ramps: rampsOut.map((r) => [r.ic, r.kind, r.pts.map((p) => [R2(p[0]), R2(p[1]), R3(p[2] || 0)])]),
   crossings: PLAN.crossings.map((c) => [c.id, c.kind, c.at[0], c.at[1], c.arm ? c.arm[0] : 0, c.arm ? c.arm[1] : 0, c.cls, c.setback == null ? 0 : c.setback]),
-  signals: PLAN.junctions.filter((j) => j.type === 'signal').map((j) => [j.id, j.at[0], j.at[1]]),
+  islands: islandsOut, signals: PLAN.junctions.filter((j) => j.type === 'signal').map((j) => [j.id, j.at[0], j.at[1]]),
   stops: stopsOut,
   landmarks: PLAN.landmarks.map((l) => [l.id, l.kind, l.name, l.at[0], l.at[1]]),
   footbridges: PLAN.footbridges.map((f) => [f.id, f.at[0], f.at[1], f.axis, f.len]), tunnels: PLAN.tunnels.map((f) => [f.id, f.at[0], f.at[1], f.axis, f.len]),

@@ -80,7 +80,7 @@ export function buildPlan() {
     { x: 160, cls: 'service', name: 'Портовый пр.', spans: [[160, 214]] },
     { x: 200, cls: 'local', name: 'Окраинная ул.', spans: [[-108, 120]] },
     { x: 280, cls: 'service', name: 'Терминальный пр.', spans: [[160, 214]] },
-    { x: 294, cls: 'service', name: 'въезд P+R', spans: [[0, 44]], lot: 'P+R' },
+    { x: 296, cls: 'service', name: 'въезд P+R', spans: [[0, 44]], lot: 'P+R' },
   ];
   const H = [
     { z: -190, cls: 'collector', name: 'Промышленная ул.', spans: [[0, 160]] },
@@ -99,7 +99,7 @@ export function buildPlan() {
   ];
   // extra split points: diamond terminals, the P+R entrance
   const DT = 18;   // half spacing of the diamond ramp terminals (36 game m = 90 m real, the 300 ft desirable spacing)
-  const extraZ = { 0: [M1_Z - DT, M1_Z + DT] }, extraX = { 0: [M2_X - 24, M2_X + 24, 294] };   // the two dumbbell rings of I2 (DB.VC) and the P+R entrance
+  const extraZ = { 0: [M1_Z - DT, M1_Z + DT] }, extraX = { 0: [207, M2_X, 291, 296] };   // I2 (Svetlanovskaya-style split street): the split starts at x 207 / 291, the main crossing is at x 250; P+R entrance at 296
 
   // ------------------------------------------------------------------ graph
   const nodes = new Map(), edges = [], key = (x, z) => `${R(x)},${R(z)}`;
@@ -124,7 +124,7 @@ export function buildPlan() {
     for (let i = 0; i + 1 < xs.length; i++) {
       const x0 = xs[i], x1 = xs[i + 1], ex = { dir: 'x' };
       if (riverOver(x0, x1) && l.z > -175) ex.bridge = 'river';
-      if (x0 < M2_X && x1 > M2_X && l.z === 0) ex.underMotorway = 'M2';
+      if (l.z === 0 && x0 >= 207 - 1e-6 && x1 <= 291 + 1e-6) ex.split = true;   // I2: the street here is two one-way carriageways round an island (drawn by compile-plan-c.mjs), the graph edge is only its axis
       if (x0 < M2_X && x1 > M2_X && l.z === 160) ex.underRamps = 'I4';
       addEdge(node(x0, l.z), node(x1, l.z), l.cls, l.name, ex);
     }
@@ -168,27 +168,6 @@ export function buildPlan() {
     const terminals = [F([0, DT]), F([0, -DT])];
     interchanges.push({ id, kind: 'diamond', name, at, cross, ramps, terminals, terminalSpacing: 2 * DT, deck: [F([-(cwPlus + 4), 0]), F([cwPlus + 4, 0])], deckRoad: 'motorway' });
   }
-  // Dumbbell (double roundabout) interchange: the motorway passes OVER the street; on the street two compact rings sit VC game m either side of the motorway.
-  // Each ring has 4 legs: the street (both ways) and two one-lane ramps (the off-ramp arrives along the motorway, the on-ramp leaves the other way).
-  // Norms (AASHTO / FHWA / WisDOT roundabout guide): exit taper 1:15 (offset 2.4 m -> 36 game m = 90 m real) where room allows, ring R 11 (outer radius 27 m real), ramp radius >= 14.
-  const DB = { VC: 24, R: 11, LN_: 90, LS_: 62, K0: 0.35 };   // ring centre offset; ring outer radius; ramp reach (motorway end) towards the north / south (the south end stops short of the trumpet I4 ramps at z 64)
-  function dumbbell(id, at, k, name, cross) {
-    const { VC, R, LN_, LS_ } = DB, LNn = MW + CLS.ramp.w / 2, ramps = [];
-    const pair = (Fk, offLm, onLm) => {
-      const arm = (Lm, tp) => {   // from the motorway (distance Lm from the junction centre) to the ring arm (u = -(R + 0.2)); tp = parallel taper length (0 = one curve)
-        const end = [-(R + 0.2), VC];
-        if (tp > 0) return join(cubic([-Lm, ATT], [1, 0], tp * 0.35, [-Lm + tp, LNn], [1, 0], tp * 0.35, 12), cubic([-Lm + tp, LNn], [1, 0], (Lm - tp - R) * 0.45, end, [1, 0], (Lm - tp - R) * 0.45, 28));
-        return cubic([-Lm, ATT], [1, 0], (Lm - R) * DB.K0, end, [1, 0], (Lm - R) * 0.45, 32);
-      };
-      const off = arm(offLm, offLm >= 80 ? 36 : 0);
-      const on = arm(onLm, onLm >= 80 ? 36 : 0).map(([u, v]) => [-u, v]).reverse();
-      ramps.push({ kind: 'off', pts: off.map(Fk), attach: ['motorway', 'cross'], decel: offLm >= 80 ? 36 : 0, ring: true }, { kind: 'on', pts: on.map(Fk), attach: ['cross', 'motorway'], accel: onLm >= 80 ? 36 : 0, ring: true });
-    };
-    const F = frame(at, k);
-    pair(F, LN_, LS_); pair(frame(at, k + 2), LS_, LN_);
-    const terminals = [F([0, VC]), F([0, -VC])];
-    interchanges.push({ id, kind: 'dumbbell', name, at, cross, ramps, terminals, ringR: R, ringArms: terminals.map((t, i) => ({ at: t, dirs: [[0, 1], [0, -1]] })), deck: [F([-8, 0]), F([8, 0])], deckRoad: 'motorway', note: 'гантель: М2 над улицей, два кольца R 11 на улице, прямые однополосные съезды' });
-  }
   function cloverleaf(id, at, name) {
     const r = 18, a = MW + 4, L = 110, kk = 30, ramps = [];
     for (let q = 0; q < 4; q++) {
@@ -216,7 +195,7 @@ export function buildPlan() {
     interchanges.push({ id, kind: 'trumpet', name, at, ramps, trunkEnd: F([0, top]), note: 'три ветви: М2 заканчивается; раструб на стороне порта' });
   }
   diamond('I1', [0, M1_Z], 0, 'Ромб: Главный пр. × М1', 'Главный пр.', CLS.arterial.w / 2, CLS.arterial.w / 2, CLS.arterial.w / 2, CLS.collector.w / 2);
-  dumbbell('I2', [M2_X, 0], 1, 'Гантель: Центральная магистраль × М2', 'Центральная магистраль');
+  // I2 (M2 x Centralnaya) is a plain at-grade signalised crossing with the street split round two islands (see compile-plan-c.mjs 'split street'); no interchange object
   cloverleaf('I3', [M2_X, M1_Z], 'Клеверный лист: М1 × М2');
   trumpet('I4', [M2_X, 160], 'Трубка: М2 × Портовое ш.');
 
@@ -228,13 +207,14 @@ export function buildPlan() {
     '0,188': { type: 'roundabout', R: 11, lanes: 1, name: 'Морская площадь' },
     '-232,-160': { type: 'roundabout', R: 11, lanes: 1 }, '-232,0': { type: 'roundabout', R: 11, lanes: 1 }, '-232,160': { type: 'roundabout', R: 11, lanes: 1 },
     '-232,-80': { type: 'priority', major: null }, '-232,80': { type: 'priority', major: null }, '-80,188': { type: 'priority', major: null }, '80,-190': { type: 'priority', major: null },
-    '160,-190': { type: 'roundabout', R: 11, lanes: 1 }, '226,0': { type: 'roundabout', R: 11, lanes: 1, name: 'Кольцо I2 запад' }, '274,0': { type: 'roundabout', R: 11, lanes: 1, name: 'Кольцо I2 восток' }, '0,-190': { type: 'riro' },
+    '160,-190': { type: 'roundabout', R: 11, lanes: 1 }, '250,0': { type: 'signal', big: true, name: 'Светофорный узел I2' }, '0,-190': { type: 'riro' },
   };
   const junctions = [];
   for (const n of nodeArr) {
     const L = n.legs.map((id) => eById.get(id)), isTerm = interchanges.some((ic) => (ic.terminals || []).some((t) => Math.hypot(t[0] - n.x, t[1] - n.z) < 0.5));
     if (L.length < 3 && !isTerm && !(L.length === 2 && L[0].dir !== L[1].dir)) continue;
-    if (L.some((e) => e.cls === 'motorway')) continue;
+    const atI2 = n.x === M2_X && n.z === 0;   // M2 meets Centralnaya at grade here
+    if (L.some((e) => e.cls === 'motorway') && !atI2) continue;
     const cl = L.map((e) => e.cls), k = `${n.x},${n.z}`, RANK = { arterial: 4, collector: 3, service: 2, local: 1 };
     const ax = { x: null, z: null }; for (const e of L) if (!ax[e.dir] || RANK[e.cls] > RANK[ax[e.dir]]) ax[e.dir] = e.cls;
     const pair = [ax.x, ax.z].sort((p, q) => RANK[q] - RANK[p]), [hi, lo] = pair;
@@ -250,7 +230,7 @@ export function buildPlan() {
     else if (hi === 'collector') j = { type: 'priority', major: 'collector' };
     else j = { type: 'priority', major: null };
     n.kind = j.type;
-    junctions.push({ id: n.id, at: [n.x, n.z], ...j, legs: L.length, classes: cl, arms: L.map((e) => { const o = byId.get(e.a === n.id ? e.b : e.a); return { edge: e.id, cls: e.cls, dir: [Math.sign(R(o.x - n.x)), Math.sign(R(o.z - n.z))] }; }) });
+    junctions.push({ id: n.id, at: [n.x, n.z], ...j, ...(atI2 ? { boxZ: 10.8, splitArms: L.filter((e) => e.split).map((e) => e.id) } : {}), legs: L.length, classes: cl, arms: L.filter((e) => !e.split).map((e) => { const o = byId.get(e.a === n.id ? e.b : e.a); return { edge: e.id, cls: e.cls, dir: [Math.sign(R(o.x - n.x)), Math.sign(R(o.z - n.z))] }; }) });
   }
 
   // ------------------------------------------------------------------ crossings (pedestrian), footbridges, tunnels
@@ -266,8 +246,6 @@ export function buildPlan() {
     const e = edges.find((g) => { const a = byId.get(g.a), b = byId.get(g.b); return g.dir === 'x' && a.z === z && Math.min(a.x, b.x) < x && Math.max(a.x, b.x) > x; });
     if (e) crossings.push({ id: `MB${crossings.length}`, kind: e.cls === 'arterial' ? 'ped-signal-midblock' : 'zebra', at: [x, z], arm: null, cls: e.cls, axis: 'x', note: 'у остановки / у вилл' });
   }
-  // the ramps of a dumbbell enter its rings: extra arms (no pedestrian crossing on them: the crossings above were made from the street arms only)
-  for (const ic of interchanges) for (const ra of ic.ringArms || []) { const j = junctions.find((q) => Math.hypot(q.at[0] - ra.at[0], q.at[1] - ra.at[1]) < 0.5); if (j) for (const d of ra.dirs) j.arms.push({ edge: null, cls: 'ramp', dir: [Math.sign(d[1] === 0 ? d[0] : 0), 0].some((x) => x) ? d : [d[1] ? 0 : d[0], d[1]], ramp: true }); }
   const footbridges = [
     { id: 'FB1', at: [250, -104], axis: 'x', over: 'М2 Восточная хорда', len: 46, note: 'конец Университетского б-ра -> Восточный лесопарк', ramps: 'пандусы + лифт' },
     { id: 'FB2', at: [-210, 40], axis: 'x', over: 'река', len: 34, note: 'пешеходно-велосипедный мост набережного парка' },
