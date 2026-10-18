@@ -30,12 +30,12 @@ const COLORS = {
   grass: 0x5f8f48, grassB: 0x6a9a50, lawn: 0x76a85c, park: 0x5d9a4a, forest: 0x3f6d37, field0: 0x9a9a52, field1: 0x6f9b45, field2: 0xb0a45a, field3: 0x7e9a4a, field4: 0x8f7a4c,
   urban: 0x86ad68, industry: 0x8d8f86, verge: 0x6c9650, parking: 0x6a6e72, embank: 0x8b9566, beach: 0xdac99b, promenade: 0xcfc6b2, port: 0x9fa09a,
   sea: 0x3f7fae, seaLight: 0x7fb7d2, river: 0x4a88b4, bank: 0xb9ae8c, dirt: 0x8d7a58,
-  asph: 0x353a3f, ramp: 0x3a4045, walk: 0xc4bfae, kerb: 0xaaa595, median: 0xb8b4a4, medLawn: 0x6f9d57, medM: 0xa9a99f, plaza: 0xd4cab4, islandL: 0x6ea154, islandC: 0xd9d1bb,
+  asph: 0x353a3f, ramp: 0x353a3f, walk: 0xc4bfae, kerb: 0xaaa595, median: 0xb8b4a4, medLawn: 0x6f9d57, medM: 0xa9a99f, plaza: 0xd4cab4, islandL: 0x6ea154, islandC: 0xd9d1bb,
   white: 0xf2f2ec, yellow: 0xe7c85a, ballast: 0x8a8782, rail: 0x56585b, platform: 0xb8b5aa, moleC: 0x9b9a92, rock: 0x77756f,
   resid: 0x82b064, mixed: 0x95b57a, cbd: 0xaaa898, indus: 0x959890, school: 0x90bd72, hospital: 0xa4b88e, station: 0xa9a79b, villas: 0x78b45f, waterf: 0xa6b88f, market: 0xb4ae98, stadium: 0x6fae55,
 };
 const PAL = Object.keys(COLORS), CI = Object.fromEntries(PAL.map((k, i) => [k, i]));
-const H = { ground: 0, asph: 0.05, walk: 0.12, med: 0.12, paint: 0.062, ramp: 0.053, ringWalk: 0.12, island: 0.09, plaza: 0.03, zone: -0.045, zone2: -0.03, water: -0.02, bank: -0.03, base: -0.06, rail: 0.035, railPaint: 0.066 };
+const H = { ground: 0, asph: 0.05, walk: 0.12, med: 0.12, paint: 0.062, ramp: 0.052, ringWalk: 0.12, island: 0.09, plaza: 0.03, fillet: 0.123, zone: -0.06, zone2: -0.05, water: -0.02, bank: -0.03, base: -0.08, rail: 0.035, railPaint: 0.066 };   // every ground layer has its own height (no coplanar overlaps = no z-fighting seams)
 
 // ---- the cell store
 const cells = new Map();
@@ -111,13 +111,14 @@ const N = new Map(PLAN.nodes.map((n) => [n.id, n])), J = new Map(PLAN.junctions.
 const hw = (cls) => CLS[cls].w / 2;
 const rightOf = (h) => [-h[1], h[0]];
 const MW = CLS.motorway.w / 2;
-const ringW = (j) => j.lanes === 2 ? 6.2 : 3.6;
+const ringW = (j) => j.lanes === 2 ? 5.4 : 3.0;   // circulatory lane: 2 lanes 5.4 (>= 5.0), 1 lane 3.0 (car + truck swept path >= 2.6)
+const laneW = (cls) => CLS[cls].lane || (CLS[cls].w - CLS[cls].median) / 2 / CLS[cls].lanes;
 const RAIL_Z = PLAN.rail.pts[0][1], M1_Z = -240, M2_X = 250;
 function trimAt(nodeId, e) {   // how far markings / medians stay away from a node
   const n = N.get(nodeId), j = J.get(nodeId);
   if (!j) return n.legs && n.legs.length > 1 ? 1.5 : 0;
   if (j.type === 'roundabout') return j.R + 6.5;
-  if (j.type === 'mini') return 5.5;
+  if (j.type === 'mini') return 7;
   const cross = j.arms.filter((a) => (a.dir[0] !== 0) !== (e.dir === 'x')).map((a) => hw(a.cls));
   const ch = cross.length ? Math.max(...cross) : 0;
   if (j.type === 'signal') return ch + 5.2;
@@ -127,7 +128,7 @@ function trimAt(nodeId, e) {   // how far markings / medians stay away from a no
 // intervals along an edge's axis where a higher road / the railway owns the surface (flat model of step C1; heights come in C6)
 function cutsOf(e) {
   const a = N.get(e.a), b = N.get(e.b), cuts = [];
-  if (e.underRail != null) { const c = e.dir === 'z' ? e.underRail : null; if (c != null) cuts.push([c - 4.6, c + 4.6]); }
+  if (e.underRail != null) { const c = e.dir === 'z' ? e.underRail : null; if (c != null) cuts.push([c - 5.4, c + 5.4]); }
   if (e.underMotorway === 'M1') cuts.push([M1_Z - MW - 0.8, M1_Z + MW + 0.8]);
   if (e.underMotorway === 'M2') cuts.push([M2_X - MW - 0.8, M2_X + MW + 0.8]);
   if (e.underRamps === 'I4') cuts.push([M2_X - MW - 6, M2_X + MW + 6]);
@@ -221,7 +222,7 @@ function rasterCell(cx, cz) {
 }
 
 // ---- 3. curved pieces: roundabouts, mini roundabouts, ramps, plaza
-const ringsOut = [];
+const ringsOut = [], minisOut = [];
 for (const j of PLAN.junctions) {
   const c = j.at;
   if (j.type === 'roundabout') {
@@ -250,20 +251,47 @@ for (const j of PLAN.junctions) {
     for (const a of j.arms) {
       const d = a.dir, r = rightOf(d), w = hw(a.cls), base = R + 0.5, tip = R + 7.5, iw = Math.min(1.0, w * 0.4);
       const P = (t, l) => [c[0] + d[0] * t + r[0] * l, c[1] + d[1] * t + r[1] * l];
-      emitTri('r', P(base, iw), P(tip, 0), P(base, -iw), H.island, CI.islandC);
+      for (const sg of [-1, 1]) ribbon('p', [P(base, sg * iw), P(tip, 0)], 0.14, H.paint, CI.white);   // painted splitter island: outline on the asphalt, no fill
       // teeth on the incoming half (right of the incoming heading = rightOf(-d) = -r)
       const sgn = -1;
       for (let l = iw + 0.2; l < w - 0.1; l += 0.7) { const q0 = P(R + 0.35, sgn * l), q1 = P(R + 0.7, sgn * (l + 0.35)), q2 = P(R + 0.7, sgn * l); emitTri('p', q0, q1, q2, H.paint, CI.white); }
     }
   } else if (j.type === 'mini') {
-    disc('r', c, 1.5, H.island + 0.03, CI.islandC, 20); disc('r', c, 1.25, H.island + 0.035, CI.islandL, 20);
-    for (let k = 0; k < 20; k++) { const s = k / 20 * Math.PI * 2, e = (k + 1) / 20 * Math.PI * 2; emitWall(c[0] + Math.cos(s) * 1.5, c[1] + Math.sin(s) * 1.5, c[0] + Math.cos(e) * 1.5, c[1] + Math.sin(e) * 1.5, H.asph, H.island + 0.03, CI.kerb); }
-    for (let a = 0; a < 360; a += 20) annulus('p', c, 2.75, 2.9, a, a + 11, H.paint, CI.white, 4);
+    const Ri = 1.9, Ro = Ri + 2.8;   // island r 1.9, circulatory lane 2.8 (>= 2.6), painted outer edge
+    disc('r', c, Ri, H.island + 0.03, CI.islandC, 24); disc('r', c, Ri - 0.25, H.island + 0.035, CI.islandL, 24);
+    for (let k = 0; k < 24; k++) { const s = k / 24 * Math.PI * 2, e = (k + 1) / 24 * Math.PI * 2; emitWall(c[0] + Math.cos(s) * Ri, c[1] + Math.sin(s) * Ri, c[0] + Math.cos(e) * Ri, c[1] + Math.sin(e) * Ri, H.asph, H.island + 0.03, CI.kerb); }
+    for (let a = 0; a < 360; a += 15) annulus('p', c, Ro - 0.07, Ro + 0.07, a, a + 9, H.paint, CI.white, 3);
+    minisOut.push({ id: j.id, at: c, R: Ro, Ri });
+  }
+}
+// kerb returns (radius 3) at every corner of a junction where two perpendicular streets meet: asphalt fillet at kerb height, white-free, rounded
+for (const j of PLAN.junctions) {
+  if (j.type === 'roundabout') continue;
+  const c = j.at, RET = 3.0;
+  for (const A of j.arms.filter((a) => a.dir[1] === 0)) for (const B of j.arms.filter((b) => b.dir[0] === 0)) {
+    if (A.cls === 'motorway' || B.cls === 'motorway') continue;
+    const sx = A.dir[0], sz = B.dir[1], K = [c[0] + sx * hw(B.cls), c[1] + sz * hw(A.cls)];
+    const O = [K[0] + sx * RET, K[1] + sz * RET], pts = [];
+    for (let k = 0; k <= 10; k++) { const t = k / 10 * Math.PI / 2, a0 = Math.atan2(-sz, 0), vx = -sx * Math.cos(t) , vz = -sz * Math.sin(t); pts.push([O[0] + vx * RET, O[1] + vz * RET]); }
+    // arc runs from (O.x - sx*R, O.z) [on the edge z = K.z ... see below] : build the patch K, P1, arc, P2 as a fan
+    const P1 = [K[0] + sx * RET, K[1]], P2 = [K[0], K[1] + sz * RET], arc2 = [];
+    for (let k = 0; k <= 10; k++) { const t = k / 10 * Math.PI / 2; arc2.push([O[0] - sx * RET * Math.sin(t), O[1] - sz * RET * Math.cos(t)]); }   // from P1 (t = 0: O - (0, sz R)... ) to P2
+    void pts; void P1; void P2;
+    for (let k = 0; k + 1 < arc2.length; k++) emitTri('r', K, arc2[k], arc2[k + 1], H.fillet, CI.asph);
   }
 }
 // ramps (interchanges): 2 m ribbons with white edge dashes
 const rampsOut = [];
-for (const ic of PLAN.interchanges) for (const r of ic.ramps) {
+function smoothRamp(pts) {   // centripetal-free Catmull-Rom through the plan points, ~0.8 m steps: no polyline kinks in the game geometry
+  const out = [];
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)], L = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), n = Math.max(1, Math.round(L / 0.8));
+    for (let k = 0; k < n; k++) { const t = k / n, t2 = t * t, t3 = t2 * t; out.push([0, 1].map((a) => 0.5 * (2 * p1[a] + (-p0[a] + p2[a]) * t + (2 * p0[a] - 5 * p1[a] + 4 * p2[a] - p3[a]) * t2 + (-p0[a] + 3 * p1[a] - 3 * p2[a] + p3[a]) * t3))); }
+  }
+  out.push(pts[pts.length - 1]); return out;
+}
+for (const ic of PLAN.interchanges) for (const r0 of ic.ramps) {
+  const r = { ...r0, pts: smoothRamp(r0.pts) };
   ribbon('r', r.pts, CLS.ramp.w, H.ramp, CI.ramp);
   rampsOut.push({ ic: ic.id, kind: r.kind, pts: r.pts });
   // dashed centre line every 4 m
@@ -294,30 +322,31 @@ for (const e of PLAN.edges) {
   const parts = subtractIntervals(lo, hi, cuts);
   for (const [pl, ph] of parts) {
     if (mo) {
-      for (const o of [-(MW - 0.35), MW - 0.35, -1.4, 1.4]) solid(ax, c + o, pl, ph, 0.13, H.paint, CI.white);
-      for (const o of [-3.175, 3.175]) dashed(ax, c + o, pl, ph, 0.14, 1.6, 1.8, H.paint, CI.white);
+      const mh = CLS.motorway.median / 2, mdv = mh + CLS.motorway.lane, edge = MW - CLS.motorway.shoulder;
+      for (const o of [-edge, edge, -(mh + 0.3), mh + 0.3]) solid(ax, c + o, pl, ph, 0.13, H.paint, CI.white);
+      for (const o of [-mdv, mdv]) dashed(ax, c + o, pl, ph, 0.14, 1.6, 1.8, H.paint, CI.white);
     } else if (e.cls === 'arterial') {
-      for (const o of [-1.85, 1.85]) dashed(ax, c + o, pl, ph, 0.12, 1.0, 1.4, H.paint, CI.white);
+      for (const o of [-(CLS.arterial.median / 2 + CLS.arterial.lane), CLS.arterial.median / 2 + CLS.arterial.lane]) dashed(ax, c + o, pl, ph, 0.12, 1.0, 1.4, H.paint, CI.white);
     } else if (e.cls === 'collector') dashed(ax, c, pl, ph, 0.12, 1.0, 1.2, H.paint, CI.white);
   }
 }
 
 // ---- 5. junction furniture: zebra crossings, stop lines, signal / sign points
 const poleSet = [];   // pole / head positions for the cell furniture lists, filled below
-function zebra(c, dir, at, cls, len = 1.1) {
+function zebra(c, dir, at, cls, len = 1.6) {
   const w = hw(cls), med = CLS[cls].median / 2, p = [c[0] + dir[0] * at, c[1] + dir[1] * at];
-  for (let l = -(w - 0.3); l <= w - 0.29; l += 0.8) {
+  for (let l = -(w - 0.35); l <= w - 0.34; l += 0.95) {
     if (Math.abs(l) < med + 0.1) continue;
-    if (dir[0] === 0) emitRect('p', 'q', p[0] + l - 0.2, p[1] - len / 2, p[0] + l + 0.2, p[1] + len / 2, H.paint, CI.white);
-    else emitRect('p', 'q', p[0] - len / 2, p[1] + l - 0.2, p[0] + len / 2, p[1] + l + 0.2, H.paint, CI.white);
+    if (dir[0] === 0) emitRect('p', 'q', p[0] + l - 0.25, p[1] - len / 2, p[0] + l + 0.25, p[1] + len / 2, H.paint, CI.white);
+    else emitRect('p', 'q', p[0] - len / 2, p[1] + l - 0.25, p[0] + len / 2, p[1] + l + 0.25, H.paint, CI.white);
   }
 }
 function stopLine(c, dir, at, cls) {   // across the incoming half of an arm
   const w = hw(cls), med = CLS[cls].median / 2, r = [dir[1], -dir[0]], l0 = med, l1 = w, p = [c[0] + dir[0] * at, c[1] + dir[1] * at];
   const q = (l) => [p[0] + r[0] * l, p[1] + r[1] * l];
   const A = q(l0), B = q(l1);
-  if (dir[0] === 0) emitRect('p', 'q', Math.min(A[0], B[0]), p[1] - 0.16, Math.max(A[0], B[0]), p[1] + 0.16, H.paint, CI.white);
-  else emitRect('p', 'q', p[0] - 0.16, Math.min(A[1], B[1]), p[0] + 0.16, Math.max(A[1], B[1]), H.paint, CI.white);
+  if (dir[0] === 0) emitRect('p', 'q', Math.min(A[0], B[0]), p[1] - 0.2, Math.max(A[0], B[0]), p[1] + 0.2, H.paint, CI.white);
+  else emitRect('p', 'q', p[0] - 0.2, Math.min(A[1], B[1]), p[0] + 0.2, Math.max(A[1], B[1]), H.paint, CI.white);
 }
 const furniture = { lamp: [], sig: [], pole: [], plate: [], stop: [] };   // world lists, then split into cells
 const yawOf = (d) => Math.atan2(d[0], d[1]);
@@ -331,7 +360,6 @@ for (const cr of PLAN.crossings) {
     if (!arm) continue;
     zebra(j.at, dir, along, cr.cls, cr.kind === 'ped-signal' ? 1.4 : 1.1);
     crossingKey.add(cr.id);
-    if (j.type !== 'roundabout' && j.type !== 'mini') stopLine(j.at, dir, along + 1.5, cr.cls);
   } else if (cr.axis) {
     const w = hw(cr.cls);
     const e = PLAN.edges.find((q) => q.cls === cr.cls && q.dir === cr.axis && ((cr.axis === 'x' && Math.abs(N.get(q.a).z - cr.at[1]) < 0.01 && Math.min(N.get(q.a).x, N.get(q.b).x) <= cr.at[0] && Math.max(N.get(q.a).x, N.get(q.b).x) >= cr.at[0]) || (cr.axis === 'z' && Math.abs(N.get(q.a).x - cr.at[0]) < 0.01)));
@@ -351,7 +379,6 @@ for (const j of PLAN.junctions) {
       const cross = j.arms.filter((x) => (x.dir[0] !== 0) !== (a.dir[0] !== 0)).map((x) => hw(x.cls)), ch = cross.length ? Math.max(...cross) : 0;
       const at = ch + 1.0;
       if (j.arms.length >= 3 && major) {
-        stopLine(c, a.dir, at, a.cls);
         const r = [a.dir[1], -a.dir[0]];
         furniture.pole.push([c[0] + a.dir[0] * (at + 0.6) + r[0] * (hw(a.cls) + 0.5), c[1] + a.dir[1] * (at + 0.6) + r[1] * (hw(a.cls) + 0.5), yawOf(a.dir), SIGN.stop]);
       }
@@ -361,7 +388,7 @@ for (const j of PLAN.junctions) {
     for (const a of j.arms) {
       const w = hw(a.cls), along = (a.dir[0] !== 0 ? hx : hz) + 2.2;
       if (!PLAN.crossings.some((cr) => cr.id.startsWith(j.id + '-') && cr.arm && cr.arm[0] === a.dir[0] && cr.arm[1] === a.dir[1])) zebra(c, a.dir, along, a.cls, 1.4);
-      stopLine(c, a.dir, along + 1.6, a.cls);
+      if (a.cls === 'arterial' || a.cls === 'collector') stopLine(c, a.dir, along + 1.7, a.cls);
       const r = [a.dir[1], -a.dir[0]];
       furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) + r[0] * (w + 0.55), c[1] + a.dir[1] * (along + 1.2) + r[1] * (w + 0.55), yawOf(a.dir)]);
     }
@@ -407,10 +434,11 @@ const SZ = PLAN.size;
   // base grass in 5 m squares with a deterministic tint (cheap mottling)
   const rnd = mulberry(7);
   for (let x = Math.floor(SZ.x0 / 10) * 10; x < SZ.x1; x += 10) for (let z = Math.floor(SZ.z0 / 10) * 10; z < SZ.z1; z += 10) {
-    emitRect('g', 'q', x, z, x + 10, z + 10, H.base, rnd() < 0.5 ? CI.grass : CI.grassB);
+    emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass); void rnd;
   }
   const KIND = { forest: 'forest', industry: 'industry', verge: 'verge', park: 'park', parking: 'parking', embankment: 'embank', beach: 'beach', promenade: 'promenade', port: 'port', urban: 'urban' };
-  for (const a of PLAN.areas) emitPoly('g', a.poly, H.zone, CI[KIND[a.kind]]);
+  const KORDER = ['urban', 'industry', 'verge', 'park', 'parking', 'embankment', 'port', 'beach', 'promenade', 'forest'];
+  for (const a of PLAN.areas) emitPoly('g', a.poly, -0.075 + KORDER.indexOf(a.kind) * 0.002, CI[KIND[a.kind]]);
   const ZONE = { residential: 'resid', mixed: 'mixed', cbd: 'cbd', industrial: 'indus', logistics: 'indus', railyard: 'indus', station: 'station', busterm: 'station', villas: 'villas', school: 'school', hospital: 'hospital', park: 'park', market: 'market', east: 'mixed', stadium: 'stadium', campus: 'school', waterfront: 'waterf' };
   for (const b of PLAN.blocks) { const r = b.lot || b.rect; emitRect('g', 'q', r[0], r[1], r[2], r[3], H.zone2, CI[ZONE[b.zone] || 'resid']); }
   // fields in strips
@@ -420,10 +448,10 @@ const SZ = PLAN.size;
     for (let k = 0; k < n; k++) {
       const ci = CI['field' + ((f.crop + k) % 4)];
       const rect = f.angle === 0 ? [Math.min(...xs), Math.min(...zs) + (Math.max(...zs) - Math.min(...zs)) * k / n, Math.max(...xs), Math.min(...zs) + (Math.max(...zs) - Math.min(...zs)) * (k + 1) / n] : [Math.min(...xs) + (Math.max(...xs) - Math.min(...xs)) * k / n, Math.min(...zs), Math.min(...xs) + (Math.max(...xs) - Math.min(...xs)) * (k + 1) / n, Math.max(...zs)];
-      for (const t of tris) { const poly = clipPoly(t, rect[0], rect[1], rect[2], rect[3]); if (poly.length < 3) continue; for (let i = 1; i + 1 < poly.length; i++) emitTri('g', poly[0], poly[i], poly[i + 1], H.zone, ci); }
+      for (const t of tris) { const poly = clipPoly(t, rect[0], rect[1], rect[2], rect[3]); if (poly.length < 3) continue; for (let i = 1; i + 1 < poly.length; i++) emitTri('g', poly[0], poly[i], poly[i + 1], -0.06, ci); }
     }
   }
-  for (const f of PLAN.rural.forests) emitPoly('g', f, H.zone, CI.forest);
+  for (const f of PLAN.rural.forests) emitPoly('g', f, -0.058, CI.forest);
   for (const ln of PLAN.rural.lanes) ribbon('g', ln, 1.4, H.zone2, CI.dirt);
   // sea (below the coast line), shore band, river with banks, marina, rocks
   const coast = PLAN.water.sea.coast;
@@ -533,6 +561,7 @@ const graph = {
   nodes: PLAN.nodes.map((n) => [n.id, n.x, n.z, n.kind || '']),
   edges: PLAN.edges.map((e) => { const a = N.get(e.a), b = N.get(e.b); return [e.id, e.a, e.b, e.cls, a.x, a.z, b.x, b.z, e.name || '']; }),
   rings: ringsOut.map((r) => [r.id, r.at[0], r.at[1], r.R, r.Ri]),
+  minis: minisOut.map((r) => [r.id, r.at[0], r.at[1], r.R, r.Ri]),
   ramps: rampsOut.map((r) => [r.ic, r.kind, r.pts.map((p) => [R2(p[0]), R2(p[1])])]),
   crossings: PLAN.crossings.map((c) => [c.id, c.kind, c.at[0], c.at[1], c.arm ? c.arm[0] : 0, c.arm ? c.arm[1] : 0, c.cls, c.setback == null ? 0 : c.setback]),
   signals: PLAN.junctions.filter((j) => j.type === 'signal').map((j) => [j.id, j.at[0], j.at[1]]),

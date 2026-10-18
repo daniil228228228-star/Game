@@ -73,6 +73,60 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
   check(missing.length === 0, `data: ${zebras} crossings of the plan all have white bars (${missing.length} missing ${J(missing.slice(0, 5))})`);
   // 5. floor
   check(D.access(0, 100) && D.access(150, -60) && D.access(-280, 0) && !D.floor(0, 230) && !D.floor(-210, -100) && D.floor(-210, 0) && D.floor(-210, -240) && !D.floor(400, 0), 'data: floor = land of the plan (land yes, sea / river no, bridge over the river yes, outside the map no)');
+  // 6. vehicles on the real widths: car 1.4 x 2.14, truck 1.15 x 2.11, clearance >= 0.25 m
+  {
+    const CAR = { w: 1.4, l: 2.14 }, TRUCK = { w: 1.15, l: 2.11 }, CLR = 0.25, bad = [];
+    for (const [cls, [w, sw, med, lanes]] of Object.entries(D.classes)) {
+      if (cls === 'motorway') { /* lanes below */ }
+      const lane = cls === 'ramp' ? w : (w - med) / 2 / lanes;
+      // two cars in opposite lanes (centred): gap between them and to the kerb
+      const toKerb = (lane - CAR.w) / 2, between = lane - CAR.w;
+      if (toKerb < CLR - 1e-9 || between < 2 * CLR - 1e-9) bad.push(`${cls}: lane ${lane.toFixed(2)} -> kerb ${toKerb.toFixed(2)}, cars ${between.toFixed(2)}`);
+    }
+    check(bad.length === 0, `vehicles: in every street class two cars in opposite lanes keep >= 0.25 m to each other and to the kerb (${J(bad)}; lanes ${J(Object.fromEntries(Object.entries(D.classes).map(([k, v]) => [k, +(k === 'ramp' ? v[0] : (v[0] - v[2]) / 2 / v[3]).toFixed(2)])))})`);
+    const swath = (rc, V) => { const outer = Math.hypot(rc + V.w / 2, V.l * 0.7), inner = Math.sqrt(Math.max(0, rc * rc - (V.l * 0.6) ** 2)) - V.w / 2; return outer - inner; };
+    const rb = [];
+    for (const [id, x, z, R, Ri] of D.graph.rings.concat(D.graph.minis)) {
+      const lane = R - Ri, rc = (R + Ri) / 2, mini = D.graph.minis.some((m) => m[0] === id), central = !mini && R >= 14;
+      const need = Math.max(swath(rc, TRUCK), swath(rc, CAR)) + 2 * CLR;
+      if (lane < (central ? 5.0 : 2.6) - 1e-9 || Ri < 1.8 - 1e-9 || lane < need - 1e-9) rb.push([id, +lane.toFixed(2), +Ri.toFixed(2), +need.toFixed(2)]);
+      // a car and a truck side by side in the two-lane ring, or entering from the adjacent arms: each lane alone must hold the vehicle with clearance
+      if (central && lane / 2 < CAR.w + 2 * CLR - 1e-9) rb.push([id, 'two lanes too narrow', lane / 2]);
+    }
+    check(rb.length === 0, `roundabouts: circulatory lane >= 2.6 (central 2-lane ring >= 5.0), island r >= 1.8, swept path of a car / truck + 0.25 m both sides fits ${J(rb)} (${D.graph.rings.length} rings + ${D.graph.minis.length} minis)`);
+    // ramps: radius >= 13.5 everywhere, no turn > 9 degrees per plan step (G1), ramp lane >= 2.8
+    const rr = [];
+    for (const [ic, kind, pts] of D.graph.ramps) for (let i = 1; i + 1 < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], c = pts[i + 1], ab = Math.hypot(b[0] - a[0], b[1] - a[1]), bc = Math.hypot(c[0] - b[0], c[1] - b[1]); if (ab < 0.05 || bc < 0.05) continue;
+      const ar = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2, R = ar < 1e-9 ? 1e9 : ab * bc * Math.hypot(a[0] - c[0], a[1] - c[1]) / (4 * ar);
+      const turn = Math.abs(Math.atan2(c[1] - b[1], c[0] - b[0]) - Math.atan2(b[1] - a[1], b[0] - a[0])); const t = Math.min(turn, 2 * Math.PI - turn) * 57.3;
+      if (R < 13.5 || t > 9) rr.push([ic, kind, +R.toFixed(1), +t.toFixed(1), b]);
+    }
+    check(rr.length === 0 && D.classes.ramp[0] >= 2.8, `ramps: radius >= 13.5 m and no kink > 9 deg per step on all ${D.graph.ramps.length} ramps, ramp lane ${D.classes.ramp[0]} m (${J(rr.slice(0, 3))})`);
+  }
+  // 7. every painted mark belongs to a complete group: zebra = >= 4 bars across the carriageway, stop line spans the lane, no lone short mark
+  {
+    const marks = [];
+    for (const c of Object.values(D.cells)) { const q = c.p && c.p.q || []; for (let i = 0; i < q.length; i += 6) if (q[i + 5] === CI.white) marks.push({ x0: q[i], z0: q[i + 1], x1: q[i + 2], z1: q[i + 3] }); }
+    const dim = (m) => ({ lx: m.x1 - m.x0, lz: m.z1 - m.z0 });
+    const bars = marks.filter((m) => { const d = dim(m); return Math.min(d.lx, d.lz) > 0.4 && Math.max(d.lx, d.lz) < 2.0; });
+    const stops = marks.filter((m) => { const d = dim(m); return Math.min(d.lx, d.lz) >= 0.3 && Math.min(d.lx, d.lz) <= 0.45 && Math.max(d.lx, d.lz) >= 1.9; });
+    const other = marks.filter((m) => !bars.includes(m) && !stops.includes(m));
+    const orient = (m) => (m.x1 - m.x0) > (m.z1 - m.z0) ? 'h' : 'v';
+    const seen = new Set(), lone = [];
+    for (const b of bars) {
+      if (seen.has(b)) continue;
+      const grp = [b]; seen.add(b);
+      for (let k = 0; k < grp.length; k++) for (const o of bars) if (!seen.has(o) && orient(o) === orient(grp[k]) && Math.abs(o.x0 - grp[k].x0) < 1.3 && Math.abs(o.z0 - grp[k].z0) < 1.3) { seen.add(o); grp.push(o); }
+      if (grp.length < 4) lone.push([+b.x0.toFixed(1), +b.z0.toFixed(1), grp.length]);
+    }
+    check(lone.length === 0 && bars.length > 400, `paint: all ${bars.length} zebra bars sit in groups of >= 4 (lone ${J(lone.slice(0, 4))})`);
+    // a stop line must be at least one lane wide (>= 1.9) and have a zebra bar group within 4 m in front of it
+    const orphan = stops.filter((s) => !bars.some((b) => Math.hypot((b.x0 + b.x1) / 2 - (s.x0 + s.x1) / 2, (b.z0 + b.z1) / 2 - (s.z0 + s.z1) / 2) < 5));
+    check(orphan.length === 0, `paint: ${stops.length} stop lines all span >= 1.9 m and stand behind a zebra (${J(orphan.slice(0, 3))})`);
+    const short = other.filter((m) => { const d = dim(m); return Math.max(d.lx, d.lz) < 0.9; });
+    check(short.length === 0, `paint: no isolated mark shorter than 0.9 m outside the dash / tooth patterns (${short.length}, ${J(short.slice(0, 3))})`);
+  }
   check(D.graph.signals.length === PLAN.counts.signals && D.graph.stops.length === PLAN.counts.busStops, `data: ${D.graph.signals.length} signal junctions and ${D.graph.stops.length} bus stops from the plan`);
 }
 function R(n) { return Math.round(n * 10) / 10; }
@@ -116,11 +170,12 @@ const PAGE = () => {
 
 const shot = async (page, name, x, z, d, el, az) => {
   if (!SHOTS) return;
+  await page.evaluate(({ x, z }) => { PlanCV161.R_BUILD = 400; PlanCV161.R_KEEP = 900; PlanCV161.ensureNear(x, z); return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); }, { x, z });
   const url = await page.evaluate(({ x, z, d, el, az }) => {
-    PlanCV161.ensureNear(x, z);
+    const fog0 = scene.fog; scene.fog = null;
     const cv = renderer.domElement, cam = new THREE.PerspectiveCamera(50, cv.width / cv.height, 0.3, 900), E = el * Math.PI / 180, A = az * Math.PI / 180;
     cam.position.set(x + Math.sin(A) * Math.cos(E) * d, Math.sin(E) * d, z + Math.cos(A) * Math.cos(E) * d); cam.up.set(0, 1, 0); cam.lookAt(x, 0, z); cam.updateMatrixWorld(true);
-    renderer.render(scene, cam); return cv.toDataURL('image/jpeg', 0.88);
+    renderer.render(scene, cam); const u = cv.toDataURL('image/jpeg', 0.88); scene.fog = fog0; PlanCV161.R_BUILD = 128; PlanCV161.R_KEEP = 190; return u;
   }, { x, z, d, el, az });
   fs.writeFileSync(path.join(SHOTS, name + '.jpg'), Buffer.from(url.split(',')[1], 'base64'));
 };

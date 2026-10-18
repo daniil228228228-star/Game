@@ -27,6 +27,7 @@
 
   // ---- old core that does not exist in layout C (the base ground is replaced by the cells; the dark disc and the spherical hills / skyline boxes are gated at their owners)
   function retireOldCore() {
+    try { for (const c of (scene.userData.clouds || [])) c.visible = false; } catch (_) {}   // the old cloud blobs hang over the centre of the old island
     try { if (typeof ground !== 'undefined') ground.visible = false; if (typeof groundShadow !== 'undefined') groundShadow.visible = false; } catch (_) {}
   }
 

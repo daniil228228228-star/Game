@@ -14,14 +14,15 @@ const P2 = (p) => [R(p[0]), R(p[1])];
 
 // ---- classes: carriageway width (game m; real = x2.5), lanes per direction, median, design speed (km/h real), sidewalk per side
 export const CLS = {
-  motorway: { w: 10.5, lanes: 2, median: 2.2, speed: 90, sidewalk: 0 },
-  arterial: { w: 6.4, lanes: 2, median: 1.0, speed: 60, sidewalk: 1.4 },
-  collector: { w: 3.6, lanes: 1, median: 0, speed: 40, sidewalk: 1.1 },
-  local: { w: 2.4, lanes: 1, median: 0, speed: 30, sidewalk: 0.9 },
-  service: { w: 2.8, lanes: 1, median: 0, speed: 20, sidewalk: 0 },
-  ramp: { w: 2.0, lanes: 1, median: 0, speed: 50, sidewalk: 0 },
+  // widths from the REAL game vehicles (car 1.4 x 2.14, truck 1.15 x 2.11), not from the 0.4 scale: lane >= 1.9 (car + 0.25 clearance each side)
+  motorway: { w: 12.6, lanes: 2, median: 2.2, speed: 90, sidewalk: 0, lane: 2.1, shoulder: 1.0 },
+  arterial: { w: 9.2, lanes: 2, median: 1.2, speed: 60, sidewalk: 1.8, lane: 2.0 },
+  collector: { w: 4.4, lanes: 1, median: 0, speed: 40, sidewalk: 1.4, lane: 2.2 },
+  local: { w: 4.0, lanes: 1, median: 0, speed: 30, sidewalk: 1.2, lane: 2.0 },
+  service: { w: 4.0, lanes: 1, median: 0, speed: 20, sidewalk: 0, lane: 2.0 },
+  ramp: { w: 2.8, lanes: 1, median: 0, speed: 50, sidewalk: 0, lane: 2.8 },
 };
-const MW = CLS.motorway.w / 2, ATT = MW - 1.0;   // ramps leave / join a motorway with their centre line inside the outer lane
+const MW = CLS.motorway.w / 2, ATT = MW - 1.0, TRK = MW * 0.61;   // ramps leave / join a motorway with their centre line inside the outer lane
 
 // ---- small geometry kit (screen frame: x right, z down; a right turn = increasing angle)
 const add = (a, b) => [a[0] + b[0], a[1] + b[1]], sub = (a, b) => [a[0] - b[0], a[1] - b[1]], mul = (a, k) => [a[0] * k, a[1] * k];
@@ -149,7 +150,7 @@ export function buildPlan() {
       const off = join(cubic([-104, ATT], [1, 0], 7, [-86, LN], [1, 0], 7, 10), seg([-86, LN], [-60, LN], 4), cubic([-60, LN], [1, 0], 24, [-(cw - 0.3), DT], [1, 0], 16));
       const on = join(cubic([cw - 0.3, DT], [1, 0], 16, [60, LN], [1, 0], 24), seg([60, LN], [86, LN], 4), cubic([86, LN], [1, 0], 7, [104, ATT], [1, 0], 7, 10));
       const sl = (cs ?? 0) + CLS.ramp.w / 2 + 0.6;   // slip lane centre: its own lane beside the road with a painted / kerbed island
-      const slipOff = join(cubic([-74, LN], [1, 0], 36, [-sl, DT + 10], [0, 1], 22, 32), seg([-sl, DT + 10], [-sl, DT + 13], 2), cubic([-sl, DT + 13], [0, 1], 7, [-((cs ?? 0) - 0.8), DT + 28], [0, 1], 7, 12));
+      const slipOff = join(cubic([-80, LN], [1, 0], 40, [-sl, DT + 10], [0, 1], 28, 36), seg([-sl, DT + 10], [-sl, DT + 13], 2), cubic([-sl, DT + 13], [0, 1], 7, [-((cs ?? 0) - 0.8), DT + 28], [0, 1], 7, 12));
       const slipOn = slipOff.map(([u, v]) => [-u, v]).reverse();
       ramps.push({ kind: 'off', pts: off.map(Fk), attach: ['motorway', 'cross'], decel: 26 }, { kind: 'on', pts: on.map(Fk), attach: ['cross', 'motorway'], accel: 26 });
       if (cs == null) return;   // no room for slip lanes (P+R entrance): right turns use the signalised terminal
@@ -172,14 +173,14 @@ export function buildPlan() {
   }
   function trumpet(id, at, name) {
     // M2 ends from the north; the through road H (z = at.z) runs east-west. Bell (loop + rim) on the far (south) side, two trunk ramps cross H on a bridge.
-    const F = frame(at, 0), hw = CLS.arterial.w / 2, r = 17, C = [-3.2 - r, hw + 1.6 + r], Rr = r + 6.4, top = -45, ramps = [];
-    const b = join(seg([-3.2, top], [-3.2, C[1]], 10), arc(C, r, 0, 270), seg([C[0], hw + 1.6], [6, hw + 1.6], 6), cubic([6, hw + 1.6], [1, 0], 7, [22, hw - 1.0], [1, 0], 7, 10));
-    const d = join(cubic([C[0] - Rr - 35, hw - 1.0], [1, 0], 8, [C[0] - Rr - 17, hw + 1.6], [1, 0], 8, 12), arc([C[0] - Rr - 17, C[1]], 17, -90, 0), arc(C, Rr, 180, 0), seg([3.2, C[1]], [3.2, top], 10));
+    const F = frame(at, 0), hw = CLS.arterial.w / 2, r = 17, C = [-TRK - r, hw + CLS.ramp.w / 2 + 0.4 + r], Rr = r + 2 * TRK, top = -45, ramps = [];
+    const b = join(seg([-TRK, top], [-TRK, C[1]], 10), arc(C, r, 0, 270), seg([C[0], hw + CLS.ramp.w / 2 + 0.4], [6, hw + CLS.ramp.w / 2 + 0.4], 6), cubic([6, hw + CLS.ramp.w / 2 + 0.4], [1, 0], 7, [22, hw - 1.0], [1, 0], 7, 10));
+    const d = join(cubic([C[0] - Rr - 35, hw - 1.0], [1, 0], 8, [C[0] - Rr - 17, hw + CLS.ramp.w / 2 + 0.4], [1, 0], 8, 12), arc([C[0] - Rr - 17, C[1]], 17, -90, 0), arc(C, Rr, 180, 0), seg([TRK, C[1]], [TRK, top], 10));
     const LM = MW + CLS.ramp.w / 2, LH = hw + CLS.ramp.w / 2;   // added lanes beside M2 and beside the through road
     const a = join(cubic([-ATT, -96], [0, 1], 6, [-LM, -80], [0, 1], 6, 10), seg([-LM, -80], [-LM, -66], 3), cubic([-LM, -66], [0, 1], 30, [-34, -LH], [-1, 0], 24), seg([-34, -LH], [-50, -LH], 3), cubic([-50, -LH], [-1, 0], 6, [-64, -(hw - 1.0)], [-1, 0], 6, 10));
     const c = join(cubic([64, -(hw - 1.0)], [-1, 0], 6, [50, -LH], [-1, 0], 6, 10), seg([50, -LH], [34, -LH], 3), cubic([34, -LH], [-1, 0], 24, [LM, -66], [0, -1], 30), seg([LM, -66], [LM, -80], 3), cubic([LM, -80], [0, -1], 6, [ATT, -96], [0, -1], 6, 10));
-    ramps.push({ kind: 'loop', pts: b.map(F), r, attach: ['motorway', 'cross'], bridges: [[F([-3.2, -hw - 4]), F([-3.2, hw + 4])]], note: 'М2 на юг -> Портовое ш. на восток (петля 270°)' });
-    ramps.push({ kind: 'semi-direct', pts: d.map(F), attach: ['cross', 'motorway'], bridges: [[F([3.2, hw + 4]), F([3.2, -hw - 4])]], note: 'Южный пр. на восток -> М2 на север (раструб вокруг петли)' });
+    ramps.push({ kind: 'loop', pts: b.map(F), r, attach: ['motorway', 'cross'], bridges: [[F([-TRK, -hw - 4]), F([-TRK, hw + 4])]], note: 'М2 на юг -> Портовое ш. на восток (петля 270°)' });
+    ramps.push({ kind: 'semi-direct', pts: d.map(F), attach: ['cross', 'motorway'], bridges: [[F([TRK, hw + 4]), F([TRK, -hw - 4])]], note: 'Южный пр. на восток -> М2 на север (раструб вокруг петли)' });
     ramps.push({ kind: 'direct', pts: a.map(F), attach: ['motorway', 'cross'], note: 'М2 на юг -> Южный пр. на запад' });
     ramps.push({ kind: 'direct', pts: c.map(F), attach: ['cross', 'motorway'], note: 'Портовое ш. на запад -> М2 на север' });
     interchanges.push({ id, kind: 'trumpet', name, at, ramps, trunkEnd: F([0, top]), note: 'три ветви: М2 заканчивается; раструб на стороне порта' });
@@ -193,10 +194,11 @@ export function buildPlan() {
   const nodeArr = [...nodes.values()], byId = new Map(nodeArr.map((n) => [n.id, n])), eById = new Map(edges.map((e) => [e.id, e]));
   const inner = (x, z) => Math.abs(x) <= 160 && Math.abs(z) <= 160;
   const SPECIAL = {
-    '0,0': { type: 'roundabout', R: 12, lanes: 2, name: 'Центральная площадь' },
-    '0,188': { type: 'roundabout', R: 9, lanes: 1, name: 'Морская площадь' },
-    '-232,-160': { type: 'roundabout', R: 9, lanes: 1 }, '-232,0': { type: 'roundabout', R: 9, lanes: 1 }, '-232,160': { type: 'roundabout', R: 9, lanes: 1 },
-    '160,-190': { type: 'roundabout', R: 9, lanes: 1 }, '0,-190': { type: 'riro' },
+    '0,0': { type: 'roundabout', R: 15, lanes: 2, name: 'Центральная площадь' },
+    '0,188': { type: 'roundabout', R: 11, lanes: 1, name: 'Морская площадь' },
+    '-232,-160': { type: 'roundabout', R: 11, lanes: 1 }, '-232,0': { type: 'roundabout', R: 11, lanes: 1 }, '-232,160': { type: 'roundabout', R: 11, lanes: 1 },
+    '-232,-80': { type: 'priority', major: null }, '-232,80': { type: 'priority', major: null }, '-80,188': { type: 'priority', major: null }, '80,-190': { type: 'priority', major: null },
+    '160,-190': { type: 'roundabout', R: 11, lanes: 1 }, '0,-190': { type: 'riro' },
   };
   const junctions = [];
   for (const n of nodeArr) {
@@ -211,7 +213,7 @@ export function buildPlan() {
     else if (isTerm) j = { type: 'signal', terminal: true };
     else if (L.length === 2) j = { type: 'corner' };
     else if (hi === 'arterial' && lo === 'arterial') j = { type: 'signal' };
-    else if (hi === 'arterial' && lo === 'collector') j = inner(n.x, n.z) ? { type: 'signal' } : { type: 'roundabout', R: 9, lanes: 1 };
+    else if (hi === 'arterial' && lo === 'collector') j = inner(n.x, n.z) ? { type: 'signal' } : { type: 'roundabout', R: 11, lanes: 1 };
     else if (hi === 'arterial' && lo === 'service' && !L.some((e) => e.lot) && (n.x === 160 || n.x === 80)) j = { type: 'signal' };
     else if (hi === 'arterial') j = { type: 'riro' };
     else if (hi === 'collector' && lo === 'collector') j = { type: 'mini' };
