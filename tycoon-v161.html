@@ -1416,9 +1416,9 @@ const UPGRADE_PAD_OFFSET = 2.15;  // an upgrade pad sits this far to the side of
 const MAX_BUILDING_LEVEL = 10;    // 1 = just built; nine upgrade levels on top of that (v161 late game: levels 6-10 = 'gold tiers', assets/late-game-v161.js; was 5)
 
 // Spiral layout: each stage sits further from spawn, so the base visibly grows outward.
-const SPIRAL_BASE_RADIUS = 7;
-const SPIRAL_RADIUS_STEP = 4.6;
-const SPIRAL_ANGLE_STEP = 0.95; // radians per stage
+const SPIRAL_BASE_RADIUS = 18;   // v161 roundabout (2026-10-18): was 7; the first house must stand clear of the circle + its splitter islands (see assets/roundabout-v161.js)
+const SPIRAL_RADIUS_STEP = 4.0;
+const SPIRAL_ANGLE_STEP = 0.8; // radians per stage (v161 roundabout 2026-10-18: was 0.95; with 0.95 and the larger base radius a street had to cross the hub's arms next to the circle)
 
 // v63 hotfix 0.3(a): the road hub (pathPoints[0], where every stage spoke from
 // spokeProjectV367 converges) sits at the world origin. moveWorkVehicle() fully stops any
@@ -1804,7 +1804,10 @@ function buildingPosition(i) {
 // footprint and the main path.
 function upgradePadPosition(buildingPos, i) {
   const dir = stagePosition(i).normalize();
-  const tangent = new THREE.Vector3(-dir.z, 0, dir.x);
+  let tangent = new THREE.Vector3(-dir.z, 0, dir.x);
+  // v161 (2026-10-18): the pad stands BESIDE the building's own axes, not on the spiral's diagonal tangent: with the roundabout layout a pad at 40 degrees to the walls came within 0.53 m of the
+  // factory's wall boxes (the layers build outward from the pad side, assets/factory-v161.js padLocal). Same side as before, snapped to the side axis perpendicular to the driveway axis.
+  if (!STAGES[i]?.expansionV159 && typeof stageAccessAxisV92 === 'function') { const a = stageAccessAxisV92(i), perp = new THREE.Vector3(-a.z, 0, a.x); if (perp.dot(tangent) < 0) perp.negate(); tangent = perp; }
   /* v159 integration begin */
   if (STAGES[i]?.expansionV159) return buildingPos.clone().addScaledVector(tangent, i === 10 ? 4.4 : 3.8);
   /* v159 integration end */
@@ -33898,6 +33901,7 @@ function branchCandidates99(start,end,obs){
   add([start,new THREE.Vector3(start.x,0,end.z),end]);
   return c;
 }
+const ROUNDABOUT_KNEE_MIN_V161=16;
 function plan(i){
   ensureSig();if(routeCache.has(i))return routeCache.get(i).map(p=>p.clone());
   const hub=STAGE_HUB_V367.clone(),finalEnd=stageRoadEndpointV367(i),approach=stageRoadApproachV92(i),
@@ -33910,7 +33914,14 @@ function plan(i){
     const newLen=len99(branch),prefixLen=len99(prefix),bends=Math.max(0,branch.length-2);
     // Almost all weight is on new asphalt. This produces one connected tree instead of
     // independent rectangular roads from the hub.
-    const score=newLen+bends*.36+prefixLen*.025;
+    // v161 roundabout (2026-10-18): the hub is a roundabout, so no knee / junction may sit within ROUNDABOUT_KNEE_MIN_V161 of it (real practice: the first junction is several car lengths from the circle,
+    // here the ring + splitter islands reach 6 m). The penalty only ranks candidates; if every candidate breaks it the cheapest one still wins.
+    let hubPen=0;
+    for(let q=1;q<path.length-1;q++)if(Math.hypot(path[q].x-hub.x,path[q].z-hub.z)<ROUNDABOUT_KNEE_MIN_V161)hubPen+=500;
+    // a street that runs ACROSS the hub's arms near the circle (a cross street, not a radial leg) is a junction too: no path segment after the first leg may pass closer than the limit
+    for(let q=1;q<path.length-1;q++){const a=path[q],b=path[q+1],dx=b.x-a.x,dz=b.z-a.z,l2=dx*dx+dz*dz,t=l2?Math.max(0,Math.min(1,((hub.x-a.x)*dx+(hub.z-a.z)*dz)/l2)):0;if(Math.hypot(a.x+dx*t-hub.x,a.z+dz*t-hub.z)<ROUNDABOUT_KNEE_MIN_V161-.5)hubPen+=500;}
+    if(branch.length&&Math.hypot(branch[0].x-hub.x,branch[0].z-hub.z)>.3&&Math.hypot(branch[0].x-hub.x,branch[0].z-hub.z)<ROUNDABOUT_KNEE_MIN_V161)hubPen+=500;
+    const score=newLen+bends*.36+prefixLen*.025+hubPen;
     if(!best||score<best.score)best={path,score};
   };
 
@@ -33920,8 +33931,11 @@ function plan(i){
     for(let j=0;j<i;j++){
       const old=plan(j),lastUsable=Math.max(1,old.length-1);
       for(let k=0;k<lastUsable-1;k++){
-        const hit=nearestPoint99(approach,old[k],old[k+1]),pre=prefix99(old,k,hit.t);
-        for(const b of branchCandidates99(hit.p,approach,obs))consider(pre,b);
+        const hit=nearestPoint99(approach,old[k],old[k+1]);
+        // v161 roundabout: the nearest point may be too close to the hub (a junction next to the circle); the far end of that leg is a second place to branch from
+        const hits=[hit];if(Math.hypot(hit.p.x-hub.x,hit.p.z-hub.z)>.3&&Math.hypot(hit.p.x-hub.x,hit.p.z-hub.z)<ROUNDABOUT_KNEE_MIN_V161&&Math.hypot(old[k+1].x-hub.x,old[k+1].z-hub.z)>=ROUNDABOUT_KNEE_MIN_V161)hits.push({p:old[k+1].clone(),t:1});
+        for(const h of hits){const pre=prefix99(old,k,h.t);
+          for(const b of branchCandidates99(h.p,approach,obs))consider(pre,b);}
       }
     }
     // Safe fallback. Slightly penalised so reusing the existing road normally wins.
@@ -39743,6 +39757,7 @@ body.v165-polish :is(.projectProgress,.cityProgress,.fleetCondition)>i{backgroun
 </script>
 <script src="assets/panel-stable-v161.js"></script>
 <script src="assets/masterplan-v161.js"></script>
+<script src="assets/roundabout-v161.js"></script>
 <link rel="stylesheet" href="assets/premium-ui-v161.css">
 </body>
 

@@ -4,7 +4,7 @@
 // The plan's pedestrian underpass is not built (documented in compile-port.mjs): the bus station is reached over the apron south of the tracks.
 //   launch 1 (fresh game): data (check, hashes of B01..B14 unchanged, station data, blockers, flood fill), gate matrix (stage 12 + B13), exact price 330000 through the real #actionBtn,
 //   group / names / tags, hall + platforms not walkable, forecourt + bus station walkable, 8-direction pushes round the hall, draw-call budget, save/reload, reset.
-//   launch 2 (OLD_SAVE): all flags false, no objects, signature 51/648310607, restore chain.
+//   launch 2 (OLD_SAVE): all flags false, no objects, signature 51/-720375465, restore chain.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -196,7 +196,7 @@ await run(async () => {
     await ev(PAGE);
     const o = await ev(() => ({ flags: { ...masterplanStateV161 }, mp: __mpObjects(), markers: ['B01', 'B13', 'B15'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), sig: __sig() }));
     check(Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: all flags false, no object, no pad (${J({ mp: o.mp.length, markers: o.markers })})`);
-    check(o.sig.count === 51 && o.sig.hash === 648310607, `OLD_SAVE road signature stays 51 / 648310607 (${o.sig.count}/${o.sig.hash})`);
+    check(o.sig.count === 51 && o.sig.hash === -720375465, `OLD_SAVE road signature stays 51 / -720375465 (${o.sig.count}/${o.sig.hash})`);
     const chain = await ev(() => {
       const r = (d) => { restoreMasterplanV161(d); return ['B13', 'B14', 'B15'].map((k) => k + (masterplanStateV161[k] ? '1' : '0')).join(' '); };
       const all = Object.fromEntries(Object.keys(masterplanStateV161).map((k) => [k, true]));

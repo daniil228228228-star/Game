@@ -7,7 +7,7 @@
 //   launch 1 (fresh game): data (check, hashes of B01..B10 unchanged, lots 10 / 3, holes, fences), gate matrix (stage 10 + chain, no reputation in phaseInfo[4]), exact prices 70000 / 140000 through the real
 //   #actionBtn, groups / names / tags / one surface mesh per pad, seams (avenue, South street, M2 arterial, frontage streets, deck), outside (water, cut, M2, ramps), 8-direction pushes at every edge,
 //   trench depth by raycast, deck crossing, shadows at the south end, draw-call budget (layer <= +40, phase 4 <= +14), save/reload at a spot on the new floor, lazy build, reset.
-//   launch 2 (OLD_SAVE): twelve flags false, no objects, signature 51/648310607, restore chain.
+//   launch 2 (OLD_SAVE): twelve flags false, no objects, signature 51/-720375465, restore chain.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -127,7 +127,7 @@ await run(async () => {
   const ev = (fn, arg) => page.evaluate(fn, arg);
   try {
     await ev(PAGE);
-    // (the absolute fresh signature 17/678830722 is asserted by tests/sawmill-area.test.mjs / masterplan-port-verify.test.mjs; here every purchase must leave the live signature untouched, and OLD_SAVE keeps 51/648310607)
+    // (the absolute fresh signature 17/678830722 is asserted by tests/sawmill-area.test.mjs / masterplan-port-verify.test.mjs; here every purchase must leave the live signature untouched, and OLD_SAVE keeps 51/-720375465)
     const pre = await ev(() => ({ mp: __mpObjects(), flags: { ...masterplanStateV161 } }));
     check(pre.mp.length === 0 && Object.keys(pre.flags).length >= 12 && Object.values(pre.flags).every((f) => f === false), `fresh game: no object, twelve flags all false (${J(pre.flags)})`);
     // phase 1-3 floors are bought in the earlier tests; here the chain B11 needs is restored from a save-shaped object (B02, B04, B08 never bought)
@@ -373,7 +373,7 @@ await run(async () => {
     await ev(PAGE);
     const o = await ev(() => ({ flags: { ...masterplanStateV161 }, mp: __mpObjects(), markers: ['B01', 'B10', 'B11', 'B12'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), sig: __sig(), stage: stageIndex }));
     check(Object.keys(o.flags).length >= 12 && Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: twelve flags false, no object, no pad (${J({ flags: o.flags, mp: o.mp.length, markers: o.markers, stage: o.stage })})`);
-    check(o.sig.count === 51 && o.sig.hash === 648310607, `OLD_SAVE road signature stays 51 / 648310607 (${o.sig.count}/${o.sig.hash})`);
+    check(o.sig.count === 51 && o.sig.hash === -720375465, `OLD_SAVE road signature stays 51 / -720375465 (${o.sig.count}/${o.sig.hash})`);
     check(await ev(() => !MasterplanV161.access(100, 140) && !MasterplanV161.access(6, 120) && !MasterplanV161.floor(60, 160)), 'OLD_SAVE: no paid floor anywhere (access false)');
     const chain = await ev(() => {
       const r = (d) => { restoreMasterplanV161(d); return Object.entries(masterplanStateV161).slice(0, 12).map(([k, v]) => k + (v ? '1' : '0')).join(' '); };

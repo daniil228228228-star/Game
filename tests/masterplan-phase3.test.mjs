@@ -9,7 +9,7 @@
 //       8-direction pushes at every edge of every phase-3 floor (drawn floor within 12 cm, never in the sea, never beyond the land); solid props (trees, planters, lamps);
 //     * backdrop hidden on the new floors; sea square covers the world; shadows within one texel at the far east end; draw-call budget (whole layer <= +40, phase 3 alone <= +14);
 //     * save/reload keeps the flags and the player; lazy build / hide by distance; reset path clears groups, sea, colliders, retired scenery; 0 console errors, 0 4xx.
-//   launch 2 (OLD_SAVE): all ten flags false, no objects, signature 51/648310607, restore chain B01 -> B03 -> B05 -> B07 -> B08 / B06 + B07 -> B09 -> B10.
+//   launch 2 (OLD_SAVE): all ten flags false, no objects, signature 51/-720375465, restore chain B01 -> B03 -> B05 -> B07 -> B08 / B06 + B07 -> B09 -> B10.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -355,7 +355,7 @@ await run(async () => {
     await ev(PAGE);
     const o = await ev(() => ({ flags: { ...masterplanStateV161 }, mp: __mpObjects(), markers: ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B09', 'B10'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), sig: __sig(), stage: stageIndex }));
     check(Object.keys(o.flags).length >= 10 && Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: ten flags false, no object, no pad (${J({ flags: o.flags, mp: o.mp.length, markers: o.markers, stage: o.stage })})`);
-    check(o.sig.count === 51 && o.sig.hash === 648310607, `OLD_SAVE road signature stays 51 / 648310607 (${o.sig.count}/${o.sig.hash})`);
+    check(o.sig.count === 51 && o.sig.hash === -720375465, `OLD_SAVE road signature stays 51 / -720375465 (${o.sig.count}/${o.sig.hash})`);
     check(await ev(() => !MasterplanV161.access(130, -100) && !MasterplanV161.access(100, 0) && !MasterplanV161.floor(150, 0)), 'OLD_SAVE: no paid floor anywhere (access false)');
     const chain = await ev(() => {
       const r = (d) => { restoreMasterplanV161(d); return Object.entries(masterplanStateV161).slice(0, 10).map(([k, v]) => k + (v ? '1' : '0')).join(' '); };   // phase 4 adds B11 / B12 (tests/masterplan-phase4.test.mjs)

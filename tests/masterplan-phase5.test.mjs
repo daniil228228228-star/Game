@@ -5,7 +5,7 @@
 // along the strip boundary, long straight runs also stand in the v83 registry as thin decor colliders.
 //   launch 1 (fresh game): data (check, hashes of B01..B12 unchanged, rails / nodes / stations / yard / blockers / fences), gate matrix (stage 11 + chain), exact prices 210000 / 140000..105000
 //   through the real #actionBtn, groups / names / tags / sleeper InstancedMesh, seams, tracks not walkable, 8-direction pushes, draw-call budget (layer <= +40, phase 5 <= +10), save/reload, reset.
-//   launch 2 (OLD_SAVE): fourteen flags false, no objects, signature 51/648310607, restore chain.
+//   launch 2 (OLD_SAVE): fourteen flags false, no objects, signature 51/-720375465, restore chain.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -327,7 +327,7 @@ await run(async () => {
     await ev(PAGE);
     const o = await ev(() => ({ flags: { ...masterplanStateV161 }, mp: __mpObjects(), markers: ['B01', 'B12', 'B13', 'B14'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), sig: __sig(), stage: stageIndex }));
     check(Object.keys(o.flags).length >= 14 && Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: fourteen flags false, no object, no pad (${J({ flags: o.flags, mp: o.mp.length, markers: o.markers, stage: o.stage })})`);
-    check(o.sig.count === 51 && o.sig.hash === 648310607, `OLD_SAVE road signature stays 51 / 648310607 (${o.sig.count}/${o.sig.hash})`);
+    check(o.sig.count === 51 && o.sig.hash === -720375465, `OLD_SAVE road signature stays 51 / -720375465 (${o.sig.count}/${o.sig.hash})`);
     check(await ev(() => !MasterplanV161.access(165, 60) && !MasterplanV161.floor(165, 60)), 'OLD_SAVE: no paid floor anywhere (access false)');
     const chain = await ev(() => {
       const r = (d) => { restoreMasterplanV161(d); return Object.entries(masterplanStateV161).slice(10, 14).map(([k, v]) => k + (v ? '1' : '0')).join(' '); };

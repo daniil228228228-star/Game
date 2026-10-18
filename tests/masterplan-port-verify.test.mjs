@@ -2,7 +2,7 @@
 // real button, clamp, geometry limits, reload) with what that one does not measure:
 //   fresh save + stage jump: nothing of the layer exists before its turn; pads appear exactly when available (B01 needs stage 4 + a paid ring, B02 needs B01, B03 needs stage 6 +
 //   reputation 25 + B01); every purchase through the real #actionBtn charges ONE exact price (read from the game: v124 x1.25 already applied) and builds the group;
-//   road meshes (the groups behind the signatures 17/678830722, 47/-510574045, 51/648310607) have the same uuids and the same count/hash after every purchase;
+//   road meshes (the groups behind the signatures 17/678830722, 47/-510574045, 51/-720375465) have the same uuids and the same count/hash after every purchase;
 //   draw-call / triangle / geometry delta of the whole layer at the same viewpoint (plan budget <= +40 draw calls);
 //   edges of the paid floor probed in 8 directions at the pier end, the port avenue, the quay and the north strip end: the player stays on drawn floor (ray down hits the
 //   floor within 10 cm), never reaches the sea, never gets stuck; real keyboard walk to the pier end and to the north end and back;
@@ -208,7 +208,7 @@ await run(async () => {
     await ev(PAGE);
     const o = await ev(() => ({ flags: { ...masterplanStateV161 }, mp: __mpObjects(), markers: ['B01', 'B02', 'B03'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), sig: __sig(), stage: stageIndex, calls: 0 }));
     check(Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: all flags false, no masterplan object, no pad (${J({ flags: o.flags, mp: o.mp.length, markers: o.markers, stage: o.stage })})`);
-    check(o.sig.count === 51 && o.sig.hash === 648310607, `OLD_SAVE road signature stays 51 / 648310607 (${o.sig.count}/${o.sig.hash})`);
+    check(o.sig.count === 51 && o.sig.hash === -720375465, `OLD_SAVE road signature stays 51 / -720375465 (${o.sig.count}/${o.sig.hash})`);
     await ev(() => { stageIndex = 16; refreshIndustrialPadMarkersV118(); });
     const later = await ev(() => ({ markers: ['B01', 'B02', 'B03'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), roads: totalRoadLevelsV37(), mp: __mpObjects().length, sig: __sig() }));
     console.log('OLD_SAVE at stage 16 (opt-in): ' + J({ markers: later.markers, roadLevels: later.roads, mp: later.mp }));

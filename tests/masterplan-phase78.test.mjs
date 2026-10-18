@@ -3,7 +3,7 @@
 // the bridge (street = the only floor over the estuary, deck slab + parapets + piers, no slab of its own), the south-bank slab with the two sports parcels.
 //   launch 1 (fresh game): data (check, hashes of B01..B15 unchanged, land / lots / walkable, flood fill), gate matrix (stage 14 + reputation 120 + chain, stage 15 + reputation 220),
 //   exact prices through the real #actionBtn, groups / names / tags, floor checks (quay, bridge deck across the water, south bank, the water beside the deck), 8-direction pushes,
-//   draw-call budget, save/reload, reset.   launch 2 (OLD_SAVE): all flags false, no objects, signature 51/648310607, restore chain.
+//   draw-call budget, save/reload, reset.   launch 2 (OLD_SAVE): all flags false, no objects, signature 51/-720375465, restore chain.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -216,7 +216,7 @@ await run(async () => {
     await ev(PAGE);
     const o = await ev(() => ({ flags: { ...masterplanStateV161 }, mp: __mpObjects(), markers: ['B01', 'B16', 'B17', 'B18'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), sig: __sig() }));
     check(Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: all flags false, no object, no pad (${J({ mp: o.mp.length, markers: o.markers })})`);
-    check(o.sig.count === 51 && o.sig.hash === 648310607, `OLD_SAVE road signature stays 51 / 648310607 (${o.sig.count}/${o.sig.hash})`);
+    check(o.sig.count === 51 && o.sig.hash === -720375465, `OLD_SAVE road signature stays 51 / -720375465 (${o.sig.count}/${o.sig.hash})`);
     const chain = await ev(() => {
       const r = (d) => { restoreMasterplanV161(d); return ['B16', 'B17', 'B18'].map((k) => k + (masterplanStateV161[k] ? '1' : '0')).join(' '); };
       const all = Object.fromEntries(Object.keys(masterplanStateV161).map((k) => [k, true]));

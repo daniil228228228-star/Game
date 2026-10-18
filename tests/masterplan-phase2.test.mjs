@@ -12,7 +12,7 @@
 //     * draw calls of the whole masterplan layer at the worst viewpoints (budget <= +40), meshes and triangles of both new groups;
 //     * first visit: after a reload at the far pier a teleport into the park builds its group and floor within two frames (before the 500 ms tick);
 //     * save/reload keeps all five flags, the built groups and a player standing in the NW blocks; 0 console errors, 0 4xx.
-//   launch 2 (OLD_SAVE): all flags false, no objects, no pads, signature 51/648310607, requires chain B01 -> B03 -> B04/B05 enforced by restore.
+//   launch 2 (OLD_SAVE): all flags false, no objects, no pads, signature 51/-720375465, requires chain B01 -> B03 -> B04/B05 enforced by restore.
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -332,7 +332,7 @@ await run(async () => {
     await ev(PAGE);
     const o = await ev(() => ({ flags: { ...masterplanStateV161 }, mp: __mpObjects(), markers: ['B01', 'B02', 'B03', 'B04', 'B05'].map((id) => industrialPadMarkersV118.has('mp161-' + id)), sig: __sig(), stage: stageIndex }));
     check(Object.keys(o.flags).length >= 5 && Object.values(o.flags).every((f) => f === false) && o.mp.length === 0 && o.markers.every((m) => !m), `OLD_SAVE: five flags false, no object, no pad (${J({ flags: o.flags, mp: o.mp.length, markers: o.markers, stage: o.stage })})`);
-    check(o.sig.count === 51 && o.sig.hash === 648310607, `OLD_SAVE road signature stays 51 / 648310607 (${o.sig.count}/${o.sig.hash})`);
+    check(o.sig.count === 51 && o.sig.hash === -720375465, `OLD_SAVE road signature stays 51 / -720375465 (${o.sig.count}/${o.sig.hash})`);
     check(await ev(() => !MasterplanV161.access(-60, -125) && !MasterplanV161.access(55, -125) && !MasterplanV161.floor(-60, -125)), 'OLD_SAVE: no paid floor anywhere (access false)');
     const chain = await ev(() => {
       const r = (d) => { restoreMasterplanV161(d); return Object.entries(masterplanStateV161).slice(0, 5).map(([k, v]) => k + (v ? '1' : '0')).join(' '); };

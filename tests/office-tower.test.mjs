@@ -32,8 +32,11 @@ console.log('stages:', ALL.map((i) => `${i} ${names[i]}`).join(', '));
 // ------------------------------------------------------------------------------------------------ B. live world: all stages one by one at level 1, then 4 real upgrade rounds (like tests/roads.test.mjs 3b, stages 6..15)
 const fin = () => ev(() => { for (const b of buildings) if (b.underConstruction) { b.underConstruction = false; b.progress = 1; } for (let k = growingMeshes.length - 1; k >= 0; k--) { growingMeshes[k].mesh.visible = true; growingMeshes[k].mesh.scale.set(1, 1, 1); growingMeshes.splice(k, 1); } });
 const uu = () => ev(() => { const tags = ['v59RoadDeck', 'v86StageRoad', 'v66ServiceRoad', 'v116PersistentRoad'], o = []; scene.traverse((m) => { if (m.isMesh && m.userData && tags.some((t) => m.userData[t])) o.push(m.uuid); }); return o; });
+const tagOf = (ids) => ev((ids) => { const set = new Set(ids), out = {}; scene.traverse((m) => { if (set.has(m.uuid)) { const k = Object.keys(m.userData || {}).filter((x) => /^v\d+/.test(x)).join('+') + '|' + (m.parent && m.parent.name); out[k] = (out[k] || 0) + 1; } }); return out; }, ids);
 const same = (a, b) => { const A = new Set(a), B = new Set(b); return a.length === b.length && a.every((x) => B.has(x)) && b.every((x) => A.has(x)); };
 const settleU = async (min = 3, max = 45) => { let prevU = await uu(), n = 0; for (let k = 0; k < max; k++) { await page.waitForTimeout(900); const now = await uu(); if (same(prevU, now)) { if (++n >= min) return now; } else n = 0; prevU = now; } return prevU; };
+// the building probe stands its meshes at the hub: the roundabout island (a solid at (0,0)) would block their door steps, so this test runs without the overlay (tests/roundabout.test.mjs owns it)
+await ev(() => { if (window.RoundaboutV161) { RoundaboutV161.enabled = false; RoundaboutV161.refresh(true); } });
 await ev(() => { stageIndex = 16; money = 1e12; planks = 1e7; concrete = 1e6; metal = 1e6; });
 for (let i = 0; i < 16; i++) {
   const had = await ev((i) => buildings.some((b) => b.index === i), i);
@@ -52,6 +55,8 @@ for (let L = 2; L <= 5; L++) {
     await fin();
   }
   const afterU = await settleU(3, 45);
+  const addedU = afterU.filter((x) => !new Set(beforeU).has(x));
+  if (addedU.length) console.log('INFO round', L, 'road meshes ADDED (not re-laid):', J(await tagOf(addedU)));
   rounds.push({ L, before: beforeU.length, after: afterU.length, same: same(beforeU, afterU), destroyed: beforeU.filter((x) => !new Set(afterU).has(x)).length });
   beforeU = afterU;
 }
@@ -137,7 +142,7 @@ for (const i of ALL) {
           for (let s = 0; s < 80; s++) { playerVelocity.set(-f.x * 4, 0, -f.z * 4); const rr = resolvePlayerCircleCollisions(x - f.x * 0.05, z - f.z * 0.05, own); x = rr.x; z = rr.z; minD = Math.min(minD, Math.hypot(x - w.x, z - w.z)); best = Math.max(best, -((x - w.x) * f.x + (z - w.z) * f.z)); }
           playerVelocity.copy(saved);
           meas.doorAxis = { minD: +minD.toFixed(2), past: +best.toFixed(2) };
-          const stepPt = { x: w.x + f.x * 0.9, z: w.z + f.z * 0.9 }; meas.doorStep = P.blockedAt(stepPt.x, stepPt.z).hit;
+          const stepPt = { x: w.x + f.x * 0.9, z: w.z + f.z * 0.9 }; { const bl = P.blockedAt(stepPt.x, stepPt.z); meas.doorStep = bl.hit; meas.doorBy = bl.by; meas.stepPt = [+stepPt.x.toFixed(1), +stepPt.z.toFixed(1)]; }
         }
         let pics = null; if (shots.length) pics = P.shoot(m, shots).shots;
         return { meas, pics };
@@ -168,7 +173,7 @@ for (const si of ALL) {
   check(ls.every((r) => r.overlap !== null && r.overlap >= 0.9), `${nm}: the wall boxes cover >= 90 % of the wall footprint (worst ${Math.min(...ls.map((r) => r.overlap))})`);
   check(ls.every((r) => r.outsideMax <= 0.3 && r.outside <= 0.8), `${nm}: no collider more than 0.3 m (0.8 m2) outside the walls (worst ${Math.max(...ls.map((r) => r.outsideMax))} m / ${Math.max(...ls.map((r) => r.outside))} m2; before ${oldS[si + ':1'] ? 'up to 1.04 m' : ''})`);
   check(ls.every((r) => r.sweepReached === 0 && r.doorAxis && r.doorAxis.minD <= 0.8 && r.doorAxis.past <= 0.75), `${nm}: no walk-in from 8 directions; along the door axis the player reaches the revolving door (${J(ls.slice(0, 1).map((r) => r.doorAxis))} m from the door) but not past the niche (<= 0.75 m)`);
-  check(ls.every((r) => r.door && r.door.dot >= 0.95 && r.door.dist <= r.door.radius + 1.5 && r.doorStep === false), `${nm}: the door faces the driveway (dot ${J(ls.slice(0, 1).map((r) => r.door.dot))}, within radius + 1.5 m of the road end) and the step in front is walkable`);
+  check(ls.every((r) => r.door && r.door.dot >= 0.95 && r.door.dist <= r.door.radius + 1.5 && r.doorStep === false), `${nm}: the door faces the driveway (dot ${J(ls.slice(0, 1).map((r) => r.door.dot))}, within radius + 1.5 m of the road end) and the step in front is walkable ${J(ls.filter((r) => r.doorStep !== false).slice(0, 1).map((r) => [r.L, r.stepPt, r.doorBy]))}`);
   check(ls.every((r) => r.padDist >= 0.8), `${nm}: the upgrade pad is >= 0.8 m outside every wall box (${Math.min(...ls.map((r) => r.padDist))} m)`);
   const H = ls.slice(0, 5).map((r) => r.size[1]);
   check(H.every((h, k) => k === 0 || (h >= H[k - 1] - 1e-6 && h - H[k - 1] <= hcap)) && H[4] <= H[0] * (tower ? 3.0 : 2.4), `${nm}: no 18 % stretch of one slab - the height grows by whole floors only: ${J(H.map((h) => +h.toFixed(2)))} m for levels 1..5, <= ${hcap} m per level (old builder ${J(Object.fromEntries(Object.entries(oldS).map(([k, v]) => [k, v.height])))})`);

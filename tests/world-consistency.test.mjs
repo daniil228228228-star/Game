@@ -22,7 +22,7 @@ const SHOTS = process.env.SHOTS_DIR ? path.resolve(process.env.SHOTS_DIR) : null
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 const J = JSON.stringify;
 // service group of the old full network measured on commit 93573ed (OLD_SAVE, stage 1, every flag built): v70 + v113 + stage road meshes
-const OLD_ROADS = { count: 51, hash: 648310607 };
+const OLD_ROADS = { count: 51, hash: -720375465 };
 const DOCUMENTED_DEAD_ENDS = []; // [{ id, why }] road ends that may touch nothing and no anchor; empty = none known
 
 // ---------------------------------------------------------------------------------------------------------------- in-page helpers
