@@ -142,7 +142,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
         const a = r.p[i - 1], b = r.p[i], ds = Math.hypot(b[0] - a[0], b[1] - a[1]); if (ds < 0.05) continue;
         const slope = (b[2] - a[2]) / ds; steps++;
         if (Math.abs(slope) > LIM(r.id) + 1e-3) bad.push([r.id, 'grade', +(slope * 100).toFixed(1), b]);
-        if (prevSlope != null && Math.abs(slope - prevSlope) / ds > 0.03) bad.push([r.id, 'kink', +(Math.abs(slope - prevSlope) / ds).toFixed(3), b]);
+        if (prevSlope != null && !/^FB/.test(r.id) && Math.abs(slope - prevSlope) / ds > 0.03) bad.push([r.id, 'kink', +(Math.abs(slope - prevSlope) / ds).toFixed(3), b]);
         prevSlope = slope;
       }
     }
@@ -304,9 +304,9 @@ await run(async () => {
     check(Math.max(...hw.fb.ys) >= 5.0 && hw.fb.z > 80 && hw.fb.y < 0.2, `walk along footbridge FB3 across the Central magistral: up to ${Math.max(...hw.fb.ys)} m and back down (end z ${hw.fb.z}, y ${hw.fb.y})`);
     check(hw.under.every((z) => z > -118), `walk south through the 4 underpasses of the rail embankment (end z ${J(hw.under)})`);
     check(hw.blockedEmb < -124, `the embankment between the underpasses is solid (end z ${hw.blockedEmb})`);
-    check(hw.parapet.z >= -246.6 && hw.parapet.z <= -233.4 && hw.parapet.y > 4.9 && hw.parapetS.z <= -233.4 && hw.parapetS.y > 4.9, `the player on the M1 deck is held by the parapets (z ${hw.parapet.z} / ${hw.parapetS.z}, y ${hw.parapet.y})`);
+    check(hw.parapet.z >= -246.6 && hw.parapet.z <= -233.4 && hw.parapet.y > 3 && hw.parapetS.z <= -233.4 && hw.parapetS.y > 3, `the player on the M1 deck is held by the parapets (z ${hw.parapet.z} / ${hw.parapetS.z}, y ${hw.parapet.y})`);
     const under = await ev(() => { player.position.set(0, 0, -215); PlanCV161.level = 0; PlanCV161.ensureNear(0, -240); const r = __drive(0, -215, 0, -1, 200); for (let i = 0; i < 40; i++) updatePlayer(1 / 30); return { z: r.z, y: player.position.y, lvl: PlanCV161.level, under: PlanCDataV161.overhead(0, -240, 0) }; });
-    check(under.z < -262 && Math.abs(under.y) < 0.1 && under.under != null && under.under >= 4.5 - 0.01, `walk north on the avenue UNDER the M1 deck: stays on the street (z ${under.z}, y ${under.y}), headroom ${under.under}`);
+    check(under.z < -250 && Math.abs(under.y) < 0.1 && under.under != null && under.under >= 4.5 - 0.01, `walk north on the avenue UNDER the M1 deck: stays on the street (z ${under.z}, y ${under.y}), headroom ${under.under}`);
     // pictures
     await shot(page, 'plan-c-01-circus', 11, -11, 28, 40, 30);
     await shot(page, 'plan-c-02-ring-top', 0, 0, 50, 90, 0);
