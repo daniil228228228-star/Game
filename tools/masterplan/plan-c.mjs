@@ -138,17 +138,25 @@ export function buildPlan() {
 
   // ------------------------------------------------------------------ interchanges (ramps are polylines in game metres; `bridges` = parts above another road)
   const interchanges = [];
-  function diamond(id, at, k, name, cross, cwPlus, cwMinus) {
+  function diamond(id, at, k, name, cross, cwPlus, cwMinus, slipPlus = cwPlus, slipMinus = cwMinus) {
     // real diamond: taper (1:15 real) into a parallel deceleration lane beside the carriageway, then ONE smooth curve to the terminal;
     // the ramp hugs the motorway (8-13 game m = 20-33 m real from the carriageway edge). The -v side is the same pair turned 180 degrees.
     const ramps = [], LN = MW + CLS.ramp.w / 2;   // centre of an added lane right beside the carriageway
-    const pair = (Fk, cw) => {
+    // + free right-turn slip lanes (channelised): from the off-ramp's parallel lane one smooth curve turns ~90 degrees, runs as its own lane
+    //   beside the crossing road for ~15 game m (35-40 m real) and merges tangentially into its outer lane; the on-slip is the mirror.
+    //   Left turns and straight-on stay at the two signalised terminals, so all 8 movements work.
+    const pair = (Fk, cw, cs) => {
       const off = join(cubic([-104, ATT], [1, 0], 7, [-86, LN], [1, 0], 7, 10), seg([-86, LN], [-60, LN], 4), cubic([-60, LN], [1, 0], 24, [-(cw - 0.3), DT], [1, 0], 16));
       const on = join(cubic([cw - 0.3, DT], [1, 0], 16, [60, LN], [1, 0], 24), seg([60, LN], [86, LN], 4), cubic([86, LN], [1, 0], 7, [104, ATT], [1, 0], 7, 10));
+      const sl = (cs ?? 0) + CLS.ramp.w / 2 + 0.6;   // slip lane centre: its own lane beside the road with a painted / kerbed island
+      const slipOff = join(cubic([-74, LN], [1, 0], 36, [-sl, DT + 10], [0, 1], 22, 32), seg([-sl, DT + 10], [-sl, DT + 13], 2), cubic([-sl, DT + 13], [0, 1], 7, [-((cs ?? 0) - 0.8), DT + 28], [0, 1], 7, 12));
+      const slipOn = slipOff.map(([u, v]) => [-u, v]).reverse();
       ramps.push({ kind: 'off', pts: off.map(Fk), attach: ['motorway', 'cross'], decel: 26 }, { kind: 'on', pts: on.map(Fk), attach: ['cross', 'motorway'], accel: 26 });
+      if (cs == null) return;   // no room for slip lanes (P+R entrance): right turns use the signalised terminal
+      ramps.push({ kind: 'slip-off', pts: slipOff.map(Fk), attach: ['ramp', 'cross'], note: 'свободный правый поворот с хорды на проспект' }, { kind: 'slip-on', pts: slipOn.map(Fk), attach: ['cross', 'ramp'], note: 'свободный правый поворот с проспекта на хорду' });
     };
     const F = frame(at, k);
-    pair(F, cwPlus); pair(frame(at, k + 2), cwMinus);
+    pair(F, cwPlus, slipPlus); pair(frame(at, k + 2), cwMinus, slipMinus);
     const terminals = [F([0, DT]), F([0, -DT])];
     interchanges.push({ id, kind: 'diamond', name, at, cross, ramps, terminals, terminalSpacing: 2 * DT, deck: [F([-(cwPlus + 4), 0]), F([cwPlus + 4, 0])], deckRoad: 'motorway' });
   }
@@ -176,8 +184,8 @@ export function buildPlan() {
     ramps.push({ kind: 'direct', pts: c.map(F), attach: ['cross', 'motorway'], note: 'Портовое ш. на запад -> М2 на север' });
     interchanges.push({ id, kind: 'trumpet', name, at, ramps, trunkEnd: F([0, top]), note: 'три ветви: М2 заканчивается; раструб на стороне порта' });
   }
-  diamond('I1', [0, M1_Z], 0, 'Ромб: Главный пр. × М1', 'Главный пр.', CLS.arterial.w / 2, CLS.arterial.w / 2);
-  diamond('I2', [M2_X, 0], 1, 'Ромб: Центральная магистраль × М2', 'Центральная магистраль', CLS.arterial.w / 2, CLS.arterial.w / 2);
+  diamond('I1', [0, M1_Z], 0, 'Ромб: Главный пр. × М1', 'Главный пр.', CLS.arterial.w / 2, CLS.arterial.w / 2, CLS.arterial.w / 2, CLS.collector.w / 2);
+  diamond('I2', [M2_X, 0], 1, 'Ромб: Центральная магистраль × М2', 'Центральная магистраль', CLS.arterial.w / 2, CLS.arterial.w / 2, CLS.arterial.w / 2, null);   // east side: P+R entrance, no slips
   cloverleaf('I3', [M2_X, M1_Z], 'Клеверный лист: М1 × М2');
   trumpet('I4', [M2_X, 160], 'Трубка: М2 × Портовое ш.');
 

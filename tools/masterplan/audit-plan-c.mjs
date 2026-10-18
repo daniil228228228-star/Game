@@ -95,7 +95,8 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
     if (ramps.some((r) => [r.pts[0], r.pts[r.pts.length - 1]].some((p) => Math.hypot(p[0] - n.x, p[1] - n.z) < 8))) continue;
     bad.push(`${n.x},${n.z}`);
   }
-  const loose = []; for (const r of ramps) for (const p of [r.pts[0], r.pts[r.pts.length - 1]]) if (!attach(p)) loose.push(`${r.id} end ${p}`);
+  const onRamp = (p, self) => ramps.some((o) => o !== self && o.pts.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) < 1.2));   // a slip lane branches off / joins a ramp
+  const loose = []; for (const r of ramps) for (const p of [r.pts[0], r.pts[r.pts.length - 1]]) if (!attach(p) && !onRamp(p, r)) loose.push(`${r.id} end ${p}`);
   check('no road ends nowhere (dead ends only at map exits / parking lots; every ramp end lies on a carriageway)', !bad.length && !loose.length, [...bad, ...loose].join('; ') || `${P.exits.length} map exits, ${ramps.length * 2} ramp ends attached`);
   // 8. reachability: graph of streets + ramps
   const parent = new Map(P.nodes.map((x) => [x.id, x.id])), find = (x) => { while (parent.get(x) !== x) x = parent.get(x); return x; }, uni = (a, b) => parent.set(find(a), find(b));
@@ -116,13 +117,13 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
       const e = E.filter((x) => { const a = N.get(x.a), b = N.get(x.b), dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz), t = ((p[0] - a.x) * dx + (p[1] - a.z) * dz) / (L * L); if (t < -0.01 || t > 1.01) return false; const q = [a.x + dx * t, a.z + dz * t]; return Math.hypot(q[0] - p[0], q[1] - p[1]) <= CLS[x.cls].w / 2 + 0.8; })[0];
       if (!e) continue;
       const roadAng = e.dir === 'x' ? 0 : 90, diff = Math.abs(((h - roadAng) % 180 + 180) % 180), off = Math.min(diff, 180 - diff);
-      const want = e.cls === 'motorway' || (r.ic === 'I4' && e.cls === 'arterial') ? 0 : 90;   // merges run parallel; diamond terminals meet the crossing road square-on
+      const want = e.cls === 'motorway' || (r.ic === 'I4' && e.cls === 'arterial') || r.kind.startsWith('slip') ? 0 : 90;   // merges run parallel; diamond terminals meet the crossing road square-on
       if (Math.abs(off - want) > 12) bad.push(`${r.id} ${end ? 'end' : 'start'} meets ${e.cls} at ${R1(off)} deg (want ${want})`);
     }
     for (let i = 1; i + 1 < r.pts.length; i++) { const [a, b, c] = [r.pts[i - 1], r.pts[i], r.pts[i + 1]], ab = Math.hypot(b[0] - a[0], b[1] - a[1]), bc = Math.hypot(c[0] - b[0], c[1] - b[1]), ac = Math.hypot(c[0] - a[0], c[1] - a[1]), cr = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])); if (cr > 1e-6 && ab > 0.5 && bc > 0.5) radii.push({ r: ab * bc * ac / (2 * cr), id: r.id }); }
   }
   const minR = radii.reduce((m, x) => (x.r < m.r ? x : m), { r: Infinity });
-  check('ramps join motorways parallel (+-12 deg) and diamond terminals square-on', !bad.length, bad.join('; ') || `${ramps.length} ramps, ${ramps.length * 2} ends checked`);
+  check('ramps join motorways and slip lanes join the avenue parallel (+-12 deg); diamond terminals square-on', !bad.length, bad.join('; ') || `${ramps.length} ramps, ${ramps.length * 2} ends checked`);
   check('ramp curve radius >= 14 game m (35 m real, loop design speed ~40 km/h)', minR.r >= 14, `tightest ${R1(minR.r)} m on ${minR.id}`);
   // at-grade conflicts: a ramp may touch a road only where it attaches, and cross one only on a declared bridge
   const segX = (p1, p2, p3, p4) => { const d = (p2[0] - p1[0]) * (p4[1] - p3[1]) - (p2[1] - p1[1]) * (p4[0] - p3[0]); if (Math.abs(d) < 1e-9) return null; const t = ((p3[0] - p1[0]) * (p4[1] - p3[1]) - (p3[1] - p1[1]) * (p4[0] - p3[0])) / d, u = ((p3[0] - p1[0]) * (p2[1] - p1[1]) - (p3[1] - p1[1]) * (p2[0] - p1[0])) / d; return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? [p1[0] + t * (p2[0] - p1[0]), p1[1] + t * (p2[1] - p1[1])] : null; };
@@ -131,7 +132,8 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
   for (const r of ramps) for (let i = 0; i + 1 < r.pts.length; i++) {
     const p1 = r.pts[i], p2 = r.pts[i + 1], nearEnd = (p) => [r.pts[0], r.pts[r.pts.length - 1]].some((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) < 30);
     for (const e of E) { const a = N.get(e.a), b = N.get(e.b), x = segX(p1, p2, [a.x, a.z], [b.x, b.z]); if (x && !nearEnd(x) && !bridged(x)) conflicts.push(`${r.id} x ${e.name || e.cls} at ${x.map(R1)}`); }
-    for (const o of ramps) if (o !== r) for (let k = 0; k + 1 < o.pts.length; k++) { const x = segX(p1, p2, o.pts[k], o.pts[k + 1]); if (x && !nearEnd(x) && !bridged(x)) conflicts.push(`${r.id} x ${o.id} at ${x.map(R1)}`); }
+    for (const o of ramps) if (o !== r) for (let k = 0; k + 1 < o.pts.length; k++) { const q1 = o.pts[k], q2 = o.pts[k + 1], ang = Math.abs(Math.atan2(p2[1] - p1[1], p2[0] - p1[0]) - Math.atan2(q2[1] - q1[1], q2[0] - q1[0])) % (2 * Math.PI); if (Math.min(ang, 2 * Math.PI - ang) < 0.14) continue;   // a shared lane / tangent split, not a crossing
+      const x = segX(p1, p2, q1, q2); if (x && !nearEnd(x) && ![o.pts[0], o.pts[o.pts.length - 1]].some((q) => Math.hypot(q[0] - x[0], q[1] - x[1]) < 2) && !bridged(x)) conflicts.push(`${r.id} x ${o.id} at ${x.map(R1)}`); }
   }
   check('ramps cross other roads only on bridges', !conflicts.length, conflicts.length ? [...new Set(conflicts)].slice(0, 8).join('; ') : 'no at-grade conflict');
 }
