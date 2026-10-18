@@ -477,7 +477,7 @@ for (const j of PLAN.junctions) {
       if (a.cls === 'arterial' || a.cls === 'motorway') for (let k = 0; k < 2; k++) arrow(c, a.dir, along + 6.5, CLS[a.cls].median / 2 + CLS[a.cls].lane * (k + 0.5));
       const r = [a.dir[1], -a.dir[0]];
       furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) + r[0] * (w + 0.55), c[1] + a.dir[1] * (along + 1.2) + r[1] * (w + 0.55), yawOf(a.dir)]);
-      if (CLS[a.cls].median > 0) furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) - r[0] * (CLS[a.cls].median / 2 + 0.45), c[1] + a.dir[1] * (along + 1.2) - r[1] * (CLS[a.cls].median / 2 + 0.45), yawOf(a.dir)]);   // second head on the median: two per approach
+      if (a.cls === 'motorway') furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) - r[0] * (CLS[a.cls].median / 2 - 0.3), c[1] + a.dir[1] * (along + 1.2) - r[1] * (CLS[a.cls].median / 2 - 0.3), yawOf(a.dir)]);   // second head on the median: two per approach
     }
   } else if (j.type === 'roundabout') {
     for (const a of j.arms) {
@@ -529,18 +529,18 @@ const SPLIT = { hz: 6, band: 4.8, walk: 1.8, R: 7 }, islandsOut = [];
       for (let k = 0; k + 1 < arc.length; k++) { emitTri('r', K, arc[k], arc[k + 1], H.asph, CI.asph); emitWall(arc[k][0], arc[k][1], arc[k + 1][0], arc[k + 1][1], H.asph, H.walk, CI.kerb); }
     }
     // markings: zebra on both branches, stop line + arrows + lane dashes on the inbound one (west: south branch eastbound, east: north branch westbound)
-    const inSz = side < 0 ? 1 : -1, zx = noseX - side * 3.2, sx = noseX - side * 6.0;
+    const inSz = side < 0 ? 1 : -1, zx = noseX - side * 3.2, sx = zx + side * 3.0;   // zebra in front of the nose, the stop line 3 m before it (away from M2)
     for (const sz of [-1, 1]) {
       const z0 = sz * hz, z1 = sz * (hz + SPLIT.band), lo = Math.min(z0, z1), hi = Math.max(z0, z1);
-      for (let z = lo + 0.45; z < hi - 0.3; z += 0.9) emitRect('p', 'q', zx - 1.1, z - 0.22, zx + 1.1, z + 0.22, H.paint, CI.white);
+      for (let z = lo + 0.45; z < hi - 0.3; z += 0.9) emitRect('p', 'q', zx - 0.9, z - 0.25, zx + 0.9, z + 0.25, H.paint, CI.white);
       if (sz === inSz) {
         emitRect('p', 'q', sx - 0.2, lo + 0.1, sx + 0.2, hi - 0.1, H.paint, CI.white);
-        const zc = sz * (hz + SPLIT.band / 2), x0 = Math.min(sx - side * 1.5, farX + side * 8), x1 = Math.max(sx - side * 1.5, farX + side * 8);
-        dashed('x', zc, Math.min(x0, x1), Math.max(x0, x1), 0.18, 1.0, 1.4, H.paint, CI.white);
-        for (const lat of [-1, 1]) arrow([sx - side * 12, zc + lat * 1.2], [-side, 0], 0, 0);
-        furniture.sig.push([sx - side * 0.8, sz * (hz + SPLIT.band + 0.7), yawOf([-side, 0])], [sx - side * 0.8, sz * (hz - 0.7), yawOf([-side, 0])]);
+        const zc = sz * (hz + SPLIT.band / 2), xA = sx + side * 1.5, xB = farX - side * 6;
+        dashed('x', zc, Math.min(xA, xB), Math.max(xA, xB), 0.18, 1.0, 1.4, H.paint, CI.white);
+        for (const lat of [-1, 1]) arrow([sx + side * 10, zc + lat * 1.2], [side, 0], 0, 0);
+        furniture.sig.push([sx + side * 0.8, sz * (hz + SPLIT.band + 0.7), yawOf([side, 0])], [sx + side * 0.8, sz * (hz - 0.7), yawOf([side, 0])]);
       } else {
-        for (const lat of [-1, 1]) arrow([sx + side * 4, sz * (hz + SPLIT.band / 2) + lat * 1.2], [side, 0], 0, 0);
+        for (const lat of [-1, 1]) arrow([zx - side * 9, sz * (hz + SPLIT.band / 2) + lat * 1.2], [-side, 0], 0, 0);
       }
     }
     // furniture on the island: lamps along the axis, a few trees

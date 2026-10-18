@@ -47,11 +47,23 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
   const N = new Map(PLAN.nodes.map((n) => [n.id, n]));
   let samples = 0; const holes = [];
   for (const e of PLAN.edges) {
+    if (e.split) continue;   // I2: the straight axis of the split street is a lawn island; its carriageways are checked below
     const a = N.get(e.a), b = N.get(e.b), L = Math.hypot(b.x - a.x, b.z - a.z);
     const rA = (D.graph.rings.find((q) => q[0] === e.a) || [0, 0, 0, 0])[3], rB = (D.graph.rings.find((q) => q[0] === e.b) || [0, 0, 0, 0])[3];   // inside a roundabout the island is not road
     for (let s = 0.3; s < L; s += 1.1) { if (s < rA || s > L - rB) continue; const x = a.x + (b.x - a.x) * s / L, z = a.z + (b.z - a.z) * s / L; samples++; if (!asphaltAt(x, z)) holes.push([e.id, R(x), R(z)]); }
   }
   check(holes.length === 0 && PLAN.edges.length === D.graph.edges.length, `data: asphalt under the centre line of all ${PLAN.edges.length} graph edges (${samples} samples, holes ${J(holes.slice(0, 6))})`);
+  // 1b. I2 split street: the band of every island carries asphalt all round (sampled between the island kerb and the outer outline), the island itself has none
+  {
+    const bad = [];
+    for (const isl of D.graph.islands) {
+      const n = isl.poly.length;
+      for (let i = 0; i < n; i += 2) { const p = isl.poly[i], q = isl.outer[i], mx = (p[0] * 0.55 + q[0] * 0.45), mz = (p[1] * 0.55 + q[1] * 0.45); if (!asphaltAt(mx, mz) && Math.abs(mx - 250) > 7) bad.push([isl.side, i, +mx.toFixed(1), +mz.toFixed(1)]); }
+      const cx = isl.poly.reduce((a, p) => a + p[0], 0) / n, cz = isl.poly.reduce((a, p) => a + p[1], 0) / n;
+      if (asphaltAt(cx, cz)) bad.push([isl.side, 'island']);
+    }
+    check(D.graph.islands.length === 2 && bad.length === 0, `data: I2 split street: 2 islands, asphalt band all round, islands free of asphalt (${J(bad.slice(0, 4))})`);
+  }
   // 2. no overlapping asphalt rectangles (the union is decomposed)
   let overlaps = 0;
   for (const list of byCell.values()) { list.sort((p, q) => p.x0 - q.x0); for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length && list[j].x0 < list[i].x1 - 1e-3; j++) { const ox = Math.min(list[i].x1, list[j].x1) - Math.max(list[i].x0, list[j].x0), oz = Math.min(list[i].z1, list[j].z1) - Math.max(list[i].z0, list[j].z0); if (ox > 0.01 && oz > 0.01) overlaps++; } }
@@ -69,7 +81,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
   let zebras = 0; const missing = [];
   for (const cr of PLAN.crossings) {
     let px, pz;
-    if (cr.arm) { const j = J2.get(cr.id.split('-')[0]); const cross = j.arms.filter((a) => (a.dir[0] !== 0) !== (cr.arm[0] !== 0)).map((a) => PLAN.classes[a.cls].w / 2); const along = cr.setback != null ? cr.setback : (cross.length ? Math.max(...cross) : 0) + 2.2; px = j.at[0] + cr.arm[0] * along; pz = j.at[1] + cr.arm[1] * along; }
+    if (cr.arm) { const j = J2.get(cr.id.split('-')[0]); const cross = j.arms.filter((a) => (a.dir[0] !== 0) !== (cr.arm[0] !== 0)).map((a) => PLAN.classes[a.cls].w / 2); const along = cr.setback != null ? cr.setback : Math.max(cross.length ? Math.max(...cross) : 0, j.boxZ || 0) + 2.2; px = j.at[0] + cr.arm[0] * along; pz = j.at[1] + cr.arm[1] * along; }
     else { px = cr.at[0]; pz = cr.at[1]; }
     zebras++;
     if (!paint.some((p) => Math.hypot(p[0] - px, p[1] - pz) < 2.4)) missing.push(cr.id);
@@ -106,7 +118,6 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
       const turn = Math.abs(Math.atan2(c[1] - b[1], c[0] - b[0]) - Math.atan2(b[1] - a[1], b[0] - a[0])); const t = Math.min(turn, 2 * Math.PI - turn) * 57.3;
       if (R < 13 || t > 9) rr.push([ic, kind, +R.toFixed(1), +t.toFixed(1), b]);
     }
-    console.log('KNOWN ISSUE: I2 dumbbell south ramps: reach limited to z 62 by the I4 trumpet ramps (z 64+), the ramp meets the descending causeway with a 0.04-0.05 / m crest (limit 0.03 elsewhere)');
     check(rr.length === 0 && D.classes.ramp[0] >= 2.8, `ramps: radius >= 13 m and no kink > 9 deg per step on all ${D.graph.ramps.length} ramps, ramp lane ${D.classes.ramp[0]} m (${J(rr.slice(0, 3))})`);
   }
   // 7. every painted mark belongs to a complete group: zebra = >= 4 bars across the carriageway, stop line spans the lane, no lone short mark
@@ -136,7 +147,8 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
   // 8. height layer (offline): deck clearance, grades, smooth vertical curves, ramps meet their roads
   {
     const S = D.struct, top = (x, z) => Math.max(...D.surfaces(x, z));
-    const decks = [[0, -240, 'M1 over Главный пр.'], [250, 0, 'M2 over Центральная магистраль'], [250, -240, 'M2 over M1 (cloverleaf)']].map(([x, z, n]) => [n, top(x, z)]);
+    const decks = [[0, -240, 'M1 over Главный пр.'], [250, -240, 'M2 over M1 (cloverleaf)']].map(([x, z, n]) => [n, top(x, z)]);
+    check(top(250, 0) < 0.2 && top(250, -60) < 0.2, `heights: M2 is at ground level at the I2 crossing (z 0: ${top(250, 0)}, z -60: ${top(250, -60)}), no deck above the street`);
     check(decks.every(([, h]) => h - 0.8 >= 4.5 - 1e-6), `heights: every motorway deck over a road leaves >= 4.5 m headroom (deck tops ${J(decks.map(([n, h]) => [n, +h.toFixed(2)]))}, slab 0.8)`);
     check(S.openings.every(([x, half, clear]) => clear >= 2.8) && S.openings.filter(([x, half, clear]) => clear >= 4.5).length >= 7, `heights: rail embankment ${S.railY} m high with ${S.openings.length} openings (${S.openings.filter((o) => o[2] >= 4.5).length} road openings with 4.5 m headroom, ${S.openings.filter((o) => o[2] < 4.5).length} station tunnels)`);
     const bad = [], LIM = (id) => /^M[12]$/.test(id) ? 0.0625 : /^FB/.test(id) ? 0.42 : 0.07;
@@ -147,7 +159,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
         const a = r.p[i - 1], b = r.p[i], ds = Math.hypot(b[0] - a[0], b[1] - a[1]); if (ds < 0.05) continue;
         const slope = (b[2] - a[2]) / ds; steps++;
         if (Math.abs(slope) > LIM(r.id) + 1e-3) bad.push([r.id, 'grade', +(slope * 100).toFixed(1), b]);
-        if (prevSlope != null && ds > 1.5 && !/^FB/.test(r.id) && Math.abs(slope - prevSlope) / ds > (/^I2\./.test(r.id) ? 0.05 : 0.03)) bad.push([r.id, 'kink', +(Math.abs(slope - prevSlope) / ds).toFixed(3), b]);
+        if (prevSlope != null && ds > 1.5 && !/^FB/.test(r.id) && Math.abs(slope - prevSlope) / ds > 0.03) bad.push([r.id, 'kink', +(Math.abs(slope - prevSlope) / ds).toFixed(3), b]);
         prevSlope = slope;
       }
     }
@@ -295,7 +307,7 @@ await run(async () => {
       }
       return out;
     });
-    check(rings.length === 8 && rings.every((n) => n >= 11), `roundabouts: the ring of all 8 (6 + 2 dumbbell) is drawn at asphalt height (${J(rings)})`);
+    check(rings.length === 6 && rings.every((n) => n >= 11), `roundabouts: the ring of all 6 is drawn at asphalt height (${J(rings)})`);
     // draw-call budget: the whole layer, layer hidden vs shown with the same camera, at ten places (the game's own radius)
     await ev(() => { PlanCV161.R_BUILD = 128; PlanCV161.R_KEEP = 190; });
     const spots = [[11, -11], [0, 0], [0, -230], [250, -240], [250, 0], [250, 160], [-232, -160], [-40, -110], [120, 180], [-200, 190], [-100, -200]];
