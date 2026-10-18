@@ -240,7 +240,7 @@ for (const e of PLAN.edges) {
 }
 
 // ---- 2. raster decomposition per cell -> disjoint rectangles + kerb walls
-const TYPES = { asph: { h: H.asph, ci: CI.asph, prio: 2 }, walk: { h: H.walk, ci: CI.walk, prio: 1 }, med: { h: H.med, ci: CI.median, prio: 3 }, medM: { h: H.med, ci: CI.medLawn, prio: 3 } };
+const TYPES = { carve: { h: 0.05, ci: -1, prio: 1.5 }, asph: { h: H.asph, ci: CI.asph, prio: 2 }, walk: { h: H.walk, ci: CI.walk, prio: 1 }, med: { h: H.med, ci: CI.median, prio: 3 }, medM: { h: H.med, ci: CI.medLawn, prio: 3 } };
 const rasterOut = new Map();   // cell key -> list of {x0,z0,x1,z1,type} (the disjoint result, used by furniture/tree placement and the tests)
 function rasterCell(cx, cz) {
   const X0 = cx * CELL, Z0 = cz * CELL, X1 = X0 + CELL, Z1 = Z0 + CELL;
@@ -267,12 +267,12 @@ function rasterCell(cx, cz) {
   }
   const rects = out.map((o) => ({ type: o.type, x0: xs[o.i0], x1: xs[o.i1], z0: zs[o.j0], z1: zs[o.j1] }));
   rasterOut.set(ck(cx, cz), rects);
-  for (const r of rects) emitRect('r', 'q', r.x0, r.z0, r.x1, r.z1, TYPES[r.type].h, TYPES[r.type].ci);
+  for (const r of rects) if (r.type !== 'carve') emitRect('r', 'q', r.x0, r.z0, r.x1, r.z1, TYPES[r.type].h, TYPES[r.type].ci);
   // kerbs: height steps between neighbouring grid cells (and to the open ground); the taller side emits the wall once
   const walls = new Map();
   const typeAt = (i, j) => (i < 0 || j < 0 || i >= nx || j >= nz) ? null : grid[j * nx + i];
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-    const t = grid[j * nx + i]; if (!t) continue;
+    const t = grid[j * nx + i]; if (!t || t === 'carve') continue;
     const h = TYPES[t].h;
     for (const [di, dj, ax] of [[1, 0, 'x'], [-1, 0, 'x'], [0, 1, 'z'], [0, -1, 'z']]) {
       const ni = i + di, nj = j + dj, tn = typeAt(ni, nj);
@@ -294,7 +294,7 @@ function rasterCell(cx, cz) {
 }
 
 // ---- 3. curved pieces: roundabouts, mini roundabouts, ramps, plaza
-const ringsOut = [], minisOut = [], rampsOut = [];
+const ringsOut = [], minisOut = [], rampsOut = [], cornerOut = [];
 for (const j of PLAN.junctions) {
   const c = j.at;
   if (j.type === 'roundabout') {
@@ -336,25 +336,24 @@ for (const j of PLAN.junctions) {
     minisOut.push({ id: j.id, at: c, R: Ro, Ri });
   }
 }
-// kerb returns (radius 3) at every corner of a junction where two perpendicular streets meet: asphalt fillet at kerb height, white-free, rounded
+// kerb returns (radius 3): at every corner where two streets meet the sidewalk corner is a quarter disc (centre = the far corner of a 3 x 3 square, tangent to both kerb lines), the rest of the square is asphalt
+// at asphalt height - the square is carved out of the sidewalk raster first, so nothing is drawn twice and no kerb outline crosses the carriageway
 for (const j of PLAN.junctions) {
   if (j.type === 'roundabout') continue;
   const c = j.at, RET = 3.0;
   for (const A of j.arms.filter((a) => a.dir[1] === 0)) for (const B of j.arms.filter((b) => b.dir[0] === 0)) {
-    if (A.cls === 'motorway' || B.cls === 'motorway') continue;
-    const sx = A.dir[0], sz = B.dir[1], K = [c[0] + sx * hw(B.cls), c[1] + sz * hw(A.cls)];
-    const O = [K[0] + sx * RET, K[1] + sz * RET], pts = [];
-    for (let k = 0; k <= 10; k++) { const t = k / 10 * Math.PI / 2, a0 = Math.atan2(-sz, 0), vx = -sx * Math.cos(t) , vz = -sz * Math.sin(t); pts.push([O[0] + vx * RET, O[1] + vz * RET]); }
-    // arc runs from (O.x - sx*R, O.z) [on the edge z = K.z ... see below] : build the patch K, P1, arc, P2 as a fan
-    const P1 = [K[0] + sx * RET, K[1]], P2 = [K[0], K[1] + sz * RET], arc2 = [];
-    for (let k = 0; k <= 10; k++) { const t = k / 10 * Math.PI / 2; arc2.push([O[0] - sx * RET * Math.sin(t), O[1] - sz * RET * Math.cos(t)]); }   // from P1 (t = 0: O - (0, sz R)... ) to P2
-    void pts; void P1; void P2;
-    for (let k = 0; k + 1 < arc2.length; k++) emitTri('r', K, arc2[k], arc2[k + 1], H.fillet, CI.asph);
+    if (A.cls === 'motorway' || B.cls === 'motorway' || CLS[A.cls].sidewalk <= 0 || CLS[B.cls].sidewalk <= 0) continue;
+    const sx = A.dir[0], sz = B.dir[1], K = [c[0] + sx * hw(B.cls), c[1] + sz * hw(A.cls)], O = [K[0] + sx * RET, K[1] + sz * RET];
+    addShape(Math.min(K[0], O[0]), Math.min(K[1], O[1]), Math.max(K[0], O[0]), Math.max(K[1], O[1]), 'carve');
+    cornerOut.push({ K, O, sx, sz, RET });
+    const arc = []; for (let k = 0; k <= 12; k++) { const t = k / 12 * Math.PI / 2; arc.push([O[0] - sx * RET * Math.sin(t), O[1] - sz * RET * Math.cos(t)]); }
+    for (let k = 0; k + 1 < arc.length; k++) {
+      emitTri('r', K, arc[k], arc[k + 1], H.asph, CI.asph);       // asphalt between the corner and the arc
+      emitTri('r', O, arc[k], arc[k + 1], H.walk, CI.walk);       // sidewalk corner: quarter disc
+      emitWall(arc[k][0], arc[k][1], arc[k + 1][0], arc[k + 1][1], H.asph, H.walk, CI.kerb);
+    }
   }
 }
-// ramps (interchanges): 2 m ribbons with white edge dashes
-
-
 
 // ---- 4. markings of the straight streets
 function dashed(axis, c, lo, hi, width, dash, gap, y, ci, phase = 0) {   // axis 'x': line along x at z = c
@@ -374,11 +373,11 @@ for (const e of PLAN.edges) {
   for (const [pl, ph] of parts) {
     if (mo) {
       const mh = CLS.motorway.median / 2, mdv = mh + CLS.motorway.lane, edge = MW - CLS.motorway.shoulder;
-      for (const o of [-edge, edge, -(mh + 0.3), mh + 0.3]) solid(ax, c + o, pl, ph, 0.13, H.paint, CI.white);
-      for (const o of [-mdv, mdv]) dashed(ax, c + o, pl, ph, 0.14, 1.6, 1.8, H.paint, CI.white);
+      for (const o of [-edge, edge, -(mh + 0.3), mh + 0.3]) solid(ax, c + o, pl, ph, 0.18, H.paint, CI.white);
+      for (const o of [-mdv, mdv]) dashed(ax, c + o, pl, ph, 0.18, 1.6, 1.8, H.paint, CI.white);
     } else if (e.cls === 'arterial') {
-      for (const o of [-(CLS.arterial.median / 2 + CLS.arterial.lane), CLS.arterial.median / 2 + CLS.arterial.lane]) dashed(ax, c + o, pl, ph, 0.12, 1.0, 1.4, H.paint, CI.white);
-    } else if (e.cls === 'collector') dashed(ax, c, pl, ph, 0.12, 1.0, 1.2, H.paint, CI.white);
+      for (const o of [-(CLS.arterial.median / 2 + CLS.arterial.lane), CLS.arterial.median / 2 + CLS.arterial.lane]) dashed(ax, c + o, pl, ph, 0.18, 1.0, 1.4, H.paint, CI.white);
+    } else if (e.cls === 'collector') dashed(ax, c, pl, ph, 0.18, 1.0, 1.2, H.paint, CI.white);
   }
 }
 
@@ -533,9 +532,11 @@ function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median h
     const q = offsetPts3(pts, sg * (o.w / 2 + 0.3));
     for (let i = 0; i + 1 < q.length; i++) {
       const cross = inCross((S[i] + S[i + 1]) / 2);
-      emitQuadS(q[i][0], q[i][1], q[i + 1][0], q[i + 1][1], cross ? q[i][2] - 0.8 : 0, q[i][2] + 0.05, cross ? q[i + 1][2] - 0.8 : 0, q[i + 1][2] + 0.05, CI.conc);
+      emitQuadS(q[i][0], q[i][1], q[i + 1][0], q[i + 1][1], cross ? q[i][2] - 0.8 : 0, q[i][2] + 0.05, cross ? q[i + 1][2] - 0.8 : 0, q[i + 1][2] + 0.05, cross ? CI.concD : CI.conc);
     }
   }
+  // cornice: a pale band along the deck edge so the slab reads as a bridge from below
+  for (const sg of [-1, 1]) capAlong(pts, sg * (o.w / 2 + 0.42), 0.5, 0.07, CI.conc);
   // ceiling + abutments at crossings
   for (const [a, b] of o.crossings) {
     const idx = pts.map((_, i) => i).filter((i) => S[i] >= a - 1e-6 && S[i] <= b + 1e-6);
@@ -544,8 +545,8 @@ function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median h
   }
   // paint
   if (o.paint) {
-    for (const sg of [-1, 1]) { paintAlong(pts, sg * o.paint.edge, 0.13, 1, 0, 0.062, CI.white); if (o.paint.divider) paintAlong(pts, sg * o.paint.divider, 0.14, 1.6, 1.8, 0.062, CI.white); if (o.paint.inner) paintAlong(pts, sg * o.paint.inner, 0.13, 1, 0, 0.062, CI.white); }
-    if (o.paint.center) paintAlong(pts, 0, 0.11, 1.0, 3.0, 0.062, CI.white);
+    for (const sg of [-1, 1]) { paintAlong(pts, sg * o.paint.edge, 0.18, 1, 0, 0.062, CI.white); if (o.paint.divider) paintAlong(pts, sg * o.paint.divider, 0.18, 1.6, 1.8, 0.062, CI.white); if (o.paint.inner) paintAlong(pts, sg * o.paint.inner, 0.18, 1, 0, 0.062, CI.white); }
+    if (o.paint.center) paintAlong(pts, 0, 0.16, 1.0, 3.0, 0.062, CI.white);
   }
 }
 function sampleAxis(axis, c, lo, hi, hfn, step = 3) {
@@ -594,8 +595,8 @@ for (const ic of PLAN.interchanges) {
       }
       if (hMax > 1.2) addParapets(p3.filter((v) => v[2] > 1.0), sg * (CLS.ramp.w / 2 + 0.2));
     }
-    paintAlong(p3, 0, 0.1, 1.0, 3.0, 0.064, CI.white);
-    for (const sg of [-1, 1]) paintAlong(p3, sg * (CLS.ramp.w / 2 - 0.2), 0.1, 1, 0, 0.064, CI.white);
+    paintAlong(p3, 0, 0.16, 1.0, 3.0, 0.064, CI.white);
+    for (const sg of [-1, 1]) paintAlong(p3, sg * (CLS.ramp.w / 2 - 0.2), 0.16, 1, 0, 0.064, CI.white);
     STRUCT.ribbons.push({ id: ic.id + '.' + r.kind, w: CLS.ramp.w - 0.2, p: p3.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
   }
 }
@@ -626,8 +627,8 @@ for (const f of PLAN.footbridges) {
   for (const sg of [-1, 1]) { const off = sg * 1.25; wallAlong(pts, off, (h) => h + 0.02, (h) => h + 1.1, CI.conc); capAlong(pts, off, 0.15, 1.1, CI.conc); wallAlong(pts, off, (h) => Math.max(0, h - 0.55), (h) => h, CI.concD); addParapets(pts.filter((q) => q[2] > 0.8), off); }
   deckRibbon(pts, 2.4, -0.55, CI.concD);
   // columns: at the ends of the span, and every 9 m under the ramps (higher than 0.8 m)
-  for (let i = 0; i < pts.length; i += 3) { const q = pts[i]; if (q[2] > 0.8) box3(q[0] - 0.3, q[1] - 0.3, q[0] + 0.3, q[1] + 0.3, 0, q[2] - 0.55, CI.concD, false); }
-  STRUCT.ribbons.push({ id: f.id, w: 2.0, p: pts.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
+  for (let i = 0; i < pts.length; i += 3) { const q = pts[i], sAx = -half + i * 3; if (q[2] > 0.8 && Math.abs(sAx) >= over - 0.01) box3(q[0] - 0.3, q[1] - 0.3, q[0] + 0.3, q[1] + 0.3, 0, q[2] - 0.55, CI.concD, false); }   // supports only outside the roadway (never a pier in a lane)
+  STRUCT.ribbons.push({ id: f.id, w: 2.2, p: pts.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
   void S;
 }
 
@@ -727,9 +728,8 @@ for (const line of PLAN.transit.lines) for (const s of line.stops) {
   let best = null; for (let i = 0; i + 1 < line.pts.length; i++) { const d = segDist(s[0], s[1], line.pts[i], line.pts[i + 1]); if (!best || d < best.d) best = { d, i }; }
   const p0 = line.pts[best.i], p1 = line.pts[best.i + 1], L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1, h = [(p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L], r = rightOf(h);
   const e = PLAN.edges.find((q) => { const a = N.get(q.a), b = N.get(q.b); return q.dir === 'x' ? Math.abs(a.z - s[1]) < 0.01 && s[0] >= Math.min(a.x, b.x) && s[0] <= Math.max(a.x, b.x) : Math.abs(a.x - s[0]) < 0.01 && s[1] >= Math.min(a.z, b.z) && s[1] <= Math.max(a.z, b.z); });
-  const off = e ? hw(e.cls) + CLS[e.cls].sidewalk * 0.55 : 3;
+  const off = e ? hw(e.cls) + CLS[e.cls].sidewalk - 0.6 : 3;   // the shelter (1.1 m deep) stands on the sidewalk, its back at the outer edge, its front to the kerb
   furniture.stop.push([s[0] + r[0] * off, s[1] + r[1] * off, Math.atan2(-r[0], -r[1]), line.id]);
-  if (e && (e.cls === 'arterial' || e.cls === 'collector')) { const lat = hw(e.cls) - laneW(e.cls) - 0.06, a = [s[0] + r[0] * lat - h[0] * 7, s[1] + r[1] * lat - h[1] * 7], b = [s[0] + r[0] * lat + h[0] * 7, s[1] + r[1] * lat + h[1] * 7]; ribbon('p', [a, b], 0.12, H.paint, CI.white); }   // bus bay: the lane beside the kerb is marked for 14 m
   stopsOut.push({ line: line.id, at: s });
 }
 // landscape trees
@@ -758,6 +758,8 @@ for (const line of PLAN.transit.lines) for (const s of line.stops) {
   for (let k = 0; k < 16; k++) { const a = (k + 0.5) * Math.PI / 8; const px = Math.cos(a) * 19.5, pz = Math.sin(a) * 19.5; if (!rasterAt(px, pz)) cellOf(Math.floor(px / CELL), Math.floor(pz / CELL)).f.tree.push(R2(px), R2(pz), 0.95, R2(rnd())); }
   for (const j of PLAN.junctions) if (j.type === 'roundabout' && j.R < 12) cellOf(Math.floor(j.at[0] / CELL), Math.floor(j.at[1] / CELL)).f.tree.push(j.at[0], j.at[1], 1.1, 0.5);
 }
+furniture.lamp = furniture.lamp.filter((l) => !furniture.stop.some((st) => Math.hypot(st[0] - l[0], st[1] - l[1]) < 3.2));   // no lamp inside a bus stop
+for (const cellC of cells.values()) cellC.f.tree = cellC.f.tree.filter(() => true);
 furniture.cat = furnCat;
 for (const [kind, list] of Object.entries(furniture)) for (const f of list) { const c = cellOf(Math.floor(f[0] / CELL), Math.floor(f[1] / CELL)).f[kind]; for (const v of f) c.push(typeof v === 'number' ? R2(v) : v); }
 
@@ -816,7 +818,7 @@ const FLOOR_FN = `
   D.surfaceY=function(x,z,hint,step){step=step==null?.75:step;var s=D.surfaces(x,z),best=null;for(var i=0;i<s.length;i++)if(s[i]<=hint+step&&(best==null||s[i]>best))best=s[i];if(best==null&&s.length){best=s[0];for(i=1;i<s.length;i++)if(s[i]<best)best=s[i];}return best;};
   // underside of the lowest deck above a point that stands at y (camera clearance); null when open sky
   D.overhead=function(x,z,y){var s=D.surfaces(x,z),low=null;for(var i=0;i<s.length;i++)if(s[i]>y+1.6&&(low==null||s[i]<low))low=s[i];return low==null?null:low-.8;};
-  D.access=function(x,z,m){m=m==null?.65:m;if(!D.surfaces(x,z).length)return false;for(var i=0;i<8;i++){var a=i*Math.PI/4;if(!D.surfaces(x+Math.cos(a)*m,z+Math.sin(a)*m).length)return false;}return true;};
+  D.access=function(x,z,m){m=m==null?.45:m;if(!D.surfaces(x,z).length)return false;for(var i=0;i<8;i++){var a=i*Math.PI/4;if(!D.surfaces(x+Math.cos(a)*m,z+Math.sin(a)*m).length)return false;}return true;};
   D.cellKey=function(x,z){return Math.floor(x/D.cell)+','+Math.floor(z/D.cell);};
 })(window.PlanCDataV161);
 `;

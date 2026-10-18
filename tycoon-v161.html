@@ -1373,7 +1373,7 @@ function masterplanFloorV161(x,z){
   return true;
 }
 function masterplanAccessV161(x,z,margin=.65){
-  if (window.LAYOUT_V161 === 'C') return !!(window.PlanCDataV161 && window.PlanCDataV161.access(x,z,margin)); // plan C: the whole land of the plan is walkable floor (assets/plan-c-data-v161.js)
+  if (window.LAYOUT_V161 === 'C') return !!(window.PlanCDataV161 && window.PlanCDataV161.access(x,z)); // plan C: the whole land of the plan is walkable floor (assets/plan-c-data-v161.js)
   if (!masterplanStateV161.B01 || !masterplanFloorV161(x,z)) return false;
   // margin against the UNION of paid floors (no invisible seam at a parcel entrance)
   for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; if (!masterplanFloorV161(x + Math.cos(a) * margin, z + Math.sin(a) * margin)) return false; }

@@ -152,6 +152,37 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
     for (const [ic, kind, pts] of D.graph.ramps) { for (const end of [pts[0], pts[pts.length - 1]]) { const hs = D.surfaces(end[0], end[1]).filter((h) => Math.abs(h - end[2]) < 0.6); if (!hs.length && end[2] > 0.3) mism.push([ic, kind, end]); } }
     check(mism.length === 0, `heights: every ramp end above 0.3 m lies on a deck / ramp surface of its road (${J(mism.slice(0, 3))})`);
   }
+  // 9. furniture: no lamp / signal / sign pole / shelter / tree stands in a lane, on a roundabout ring or on a ramp; stops stand on the sidewalk with no lamp inside
+  {
+    const A = []; for (const c of Object.values(D.cells)) { const q = c.r && c.r.q || []; for (let i = 0; i < q.length; i += 6) if (q[i + 5] === CI.asph) A.push([q[i], q[i + 1], q[i + 2], q[i + 3]]); }
+    const W = []; for (const c of Object.values(D.cells)) { const q = c.r && c.r.q || []; for (let i = 0; i < q.length; i += 6) if (q[i + 5] === CI.walk) W.push([q[i], q[i + 1], q[i + 2], q[i + 3]]); }
+    const inR = (L, x, z, m) => L.some((r) => x > r[0] + m && x < r[2] - m && z > r[1] + m && z < r[3] - m);
+    const ramps = D.struct.ribbons.filter((r) => /^I\d\./.test(r.id) || /^M[12]$/.test(r.id));
+    const nearRamp = (x, z) => ramps.some((r) => r.p.some((q, i) => i && Math.hypot(x - q[0], z - q[1]) < r.w / 2 + 0.4 && q[2] < 6));
+    const rings = D.graph.rings.concat(D.graph.minis);
+    const bad = [], stops = [], lamps = [];
+    for (const [key, c] of Object.entries(D.cells)) {
+      const f = c.f || {};
+      for (const [kind, stride] of [['lamp', 3], ['sig', 3], ['pole', 4], ['stop', 4], ['tree', 4]]) {
+        const a = f[kind] || [];
+        for (let i = 0; i < a.length; i += stride) {
+          const x = a[i], z = a[i + 1];
+          if (kind === 'pole' && rings.some((r) => Math.hypot(x - r[1], z - r[2]) < 0.1)) continue;   // the roundabout sign stands on its island
+          const onRing = rings.some((r) => { const d = Math.hypot(x - r[1], z - r[2]); return d > r[4] + 0.05 && d < r[3] - 0.05; });
+          if (inR(A, x, z, 0.15) || onRing || nearRamp(x, z)) bad.push([kind, +x.toFixed(1), +z.toFixed(1)]);
+          if (kind === 'stop') stops.push([x, z]); if (kind === 'lamp') lamps.push([x, z]);
+        }
+      }
+    }
+    check(bad.length === 0, `furniture: none of ${stops.length} shelters, ${lamps.length} lamps, signals, signs and trees stands in a lane, on a ring or on a ramp (${J(bad.slice(0, 5))})`);
+    const off = stops.filter(([x, z]) => !W.some((r) => x > r[0] - 0.05 && x < r[2] + 0.05 && z > r[1] - 0.05 && z < r[3] + 0.05));
+    const lampInStop = lamps.filter(([x, z]) => stops.some(([sx, sz]) => Math.hypot(sx - x, sz - z) < 2.0));
+    check(off.length === 0 && lampInStop.length === 0, `bus stops: all ${stops.length} shelters stand on a sidewalk, no lamp within 2 m (off ${J(off.slice(0, 3))}, lamp ${lampInStop.length})`);
+    // no vertical support (pier, column, wall) of a deck inside a carriageway
+    const walls = [];
+    for (const c of Object.values(D.cells)) { const sq = c.d && c.d.s || []; for (let i = 0; i < sq.length; i += 9) { const b = Math.min(sq[i + 4], sq[i + 6]), t = Math.max(sq[i + 5], sq[i + 7]); if (b > 1.0 || t < 0.3 || t - b < 1.2) continue; for (const fr of [0, 0.5, 1]) { const x = sq[i] + (sq[i + 2] - sq[i]) * fr, z = sq[i + 1] + (sq[i + 3] - sq[i + 1]) * fr; if (inR(A, x, z, 0.25) && !D.surfaces(x, z).some((h) => h > 0.5 && false)) walls.push([+x.toFixed(1), +z.toFixed(1)]); } } }
+    check(walls.length === 0, `decks: no pier / column / wall stands on the asphalt of a lane (${walls.length} ${J(walls.slice(0, 4))})`);
+  }
   check(D.graph.signals.length === PLAN.counts.signals && D.graph.stops.length === PLAN.counts.busStops, `data: ${D.graph.signals.length} signal junctions and ${D.graph.stops.length} bus stops from the plan`);
 }
 function R(n) { return Math.round(n * 10) / 10; }
@@ -307,6 +338,54 @@ await run(async () => {
     check(hw.parapet.z >= -246.6 && hw.parapet.z <= -233.4 && hw.parapet.y > 3 && hw.parapetS.z <= -233.4 && hw.parapetS.y > 3, `the player on the M1 deck is held by the parapets (z ${hw.parapet.z} / ${hw.parapetS.z}, y ${hw.parapet.y})`);
     const under = await ev(() => { player.position.set(0, 0, -215); PlanCV161.level = 0; PlanCV161.ensureNear(0, -240); const r = __drive(0, -215, 0, -1, 200); for (let i = 0; i < 40; i++) updatePlayer(1 / 30); return { z: r.z, y: player.position.y, lvl: PlanCV161.level, under: PlanCDataV161.overhead(0, -240, 0) }; });
     check(under.z < -250 && Math.abs(under.y) < 0.1 && under.under != null && under.under >= 4.5 - 0.01, `walk north on the avenue UNDER the M1 deck: stays on the street (z ${under.z}, y ${under.y}), headroom ${under.under}`);
+    // every footbridge with the real controls (joystick vector through updatePlayer) from 8 approach directions: up, across, down, no stall > 0.5 s
+    const fbs = await ev(() => PlanCDataV161.struct.ribbons.filter((r) => /^FB/.test(r.id)).map((r) => ({ id: r.id, p: r.p })));
+    const fbRes = [];
+    for (const fb of fbs) {
+      const r = await page.evaluate(({ fb }) => {
+        const out = { id: fb.id, runs: [] }, A = fb.p[0], B = fb.p[fb.p.length - 1], top = Math.max(...fb.p.map((q) => q[2]));
+        const step = (tx, tz, rec) => {   // one joystick frame towards (tx, tz); the stall counter measures real movement
+          const dx = tx - player.position.x, dz = tz - player.position.z, l = Math.hypot(dx, dz) || 1;
+          camera.getWorldDirection(camForward); camForward.y = 0; camForward.normalize(); camRight.crossVectors(camForward, worldUp).normalize();
+          joyVec.z = dx / l * camForward.x + dz / l * camForward.z; joyVec.x = dx / l * camRight.x + dz / l * camRight.z;
+          const px = player.position.x, pz = player.position.z; updatePlayer(1 / 30);
+          const moved = Math.hypot(player.position.x - px, player.position.z - pz);
+          rec.still = moved < 0.02 ? rec.still + 1 : 0; rec.maxStill = Math.max(rec.maxStill, rec.still); rec.maxY = Math.max(rec.maxY, player.position.y);
+        };
+        for (let k = 0; k < 8; k++) {
+          const a = k * Math.PI / 4, S = [A[0] + Math.cos(a) * 5, A[1] + Math.sin(a) * 5];
+          if (fb.p.some((q) => q[2] > 0.8 && Math.hypot(q[0] - S[0], q[1] - S[1]) < 1.8)) continue;   // that side is under the ramp itself
+          PlanCV161.R_BUILD = 128; PlanCV161.ensureNear(S[0], S[1]);
+          if (!PlanCDataV161.access(S[0], S[1])) continue;
+          player.position.set(S[0], 0, S[1]); playerVelocity.set(0, 0, 0); PlanCV161.level = 0;
+          const rec = { still: 0, maxStill: 0, maxY: 0 };
+          for (let i = 0; i < 220 && Math.hypot(player.position.x - A[0], player.position.z - A[1]) > 0.9; i++) step(A[0], A[1], rec);
+          rec.still = 0;
+          for (let w = 1; w < fb.p.length; w++) { const q = fb.p[w]; for (let i = 0; i < 120 && Math.hypot(player.position.x - q[0], player.position.z - q[1]) > 0.8; i++) step(q[0], q[1], rec); }
+          joyVec.x = joyVec.z = 0;
+          out.runs.push({ k, maxStill: rec.maxStill, maxY: +rec.maxY.toFixed(2), far: +Math.hypot(player.position.x - B[0], player.position.z - B[1]).toFixed(1), y: +player.position.y.toFixed(2), top });
+        }
+        return out;
+      }, { fb });
+      fbRes.push(r);
+    }
+    const fbBad = fbRes.flatMap((r) => r.runs.filter((q) => q.maxStill > 15 || q.maxY < q.top - 0.35 || q.far > 1.5 || q.y > 0.3).map((q) => [r.id, q]));
+    check(fbRes.length >= 5 && fbRes.every((r) => r.runs.length >= 3) && fbBad.length === 0, `footbridges ${fbRes.map((r) => r.id + ':' + r.runs.length).join(' ')}: joystick walk from the approach directions up, across and down without a stall > 0.5 s (${J(fbBad.slice(0, 3))})`);
+    // the camera never ends up inside the ground along the shoreline (beach, river mouth, banks)
+    const cam = await page.evaluate(async () => {
+      const pts = []; for (let x = -290; x <= 0; x += 25) for (const z of [160, 185, 200, 206]) pts.push([x, z]); for (let z = 150; z <= 210; z += 12) for (const x of [-232, -220, -212, -204, -196]) pts.push([x, z]);
+      const bad = []; let n = 0;
+      for (const [x, z] of pts) {
+        PlanCV161.R_BUILD = 128; PlanCV161.ensureNear(x, z); if (!PlanCDataV161.access(x, z)) continue; n++;
+        player.position.set(x, 0, z); playerVelocity.set(0, 0, 0); PlanCV161.level = 0; camera.position.set(x + 9, 12, z + 12);
+        for (let i = 0; i < 6; i++) { updatePlayer(1 / 30); await new Promise((r) => requestAnimationFrame(r)); }
+        const d = camera.position.distanceTo(player.position);
+        if (camera.position.y < 2 || camera.position.y > 30 || d < 5) bad.push([x, z, +camera.position.y.toFixed(1), +d.toFixed(1)]);
+      }
+      PlanCV161.R_BUILD = 128;
+      return { n, bad };
+    });
+    check(cam.n > 40 && cam.bad.length === 0, `camera over the shoreline: ${cam.n} spots on beach / river mouth / banks, never below 2 m, never closer than 5 m to the player (${J(cam.bad.slice(0, 4))})`);
     // pictures
     await shot(page, 'plan-c-01-circus', 11, -11, 28, 40, 30);
     await shot(page, 'plan-c-02-ring-top', 0, 0, 50, 90, 0);
