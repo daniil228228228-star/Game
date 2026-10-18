@@ -14,6 +14,7 @@
  */
 (function () {
   'use strict';
+  if (window.LAYOUT_V161 === 'C') return; // layout C: the central ring is part of plan C (assets/plan-c-v161.js)
   if (typeof THREE === 'undefined' || typeof scene === 'undefined' || !window.BuildingsV161 || !window.BuildingsV161.kit) return;
   if (window.RoundaboutV161) return;
   const K = window.BuildingsV161.kit, ctx = K.makeCtx(1);

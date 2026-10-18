@@ -15999,6 +15999,7 @@ districtBuiltAccessTargets=function(id){
 };
 
 function refreshDrivewaysAndApronsV353(force=false){
+  if(window.LAYOUT_V161==='C')return; // layout C: every building gets its own short drive from the plan (step C3), the spiral driveways do not exist
   const sig=drivewaySignatureNowV351()+`|plots:`+CITY_DISTRICTS.map(d=>districtLandState(d.id).plots.map((p,i)=>`${d.id}:${i}:${p.zone||''}:${p.level||0}:${p.owned?1:0}`).join(',')).join('|');
   if(!force&&sig===drivewaySignatureV351) return;
   drivewaySignatureV351=sig;
@@ -26795,7 +26796,7 @@ function v44Curve(name,value){
     g.rotation.y=item.rot;return g;
   }
 
-  function v44AddStreetFurniture(group,cfg,profile){
+  function v44AddStreetFurniture(group,cfg,profile){if(window.LAYOUT_V161==='C')return; // layout C: street furniture comes from the plan 
     if(!group||!cfg)return;
     const lv=typeof districtRoadLevelV37==='function'?districtRoadLevelV37(cfg.id):1;
     if(lv<2)return;
@@ -26823,7 +26824,7 @@ function v44Curve(name,value){
   }
 
   function v44EnhanceDistrictStreetGroup(group,cfg){
-    if(!group||!cfg||group.userData?.v44RoadDecorated)return group;
+    if(!group||!cfg||group.userData?.v44RoadDecorated||window.LAYOUT_V161==='C')return group;
     const p=v44RoadProfile(cfg.id);v44ApplyRoadMaterialTone(group,p);v44AddStreetFurniture(group,cfg,p);group.userData.v44RoadDecorated=true;return group;
   }
 
@@ -29913,6 +29914,7 @@ function addIntersection59(group,n,level){
   group.add(pad);
 }
   function renderNetwork59(group,segments,level){
+    if(window.LAYOUT_V161==='C'){group.userData.v59Network={segments:0,nodes:0,kinds:{}};return new Map();} // layout C: the plan draws the streets
     const nodes=nodeGraph59(segments);for(const s of segments)addRoadDeck59(group,s,nodes);for(const n of nodes.values())addIntersection59(group,n,Math.max(level||1,...n.segments.map(s=>s.lv||1)));
     group.userData.v59Network={segments:segments.length,nodes:nodes.size,kinds:[...nodes.values()].reduce((o,n)=>(o[nodeKind59(n)]=(o[nodeKind59(n)]||0)+1,o),{})};return nodes;
   }
@@ -29973,7 +29975,7 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
     }
   }
   function makeCityStreetGroup(cfg){
-    const g=new THREE.Group(),lv=districtRoadLevelV37(cfg.id),d=districtBlockDimsV362(cfg.id);if(lv<=0){g.position.copy(cfg.pos);return g;}
+    const g=new THREE.Group(),lv=districtRoadLevelV37(cfg.id),d=districtBlockDimsV362(cfg.id);if(lv<=0||window.LAYOUT_V161==='C'){g.position.copy(cfg.pos);return g;} // layout C: no district street grids
     const hw=d.hw,hh=d.hh,mainW=ROAD59.widths.perimeter[lv],midW=ROAD59.widths.collector[lv],P=(x,z)=>new THREE.Vector3(x,0,z),segments=[];
     const xs=[-hw,0,hw],zs=[-hh,0,hh];
     const push=(a,b,w,role,twoWay=true,sidewalk=true,curb=true)=>segments.push({a,b,w,lv,role,twoWay,sidewalk,center:false,curb,edgeMarks:false});
@@ -30037,6 +30039,7 @@ function addParkingPocket59(group,a,b,roadW,side=1,slots=3){
 
 
   function rebuildOuter59(){
+    if(window.LAYOUT_V161==='C')return; // layout C: no ring road (plan C has its own)
     const unlocked=totalRoadLevelsV37()>=8;
     if(typeof outerRingRoad!=='undefined')outerRingRoad.visible=unlocked;
     if(typeof outerRingMark!=='undefined')outerRingMark.visible=false;
@@ -31131,6 +31134,7 @@ function rebuildServiceRoadsV66(){
     // reads as "infrastructure ready, waiting for the building", same as a real access road laid
     // ahead of construction, not as a visual bug). The old road (if any, e.g. a stale one from
     // before a mid-run reset) has just been removed above.
+    if(window.LAYOUT_V161==='C')return null; // layout C: no service-road tree, the plan owns every street
     if(typeof fleetDepotBuiltV118!=='undefined'&&!fleetDepotBuiltV118)return null;
     if(roadGroupV66&&roadGroupV66!==oldRoad&&roadGroupV66.parent){
       scene.remove(roadGroupV66);safe(()=>disposeObject3D(roadGroupV66));
@@ -34176,7 +34180,8 @@ function simplifyAtomic100(segs){
   }
   return arr;
 }
-function makeGroup(){ensureSig();const g=new THREE.Group();g.name='v86CanonicalStageRoads';const stageIds=activeStageIdsV92(),raw=rawSegments(),segs=simplifyAtomic100(atomic(raw)),nmap=nodes(segs);for(const s of segs)addStraight(g,s,nmap);for(const n of nmap.values()){addCorner(g,n);addJunction(g,n);}g.userData.v86StageNetwork={generation,stageIds,raw:raw.length,segments:segs.length,nodes:nmap.size,kinds:[...nmap.values()].reduce((o,n)=>(o[nodeKind(n)]=(o[nodeKind(n)]||0)+1,o),{})};return g;}
+function makeGroup(){ensureSig();const g=new THREE.Group();g.name='v86CanonicalStageRoads';if(window.LAYOUT_V161==='C')return g; // layout C: streets are the compiled plan (assets/plan-c-v161.js), the stage-road planner draws nothing
+const stageIds=activeStageIdsV92(),raw=rawSegments(),segs=simplifyAtomic100(atomic(raw)),nmap=nodes(segs);for(const s of segs)addStraight(g,s,nmap);for(const n of nmap.values()){addCorner(g,n);addJunction(g,n);}g.userData.v86StageNetwork={generation,stageIds,raw:raw.length,segments:segs.length,nodes:nmap.size,kinds:[...nmap.values()].reduce((o,n)=>(o[nodeKind(n)]=(o[nodeKind(n)]||0)+1,o),{})};return g;}
   function refresh(){ensureSig();
     // v161: build the new group first; if it lays out exactly the roads that are already in the scene, keep the old meshes (and skip the follow-up passes that only exist to dress a NEW group). A base upgrade bumps ensureSig() through the registry although the stage roads do not change.
     const prevV161=cityWorldRuntime.stageRoads,sigFn=window.__TYCOON_ROAD_LAYOUT_SIG_V161__;
@@ -36339,6 +36344,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
   }
 
   function syncDistrictRoad(id){
+    if(window.LAYOUT_V161==='C')return; // layout C: every street is the compiled plan (assets/plan-c-v161.js); the old road systems stay silent
     const cfg=CITY_DISTRICTS.find(d=>d.id===id);if(!cfg)return;
     const lv=districtRoadLevelV37(id),prev=runtime.levels.get(id)??-1;
     if(lv<=0){runtime.levels.set(id,lv);return;}
@@ -36355,6 +36361,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
   }
 
   function syncMasterRoads(){
+    if(window.LAYOUT_V161==='C')return; // layout C: every street is the compiled plan (assets/plan-c-v161.js); the old road systems stay silent
     const root=ensureMasterRoot(),spec=roadSpec(),w=spec?.widths?.arterial?.[1]||2.48;
     for(const cfg of CITY_DISTRICTS){
       if(districtRoadLevelV37(cfg.id)<=0)continue;
@@ -36377,6 +36384,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
   }
 
   function syncArterial(id){
+    if(window.LAYOUT_V161==='C')return; // layout C: every street is the compiled plan (assets/plan-c-v161.js); the old road systems stay silent
     const lv=districtRoadLevelV37(id);if(lv<=0)return;
     let root=cityWorldRuntime.arterialRoads.get(id),path=runtime.frozenConnectorPaths.get(id)||[];
     if(!root&&path.length>=2){
@@ -36407,6 +36415,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
   }
 
   function syncAccessRoads(id){
+    if(window.LAYOUT_V161==='C')return; // layout C: every street is the compiled plan (assets/plan-c-v161.js); the old road systems stay silent
     const lv=districtRoadLevelV37(id);if(lv<=0)return;
     let root=cityWorldRuntime.districtAccessRoads.get(id);if(!root){root=new THREE.Group();root.name=`v113StableAccess:${id}`;scene.add(root);cityWorldRuntime.districtAccessRoads.set(id,root);}
     const set=runtime.accessKeys.get(id)||new Set(),w=roadSpec()?.widths?.access?.[1]||1.46;
@@ -36533,6 +36542,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
   }
 
   function syncServiceRoads(){
+    if(window.LAYOUT_V161==='C')return; // layout C: every street is the compiled plan (assets/plan-c-v161.js); the old road systems stay silent
     // v118: nothing to sync/seed until the depot pad actually builds the industrial
     // service-road network (rebuildServiceRoadsV66(), called from buildIndustrialStepV118() --
     // was industrialZoneBuiltV116/buildIndustrialZoneV116() before this pass). Seeding this
@@ -36555,11 +36565,13 @@ Do not treat this geometry block as completion of the entire road/transport audi
     return `${stageIndex}|${b}|${plots}`;
   }
   function syncDriveways(){
+    if(window.LAYOUT_V161==='C')return; // layout C: every street is the compiled plan (assets/plan-c-v161.js); the old road systems stay silent
     const sig=drivewaySig();if(sig===runtime.drivewaySignature)return;
     runtime.drivewaySignature=sig;runtime.originals.driveways?.(true);
   }
 
   function syncStreetlights(){
+    if(window.LAYOUT_V161==='C')return; // layout C: every street is the compiled plan (assets/plan-c-v161.js); the old road systems stay silent
     // Rebuild only the district whose lamp level changed. Road meshes are never touched here.
     for(const cfg of CITY_DISTRICTS){
       const lv=districtStreetlightLevelV37(cfg.id),prev=runtime.lightLevels.get(cfg.id)??-1;
@@ -36578,6 +36590,7 @@ Do not treat this geometry block as completion of the entire road/transport audi
   }
 
   function syncStageRoads(){
+    if(window.LAYOUT_V161==='C')return; // layout C: every street is the compiled plan (assets/plan-c-v161.js); the old road systems stay silent
     // v116: stage roads are append-only. Existing asphalt and junctions are never removed.
     // A new stage contributes only road pieces not already covered by the frozen network.
     const api=window.__TYCOON_STAGE_ROADS__,active=safe(()=>api?.activeStages?.(),[])||[];

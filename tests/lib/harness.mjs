@@ -44,9 +44,10 @@ export function startServer(root = REPO_ROOT) {
 
 // `save`: undefined (untouched) | 'clear' (empty localStorage = fresh game) | object (written under SAVE_KEY).
 // Seeding happens on the first load of the tab only; use reloadGame() to test persistence.
-export async function openGame({ save, url, waitMs = 4000 } = {}) {
+// `layout`: 'B' (default: every pre-C test keeps running on the old core + plan B, a fresh game would otherwise be plan C since 2026-10-18) | 'C' | null (no override: the game decides from the save).
+export async function openGame({ save, url, waitMs = 4000, layout = 'B' } = {}) {
   const server = url ? null : await startServer();
-  const gameUrl = url || `${server.url}/${ENTRY}`;
+  const gameUrl = url || `${server.url}/${ENTRY}${layout ? '?layout=' + layout : ''}`;
   const browser = await chromium.launch({
     executablePath: process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium',
     args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'],

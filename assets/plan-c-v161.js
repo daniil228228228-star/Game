@@ -12,11 +12,11 @@
   if (window.LAYOUT_V161 !== 'C') return;
   const D = window.PlanCDataV161;
   if (!D) { console.error('plan C data missing'); return; }
-  const CELL = D.cell, R_BUILD = 128, R_KEEP = 190, MAX_PER_TICK = 2;
+  const CELL = D.cell, MAX_PER_TICK = 2;
   const cells = new Map();            // key -> {mesh, cx, cz}
   const root = new THREE.Group(); root.name = 'planCV161'; root.userData.planCV161 = true;
   scene.add(root);
-  const api = { version: 1, enabled: true, root, cells, R_BUILD, R_KEEP, furniture: {}, lastBuilt: 0 };
+  const api = { version: 1, enabled: true, root, cells, R_BUILD: 128, R_KEEP: 190, furniture: {}, lastBuilt: 0 };   // radii in metres around the player (tests / screenshots may widen them)
   window.PlanCV161 = api;
 
   // colours: palette entries are sRGB hex, the game renders linear
@@ -155,10 +155,10 @@
   };
   function ensureNear(x, z, maxBuild = 99) {
     let n = 0, changed = false;
-    for (const w of wanted(x, z, R_BUILD)) { if (n >= maxBuild) break; if (!cells.has(w.cx + ',' + w.cz)) { addCell(w.cx, w.cz); n++; changed = true; } }
+    for (const w of wanted(x, z, api.R_BUILD)) { if (n >= maxBuild) break; if (!cells.has(w.cx + ',' + w.cz)) { addCell(w.cx, w.cz); n++; changed = true; } }
     for (const key of [...cells.keys()]) {
       const c = cells.get(key), dx = Math.max(c.cx * CELL - x, 0, x - (c.cx + 1) * CELL), dz = Math.max(c.cz * CELL - z, 0, z - (c.cz + 1) * CELL);
-      if (Math.hypot(dx, dz) > R_KEEP) { dropCell(key); changed = true; }
+      if (Math.hypot(dx, dz) > api.R_KEEP) { dropCell(key); changed = true; }
     }
     if (changed) rebuildFurniture();
     return n;
@@ -190,7 +190,33 @@
   scene.children.forEach((o) => { if (o.isMesh && o.geometry && o.geometry.type === 'SphereGeometry' && o.geometry.parameters.radius >= 200 && Math.abs(o.position.x) < 1 && Math.abs(o.position.z) < 1) domes.push(o); });
   api.domes = domes;
   const followSky = () => { for (const d of domes) { d.position.x = player.position.x; d.position.z = player.position.z; } };
+  // ---- old scenery (chop trees, random bushes / rocks of the island core) that stands on a street of the plan is retired through the core's own road-conflict flag
+  const clsW = D.classes, edgesG = D.graph.edges, ringsG = D.graph.rings;
+  function onStreet(x, z) {
+    for (const r of ringsG) if (Math.hypot(x - r[1], z - r[2]) < r[3] + 3.2) return true;
+    for (const e of edgesG) {
+      const c = clsW[e[3]], half = c[0] / 2 + c[1] + 0.9;
+      if (x < Math.min(e[4], e[6]) - half || x > Math.max(e[4], e[6]) + half || z < Math.min(e[5], e[7]) - half || z > Math.max(e[5], e[7]) + half) continue;
+      return true;
+    }
+    return Math.hypot(x, z) < 25.5;   // the paved circus
+  }
+  api.onStreet = onStreet;
+  let sceneryList = [], sceneryAt = 0;
+  function syncScenery(now) {
+    if (now - sceneryAt < 2000) return; sceneryAt = now;
+    sceneryList = scene.children.filter((o) => o.userData && (o.userData.harvestableTree || o.userData.v64RandomScenery || o.userData.foliageKindV154 || o.userData.v37LegacyRoadside));
+    let n = 0;
+    for (const o of sceneryList) {
+      if (o.userData.v161PlanCRetired) continue;
+      if (Math.abs(o.position.x) > 90 || Math.abs(o.position.z) > 90) continue;
+      if (onStreet(o.position.x, o.position.z)) { o.userData.v161PlanCRetired = true; o.userData.v84HiddenRoadConflict = true; o.visible = false; n++; }
+    }
+    api.retired = (api.retired || 0) + n;
+  }
+  api.syncScenery = (now = 1e9) => { sceneryAt = 0; syncScenery(now); };
   retireOldCore();
+  syncScenery(1e9);
   ensureNear(player.position.x, player.position.z);
   let last = 0;
   (window.__TYCOON_VISUAL_TICKS__ = window.__TYCOON_VISUAL_TICKS__ || []).push((now) => {
@@ -198,6 +224,7 @@
     if (!api.enabled || document.hidden || now - last < 250) return;
     last = now;
     try { if (typeof ground !== 'undefined' && ground.visible) ground.visible = false; } catch (_) {}
+    syncScenery(now);
     const t0 = performance.now();
     ensureNear(player.position.x, player.position.z, MAX_PER_TICK);
     api.lastBuilt = performance.now() - t0;

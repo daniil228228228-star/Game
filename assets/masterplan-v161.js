@@ -5,6 +5,7 @@
  */
 (() => {
   'use strict';
+  if (window.LAYOUT_V161 === 'C') return; // layout C: plan B (paid port pads) does not exist, the city is plan C
   const D=window.MasterplanPortDataV161,K=window.BuildingsV161.kit;
   const state=masterplanStateV161;
   let root=null,north=null,signature='',lastGate='',lastTick=0,sea=null;

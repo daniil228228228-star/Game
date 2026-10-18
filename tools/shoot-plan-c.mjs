@@ -4,10 +4,11 @@ import path from 'node:path';
 import { openGame } from '../tests/lib/harness.mjs';
 const out = path.resolve(process.argv[2] || 'shots'); fs.mkdirSync(out, { recursive: true });
 const specs = process.argv.slice(3).map((s) => { const [n, r] = s.split(':'); const [x, z, d, el, az] = r.split(',').map(Number); return { n, x, z, d, el: el ?? 60, az: az ?? 0 }; });
-const g = await openGame({ save: 'clear', url: undefined, waitMs: 5000 });
+const g = await openGame({ save: 'clear', layout: 'C', waitMs: 5000 });
 const errs = g.errors;
 for (const s of specs) {
   const url = await g.page.evaluate(({ x, z, d, el, az }) => {
+    if (d > 200) { PlanCV161.R_BUILD = 900; PlanCV161.R_KEEP = 1200; }
     PlanCV161.ensureNear(x, z);
     const cv = renderer.domElement, cam = new THREE.PerspectiveCamera(50, cv.width / cv.height, 0.3, 900);
     const E = el * Math.PI / 180, A = az * Math.PI / 180;
