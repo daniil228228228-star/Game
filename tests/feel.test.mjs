@@ -206,9 +206,12 @@ const PADPLATE = (id) => {
 };
 const padRows = [];
 for (const p of spots.pads.slice(0, 4)) {
-  await ev(([x, z]) => { player.position.set(x, 0, z); }, [p.x + 2.5, p.z + 2.5]);
+  // 2026-10-17: the wanted zoom is steady now (camera-drift test), so the pad must be where a player walking up to it has it: straight ahead of the follow camera, 2.5 m from the player
+  await ev(([x, z]) => { const dx = camera.position.x - controls.target.x, dz = camera.position.z - controls.target.z, l = Math.hypot(dx, dz) || 1; player.position.set(x + dx / l * 2.5, 0, z + dz / l * 2.5); }, [p.x, p.z]);
   await waitForState(page, () => camera.position.distanceTo(player.position) < 14.5, null, { timeout: 15000 }); // the follow camera lags a teleport
+  await ev(([x, z]) => { const dx = player.position.x - x, dz = player.position.z - z, l = Math.hypot(dx, dz) || 1, h = Math.hypot(camera.position.x - controls.target.x, camera.position.z - controls.target.z) || 6; camera.position.x = controls.target.x + dx / l * h; camera.position.z = controls.target.z + dz / l * h; controls.update(); }, [p.x, p.z]);   // walking up to the pad: it is straight ahead of the follow camera
   await page.waitForTimeout(900);
+  for (let k = 0; k < 8; k++) { const r0 = await ev(PADPLATE, p.id); if (r0.onScreen && r0.op > 0) break; await page.waitForTimeout(700); }   // the follow camera and the plate layout fade need a moment after a teleport
   padRows.push({ id: p.id, ...(await ev(PADPLATE, p.id)) });
   if (p.id === 'concrete3' || p.id === 'metal3') await shot('feel-pad-' + p.id);
 }
