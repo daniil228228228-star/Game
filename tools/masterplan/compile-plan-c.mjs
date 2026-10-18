@@ -188,7 +188,7 @@ function trimAt(nodeId, e) {   // how far markings / medians stay away from a no
   if (j.type === 'mini') return 8;
   const cross = j.arms.filter((a) => (a.dir[0] !== 0) !== (e.dir === 'x')).map((a) => hw(a.cls));
   const ch = cross.length ? Math.max(...cross) : 0;
-  if (j.type === 'signal') return ch + 5.2;
+  if (j.type === 'signal') return Math.max(ch, j.terminal ? (j.boxZ || 0) : 0) + (j.terminal && j.boxZ ? 3.8 : 5.2);   // diamond terminals: the median runs on to the stop line behind the corner fillets
   if (j.type === 'riro' && e.cls === 'arterial') return 0;
   return ch + 0.8;
 }
@@ -490,6 +490,14 @@ for (const j of PLAN.junctions) {
     for (const a of j.arms) {
       const w = hw(a.cls), along = (a.dir[0] !== 0 ? hx : hz) + 2.2;
       if (!PLAN.crossings.some((cr) => cr.id.startsWith(j.id + '-') && cr.arm && cr.arm[0] === a.dir[0] && cr.arm[1] === a.dir[1])) zebra(c, a.dir, along, a.cls, 1.4);
+      if (a.cls === 'ramp2') {   // diamond mouth: the arriving ramp has a full-width stop line and a head on each side; the departing one has neither
+        if (a.ramp === 'off') {
+          const rr = [a.dir[1], -a.dir[0]], p0 = [c[0] + a.dir[0] * (along + 1.7), c[1] + a.dir[1] * (along + 1.7)];
+          emitRect('p', 'q', p0[0] - 0.2, p0[1] - w + 0.1, p0[0] + 0.2, p0[1] + w - 0.1, H.paint, CI.white);
+          for (const sgn of [-1, 1]) furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) + rr[0] * sgn * (w + 0.55), c[1] + a.dir[1] * (along + 1.2) + rr[1] * sgn * (w + 0.55), yawOf(a.dir)]);
+        }
+        continue;
+      }
       if (a.cls === 'arterial' || a.cls === 'collector' || a.cls.startsWith('motorway')) stopLine(c, a.dir, along + 1.7, a.cls);
       if (a.cls === 'arterial' || a.cls.startsWith('motorway')) for (let k = 0; k < (a.cls === 'motorway3' ? 3 : 2); k++) arrow(c, a.dir, along + 6.5, CLS[a.cls].median / 2 + CLS[a.cls].lane * (k + 0.5));
       const r = [a.dir[1], -a.dir[0]];
@@ -507,7 +515,7 @@ for (const j of PLAN.junctions) {
 // ---- 5b. I2: the street splits into two one-way carriageways round a green island on each side of the main road (the Svetlanovskaya Square scheme, simplified).
 // West island: oval (round tip away from the crossing), east island: rounded rectangle; carriageway band 4.8 m = 2 lanes of 2.4, island half width 6, sidewalks outside,
 // the band ends square at the M2 edge with 7 m kerb returns (right-turn corners), zebra + signal heads on every branch, stop line + arrows + lane dashes on the inbound one.
-const SPLIT = { hz: 6, band: 4.8, walk: 1.8, R: 7 }, islandsOut = [], splitZones = [];   // splitZones: outline of band + sidewalk of each island (nothing random may stand there)
+const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [], splitZones = [];   // splitZones: outline of band + sidewalk of each island (nothing random may stand there)
 for (const t of pendingTapers) { emitTri('r', t[0], t[1], t[2], H.asph, CI.asph); splitZones.push(t); }   // M2 lane tapers: asphalt triangles, nothing may stand on them
 {
   const xm = M2_X, mw = CLS.motorway3.w / 2;   // the junction is 3+3 lanes wide
@@ -580,6 +588,8 @@ for (const t of pendingTapers) { emitTri('r', t[0], t[1], t[2], H.asph, CI.asph)
     }
     // a second arrow pair on every branch near the round end (direction of travel: inbound towards M2, outbound away from it)
     for (const sz of [-1, 1]) { const zc = sz * (hz + SPLIT.band / 2), xt = farX - side * 6 + side * 0, dirT = sz === inSz ? [side, 0] : [-side, 0]; for (const lat of [-1, 1]) arrow([xt - side * 4, zc + lat * 1.2], dirT, 0, 0); }
+    // bus shelters on the outer sidewalk of both branches (line B1 runs through the crossing), facing the carriageway
+    for (const [sz, t] of [[1, 0.42], [-1, 0.58]]) { const xA = side < 0 ? farX + 6 : edgeM + side * SPLIT.R, xB = side < 0 ? edgeM + side * SPLIT.R : farX - 6, px = xA + (xB - xA) * t; furniture.stop.push([R2(px), R2(sz * (hz + SPLIT.band + 1.75)), sz > 0 ? Math.PI : 0, 'B1']); }
     // furniture on the island: lamps along the axis, a few trees
     for (const t of [0.22, 0.5, 0.78]) furniture.lamp.push([R2(xa + (xb - xa) * t), 0, 0]);
     for (const [t, zz] of [[0.14, 0], [0.34, 2.4], [0.34, -2.4], [0.66, 2.4], [0.66, -2.4], [0.86, 0]]) { const px = xa + (xb - xa) * t; cellOf(Math.floor(px / CELL), Math.floor(zz / CELL)).f.tree.push(R2(px), R2(zz), R2(0.9 + 0.2 * Math.abs(Math.sin(px))), R2(Math.abs(Math.cos(px * 3))));
@@ -735,7 +745,7 @@ for (const ic of PLAN.interchanges) {
         // Include the PARALLEL auxiliary lane, not just the initial taper.
         // I2's acceleration lane and I4's deceleration lane overlap here;
         // different heights would put one ramp's parapet through the other.
-        if (h ? Math.abs(p[1 - h.axis] - h.c) > MW + CLS.ramp.w / 2 + 0.005 || p[h.axis] < h.lo || p[h.axis] > h.hi : projectPath(p, end.parent.p3).distance > CLS.ramp.w + 0.005) break;
+        if (h ? Math.abs(p[1 - h.axis] - h.c) > MW + CLS.ramp.w / 2 + 0.005 || p[h.axis] < h.lo || p[h.axis] > h.hi || (r.holdLow && h.h(p[h.axis]) > 0.35) : projectPath(p, end.parent.p3).distance > CLS.ramp.w + 0.005) break;   // diamond ramps hold the host level only where the carriageway is still at ground
         last = i;
       }
       if (last !== indices[0]) knots.push([S[last], h ? h.h(pts[last][h.axis]) : projectPath(pts[last], end.parent.p3).h]);
@@ -773,7 +783,7 @@ for (const ic of PLAN.interchanges) {
     constrainRampProfile(p3, S, pts.map((_, i) => i === 0 || i === pts.length - 1 ||
       ends.some((e, k) => (e.host || e.parent) && (k ? L - S[i] : S[i]) <= attached[k] + 1e-6) ||
       (sBr != null && Math.abs(S[i] - sBr) < 4)), ic.id + '.' + ri);
-    const path = { id: ic.id + '.' + ri, ic: ic.id, kind: r.kind, p3, bridge: sBr, S, attach: r.attach };
+    const path = { id: ic.id + '.' + ri, ic: ic.id, kind: r.kind, p3, bridge: sBr, S, attach: r.attach, mouth: r.mouth, holdLow: r.holdLow };
     done.push(path); rampPts.push(path);
     rampsOut.push({ ic: ic.id, kind: r.kind, pts: p3.map((p) => [R2(p[0]), R2(p[1]), R3(p[2])]) });
   }
@@ -784,9 +794,41 @@ for (const ic of PLAN.interchanges) {
 // road. Sampling + bisection splits runs at joins; never filter vertices and
 // reconnect across an opening (that used to create invisible collider chords).
 const roadIndex = new Map(), INDEX_CELL = 16;
+// Per-vertex edge offsets of every ramp: the merge wedge onto a parallel host (outer edge converges on the host kerb), and the widened mouth of a diamond terminal (2.8 -> 6 m over 22 m)
+const rampOffs = new Map();
+for (const { id, p3, attach, mouth, S } of rampPts) {
+  const offL = p3.map(() => -CLS.ramp.w / 2), offR = p3.map(() => CLS.ramp.w / 2), dashed = [p3.map(() => false), p3.map(() => false)];
+  for (const k of [0, 1]) {
+    const type = attach[k]; if (type !== 'motorway' && type !== 'cross') continue;
+    const i0 = k ? p3.length - 1 : 0, step = k ? -1 : 1, p = p3[i0], q = p3[i0 + step];
+    let host = null;
+    if (type === 'motorway') { const m = motorHost(p); host = { axis: m.axis, c: m.c, Hw: MW }; }
+    else {
+      const e = PLAN.edges.find((x) => { if (x.cls === 'motorway') return false; const a = N.get(x.a), b = N.get(x.b), ax = x.dir === 'x' ? 0 : 1, lat = ax === 0 ? a.z : a.x, lo = Math.min(ax === 0 ? a.x : a.z, ax === 0 ? b.x : b.z), hi = Math.max(ax === 0 ? a.x : a.z, ax === 0 ? b.x : b.z); return Math.abs(p[1 - ax] - lat) <= hw(x.cls) + 0.8 && p[ax] >= lo - 0.01 && p[ax] <= hi + 0.01; });
+      if (e) host = { axis: e.dir === 'x' ? 0 : 1, c: e.dir === 'x' ? N.get(e.a).z : N.get(e.a).x, Hw: hw(e.cls) };
+    }
+    if (!host) continue;
+    const tl = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
+    if (Math.abs(q[host.axis] - p[host.axis]) / tl < 0.8) continue;   // square-on terminals stay as they are
+    const lat = (v) => v[1 - host.axis] - host.c, dEnd = Math.abs(lat(p)), dTouch = host.Hw + CLS.ramp.w / 2;
+    if (dEnd >= dTouch - 0.2) continue;
+    const sideOut = (() => { const a = p3[Math.min(p3.length - 1, i0 + 1)], b = p3[Math.max(0, i0 - 1)], dx = a[0] - b[0], dz = a[1] - b[1], n = [-dz, dx]; return Math.sign(n[1 - host.axis] * (Math.sign(lat(p)) || 1)) || 1; })();
+    for (let i = i0; i >= 0 && i < p3.length; i += step) {
+      const d = Math.abs(lat(p3[i]));
+      if (d >= dTouch + 1e-6) break;
+      const outer = Math.max(host.Hw, Math.min(d + CLS.ramp.w / 2, host.Hw + CLS.ramp.w * (d - dEnd) / (dTouch - dEnd)));
+      if (sideOut > 0) { offR[i] = outer - d; dashed[0][i] = true; } else { offL[i] = -(outer - d); dashed[1][i] = true; }
+    }
+  }
+  if (mouth != null) {   // terminal mouth: both edges flare symmetrically
+    const L = S[S.length - 1];
+    for (let i = 0; i < p3.length; i++) { const ds = mouth ? L - S[i] : S[i]; if (ds >= 22) continue; const t = 1 - ds / 22, w = CLS.ramp.w / 2 + (CLS.ramp2.w / 2 - CLS.ramp.w / 2) * t * t * (3 - 2 * t); offL[i] = Math.min(offL[i], -w); offR[i] = Math.max(offR[i], w); }
+  }
+  rampOffs.set(id, { offL, offR, dashed });
+}
 const rampMasks = [];
 for (const r of rampPts) {
-  const l = offsetPts3(r.p3, -CLS.ramp.w / 2), rr = offsetPts3(r.p3, CLS.ramp.w / 2);
+  const ro = rampOffs.get(r.id), l = offsetVar(r.p3, ro.offL), rr = offsetVar(r.p3, ro.offR);
   for (let i = 1; i < r.p3.length; i++) if (Math.min(r.p3[i - 1][2], r.p3[i][2]) < 0.2) {
     const p = [l[i - 1], rr[i - 1], rr[i], l[i]].map((v) => v.slice(0, 2));
     rampMasks.push({ p, x0: Math.min(...p.map((q) => q[0])), x1: Math.max(...p.map((q) => q[0])), z0: Math.min(...p.map((q) => q[1])), z1: Math.max(...p.map((q) => q[1])) });
@@ -928,32 +970,10 @@ for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z'
 }
 // Render the pre-resolved ramp profiles. Single-lane ramps have edge lines,
 // NOT a dashed centre line suggesting a second lane.
-for (const { id, ic, kind, p3, bridge: sBr, S, attach } of rampPts) {
+for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth } of rampPts) {
   // Merge geometry (2026-10-18 (8)): where a ramp joins a carriageway / avenue PARALLEL to it, its outer edge converges linearly onto the host's kerb line
   // (a true wedge, one asphalt contour), the edge line on the host side turns into a dashed line, the outer edge line runs on without a break.
-  const offL = p3.map(() => -CLS.ramp.w / 2), offR = p3.map(() => CLS.ramp.w / 2), dashed = [p3.map(() => false), p3.map(() => false)];
-  for (const k of [0, 1]) {
-    const type = attach[k]; if (type !== 'motorway' && type !== 'cross') continue;
-    const i0 = k ? p3.length - 1 : 0, step = k ? -1 : 1, p = p3[i0], q = p3[i0 + step];
-    let host = null;
-    if (type === 'motorway') { const m = motorHost(p); host = { axis: m.axis, c: m.c, Hw: MW }; }
-    else {
-      const e = PLAN.edges.find((x) => { if (x.cls === 'motorway') return false; const a = N.get(x.a), b = N.get(x.b), ax = x.dir === 'x' ? 0 : 1, lat = ax === 0 ? a.z : a.x, lo = Math.min(ax === 0 ? a.x : a.z, ax === 0 ? b.x : b.z), hi = Math.max(ax === 0 ? a.x : a.z, ax === 0 ? b.x : b.z); return Math.abs(p[1 - ax] - lat) <= hw(x.cls) + 0.8 && p[ax] >= lo - 0.01 && p[ax] <= hi + 0.01; });
-      if (e) host = { axis: e.dir === 'x' ? 0 : 1, c: e.dir === 'x' ? N.get(e.a).z : N.get(e.a).x, Hw: hw(e.cls) };
-    }
-    if (!host) continue;
-    const tl = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
-    if (Math.abs(q[host.axis] - p[host.axis]) / tl < 0.8) continue;   // square-on terminals stay as they are
-    const lat = (v) => v[1 - host.axis] - host.c, dEnd = Math.abs(lat(p)), dTouch = host.Hw + CLS.ramp.w / 2;
-    if (dEnd >= dTouch - 0.2) continue;
-    const sideOut = (() => { const a = p3[Math.min(p3.length - 1, i0 + 1)], b = p3[Math.max(0, i0 - 1)], dx = a[0] - b[0], dz = a[1] - b[1], n = [-dz, dx]; return Math.sign(n[1 - host.axis] * (Math.sign(lat(p)) || 1)) || 1; })();
-    for (let i = i0; i >= 0 && i < p3.length; i += step) {
-      const d = Math.abs(lat(p3[i]));
-      if (d >= dTouch + 1e-6) break;
-      const outer = Math.max(host.Hw, Math.min(d + CLS.ramp.w / 2, host.Hw + CLS.ramp.w * (d - dEnd) / (dTouch - dEnd)));
-      if (sideOut > 0) { offR[i] = outer - d; dashed[0][i] = true; } else { offL[i] = -(outer - d); dashed[1][i] = true; }
-    }
-  }
+  const { offL, offR, dashed } = rampOffs.get(id);
   asymRibbon(p3, offL, offR, 0.052, CI.asph);
   for (const sg of [-1, 1]) {
     const q = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));
@@ -998,6 +1018,23 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach } of rampPts) {
     if (/slip/.test(kind)) { arrowAt(L * 0.36); arrowAt(L * 0.62); teethAt(L - 4.5); } else if (L > 40) { arrowAt(L * 0.4); arrowAt(L * 0.6); }
   }
   STRUCT.ribbons.push({ id: ic + '.' + kind, w: CLS.ramp.w - 0.2, p: p3.map((p) => [R2(p[0]), R2(p[1]), R3(p[2])]) });
+}
+// Diamond terminals: kerb returns (R 7) between the widened ramp mouth and the avenue edge, both corners; sidewalks are carved out and a ring of walk follows the arc
+const TERM_R = 7;
+for (const { p3, mouth, S } of rampPts) {
+  if (mouth == null) continue;
+  const P = p3[mouth ? p3.length - 1 : 0], side = P[0] < 0 ? -1 : 1, mh = CLS.ramp2.w / 2;
+  for (const sz of [-1, 1]) {
+    const K = [P[0], P[1] + sz * mh], O = [K[0] + side * TERM_R, K[1] + sz * TERM_R];
+    addShape(Math.min(K[0], O[0]), Math.min(K[1], O[1]), Math.max(K[0], O[0]), Math.max(K[1], O[1]), 'carve');
+    const arc = [], arc2 = [];
+    for (let k = 0; k <= 12; k++) { const t = k / 12 * Math.PI / 2; arc.push([O[0] - side * TERM_R * Math.sin(t), O[1] - sz * TERM_R * Math.cos(t)]); arc2.push([O[0] - side * (TERM_R - 1.4) * Math.sin(t), O[1] - sz * (TERM_R - 1.4) * Math.cos(t)]); }
+    for (let k = 0; k + 1 < arc.length; k++) {
+      emitTri('r', K, arc[k], arc[k + 1], H.asph, CI.asph);
+      emitWall(arc[k][0], arc[k][1], arc[k + 1][0], arc[k + 1][1], H.asph, H.walk, CI.kerb);
+      emitTri('r', arc[k], arc2[k], arc[k + 1], H.walk, CI.walk); emitTri('r', arc2[k], arc2[k + 1], arc[k + 1], H.walk, CI.walk);
+    }
+  }
 }
 // river bridges (flat decks with a slab, parapets and piers), M1 over the river
 {
@@ -1187,6 +1224,18 @@ for (const cellC of cells.values()) {
   const old = cellC.f.tree, kept = [];
   for (let i = 0; i < old.length; i += 4) if (!furniture.stop.some((st) => Math.hypot(st[0] - old[i], st[1] - old[i + 1]) < 2.2)) kept.push(...old.slice(i, i + 4));
   cellC.f.tree = kept;
+}
+// the lawn inside every cloverleaf loop: a ring of trees round the middle and one in the centre (the loop centre = circumcentre of three points of its middle third)
+for (const ic of PLAN.interchanges) for (const rp of ic.ramps) {
+  if (rp.kind !== 'loop' || !rp.r) continue;
+  const n = rp.pts.length, [A, B, Cc] = [Math.floor(n * 0.4), Math.floor(n * 0.5), Math.floor(n * 0.6)].map((i) => rp.pts[i]);
+  const d = 2 * (A[0] * (B[1] - Cc[1]) + B[0] * (Cc[1] - A[1]) + Cc[0] * (A[1] - B[1])); if (Math.abs(d) < 1e-6) continue;
+  const ux = ((A[0] ** 2 + A[1] ** 2) * (B[1] - Cc[1]) + (B[0] ** 2 + B[1] ** 2) * (Cc[1] - A[1]) + (Cc[0] ** 2 + Cc[1] ** 2) * (A[1] - B[1])) / d, uz = ((A[0] ** 2 + A[1] ** 2) * (Cc[0] - B[0]) + (B[0] ** 2 + B[1] ** 2) * (A[0] - Cc[0]) + (Cc[0] ** 2 + Cc[1] ** 2) * (B[0] - A[0])) / d;
+  const put = (x, z, sc, rn) => cellOf(Math.floor(x / CELL), Math.floor(z / CELL)).f.tree.push(R2(x), R2(z), R2(sc), R2(rn));
+  disc('g', [ux, uz], rp.r - 1.9, -0.04, CI.lawn, 40);
+  for (const c of cells.values()) { const old = c.f.tree, kept = []; for (let i = 0; i < old.length; i += 4) if (Math.hypot(old[i] - ux, old[i + 1] - uz) > rp.r - 1.0) kept.push(...old.slice(i, i + 4)); c.f.tree = kept; }   // scatter trees inside the loop make way for the lawn   // a mown lawn over the fields / forest tint under the loop
+  put(ux, uz, 1.25, 0.3);
+  for (let k = 0; k < 7; k++) { const a = (k + 0.3) / 7 * Math.PI * 2; put(ux + Math.cos(a) * rp.r * 0.5, uz + Math.sin(a) * rp.r * 0.5, 0.9 + 0.25 * Math.abs(Math.sin(k * 2.1)), Math.abs(Math.cos(k * 1.7))); }
 }
 furniture.cat = furnCat;
 for (const [kind, list] of Object.entries(furniture)) for (const f of list) { const c = cellOf(Math.floor(f[0] / CELL), Math.floor(f[1] / CELL)).f[kind]; for (const v of f) c.push(typeof v === 'number' ? R2(v) : v); }

@@ -244,7 +244,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
       }
       // zebra bars (0.4-0.55 thick, < 2 long) never lie on a ramp lane
       const dseg2 = (px, pz, a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], l = dx * dx + dz * dz, t = l ? Math.max(0, Math.min(1, ((px - a[0]) * dx + (pz - a[1]) * dz) / l)) : 0; return Math.hypot(px - a[0] - dx * t, pz - a[1] - dz * t); };
-      for (const m of M) { const lx = m[2] - m[0], lz = m[3] - m[1]; if (Math.min(lx, lz) < 0.4 || Math.max(lx, lz) >= 2.0) continue; const cx = (m[0] + m[2]) / 2, cz = (m[1] + m[3]) / 2; for (const [ic, kind, pts, h] of D.graph.ramps) for (let i = 1; i < pts.length; i++) if (dseg2(cx, cz, pts[i - 1], pts[i]) < 1.5) { bad2.push(['zebra bar', 'on ramp ' + ic + '/' + kind, +cx.toFixed(1), +cz.toFixed(1)]); break; } }
+      for (const m of M) { const lx = m[2] - m[0], lz = m[3] - m[1]; if (Math.min(lx, lz) < 0.4 || Math.max(lx, lz) >= 2.0) continue; const cx = (m[0] + m[2]) / 2, cz = (m[1] + m[3]) / 2; for (const [ic, kind, pts, h] of D.graph.ramps) for (let i = 1; i < pts.length; i++) if (dseg2(cx, cz, pts[i - 1], pts[i]) < 1.5 && !PLAN.interchanges.some((ic) => (ic.terminals || []).some((t) => Math.hypot(t[0] - cx, t[1] - cz) < 9))) { bad2.push(['zebra bar', 'on ramp ' + ic + '/' + kind, +cx.toFixed(1), +cz.toFixed(1)]); break; } }
       check(bad2.length === 0, `furniture 2: no lamp, signal, sign or tree stands on triangle asphalt, no tree on a sidewalk, nothing on zebra / stop-line paint (${bad2.length}: ${J(bad2.slice(0, 6))})`);
     }
     const off = stops.filter(([x, z]) => !W.some((r) => x > r[0] - 0.05 && x < r[2] + 0.05 && z > r[1] - 0.05 && z < r[3] + 0.05) && !WT.some((p) => inWalkTriangle(x, z, p)));

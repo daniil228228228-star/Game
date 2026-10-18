@@ -71,8 +71,8 @@ export function buildPlan() {
     { x: -160, cls: 'local', spans: [[160, 188]] },
     { x: -80, cls: 'collector', name: 'Школьная ул.', spans: [[-160, 188]] },
     { x: -40, cls: 'local', spans: [[-108, 188]] },
-    { x: 0, cls: 'arterial', name: 'Главный пр.', spans: [[-262, 188]] },
-    { x: 0, cls: 'collector', name: 'Северное ш.', spans: [[-370, -262]] },
+    { x: 0, cls: 'arterial', name: 'Главный пр.', spans: [[-340, 188]] },   // I1 is a full cloverleaf: the arterial is the crossing road up to z -340, no junction on it between z -340 and -126
+    { x: 0, cls: 'collector', name: 'Северное ш.', spans: [[-370, -340]] },
     { x: 40, cls: 'local', spans: [[-108, 188]] },
     { x: 80, cls: 'collector', name: 'Университетская ул.', spans: [[-190, 160]] },
     { x: 80, cls: 'service', name: 'Портовая ул.', spans: [[160, 196]] },
@@ -84,8 +84,8 @@ export function buildPlan() {
     { x: 296, cls: 'service', name: 'въезд P+R', spans: [[0, 44]], lot: 'P+R' },
   ];
   const H = [
-    { z: -190, cls: 'collector', name: 'Промышленная ул.', spans: [[0, 160]] },
-    { z: -160, cls: 'arterial', name: 'Северный пр.', spans: [[-300, 160]] },
+    { z: -190, cls: 'collector', name: 'Промышленная ул.', spans: [[80, 160]] },   // starts at x 80: the south-east ramps of the cloverleaf I1 sweep x 0..110
+    { z: -160, cls: 'arterial', name: 'Северный пр.', spans: [[-300, -80], [80, 160]] },   // no crossing of Главный пр. inside the cloverleaf I1 (the ramps arrive from z -144)
     { z: -108, cls: 'local', name: 'Привокзальная ул.', spans: [[-194, -40], [40, 200]] },
     { z: -80, cls: 'collector', name: 'Вокзальная ул.', spans: [[-300, 200]] },
     { z: -40, cls: 'local', spans: [[-280, -232], [-194, 200]] },
@@ -100,7 +100,8 @@ export function buildPlan() {
   ];
   // extra split points: diamond terminals, the P+R entrance
   const DT = 18;   // half spacing of the diamond ramp terminals (36 game m = 90 m real, the 300 ft desirable spacing)
-  const extraZ = { 0: [M1_Z - DT, M1_Z + DT] }, extraX = { 0: [208, M2_X, 290, 296] };   // I2 (Svetlanovskaya-style split street): the split starts at x 207 / 291, the main crossing is at x 250; P+R entrance at 296
+  const extraZ = {},
+     extraX = { 0: [208, M2_X, 290, 296] };   // I2 (Svetlanovskaya-style split street): the split starts at x 207 / 291, the main crossing is at x 250; P+R entrance at 296
 
   // ------------------------------------------------------------------ graph
   const nodes = new Map(), edges = [], key = (x, z) => `${R(x)},${R(z)}`;
@@ -140,38 +141,28 @@ export function buildPlan() {
 
   // ------------------------------------------------------------------ interchanges (ramps are polylines in game metres; `bridges` = parts above another road)
   const interchanges = [];
-  const SLIPU = -36, SLIPK = 12, SLIPA = 0, SLIPV = 20, SLIPK2 = 14;   // slip lane: gore at ramp u -36, right-turn curve to the avenue lane at v DT+20, merge 17 m later (radius >= 14, no overlap with the ramp)
-  function diamond(id, at, k, name, cross, cwPlus, cwMinus, slipPlus = cwPlus, slipMinus = cwMinus, SC = 1, SH = 0) {   // SH: pulls the whole slip-lane turn + merge SH game m towards the motorway (I2: the merge must not touch the junction with Окраинная ул.)
-    // SC shortens only the SOUTH end of the ramps (the side of the trumpet I4); `south` = the local u sign that points south in this pair's frame
-    const sqf = (south) => (p) => [Math.sign(p[0]) * (Math.abs(p[0]) > 10 && Math.sign(p[0]) === south ? 10 + (Math.abs(p[0]) - 10) * SC : Math.abs(p[0])), p[1]];   // shorten the ramps along the motorway (I2: the trumpet I4 starts 80 m south)
-    // real diamond: taper (1:15 real) into a parallel deceleration lane beside the carriageway, then ONE smooth curve to the terminal;
-    // the ramp hugs the motorway (8-13 game m = 20-33 m real from the carriageway edge). The -v side is the same pair turned 180 degrees.
-    const ramps = [], LN = MW + CLS.ramp.w / 2;   // centre of an added lane right beside the carriageway
-    // + free right-turn slip lanes (channelised): from the off-ramp's parallel lane one smooth curve turns ~90 degrees, runs as its own lane
-    //   beside the crossing road for ~15 game m (35-40 m real) and merges tangentially into its outer lane; the on-slip is the mirror.
-    //   Left turns and straight-on stay at the two signalised terminals, so all 8 movements work.
-    const pair = (Fk, cw, cs, south) => {
-      const sq = sqf(south);
-      const off = join(cubic([-104, ATT], [1, 0], 7, [-86, LN], [1, 0], 7, 10), seg([-86, LN], [-60, LN], 4), cubic([-60, LN], [1, 0], 24, [-(cw - 0.3), DT], [1, 0], 16));
-      const on = join(cubic([cw - 0.3, DT], [1, 0], 16, [60, LN], [1, 0], 24), seg([60, LN], [86, LN], 4), cubic([86, LN], [1, 0], 7, [104, ATT], [1, 0], 7, 10));
-      const sl = (cs ?? 0) + CLS.ramp.w / 2 + 0.6;   // slip lane centre: its own lane beside the road with a painted / kerbed island
-      // The final control point must stay OUTSIDE the parallel ramp lane.
-      // Old end v=28, k3=28 put it at v=0 and bowed the slip back across
-      // the motorway edge. A longer initial tangent and a bend 2 m outward
-      // preserve >=14 m radii while keeping the original avenue merge point.
-      // the slip branches off the ramp at a gore ~50 m before the terminal (it used to start 20 m earlier on the ramp's own lane and ran on top of it)
-      let k0 = 0; for (let i = 0; i < off.length; i++) if (Math.abs(off[i][0] - SLIPU) < Math.abs(off[k0][0] - SLIPU)) k0 = i;
-      const sp = off[k0], sn = off[Math.min(off.length - 1, k0 + 1)], sd = Math.hypot(sn[0] - sp[0], sn[1] - sp[1]) || 1, st0 = [(sn[0] - sp[0]) / sd, (sn[1] - sp[1]) / sd], ca = Math.cos(SLIPA * Math.PI / 180), sa = Math.sin(SLIPA * Math.PI / 180), st = [st0[0] * ca - st0[1] * sa, st0[0] * sa + st0[1] * ca];   // leaves the ramp at SLIPA degrees towards the avenue side
-      const slipOff = join(cubic(sp, st, SLIPK, [-sl, DT + SLIPV - SH], [0, 1], SLIPK2, 36), seg([-sl, DT + SLIPV - SH], [-sl, DT + SLIPV + 1 - SH], 2), cubic([-sl, DT + SLIPV + 1 - SH], [0, 1], 7, [-((cs ?? 0) - 0.8), DT + SLIPV + 16 - SH], [0, 1], 7, 12));
-      const slipOn = slipOff.map(([u, v]) => [-u, v]).reverse();
-      ramps.push({ kind: 'off', pts: off.map(sq).map(Fk), attach: ['motorway', 'cross'], decel: 26 }, { kind: 'on', pts: on.map(sq).map(Fk), attach: ['cross', 'motorway'], accel: 26 });
-      if (cs == null) return;   // no room for slip lanes (P+R entrance): right turns use the signalised terminal
-      ramps.push({ kind: 'slip-off', pts: slipOff.map(sq).map(Fk), attach: ['ramp', 'cross'], note: 'свободный правый поворот с хорды на проспект' }, { kind: 'slip-on', pts: slipOn.map(sq).map(Fk), attach: ['cross', 'ramp'], note: 'свободный правый поворот с проспекта на хорду' });
+  // Full cloverleaf I1: M1 (motorway, elevated) over Главный пр. (arterial, ground). Four 270 degree loops (r 14 = the audit minimum, one per quadrant) and four outer ramps that pass outside them;
+  // loops alternate on / off by rotation: the two loops on M1's arms are turned by 180 degrees, the two on the avenue's arms by 90 degrees with the roles of the roads swapped (like I3, whose roads are equal).
+  // generic lobe frame: road 1 runs along `a`, road 2 along `b` (h = half width, l = lateral of the lane the ramp joins, o = distance of the loop end from the other road's centre)
+  const CL = { r: 20, Lu: 130, Lv: 100, ku: 30, kv: 30, k1: 8, k2: 8, g: 3 };   // loops almost round: r 20 with a circle only 3 m off the roads (tails 30 % of the loop length, min radius 20 incl. the lead-ins); outer ramps from 130 m along M1 / 100 m along the avenue, >= 6.5 m outside the loops
+  function cloverAve(id, at, name) {
+    const { r, Lu, Lv, ku, kv, k1, k2, g } = CL, hwA = CLS.arterial.w / 2, ATA = hwA - 0.9, ramps = [];
+    const lobe = (h1, l1, h2, l2) => {   // road 1 first: loop from road 1 (near the crossing) round 270 degrees to road 2
+      const o1 = h2 + 2.8, o2 = h1 + 2.8, C = [h2 + g + r, h1 + g + r];
+      return join(cubic([o1, l1], [1, 0], k1, [h2 + g + r, h1 + g], [1, 0], k2, 12), arc(C, r, -90, 180), cubic([h2 + g, h1 + g + r], [0, -1], k2, [l2, o2], [0, -1], k1, 12));
     };
-    const F = frame(at, k);
-    pair(F, cwPlus, slipPlus, 1); pair(frame(at, k + 2), cwMinus, slipMinus, -1);
-    const terminals = [F([0, DT]), F([0, -DT])];
-    interchanges.push({ id, kind: 'diamond', name, at, cross, ramps, terminals, terminalSpacing: 2 * DT, deck: [F([-(cwPlus + 4), 0]), F([cwPlus + 4, 0])], deckRoad: 'motorway' });
+    const outer = (l2, L2, k2, L1, l1, k1) => cubic([l2, L2], [0, -1], k2, [L1, l1], [1, 0], k1, 36);   // from road 2 (far) to road 1 (far)
+    const T1 = [(p) => p, (p) => [-p[0], -p[1]]], T2 = [([a, b]) => [-b, a], ([a, b]) => [b, -a]];   // rotations 0 / 180 (loop starts on M1) and 90 / 270 (loop starts on the avenue)
+    for (let q = 0; q < 2; q++) {
+      const F = frame(at, 0);
+      // type 1: road 1 = M1 (a = u), road 2 = the avenue (b = v)
+      ramps.push({ kind: 'loop', pts: lobe(MW, ATT, hwA, ATA).map(T1[q]).map(F), r, attach: ['motorway', 'cross'] });
+      ramps.push({ kind: 'outer', pts: outer(ATA, Lv, kv, Lu, ATT, ku).map(T1[q]).map(F), attach: ['cross', 'motorway'] });
+      // type 2: road 1 = the avenue (a = v), road 2 = M1 (b = u); rotated by 90 degrees: (a, b) -> (u, v) = (-b, a)
+      ramps.push({ kind: 'loop', pts: lobe(hwA, ATA, MW, ATT).map(T2[q]).map(F), r, attach: ['cross', 'motorway'] });
+      ramps.push({ kind: 'outer', pts: outer(ATT, Lu, ku, Lv, ATA, kv).map(T2[q]).map(F), attach: ['motorway', 'cross'] });
+    }
+    interchanges.push({ id, kind: 'cloverleaf', name, at, ramps, deck: [frame(at, 0)([-8, 0]), frame(at, 0)([8, 0])], deckRoad: 'motorway', note: 'полный клеверный лист: М1 над Главным пр., четыре петли R 14, внешние съезды' });
   }
   function cloverleaf(id, at, name) {
     const r = 18, a = MW + 4, L = 110, kk = 30, ramps = [];
@@ -199,7 +190,7 @@ export function buildPlan() {
     ramps.push({ kind: 'direct', pts: c.map(F), attach: ['cross', 'motorway'], note: 'Портовое ш. на запад -> М2 на север' });
     interchanges.push({ id, kind: 'trumpet', name, at, ramps, trunkEnd: F([0, top]), note: 'три ветви: М2 заканчивается; раструб на стороне порта' });
   }
-  diamond('I1', [0, M1_Z], 0, 'Ромб: Главный пр. × М1', 'Главный пр.', CLS.arterial.w / 2, CLS.arterial.w / 2, null, CLS.collector.w / 2);   // no slip lanes on the south side: their merge would end 4 m before the junction z -190 (like the Okrainnaya junction at I2)
+  cloverAve('I1', [0, M1_Z], 'Клеверный лист: Главный пр. × М1');
   // I2 (M2 x Centralnaya) is a plain at-grade signalised crossing with the street split round two islands (see compile-plan-c.mjs 'split street'); no interchange object
   cloverleaf('I3', [M2_X, M1_Z], 'Клеверный лист: М1 × М2');
   trumpet('I4', [M2_X, 160], 'Трубка: М2 × Портовое ш.');
@@ -235,7 +226,7 @@ export function buildPlan() {
     else if (hi === 'collector') j = { type: 'priority', major: 'collector' };
     else j = { type: 'priority', major: null };
     n.kind = j.type;
-    junctions.push({ id: n.id, at: [n.x, n.z], ...j, ...(atI2 ? { boxZ: 18.1, splitArms: L.filter((e) => e.split).map((e) => e.id) } : {}), legs: L.length, classes: cl, arms: L.filter((e) => !e.split).map((e) => { const o = byId.get(e.a === n.id ? e.b : e.a); return { edge: e.id, cls: atI2 && e.cls === 'motorway' ? 'motorway3' : e.cls, dir: [Math.sign(R(o.x - n.x)), Math.sign(R(o.z - n.z))] }; }) });
+    junctions.push({ id: n.id, at: [n.x, n.z], ...j, ...(atI2 ? { boxZ: 18.1, splitArms: L.filter((e) => e.split).map((e) => e.id) } : {}), legs: L.length, classes: cl, arms: L.filter((e) => !e.split).map((e) => { const o = byId.get(e.a === n.id ? e.b : e.a); return { edge: e.id, cls: atI2 && e.cls === 'motorway' ? 'motorway3' : e.cls, dir: [Math.sign(R(o.x - n.x)), Math.sign(R(o.z - n.z))] }; }).concat(interchanges.flatMap((ic) => (ic.termArms || []).filter((t) => Math.hypot(t.at[0] - n.x, t.at[1] - n.z) < 0.5).map((t) => ({ edge: null, cls: t.cls, dir: t.dir, ramp: t.ramp })))), ...(isTerm ? { boxZ: 10 } : {}) });
   }
 
   // ------------------------------------------------------------------ crossings (pedestrian), footbridges, tunnels
@@ -251,6 +242,8 @@ export function buildPlan() {
     const e = edges.find((g) => { const a = byId.get(g.a), b = byId.get(g.b); return g.dir === 'x' && a.z === z && Math.min(a.x, b.x) < x && Math.max(a.x, b.x) > x; });
     if (e) crossings.push({ id: `MB${crossings.length}`, kind: e.cls === 'arterial' ? 'ped-signal-midblock' : 'zebra', at: [x, z], arm: null, cls: e.cls, axis: 'x', note: 'у остановки / у вилл' });
   }
+  // the cloverleaf I1 removed the crossings of Главный пр. at z -160 / -190: a signalised mid-block crossing keeps the 200 m rule (south of the ramp starts at z -140)
+  crossings.push({ id: 'MB-I1', kind: 'ped-signal-midblock', at: [0, -132], arm: null, cls: 'arterial', axis: 'z', note: 'у клеверного листа I1' });
   const footbridges = [
     { id: 'FB1', at: [250, -104], axis: 'x', over: 'М2 Восточная хорда', len: 46, note: 'конец Университетского б-ра -> Восточный лесопарк', ramps: 'пандусы + лифт' },
     { id: 'FB2', at: [-210, 40], axis: 'x', over: 'река', len: 34, note: 'пешеходно-велосипедный мост набережного парка' },
@@ -322,7 +315,7 @@ export function buildPlan() {
     { kind: 'forest', poly: [[-300, -240], [0, -240], [0, -168], [-300, -168]], name: 'Лесопарк' },
     { kind: 'forest', poly: [[-300, -168], [-236, -168], [-236, -84], [-300, -84]] },
     { kind: 'forest', poly: [[-300, -84], [-284, -84], [-284, 164], [-300, 164]] },
-    { kind: 'industry', poly: [[4, -232], [164, -232], [164, -164], [4, -164]] },
+    { kind: 'industry', poly: [[84, -232], [164, -232], [164, -164], [84, -164]] },
     { kind: 'verge', poly: [[164, -232], [300, -232], [300, -164], [164, -164]] },
     // the verge strip leaves the P+R lot [262,298]x[8,34] free: two flat ground polygons 4 mm apart z-fought into a grey triangle at a grazing view
     { kind: 'verge', poly: [[204, -164], [300, -164], [300, 44], [204, 44]] }, { kind: 'verge', poly: [[204, 44], [268, 44], [268, 72], [204, 72]] },
@@ -339,8 +332,8 @@ export function buildPlan() {
   // ------------------------------------------------------------------ blocks: cells between street lines, merged where no street separates them
   const xs = [-280, -232, -194, -160, -120, -80, -40, 0, 40, 80, 120, 160, 200], zs = [-218, -190, -160, -126, -108, -80, -40, 0, 40, 80, 120, 160, 188];
   const zoneAt = (cx, cz) => {
-    if (cz < -160) return cx > 0 && cx < 160 ? 'industrial' : null;
-    if (cz < -126) { if (cx < -194) return null; if (cx > -80 && cx < 0) return 'railyard'; return 'logistics'; }
+    if (cz < -160) return cx >= 80 && cx < 160 ? 'industrial' : null;
+    if (cz < -126) { if (cx < -194 || (cx >= -80 && cx < 40)) return null; /* the cloverleaf I1 sweeps x -110..110 up to z -144 */ if (cx > -80 && cx < 0) return 'railyard'; return 'logistics'; }
     if (cz < -108) return null;
     if (cx < -232) return cz > -80 && cz < 160 ? 'villas' : null;
     if (cx < -194) return null;
@@ -392,7 +385,7 @@ export function buildPlan() {
   const lines = [
     { id: 'B1', name: 'Автобус 1: P+R «Восток» — Центр — Береговая', color: '#d9480f', pts: [[296, 0], [-280, 0]], stops: [186, 104, 24, -56, -136, -256].map((x) => [x, 0]) },
     { id: 'B2', name: 'Автобус 2: Вокзал — Центр — Морская площадь', color: '#1c6dd0', pts: [[0, -100], [0, 188]], stops: [-100, -24, 56, 136, 176].map((z) => [0, z]) },
-    { id: 'B3', name: 'Автобус 3: кольцо по проспектам', color: '#2b8a3e', pts: [[-160, -160], [160, -160], [160, 160], [-160, 160], [-160, -160]], stops: [] },
+    { id: 'B3', name: 'Автобус 3: кольцо по проспектам', color: '#2b8a3e', pts: [[-160, -80], [160, -80], [160, 160], [-160, 160], [-160, -80]], stops: [] },   // the north leg runs on Вокзальная ул. (z -80): Северный пр. no longer crosses Главный пр. (cloverleaf I1)
   ];
   const rbs = [{ c: [0, 0], r: 8.6 }, { c: [0, 188], r: 6.6 }];
   const roundRoute = (pts) => {
@@ -411,7 +404,8 @@ export function buildPlan() {
     return join(out.map(P2));
   };
   for (const l of lines) l.pts = roundRoute(l.pts);
-  for (const v of [-120, -40, 40, 120]) lines[2].stops.push([v, -160], [160, v], [-v, 160], [-160, -v]);
+  for (const v of [-120, -40, 40, 120]) lines[2].stops.push([v, -80], [-v, 160]);   // B3: north leg z -80, south leg z 160
+  for (const z of [-40, 40, 120]) lines[2].stops.push([160, z], [-160, -z + 80]);   // east leg x 160 (z -40..120), west leg x -160 (z 120, 40, -40)
   const transit = { lines, note: 'остановки ~80 игровых м (200 м настоящих), у перекрёстков и в середине кварталов; метро / трамвай позже (C5)' };
 
   const landmarks = [

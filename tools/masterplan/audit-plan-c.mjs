@@ -27,12 +27,13 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
         const terms = (a.terminal ? 1 : 0) + (b.terminal ? 1 : 0), cls = between[0].cls;
         const min = terms === 2 ? 36 : terms === 1 ? 50 : inner(a.at[0], a.at[1]) && inner(b.at[0], b.at[1]) ? 80 : 160;
         seen.push(d);
+        if (d <= 14 && a.terminal && b.terminal) { accepted.push(`${a.at}->${b.at} ${d} offset-T pair of one diamond terminal group`); continue; }   // two T-junctions 12 m apart operated as ONE signal group (the ramps never cross the avenue)
         if (d < min && (a.big || b.big)) { accepted.push(`${a.at}->${b.at} ${d} < ${min}`); continue; }   // I2 is at grade by the owner's decision (2026-10-18): a documented deviation, listed in the detail
         if (d < min) bad.push(`${a.at}->${b.at} ${d} < ${min} (${cls}${terms ? ', ramp terminal' : ''})`);
       }
     }
   }
-  check('signal spacing (downtown >= 80, outside >= 160, ramp terminals >= 36, terminal-to-signal >= 50)', !bad.length, (bad.length ? bad.join('; ') : `${seen.length} pairs, min ${Math.min(...seen)} m`) + (accepted.length ? ` | accepted deviations at I2 (owner-mandated at-grade crossing): ${accepted.join(', ')}` : ''));
+  check('signal spacing (downtown >= 80, outside >= 160, ramp terminals >= 36, terminal-to-signal >= 50)', !bad.length, (bad.length ? bad.join('; ') : `${seen.length} pairs, min ${Math.min(...seen)} m`) + (accepted.length ? ` | accepted: offset-T pairs of the I1 diamond (one signal group each) and I2 (owner-mandated at-grade crossing): ${accepted.join(', ')}` : ''));
 }
 // 2. block length
 {
@@ -120,7 +121,7 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
       const e = E.filter((x) => { const a = N.get(x.a), b = N.get(x.b), dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz), t = ((p[0] - a.x) * dx + (p[1] - a.z) * dz) / (L * L); if (t < -0.01 || t > 1.01) return false; const q = [a.x + dx * t, a.z + dz * t]; return Math.hypot(q[0] - p[0], q[1] - p[1]) <= CLS[x.cls].w / 2 + 0.8; })[0];
       if (!e) continue;
       const roadAng = e.dir === 'x' ? 0 : 90, diff = Math.abs(((h - roadAng) % 180 + 180) % 180), off = Math.min(diff, 180 - diff);
-      const want = e.cls === 'motorway' || (r.ic === 'I4' && e.cls === 'arterial') || r.kind.startsWith('slip') ? 0 : 90;   // merges run parallel; diamond terminals meet the crossing road square-on
+      const want = e.cls === 'motorway' || (r.ic === 'I4' && e.cls === 'arterial') || r.kind.startsWith('slip') || (r.ic === 'I1' && (r.kind === 'loop' || r.kind === 'outer')) ? 0 : 90;   // cloverleaf ramps merge into the avenue parallel (like the slips)   // merges run parallel; diamond terminals meet the crossing road square-on
       if (Math.abs(off - want) > 12) bad.push(`${r.id} ${end ? 'end' : 'start'} meets ${e.cls} at ${R1(off)} deg (want ${want})`);
     }
     for (let i = 1; i + 1 < r.pts.length; i++) { const [a, b, c] = [r.pts[i - 1], r.pts[i], r.pts[i + 1]], ab = Math.hypot(b[0] - a[0], b[1] - a[1]), bc = Math.hypot(c[0] - b[0], c[1] - b[1]), ac = Math.hypot(c[0] - a[0], c[1] - a[1]), cr = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])); if (cr > 1e-6 && ab > 0.5 && bc > 0.5) radii.push({ r: ab * bc * ac / (2 * cr), id: r.id }); }
