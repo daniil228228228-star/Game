@@ -117,7 +117,7 @@ const probes = [];
 async function probeAround(name, getCentre, radius, shotName) {
   for (let i = 0; i < 8; i++) {
     const [dx, dz] = dirs[i];
-    await page.evaluate(({ c, dx, dz, r }) => { player.position.set(c.x + dx * r, 0, c.z + dz * r); playerVelocity.set(0, 0, 0); }, { c: await page.evaluate(getCentre), dx, dz, r: radius });
+    await page.evaluate(({ c, dx, dz, r }) => { player.position.set(c.x + dx * r, 0, c.z + dz * r); playerVelocity.set(0, 0, 0); if (window.__lookAtCentre) { const cd = Math.hypot(camera.position.x - controls.target.x, camera.position.z - controls.target.z) || 8; controls.target.set(player.position.x, controls.target.y, player.position.z); camera.position.set(player.position.x + dx * cd, camera.position.y, player.position.z + dz * cd); controls.update(); } }, { c: await page.evaluate(getCentre), dx, dz, r: radius });
     await frames(6);
     // the chase camera glides to the teleported player: wait until it has arrived and stopped
     await waitForState(page, () => { const d = Math.hypot(camera.position.x - player.position.x, camera.position.z - player.position.z), p = window.__camPrev || 1e9; window.__camPrev = d; return d < 30 && Math.abs(d - p) < 0.02; }, null, { timeout: 60000, fallback: true });
@@ -132,6 +132,8 @@ async function probeAround(name, getCentre, radius, shotName) {
 const signCentre = () => { let p = null; scene.traverse((o) => { if (o.userData && o.userData.v161YardSign) { const v = new THREE.Vector3(); o.userData.v161YardSign.getWorldPosition(v); p = { x: v.x, z: v.z }; } }); return p; };
 const sawCentre = () => ({ x: LOGISTICS_ZONES.planks.group.position.x, z: LOGISTICS_ZONES.planks.group.position.z });
 const padCentre = () => { const t = currentGuidanceTarget(); return t ? { x: t.pos.x, z: t.pos.z } : { x: 0, z: 0 }; };
+// 2026-10-17: the wanted zoom no longer drifts with obstruction pulls (camera-drift test); the probes look from a player-chosen 12.5 m like the old creeping camera did on average
+await page.evaluate(() => { desiredCameraDistance = 12.5; markCameraUserInput(); window.__lookAtCentre = true; });
 await probeAround('yard sign', signCentre, 6.5, 'plates-yard-sign');
 await probeAround('sawmill', sawCentre, 4.5, 'plates-sawmill');
 await probeAround('pad', padCentre, 4.5, 'plates-pad');
