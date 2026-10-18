@@ -549,13 +549,14 @@ function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median h
     if (o.paint.center) paintAlong(pts, 0, 0.16, 1.0, 3.0, 0.062, CI.white);
   }
 }
-function sampleAxis(axis, c, lo, hi, hfn, step = 3) {
-  const out = []; for (let v = lo; v <= hi + 1e-6; v += step) { const vv = Math.min(v, hi); out.push(axis === 'x' ? [vv, c, hfn(vv)] : [c, vv, hfn(vv)]); } if (out.length && (axis === 'x' ? out[out.length - 1][0] : out[out.length - 1][1]) < hi - 1e-6) out.push(axis === 'x' ? [hi, c, hfn(hi)] : [c, hi, hfn(hi)]); return out;
+function sampleAxis(axis, c, lo, hi, hfn, step = 3, extra = []) {
+  const vs = new Set(); for (let v = lo; v < hi; v += step) vs.add(R3(v)); vs.add(R3(hi)); for (const e of extra) if (e > lo + 0.3 && e < hi - 0.3) vs.add(R3(e));
+  return [...vs].sort((a, b) => a - b).map((v) => axis === 'x' ? [v, c, hfn(v)] : [c, v, hfn(v)]);
 }
 // motorway causeways
 const MOTOR_CROSS = { M1: [0], M2: [M1_Z, 0] };   // axis coordinates where another road passes underneath
 for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z', M2_X, M2_UP, hM2]]) for (const [a, b] of up) {
-  const pts = sampleAxis(axis, c, a, b, hfn, 3), S = arcLen(pts), s0 = axis === 'x' ? pts[0][0] : pts[0][1];
+  const pts = sampleAxis(axis, c, a, b, hfn, 3, MOTOR_CROSS[ref].flatMap((v) => [v - 7.4, v + 7.4])), S = arcLen(pts), s0 = axis === 'x' ? pts[0][0] : pts[0][1];
   const crossings = MOTOR_CROSS[ref].map((v) => [v - 7.4 - s0, v + 7.4 - s0]).filter(([x0, x1]) => x1 > 0 && x0 < S[S.length - 1]).map(([x0, x1]) => [Math.max(0, x0), Math.min(S[S.length - 1], x1)]);
   structureDeck(pts, { w: 2 * (MW - 0.5), med: CLS.motorway.median / 2, crossings, paint: { edge: MW - 1.1, divider: CLS.motorway.median / 2 + CLS.motorway.lane, inner: CLS.motorway.median / 2 + 0.3 } });
   STRUCT.ribbons.push({ id: ref, w: 2 * (MW - 0.5), p: pts.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
@@ -621,13 +622,13 @@ for (const f of PLAN.footbridges) {
   const top = isRiver ? 2.4 : 5.1, g = 0.4,   // stair-ramps (22 degrees): the ramps of a footbridge must end before the next street (40 m grid)
    ramp = top / g, half = over + ramp, lat = f.id === 'FB3' || f.id === 'FB4' ? 3.6 : 0;
   const hfn = smoothFn((s) => Math.max(0, Math.min(top, top - g * (Math.abs(s) - over))), -half - 4, half + 4, 1, 2);
-  const pts = []; for (let s = -half; s <= half + 1e-6; s += 3) pts.push(f.axis === 'x' ? [f.at[0] + s, f.at[1] + lat, hfn(s)] : [f.at[0] + lat, f.at[1] + s, hfn(s)]);
+  const pts = []; const ss = []; for (let s = -half; s < half - 0.3; s += 3) ss.push(s); ss.push(half); for (const s of ss) pts.push(f.axis === 'x' ? [f.at[0] + s, f.at[1] + lat, hfn(s)] : [f.at[0] + lat, f.at[1] + s, hfn(s)]);
   const S = arcLen(pts);
   deckRibbon(pts, 2.4, 0, CI.conc);
   for (const sg of [-1, 1]) { const off = sg * 1.25; wallAlong(pts, off, (h) => h + 0.02, (h) => h + 1.1, CI.conc); capAlong(pts, off, 0.15, 1.1, CI.conc); wallAlong(pts, off, (h) => Math.max(0, h - 0.55), (h) => h, CI.concD); addParapets(pts.filter((q) => q[2] > 0.8), off); }
   deckRibbon(pts, 2.4, -0.55, CI.concD);
   // columns: at the ends of the span, and every 9 m under the ramps (higher than 0.8 m)
-  for (let i = 0; i < pts.length; i += 3) { const q = pts[i], sAx = -half + i * 3; if (q[2] > 0.8 && Math.abs(sAx) >= over - 0.01) box3(q[0] - 0.3, q[1] - 0.3, q[0] + 0.3, q[1] + 0.3, 0, q[2] - 0.55, CI.concD, false); }   // supports only outside the roadway (never a pier in a lane)
+  for (let i = 0; i < pts.length; i += 3) { const q = pts[i], sAx = ss[i]; if (q[2] > 0.8 && Math.abs(sAx) >= over - 0.01) box3(q[0] - 0.3, q[1] - 0.3, q[0] + 0.3, q[1] + 0.3, 0, q[2] - 0.55, CI.concD, false); }   // supports only outside the roadway (never a pier in a lane)
   STRUCT.ribbons.push({ id: f.id, w: 2.2, p: pts.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
   void S;
 }
@@ -724,10 +725,11 @@ for (const e of PLAN.edges) {
 }
 // bus shelters at the stops of the three lines (side = right of the heading, the kerb the bus stops at)
 const stopsOut = [];
-for (const line of PLAN.transit.lines) for (const s of line.stops) {
+for (const line of PLAN.transit.lines) for (const s0 of line.stops) { let s = s0;
   let best = null; for (let i = 0; i + 1 < line.pts.length; i++) { const d = segDist(s[0], s[1], line.pts[i], line.pts[i + 1]); if (!best || d < best.d) best = { d, i }; }
   const p0 = line.pts[best.i], p1 = line.pts[best.i + 1], L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1, h = [(p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L], r = rightOf(h);
-  const e = PLAN.edges.find((q) => { const a = N.get(q.a), b = N.get(q.b); return q.dir === 'x' ? Math.abs(a.z - s[1]) < 0.01 && s[0] >= Math.min(a.x, b.x) && s[0] <= Math.max(a.x, b.x) : Math.abs(a.x - s[0]) < 0.01 && s[1] >= Math.min(a.z, b.z) && s[1] <= Math.max(a.z, b.z); });
+  { let sh = 0; while (sh < 4 && PLAN.nodes.some((n) => Math.hypot(n.x - s[0], n.z - s[1]) < 9)) { s = [s[0] + h[0] * 5, s[1] + h[1] * 5]; sh++; } }   // never at a junction: the shelter needs an unbroken sidewalk
+  const e = PLAN.edges.find((q) => { const a = N.get(q.a), b = N.get(q.b); return q.dir === (Math.abs(h[0]) > Math.abs(h[1]) ? 'x' : 'z') && (q.dir === 'x' ? Math.abs(a.z - s[1]) < 0.01 && s[0] >= Math.min(a.x, b.x) && s[0] <= Math.max(a.x, b.x) : Math.abs(a.x - s[0]) < 0.01 && s[1] >= Math.min(a.z, b.z) && s[1] <= Math.max(a.z, b.z)); });
   const off = e ? hw(e.cls) + CLS[e.cls].sidewalk - 0.6 : 3;   // the shelter (1.1 m deep) stands on the sidewalk, its back at the outer edge, its front to the kerb
   furniture.stop.push([s[0] + r[0] * off, s[1] + r[1] * off, Math.atan2(-r[0], -r[1]), line.id]);
   stopsOut.push({ line: line.id, at: s });
@@ -758,6 +760,9 @@ for (const line of PLAN.transit.lines) for (const s of line.stops) {
   for (let k = 0; k < 16; k++) { const a = (k + 0.5) * Math.PI / 8; const px = Math.cos(a) * 19.5, pz = Math.sin(a) * 19.5; if (!rasterAt(px, pz)) cellOf(Math.floor(px / CELL), Math.floor(pz / CELL)).f.tree.push(R2(px), R2(pz), 0.95, R2(rnd())); }
   for (const j of PLAN.junctions) if (j.type === 'roundabout' && j.R < 12) cellOf(Math.floor(j.at[0] / CELL), Math.floor(j.at[1] / CELL)).f.tree.push(j.at[0], j.at[1], 1.1, 0.5);
 }
+const nearRampPt = (x, z, m) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < CLS.ramp.w / 2 + m);
+furniture.lamp = furniture.lamp.filter((l) => !nearRampPt(l[0], l[1], 0.8));
+furniture.sig = furniture.sig.filter((l) => !nearRampPt(l[0], l[1], 0.5));
 furniture.lamp = furniture.lamp.filter((l) => !furniture.stop.some((st) => Math.hypot(st[0] - l[0], st[1] - l[1]) < 3.2));   // no lamp inside a bus stop
 for (const cellC of cells.values()) cellC.f.tree = cellC.f.tree.filter(() => true);
 furniture.cat = furnCat;

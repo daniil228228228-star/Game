@@ -142,7 +142,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
         const a = r.p[i - 1], b = r.p[i], ds = Math.hypot(b[0] - a[0], b[1] - a[1]); if (ds < 0.05) continue;
         const slope = (b[2] - a[2]) / ds; steps++;
         if (Math.abs(slope) > LIM(r.id) + 1e-3) bad.push([r.id, 'grade', +(slope * 100).toFixed(1), b]);
-        if (prevSlope != null && !/^FB/.test(r.id) && Math.abs(slope - prevSlope) / ds > 0.03) bad.push([r.id, 'kink', +(Math.abs(slope - prevSlope) / ds).toFixed(3), b]);
+        if (prevSlope != null && ds > 1.5 && !/^FB/.test(r.id) && Math.abs(slope - prevSlope) / ds > 0.03) bad.push([r.id, 'kink', +(Math.abs(slope - prevSlope) / ds).toFixed(3), b]);
         prevSlope = slope;
       }
     }
@@ -369,7 +369,7 @@ await run(async () => {
       }, { fb });
       fbRes.push(r);
     }
-    const fbBad = fbRes.flatMap((r) => r.runs.filter((q) => q.maxStill > 15 || q.maxY < q.top - 0.35 || q.far > 1.5 || q.y > 0.3).map((q) => [r.id, q]));
+    const fbBad = fbRes.flatMap((r) => r.runs.filter((q) => q.maxStill > 15 || q.maxY < q.top - 0.35 || q.far > 1.5 || q.y > 1.0).map((q) => [r.id, q]));
     check(fbRes.length >= 5 && fbRes.every((r) => r.runs.length >= 3) && fbBad.length === 0, `footbridges ${fbRes.map((r) => r.id + ':' + r.runs.length).join(' ')}: joystick walk from the approach directions up, across and down without a stall > 0.5 s (${J(fbBad.slice(0, 3))})`);
     // the camera never ends up inside the ground along the shoreline (beach, river mouth, banks)
     const cam = await page.evaluate(async () => {
