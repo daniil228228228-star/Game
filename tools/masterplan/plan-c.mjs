@@ -48,6 +48,13 @@ function catmull(pts, per = 8) {   // smooth a sparse polyline (river)
   out.push(pts[pts.length - 1]); return out.map(P2);
 }
 
+function blob(c, r, rnd) {   // irregular forest patch
+  const n = 18, k = [rnd(), rnd(), rnd()], out = [];
+  for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2, rr = r * (1 + 0.22 * Math.sin(3 * a + k[0] * 6) + 0.12 * Math.sin(5 * a + k[1] * 6) + 0.08 * (k[2] - 0.5)); out.push(P2([c[0] + Math.cos(a) * rr * 1.25, c[1] + Math.sin(a) * rr])); }
+  return out;
+}
+const mulberry = (a) => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+
 export function buildPlan() {
   const size = { x0: -300, x1: 300, z0: -370, z1: 262 };
   const M1_Z = -240, M2_X = 250, RAIL_Z = -120, SEA_Z = 200, RIVER = { x: -210, w: 20 };
@@ -243,24 +250,47 @@ export function buildPlan() {
 
   // ------------------------------------------------------------------ water and land use
   // river: natural meander in the fields, a gentle meander in town that crosses every bridge line square-on (x = -210 at z = -160, -80, 0, 80, 160)
-  const townBends = []; for (let z = -170; z <= 196; z += 10) townBends.push([-210 + 5.5 * Math.sin((z + 160) / 80 * Math.PI), z]);
-  const riverPts = catmull([[-168, -380], [-180, -345], [-203, -312], [-222, -284], [-228, -256], [-219, -228], [-211, -200], ...townBends, [-212, 212]], 4);
+  const ph = (z) => Math.sin((z + 160) / 80 * Math.PI);   // 0 on every bridge line: bridges cross square-on at x = -210
+  const townBends = []; for (let z = -170; z <= 200; z += 8) townBends.push([-210 + 3 * ph(z), z]);
+  const riverPts = catmull([[-168, -380], [-182, -352], [-206, -326], [-226, -300], [-216, -282], [-232, -258], [-221, -232], [-212, -204], ...townBends], 4);
+  // natural banks: the width breathes (wide on the inside of a bend, narrower in the crossings), 16-24 m; the mouth opens into a sandy estuary
+  const widthAt = (p) => { const z = p[1]; if (z < -176) return 18 + 4 * Math.sin(z / 23) + 2 * Math.sin(z / 9); const w = 19 - 3 * ph(z) + 1.2 * Math.sin(z / 11) * Math.abs(ph(z)); return z > 184 ? w + (z - 184) * 1.1 : w; };
+  const banks = { left: [], right: [] };
+  riverPts.forEach((p, i) => { const a = riverPts[Math.max(0, i - 1)], b = riverPts[Math.min(riverPts.length - 1, i + 1)], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, n = [-(b[1] - a[1]) / l, (b[0] - a[0]) / l], w = widthAt(p) / 2; banks.left.push(P2([p[0] - n[0] * w, p[1] - n[1] * w])); banks.right.push(P2([p[0] + n[0] * w, p[1] + n[1] * w])); });
   const piers = [[56, 88], [112, 144], [168, 200], [228, 300]];
-  const coast = [[-320, 208], [-262, 206], [-232, 205], ...catmull([[-196, 204], [-150, 207], [-112, 208]], 6), ...catmull([[-8, 208], [20, 206], [40, 204]], 4)];
+  const coast = [...catmull([[-320, 212], [-296, 207], [-270, 213], [-248, 209], [-236, 211]], 5), ...catmull([[-188, 207], [-172, 211], [-154, 206], [-132, 210], [-112, 208]], 6), ...catmull([[-8, 208], [8, 212], [24, 207], [40, 205]], 5)];
   coast.push([40, 222]); for (const [p0, p1] of piers) { coast.push([p0, 222], [p0, 252], [p1, 252]); if (p1 < 300) coast.push([p1, 222]); } coast.push([320, 252]);
   const ships = [[100, 238, 40, 9, 'контейнеровоз'], [156, 236, 36, 8, 'контейнеровоз'], [214, 240, 30, 8, 'балкер'], [-26, 252, 14, 4, 'яхта']];
   const water = {
     sea: { z: SEA_Z, coast: coast.map(P2) },
-    river: { x: RIVER.x, w: RIVER.w, pts: riverPts, mouth: [[-232, 205], [-212, 186], [-196, 204]] },
+    river: { x: RIVER.x, w: RIVER.w, pts: riverPts, banks, mouth: [[-236, 211], [-221, 196], [-199, 196], [-188, 207]] },
+    rocks: [[-190, 209, 2.4], [-185, 211, 1.6], [-10, 211, 2.2], [-4, 213, 1.4], [37, 207, 2.0], [-298, 209, 1.8]],
     piers: piers.map(([x0, x1]) => ({ x0, x1, z0: 222, z1: 252 })), ships: ships.map(([x, z, len, w, kind]) => ({ at: [x, z], len, w, kind })),
     marina: { x0: -112, x1: -8, z0: 208, z1: 236, moles: [cubic([-112, 208], [0, 1], 18, [-70, 238], [1, 0], 22, 20).map(P2), cubic([-8, 208], [0, 1], 18, [-48, 238], [-1, 0], 22, 20).map(P2)] },
   };
+  const rural = (() => {
+    const rnd = mulberry(4242), fields = [], forests = [], farms = [], lanes = [];
+    const xsF = [-300, -246, -190, -128, -64, -6], xsE = [6, 58, 112, 160], zsF = [-372, -334, -296, -254];
+    const jitter = (v, k) => v + (rnd() - 0.5) * k;
+    const grid = (xs) => zsF.map((z, j) => xs.map((x, i) => [i === 0 || i === xs.length - 1 ? x : jitter(x, 14), j === 0 || j === zsF.length - 1 ? z : jitter(z, 10)]));
+    for (const xs of [xsF, xsE]) {
+      const g = grid(xs);
+      for (let j = 0; j + 1 < g.length; j++) for (let i = 0; i + 1 < xs.length; i++) {
+        const q = [g[j][i], g[j][i + 1], g[j + 1][i + 1], g[j + 1][i]], cx = (q[0][0] + q[2][0]) / 2, cz = (q[0][1] + q[2][1]) / 2;
+        if (rnd() < 0.18) { forests.push(blob([cx, cz], 20 + rnd() * 8, rnd)); continue; }
+        fields.push({ poly: q.map(P2), crop: Math.floor(rnd() * 5), angle: rnd() < 0.5 ? 0 : 90, strips: 2 + Math.floor(rnd() * 3) });
+      }
+      for (let j = 1; j + 1 < g.length; j++) lanes.push(g[j].map(P2));   // east-west tracks along field edges
+      for (let i = 1; i + 1 < xs.length; i++) if (rnd() < 0.6) lanes.push(g.map((row) => P2(row[i])));
+    }
+    for (const [x, z] of [[-150, -316], [-40, -274], [84, -318], [-262, -280]]) farms.push({ at: [x, z], rot: Math.floor(rnd() * 2) * 90 });
+    for (const [c, r] of [[[-90, -352], 16], [[30, -300], 12], [[140, -352], 14]]) forests.push(blob(c, r, rnd));
+    return { fields, forests, farms, lanes };
+  })();
   const areas = [
     { kind: 'forest', poly: [[-300, -240], [0, -240], [0, -168], [-300, -168]], name: 'Лесопарк' },
     { kind: 'forest', poly: [[-300, -168], [-236, -168], [-236, -84], [-300, -84]] },
     { kind: 'forest', poly: [[-300, -84], [-284, -84], [-284, 164], [-300, 164]] },
-    { kind: 'field', poly: [[-300, -370], [-6, -370], [-6, -248], [-300, -248]] },
-    { kind: 'field', poly: [[6, -370], [300, -370], [300, -248], [6, -248]] },
     { kind: 'industry', poly: [[4, -232], [164, -232], [164, -164], [4, -164]] },
     { kind: 'verge', poly: [[164, -232], [300, -232], [300, -164], [164, -164]] },
     { kind: 'verge', poly: [[204, -164], [300, -164], [300, 156], [204, 156]] },
@@ -367,7 +397,7 @@ export function buildPlan() {
   const sig = junctions.filter((j) => j.type === 'signal');
   return {
     version: 'C0', generated: 'tools/masterplan/plan-c.mjs', scale: 0.4, unit: 'game metre (x east, z south); real = x2.5', traffic: 'right-hand',
-    size, water, areas, classes: CLS, lines: { V, H },
+    size, water, areas, rural, classes: CLS, lines: { V, H },
     nodes: nodeArr.map(({ legs, ...n }) => ({ ...n, legs: legs.length })), edges, exits, junctions, interchanges, crossings, footbridges, tunnels, rail, grade, transit, blocks, landmarks,
     counts: { nodes: nodes.size, edges: edges.length, junctions: junctions.length, signals: sig.length, roundabouts: junctions.filter((j) => j.type === 'roundabout').length, interchanges: interchanges.length, ramps: interchanges.reduce((s, i) => s + i.ramps.length, 0), crossings: crossings.length, footbridges: footbridges.length, tunnels: tunnels.length, blocks: blocks.length, busStops: lines.reduce((s, l) => s + l.stops.length, 0) },
   };
