@@ -151,7 +151,11 @@ export function buildPlan() {
       const off = join(cubic([-104, ATT], [1, 0], 7, [-86, LN], [1, 0], 7, 10), seg([-86, LN], [-60, LN], 4), cubic([-60, LN], [1, 0], 24, [-(cw - 0.3), DT], [1, 0], 16));
       const on = join(cubic([cw - 0.3, DT], [1, 0], 16, [60, LN], [1, 0], 24), seg([60, LN], [86, LN], 4), cubic([86, LN], [1, 0], 7, [104, ATT], [1, 0], 7, 10));
       const sl = (cs ?? 0) + CLS.ramp.w / 2 + 0.6;   // slip lane centre: its own lane beside the road with a painted / kerbed island
-      const slipOff = join(cubic([-80, LN], [1, 0], 40, [-sl, DT + 10], [0, 1], 28, 36), seg([-sl, DT + 10], [-sl, DT + 13], 2), cubic([-sl, DT + 13], [0, 1], 7, [-((cs ?? 0) - 0.8), DT + 28], [0, 1], 7, 12));
+      // The final control point must stay OUTSIDE the parallel ramp lane.
+      // Old end v=28, k3=28 put it at v=0 and bowed the slip back across
+      // the motorway edge. A longer initial tangent and a bend 2 m outward
+      // preserve >=14 m radii while keeping the original avenue merge point.
+      const slipOff = join(cubic([-80, LN], [1, 0], 44, [-sl, DT + 12], [0, 1], 22, 36), seg([-sl, DT + 12], [-sl, DT + 13], 2), cubic([-sl, DT + 13], [0, 1], 7, [-((cs ?? 0) - 0.8), DT + 28], [0, 1], 7, 12));
       const slipOn = slipOff.map(([u, v]) => [-u, v]).reverse();
       ramps.push({ kind: 'off', pts: off.map(sq).map(Fk), attach: ['motorway', 'cross'], decel: 26 }, { kind: 'on', pts: on.map(sq).map(Fk), attach: ['cross', 'motorway'], accel: 26 });
       if (cs == null) return;   // no room for slip lanes (P+R entrance): right turns use the signalised terminal

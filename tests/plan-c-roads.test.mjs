@@ -32,6 +32,10 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
     const q = c.r && c.r.q || [], t = c.r && c.r.t || [];
     for (let i = 0; i < q.length; i += 6) if (q[i + 5] === CI.asph || q[i + 5] === CI.median || q[i + 5] === CI.medLawn || q[i + 5] === CI.walk) rects.push({ x0: q[i], z0: q[i + 1], x1: q[i + 2], z1: q[i + 3], ci: q[i + 5], key });
     for (let i = 0; i < t.length; i += 8) if (t[i + 7] === CI.asph || t[i + 7] === CI.ramp) tris.push({ p: t.slice(i, i + 6), key });
+    // Check the ACTUAL drawn decks too, including their near-zero toes. A
+    // height > 0.2 exemption hid gaps between the flat and elevated meshes.
+    const v = c.d?.v || [];
+    for (let i = 0; i < v.length; i += 10) if (v[i + 9] === CI.asph) tris.push({ p: [v[i], v[i + 2], v[i + 3], v[i + 5], v[i + 6], v[i + 8]], key });
   }
   const asphRects = rects.filter((r) => r.ci === CI.asph);
   const inTri = (x, z, p) => { const s = (ax, az, bx, bz) => (x - bx) * (az - bz) - (ax - bx) * (z - bz); const d1 = s(p[0], p[1], p[2], p[3]), d2 = s(p[2], p[3], p[4], p[5]), d3 = s(p[4], p[5], p[0], p[1]); return !((d1 < -1e-6 || d2 < -1e-6 || d3 < -1e-6) && (d1 > 1e-6 || d2 > 1e-6 || d3 > 1e-6)); };
@@ -45,7 +49,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
   for (const e of PLAN.edges) {
     const a = N.get(e.a), b = N.get(e.b), L = Math.hypot(b.x - a.x, b.z - a.z);
     const rA = (D.graph.rings.find((q) => q[0] === e.a) || [0, 0, 0, 0])[3], rB = (D.graph.rings.find((q) => q[0] === e.b) || [0, 0, 0, 0])[3];   // inside a roundabout the island is not road
-    for (let s = 0.3; s < L; s += 1.1) { if (s < rA || s > L - rB) continue; if (e.cls === 'motorway' && D.surfaces(a.x + (b.x - a.x) * s / L, a.z + (b.z - a.z) * s / L).some((h) => h > 0.2)) continue; const x = a.x + (b.x - a.x) * s / L, z = a.z + (b.z - a.z) * s / L; samples++; if (!asphaltAt(x, z)) holes.push([e.id, R(x), R(z)]); }
+    for (let s = 0.3; s < L; s += 1.1) { if (s < rA || s > L - rB) continue; const x = a.x + (b.x - a.x) * s / L, z = a.z + (b.z - a.z) * s / L; samples++; if (!asphaltAt(x, z)) holes.push([e.id, R(x), R(z)]); }
   }
   check(holes.length === 0 && PLAN.edges.length === D.graph.edges.length, `data: asphalt under the centre line of all ${PLAN.edges.length} graph edges (${samples} samples, holes ${J(holes.slice(0, 6))})`);
   // 2. no overlapping asphalt rectangles (the union is decomposed)
@@ -155,7 +159,15 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
   // 9. furniture: no lamp / signal / sign pole / shelter / tree stands in a lane, on a roundabout ring or on a ramp; stops stand on the sidewalk with no lamp inside
   {
     const A = []; for (const c of Object.values(D.cells)) { const q = c.r && c.r.q || []; for (let i = 0; i < q.length; i += 6) if (q[i + 5] === CI.asph) A.push([q[i], q[i + 1], q[i + 2], q[i + 3]]); }
-    const W = []; for (const c of Object.values(D.cells)) { const q = c.r && c.r.q || []; for (let i = 0; i < q.length; i += 6) if (q[i + 5] === CI.walk) W.push([q[i], q[i + 1], q[i + 2], q[i + 3]]); }
+    const W = [], WT = []; for (const c of Object.values(D.cells)) {
+      const q = c.r?.q || [], t = c.r?.t || [];
+      for (let i = 0; i < q.length; i += 6) if (q[i + 5] === CI.walk) W.push(q.slice(i, i + 4));
+      for (let i = 0; i < t.length; i += 8) if (t[i + 7] === CI.walk) WT.push(t.slice(i, i + 6));
+    }
+    const inWalkTriangle = (x, z, p) => {
+      const d = []; for (let i = 0; i < 3; i++) { const a = i * 2, b = (i + 1) % 3 * 2; d.push((x - p[b]) * (p[a + 1] - p[b + 1]) - (p[a] - p[b]) * (z - p[b + 1])); }
+      return !(d.some((v) => v < -1e-6) && d.some((v) => v > 1e-6));
+    };
     const inR = (L, x, z, m) => L.some((r) => x > r[0] + m && x < r[2] - m && z > r[1] + m && z < r[3] - m);
     const ramps = D.struct.ribbons.filter((r) => /^I\d\./.test(r.id) || /^M[12]$/.test(r.id));
     const nearRamp = (x, z) => ramps.some((r) => r.p.some((q, i) => i && Math.hypot(x - q[0], z - q[1]) < r.w / 2 + 0.4 && q[2] < 6));
@@ -175,7 +187,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
       }
     }
     check(bad.length === 0, `furniture: none of ${stops.length} shelters, ${lamps.length} lamps, signals, signs and trees stands in a lane, on a ring or on a ramp (${J(bad.slice(0, 5))})`);
-    const off = stops.filter(([x, z]) => !W.some((r) => x > r[0] - 0.05 && x < r[2] + 0.05 && z > r[1] - 0.05 && z < r[3] + 0.05));
+    const off = stops.filter(([x, z]) => !W.some((r) => x > r[0] - 0.05 && x < r[2] + 0.05 && z > r[1] - 0.05 && z < r[3] + 0.05) && !WT.some((p) => inWalkTriangle(x, z, p)));
     const lampInStop = lamps.filter(([x, z]) => stops.some(([sx, sz]) => Math.hypot(sx - x, sz - z) < 2.0));
     check(off.length === 0 && lampInStop.length === 0, `bus stops: all ${stops.length} shelters stand on a sidewalk, no lamp within 2 m (off ${J(off.slice(0, 3))}, lamp ${lampInStop.length})`);
     // no vertical support (pier, column, wall) of a deck inside a carriageway

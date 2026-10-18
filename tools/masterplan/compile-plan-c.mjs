@@ -190,8 +190,10 @@ function smoothFn(fn, lo, hi, step = 2, k = 2) {
 const trap = (d) => Math.max(0, Math.min(DECKH, DECKH - SLOPE * Math.max(0, d - FLATH)));
 const hM1 = smoothFn((x) => trap(Math.abs(x)), -330, 390), hM2 = smoothFn((z) => Math.max(trap(Math.abs(z - M1_Z)), trap(Math.abs(z))), -390, 100);
 const intervalsAbove = (fn, lo, hi, th) => { const out = []; let a = null; for (let v = lo; v <= hi + 1e-9; v += 1) { const on = fn(v) > th; if (on && a == null) a = v; if (!on && a != null) { out.push([a, v]); a = null; } } if (a != null) out.push([a, hi]); return out; };
-const M1_UP = intervalsAbove(hM1, -330, 390, 0.25), M2_UP = intervalsAbove(hM2, -390, 100, 0.25);
-function lookupH(x, z) { const d1 = Math.abs(z - M1_Z), d2 = Math.abs(x - M2_X); if (d1 < MW + 5 && d1 <= d2) return hM1(x); if (d2 < MW + 5) return hM2(z); return 0; }
+// Include the COMPLETE rounded toe, not only heights > 25 cm. Otherwise the
+// flat asphalt stops at an elevated, uncapped edge: a visible grass slit.
+const deckIntervals = (fn, lo, hi) => intervalsAbove(fn, lo, hi, 1e-6).map(([a, b]) => [Math.max(lo, a - 1), b]);
+const M1_UP = deckIntervals(hM1, -300, 370), M2_UP = deckIntervals(hM2, -370, 88);
 // raster cuts: the ground surface of a motorway disappears where its deck stands on a causeway (the crossing road keeps its own surface under the deck)
 function cutsOf(e) {
   if (e.cls !== 'motorway') return [];
@@ -267,7 +269,16 @@ function rasterCell(cx, cz) {
   }
   const rects = out.map((o) => ({ type: o.type, x0: xs[o.i0], x1: xs[o.i1], z0: zs[o.j0], z1: zs[o.j1] }));
   rasterOut.set(ck(cx, cz), rects);
-  for (const r of rects) if (r.type !== 'carve') emitRect('r', 'q', r.x0, r.z0, r.x1, r.z1, TYPES[r.type].h, TYPES[r.type].ci);
+  for (const r of rects) if (r.type !== 'carve') {
+    if (r.type === 'walk') {
+      // Terminal aprons cut the ACTUAL ramp footprint through the sidewalk.
+      // Leaving the 12 cm pavement over a 5 cm ramp produced concrete stripes
+      // across the drivable join, even when both asphalt surfaces connected.
+      const pieces = walkAroundRamps(r);
+      if (pieces) for (const poly of pieces) emitPoly('r', poly, H.walk, CI.walk);
+      else emitRect('r', 'q', r.x0, r.z0, r.x1, r.z1, H.walk, CI.walk);
+    } else emitRect('r', 'q', r.x0, r.z0, r.x1, r.z1, TYPES[r.type].h, TYPES[r.type].ci);
+  }
   // kerbs: height steps between neighbouring grid cells (and to the open ground); the taller side emits the wall once
   const walls = new Map();
   const typeAt = (i, j) => (i < 0 || j < 0 || i >= nx || j >= nz) ? null : grid[j * nx + i];
@@ -289,7 +300,11 @@ function rasterCell(cx, cz) {
     const merged = [];
     for (const w of arr) { const l = merged[merged.length - 1]; if (l && Math.abs(l.a1 - w.a0) < 1e-6) l.a1 = w.a1; else merged.push({ ...w }); }
     const [ax, line] = key.split(':'), L = +line;
-    for (const w of merged) { if (ax === 'x') push(cellOf(cx, cz).r.w, L, w.a0, L, w.a1, w.y0, w.y1, CI.kerb); else push(cellOf(cx, cz).r.w, w.a0, L, w.a1, L, w.y0, w.y1, CI.kerb); }
+    for (const w of merged) {
+      const pts = ax === 'x' ? [[L, w.a0, 0], [L, w.a1, 0]] : [[w.a0, L, 0], [w.a1, L, 0]];
+      for (const run of exposedRuns(pts, 0, 'kerb', 0.03)) for (let i = 1; i < run.length; i++)
+        emitWall(run[i - 1][0], run[i - 1][1], run[i][0], run[i][1], w.y0, w.y1, CI.kerb);
+    }
   }
 }
 
@@ -522,26 +537,255 @@ const stRail = PLAN.rail.stations[0];
 
 // ---- 6b. decks, causeways, ramps, bridges, footbridges
 function addParapets(pts, o, level0 = null) {   // level-aware collider pieces along an offset of a [x,z,h] path
-  const q = offsetPts3(pts, o); let acc = 0, start = 0;
-  for (let i = 1; i < q.length; i++) { acc += Math.hypot(q[i][0] - q[i - 1][0], q[i][1] - q[i - 1][1]); if (acc >= 10 || i === q.length - 1) { const a = q[start], b = q[i]; STRUCT.rails.push([R2(a[0]), R2(a[1]), R2(b[0]), R2(b[1]), R2((a[2] + b[2]) / 2 + (level0 || 0))]); start = i; acc = 0; } }
+  const q = offsetPts3(pts, o); let start = 0;
+  const emit = (i) => { const a = q[start], b = q[i]; STRUCT.rails.push([R2(a[0]), R2(a[1]), R2(b[0]), R2(b[1]), R2((a[2] + b[2]) / 2 + (level0 || 0))]); start = i; };
+  for (let i = 1; i < q.length; i++) {
+    const a = q[start], b = q[i], dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz);
+    // Long chords of tight curves cut INSIDE the lane although the drawn wall
+    // follows its edge. Subdivide only where the approximation exceeds 10 cm.
+    let error = 0;
+    for (let j = start + 1; j < i; j++) error = Math.max(error, Math.abs(dx * (q[j][1] - a[1]) - dz * (q[j][0] - a[0])) / (len || 1));
+    if (error > 0.1 && i > start + 1) emit(i - 1);
+    if (len >= 10 || i === q.length - 1) emit(i);
+  }
+}
+// Resolve ALL ramp profiles before drawing any boundaries. A motorway and its
+// slip lane share an asphalt envelope; neither may put a wall across the join.
+const rampPts = [];
+const motorHosts = [
+  { id: 'M1', axis: 0, c: M1_Z, lo: -300, hi: 370, h: hM1 },
+  { id: 'M2', axis: 1, c: M2_X, lo: -370, hi: 88, h: hM2 },
+];
+const motorHost = (p) => motorHosts.reduce((a, b) => Math.abs(p[1 - a.axis] - a.c) <= Math.abs(p[1 - b.axis] - b.c) ? a : b);
+function projectPath(p, path) {
+  let best = null, distance = Infinity;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1], b = path[i], dx = b[0] - a[0], dz = b[1] - a[1], ll = dx * dx + dz * dz;
+    const t = ll ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / ll)) : 0;
+    const d = Math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dz * t);
+    if (d < distance) { distance = d; best = a[2] + (b[2] - a[2]) * t; }
+  }
+  return { h: best || 0, distance };
+}
+function constrainRampProfile(p3, S, fixed, label) {
+  // Keep attachment levels exact without increasing the established 7% grade
+  // limit. The envelopes are cones from ALL fixed samples, not a forward-only
+  // clamp that could silently detach the far end or lower a bridge opening.
+  const grade = 0.0685, anchors = p3.map((p, i) => fixed[i] ? [S[i], p[2]] : null).filter(Boolean);
+  const bounds = S.map((s) => [Math.max(0, ...anchors.map(([v, h]) => h - grade * Math.abs(s - v))), Math.min(...anchors.map(([v, h]) => h + grade * Math.abs(s - v)))]);
+  for (let i = 0; i < p3.length; i++) {
+    const [lo, hi] = bounds[i]; if (lo > hi + 1e-6) throw new Error(label + ': infeasible attachment heights / grade at ' + S[i]);
+    p3[i][2] = Math.max(lo, Math.min(hi, p3[i][2]));
+  }
+  for (let pass = 0; pass < 32; pass++) {
+    const src = p3.map((p) => p[2]);
+    for (let i = 1; i < p3.length - 1; i++) if (!fixed[i]) {
+      const t = (S[i] - S[i - 1]) / (S[i + 1] - S[i - 1]);
+      const h = src[i] * 0.5 + (src[i - 1] * (1 - t) + src[i + 1] * t) * 0.5;
+      p3[i][2] = Math.max(bounds[i][0], Math.min(bounds[i][1], h));
+    }
+    for (const direction of [1, -1]) for (let j = 1; j < p3.length; j++) {
+      const i = direction > 0 ? j : p3.length - 1 - j, prev = i - direction, delta = grade * Math.abs(S[i] - S[prev]);
+      if (!fixed[i]) p3[i][2] = Math.max(p3[prev][2] - delta, Math.min(p3[prev][2] + delta, p3[i][2]));
+    }
+    // Round the crest at the end of a held auxiliary lane. Penalising only
+    // neighbour heights tends to converge to a sharp V at a fixed sample.
+    for (const direction of [1, -1]) for (let j = 2; j < p3.length; j++) {
+      const i = direction > 0 ? j : p3.length - 1 - j, prev = i - direction, prev2 = i - 2 * direction;
+      if (fixed[i]) continue;
+      const ds = Math.abs(S[i] - S[prev]), slope = (p3[prev][2] - p3[prev2][2]) / Math.abs(S[prev] - S[prev2]);
+      const change = 0.018 * ds, lo = p3[prev][2] + Math.max(-grade, slope - change) * ds, hi = p3[prev][2] + Math.min(grade, slope + change) * ds;
+      p3[i][2] = Math.max(bounds[i][0], Math.min(bounds[i][1], Math.max(lo, Math.min(hi, p3[i][2]))));
+    }
+  }
+}
+for (const ic of PLAN.interchanges) {
+  const done = [];
+  const order = [...ic.ramps.keys()].sort((a, b) => Number(/slip/.test(ic.ramps[a].kind)) - Number(/slip/.test(ic.ramps[b].kind)));
+  for (const ri of order) {
+    const r = ic.ramps[ri], pts = r.pts, S = arcLen(pts), L = S.at(-1);
+    const ends = [0, pts.length - 1].map((i, k) => {
+      const type = r.attach[k], p = pts[i], host = type === 'motorway' ? motorHost(p) : null;
+      const parent = type === 'ramp' ? done.reduce((best, d) => !best || projectPath(p, d.p3).distance < projectPath(p, best.p3).distance ? d : best, null) : null;
+      return { type, host, parent, h: host ? host.h(p[host.axis]) : parent ? projectPath(p, parent.p3).h : 0 };
+    });
+    const knots = [[0, ends[0].h], [L, ends[1].h]];
+    // Hold the motorway's level through the actual taper, then descend to the
+    // terminal. Previously an on-ramp could already be below its host road.
+    const attached = ends.map((end, k) => {
+      if (!end.host && !end.parent) return 0;
+      const h = end.host, indices = [...pts.keys()]; if (k) indices.reverse();
+      let last = indices[0];
+      for (const i of indices) {
+        const p = pts[i];
+        // Include the PARALLEL auxiliary lane, not just the initial taper.
+        // I2's acceleration lane and I4's deceleration lane overlap here;
+        // different heights would put one ramp's parapet through the other.
+        if (h ? Math.abs(p[1 - h.axis] - h.c) > MW + CLS.ramp.w / 2 + 0.005 || p[h.axis] < h.lo || p[h.axis] > h.hi : projectPath(p, end.parent.p3).distance > CLS.ramp.w + 0.005) break;
+        last = i;
+      }
+      if (last !== indices[0]) knots.push([S[last], h ? h.h(pts[last][h.axis]) : projectPath(pts[last], end.parent.p3).h]);
+      return k ? L - S[last] : S[last];
+    });
+    const bridge = (r.bridges || [])[0]; let sBr = null;
+    if (bridge) {
+      const mid = [(bridge[0][0] + bridge[1][0]) / 2, (bridge[0][1] + bridge[1][1]) / 2];
+      let bi = 0; pts.forEach((p, i) => { if (Math.hypot(p[0] - mid[0], p[1] - mid[1]) < Math.hypot(pts[bi][0] - mid[0], pts[bi][1] - mid[1])) bi = i; });
+      sBr = S[bi]; knots.push([Math.max(8, sBr - 9), 5], [Math.min(L - 8, sBr + 9), 5]);
+    }
+    knots.sort((a, b) => a[0] - b[0]);
+    const kf = (s) => {
+      for (let i = 1; i < knots.length; i++) if (s <= knots[i][0]) {
+        const a = knots[i - 1], b = knots[i], t = Math.max(0, Math.min(1, (s - a[0]) / Math.max(1e-6, b[0] - a[0])));
+        return a[1] + (b[1] - a[1]) * t;
+      }
+      return ends[1].h;
+    };
+    const hf = smoothFn(kf, 0, L, 1, 6);
+    const p3 = pts.map((p, i) => {
+      let h = hf(S[i]);
+      for (const k of [0, 1]) {
+        const end = ends[k], s = k ? L - S[i] : S[i], hold = attached[k];
+        const sv = k ? L - hold : hold, j = S.reduce((best, v, n) => Math.abs(v - sv) < Math.abs(S[best] - sv) ? n : best, 0);
+        const targetAt = (q) => end.host ? end.host.h(q[end.host.axis]) : end.parent ? projectPath(q, end.parent.p3).h : 0;
+        const t = Math.max(0, Math.min(1, (s - hold) / Math.min(48, L / 3))), blend = t * t * (3 - 2 * t);
+        // Add a LOCAL endpoint correction, rather than multiplying an entire
+        // climbing profile by a fade (which artificially steepens loop ramps).
+        if (s <= hold + 1e-6) h = targetAt(p);
+        else h += (targetAt(pts[j]) - hf(sv)) * (1 - blend);
+      }
+      return [p[0], p[1], h];
+    });
+    constrainRampProfile(p3, S, pts.map((_, i) => i === 0 || i === pts.length - 1 ||
+      ends.some((e, k) => (e.host || e.parent) && (k ? L - S[i] : S[i]) <= attached[k] + 1e-6) ||
+      (sBr != null && Math.abs(S[i] - sBr) < 4)), ic.id + '.' + ri);
+    const path = { id: ic.id + '.' + ri, ic: ic.id, kind: r.kind, p3, bridge: sBr, S };
+    done.push(path); rampPts.push(path);
+    rampsOut.push({ ic: ic.id, kind: r.kind, pts: p3.map((p) => [R2(p[0]), R2(p[1]), R3(p[2])]) });
+  }
+}
+
+// Spatial index of paved corridors, including ground-level terminal roads.
+// Height-aware clipping preserves the barrier on an overpass above another
+// road. Sampling + bisection splits runs at joins; never filter vertices and
+// reconnect across an opening (that used to create invisible collider chords).
+const roadIndex = new Map(), INDEX_CELL = 16;
+const rampMasks = [];
+for (const r of rampPts) {
+  const l = offsetPts3(r.p3, -CLS.ramp.w / 2), rr = offsetPts3(r.p3, CLS.ramp.w / 2);
+  for (let i = 1; i < r.p3.length; i++) if (Math.min(r.p3[i - 1][2], r.p3[i][2]) < 0.2) {
+    const p = [l[i - 1], rr[i - 1], rr[i], l[i]].map((v) => v.slice(0, 2));
+    rampMasks.push({ p, x0: Math.min(...p.map((q) => q[0])), x1: Math.max(...p.map((q) => q[0])), z0: Math.min(...p.map((q) => q[1])), z1: Math.max(...p.map((q) => q[1])) });
+  }
+}
+function walkAroundRamps(rect) {
+  const masks = rampMasks.filter((m) => m.x1 > rect.x0 && m.x0 < rect.x1 && m.z1 > rect.z0 && m.z0 < rect.z1);
+  if (!masks.length) return null;
+  let pieces = [[[rect.x0, rect.z0], [rect.x1, rect.z0], [rect.x1, rect.z1], [rect.x0, rect.z1]]];
+  const halfPlane = (poly, a, b, sign, inside) => {
+    const out = [], d = (p) => ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) * sign * (inside ? 1 : -1);
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i], q = poly[(i + 1) % poly.length], dp = d(p), dq = d(q);
+      if (dp >= 0) out.push(p);
+      if ((dp >= 0) !== (dq >= 0)) { const t = dp / (dp - dq); out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); }
+    }
+    return out;
+  };
+  for (const mask of masks) {
+    const next = [], sign = Math.sign(area2(mask.p));
+    for (const poly of pieces) {
+      let rest = poly;
+      for (let i = 0; i < mask.p.length && rest.length >= 3; i++) {
+        const a = mask.p[i], b = mask.p[(i + 1) % mask.p.length], outside = halfPlane(rest, a, b, sign, false);
+        if (outside.length >= 3 && Math.abs(area2(outside)) > 1e-6) next.push(outside);
+        rest = halfPlane(rest, a, b, sign, true);
+      }
+    }
+    pieces = next;
+  }
+  return pieces;
+}
+function indexRoad(id, pts, w) {
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], half = w / 2;
+    const segment = { id, a, b, half, first: i === 1, last: i === pts.length - 1, dx: b[0] - a[0], dz: b[1] - a[1] };
+    segment.ll = segment.dx ** 2 + segment.dz ** 2;
+    for (let x = Math.floor((Math.min(a[0], b[0]) - half - 1) / INDEX_CELL); x <= Math.floor((Math.max(a[0], b[0]) + half + 1) / INDEX_CELL); x++)
+      for (let z = Math.floor((Math.min(a[1], b[1]) - half - 1) / INDEX_CELL); z <= Math.floor((Math.max(a[1], b[1]) + half + 1) / INDEX_CELL); z++) {
+        const key = x + ',' + z; if (!roadIndex.has(key)) roadIndex.set(key, []); roadIndex.get(key).push(segment);
+      }
+  }
+}
+for (const h of motorHosts) indexRoad(h.id, sampleAxis(h.axis === 0 ? 'x' : 'z', h.c, h.lo, h.hi, h.h, 1), CLS.motorway.w);
+for (const r of rampPts) indexRoad(r.id, r.p3, CLS.ramp.w);
+for (const e of PLAN.edges) if (e.cls !== 'motorway') {
+  const a = N.get(e.a), b = N.get(e.b); indexRoad(e.id, [[a.x, a.z, 0], [b.x, b.z, 0]], CLS[e.cls].w);
+}
+function coveredRoad(p, own, margin = 0.2, body = false) {
+  const segments = roadIndex.get(Math.floor(p[0] / INDEX_CELL) + ',' + Math.floor(p[1] / INDEX_CELL)) || [];
+  return segments.some((s) => {
+    if (s.id === own || !s.ll || own === 'kerb' && !/^I[1-4]\./.test(s.id)) return false;
+    let t = ((p[0] - s.a[0]) * s.dx + (p[1] - s.a[1]) * s.dz) / s.ll;
+    if (t < 0 && s.first || t > 1 && s.last) return false;
+    // Internal vertices share a cap: treating every polyline segment as an
+    // isolated butt-ended rectangle leaves tiny uncut wedges on outside bends.
+    t = Math.max(0, Math.min(1, t));
+    const h = s.a[2] + (s.b[2] - s.a[2]) * t;
+    if (body === 'barrier') { if (h < p[2] - 1.25 || h > p[2] + 1.1) return false; }
+    else if (body) { if (h < -0.1 || h > p[2] + 0.15) return false; }
+    else if (Math.abs(h - p[2]) > 0.15) return false;
+    return Math.hypot(p[0] - s.a[0] - s.dx * t, p[1] - s.a[1] - s.dz * t) < s.half + margin;
+  });
+}
+function exposedRuns(pts, off, own, margin = 0.2, body = false) {
+  const q = offsetPts3(pts, off), runs = []; let run = [];
+  const flush = () => { if (run.length > 1) runs.push(run); run = []; };
+  const mix = (a, b, t) => a.map((v, k) => v + (b[k] - v) * t);
+  for (let i = 1; i < q.length; i++) {
+    const a = q[i - 1], b = q[i], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.5));
+    let prev = a, visible = !coveredRoad(a, own, margin, body);
+    if (visible && !run.length) run.push(a);
+    for (let j = 1; j <= n; j++) {
+      const p = mix(a, b, j / n), next = !coveredRoad(p, own, margin, body);
+      if (next !== visible) {
+        let lo = prev, hi = p;
+        for (let k = 0; k < 10; k++) { const mid = mix(lo, hi, 0.5); if (!coveredRoad(mid, own, margin, body) === visible) lo = mid; else hi = mid; }
+        const edge = mix(lo, hi, 0.5);
+        if (visible) { run.push(edge); flush(); } else run.push(edge);
+      }
+      if (next && j === n) run.push(p);
+      prev = p; visible = next;
+    }
+    if (!visible) flush();
+  }
+  flush(); return runs;
 }
 function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median half or 0), crossings: [[s0,s1]] along arc length, paint: {edge, divider}, kerbC, walls: true}
   const S = arcLen(pts);
   const inCross = (s) => o.crossings.some(([a, b]) => s > a && s < b);
   deckRibbon(pts, o.w, 0.05, CI.asph);
   // parapets (both sides) + caps
-  for (const sg of [-1, 1]) { const off = sg * (o.w / 2 + 0.15); wallAlong(pts, off, (h) => h + 0.05, (h) => h + 0.95, CI.conc); capAlong(pts, off, 0.3, 0.95, CI.conc); addParapets(pts, off); }
-  if (o.med) for (const sg of [-1, 1]) { wallAlong(pts, sg * o.med, (h) => h + 0.05, (h) => h + 0.85, CI.conc); capAlong(pts, sg * o.med, 0.2, 0.85, CI.conc); }
+  for (const sg of [-1, 1]) for (const run of exposedRuns(pts, sg * (o.w / 2 + 0.15), o.id, 0.3, 'barrier')) {
+    wallAlong(run, 0, (h) => h + 0.05, (h) => h + 0.05 + Math.min(0.9, h * 3), CI.conc);
+    // The cap follows the same taper as the concrete face at the ground toe.
+    deckRibbon(run.map((p) => [p[0], p[1], p[2] + Math.min(0.9, p[2] * 3)]), 0.3, 0.05, CI.conc);
+    addParapets(run.filter((p) => p[2] > 0.2), 0);
+  }
+  if (o.med) for (const sg of [-1, 1]) {
+    wallAlong(pts, sg * o.med, (h) => h + 0.05, (h) => h + 0.05 + Math.min(0.8, h * 3), CI.conc);
+    capAlong(pts.map((p) => [p[0], p[1], p[2] + Math.min(0.8, p[2] * 3)]), sg * o.med, 0.2, 0.05, CI.conc);
+  }
   // sides: retaining wall to the ground, a fascia beam in front of every crossing
   for (const sg of [-1, 1]) {
     const q = offsetPts3(pts, sg * (o.w / 2 + 0.3));
     for (let i = 0; i + 1 < q.length; i++) {
       const cross = inCross((S[i] + S[i + 1]) / 2);
-      emitQuadS(q[i][0], q[i][1], q[i + 1][0], q[i + 1][1], cross ? q[i][2] - 0.8 : 0, q[i][2] + 0.05, cross ? q[i + 1][2] - 0.8 : 0, q[i + 1][2] + 0.05, cross ? CI.concD : CI.conc);
+      for (const run of exposedRuns([q[i], q[i + 1]], 0, o.id, 0.3, !cross))
+        wallAlong(run, 0, (h) => cross ? h - 0.8 : 0, (h) => h + 0.05, cross ? CI.concD : CI.conc);
     }
   }
   // cornice: a pale band along the deck edge so the slab reads as a bridge from below
-  for (const sg of [-1, 1]) capAlong(pts, sg * (o.w / 2 + 0.42), 0.5, 0.07, CI.conc);
+  for (const sg of [-1, 1]) for (const run of exposedRuns(pts, sg * (o.w / 2 + 0.42), o.id, 0.4)) capAlong(run, 0, 0.5, 0.07, CI.conc);
   // ceiling + abutments at crossings
   for (const [a, b] of o.crossings) {
     const idx = pts.map((_, i) => i).filter((i) => S[i] >= a - 1e-6 && S[i] <= b + 1e-6);
@@ -550,7 +794,7 @@ function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median h
   }
   // paint
   if (o.paint) {
-    for (const sg of [-1, 1]) { paintAlong(pts, sg * o.paint.edge, 0.18, 1, 0, 0.062, CI.white); if (o.paint.divider) paintAlong(pts, sg * o.paint.divider, 0.18, 1.6, 1.8, 0.062, CI.white); if (o.paint.inner) paintAlong(pts, sg * o.paint.inner, 0.18, 1, 0, 0.062, CI.white); }
+    for (const sg of [-1, 1]) { for (const run of exposedRuns(pts, sg * o.paint.edge, o.id, 0.05)) paintAlong(run, 0, 0.18, 1, 0, 0.062, CI.white); if (o.paint.divider) paintAlong(pts, sg * o.paint.divider, 0.18, 1.6, 1.8, 0.062, CI.white); if (o.paint.inner) paintAlong(pts, sg * o.paint.inner, 0.18, 1, 0, 0.062, CI.white); }
     if (o.paint.center) paintAlong(pts, 0, 0.16, 1.0, 3.0, 0.062, CI.white);
   }
 }
@@ -563,53 +807,38 @@ const MOTOR_CROSS = { M1: [0], M2: [M1_Z, 0] };   // axis coordinates where anot
 for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z', M2_X, M2_UP, hM2]]) for (const [a, b] of up) {
   const pts = sampleAxis(axis, c, a, b, hfn, 3, MOTOR_CROSS[ref].flatMap((v) => [v - 7.4, v + 7.4])), S = arcLen(pts), s0 = axis === 'x' ? pts[0][0] : pts[0][1];
   const crossings = MOTOR_CROSS[ref].map((v) => [v - 7.4 - s0, v + 7.4 - s0]).filter(([x0, x1]) => x1 > 0 && x0 < S[S.length - 1]).map(([x0, x1]) => [Math.max(0, x0), Math.min(S[S.length - 1], x1)]);
-  structureDeck(pts, { w: 2 * (MW - 0.5), med: CLS.motorway.median / 2, crossings, paint: { edge: MW - 1.1, divider: CLS.motorway.median / 2 + CLS.motorway.lane, inner: CLS.motorway.median / 2 + 0.3 } });
-  STRUCT.ribbons.push({ id: ref, w: 2 * (MW - 0.5), p: pts.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
+  structureDeck(pts, { id: ref, w: CLS.motorway.w, med: CLS.motorway.median / 2, crossings, paint: { edge: MW - 1.1, divider: CLS.motorway.median / 2 + CLS.motorway.lane, inner: CLS.motorway.median / 2 + 0.3 } });
+  STRUCT.ribbons.push({ id: ref, w: CLS.motorway.w, p: pts.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
   // solid body: ground floor is closed under the walls where the deck is higher than 0.3 m, except under the crossing roads
   for (const [x0, x1] of intervalsAbove(hfn, a, b, 0.3)) for (const [y0, y1] of subtractIntervals(x0, x1, MOTOR_CROSS[ref].map((v) => [v - 8, v + 8]))) STRUCT.blockers.push(axis === 'x' ? [y0, c - MW - 0.6, y1, c + MW + 0.6] : [c - MW - 0.6, y0, c + MW + 0.6, y1]);
 }
-// ramps with heights
-const rampPts = [];   // {ic, kind, pts3}
-for (const ic of PLAN.interchanges) {
-  const done = [];
-  const order = [...ic.ramps.keys()].sort((p, q) => (/slip/.test(ic.ramps[p].kind) ? 1 : 0) - (/slip/.test(ic.ramps[q].kind) ? 1 : 0));
-  for (const ri of order) {
-    const r = ic.ramps[ri], pts = r.pts, S = arcLen(pts), L = S[S.length - 1], near = (pt) => { let best = null, bd = 1e9; for (const d of done) for (const q of d.p3) { const dd = Math.hypot(q[0] - pt[0], q[1] - pt[1]); if (dd < bd) { bd = dd; best = q; } } return best && bd < 4 ? best[2] : 0; };
-    const slip = /slip/.test(r.kind);
-    const hs = slip && r.attach[0] === 'ramp' ? near(pts[0]) : lookupH(pts[0][0], pts[0][1]), he = slip && r.attach[1] === 'ramp' ? near(pts[pts.length - 1]) : lookupH(pts[pts.length - 1][0], pts[pts.length - 1][1]);
-    const knots = [[0, hs]];
-    const bridge = (r.bridges || [])[0];
-    let sBr = null;
-    if (bridge) { const mid = [(bridge[0][0] + bridge[1][0]) / 2, (bridge[0][1] + bridge[1][1]) / 2]; let bi = 0, bd = 1e9; pts.forEach((q, i) => { const d = Math.hypot(q[0] - mid[0], q[1] - mid[1]); if (d < bd) { bd = d; bi = i; } }); sBr = S[bi]; knots.push([Math.max(8, sBr - 9), 5.0], [Math.min(L - 8, sBr + 9), 5.0]); }
-    knots.push([L, he]);
-    const kf = (s) => { for (let i = 0; i + 1 < knots.length; i++) if (s <= knots[i + 1][0]) { const t = (s - knots[i][0]) / Math.max(1e-6, knots[i + 1][0] - knots[i][0]); return knots[i][1] + (knots[i + 1][1] - knots[i][1]) * Math.min(1, Math.max(0, t)); } return knots[knots.length - 1][1]; };
-    const hf = smoothFn(kf, 0, L, 1, 6);
-    const p3 = pts.map((q, i) => [q[0], q[1], hf(S[i])]);
-    done.push({ p3 }); rampPts.push({ ic: ic.id, kind: r.kind, p3, bridge: sBr, S });
-    rampsOut.push({ ic: ic.id, kind: r.kind, pts: p3.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
-    // surface
-    deckRibbon(p3, CLS.ramp.w, 0.052, CI.asph);
-    const hMax = Math.max(...p3.map((q) => q[2]));
-    for (const sg of [-1, 1]) {
-      const q = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));
-      // The retaining body sits UNDER the deck with a 0.3 m slab overhang.
-      // Putting its ground-founded face beyond the parapet left only 0.2 m
-      // to the Southern Avenue at the trumpet's approach.
-      const body = offsetPts3(p3, sg * (CLS.ramp.w / 2 - 0.3));
-      for (let i = 0; i + 1 < q.length; i++) {
-        const h0 = q[i][2], h1 = q[i + 1][2];
-        if (Math.max(h0, h1) < 0.3) continue;
-        const cross = sBr != null && Math.abs((S[i] + S[i + 1]) / 2 - sBr) < 9;
-        const support = cross ? q : body;
-        emitQuadS(support[i][0], support[i][1], support[i + 1][0], support[i + 1][1], cross ? h0 - 0.6 : 0, h0 + 0.05, cross ? h1 - 0.6 : 0, h1 + 0.05, CI.conc);
-        if (Math.max(h0, h1) > 1.2) emitQuadS(q[i][0], q[i][1], q[i + 1][0], q[i + 1][1], h0 + 0.05, h0 + 0.8, h1 + 0.05, h1 + 0.8, CI.conc);
-      }
-      if (hMax > 1.2) addParapets(p3.filter((v) => v[2] > 1.0), sg * (CLS.ramp.w / 2 + 0.2));
+// Render the pre-resolved ramp profiles. Single-lane ramps have edge lines,
+// NOT a dashed centre line suggesting a second lane.
+for (const { id, ic, kind, p3, bridge: sBr, S } of rampPts) {
+  deckRibbon(p3, CLS.ramp.w, 0.052, CI.asph);
+  for (const sg of [-1, 1]) {
+    const q = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));
+    const body = offsetPts3(p3, sg * (CLS.ramp.w / 2 - 0.3));
+    for (let i = 1; i < p3.length; i++) {
+      if (Math.max(p3[i - 1][2], p3[i][2]) < 0.3) continue;
+      const cross = sBr != null && Math.abs((S[i - 1] + S[i]) / 2 - sBr) < 9;
+      const support = cross ? q : body;
+      for (const run of exposedRuns([support[i - 1], support[i]], 0, id, 0.3, !cross))
+        wallAlong(run, 0, (h) => cross ? h - 0.6 : 0, (h) => h + 0.05, CI.conc);
     }
-    paintAlong(p3, 0, 0.16, 1.0, 3.0, 0.064, CI.white);
-    for (const sg of [-1, 1]) paintAlong(p3, sg * (CLS.ramp.w / 2 - 0.2), 0.16, 1, 0, 0.064, CI.white);
-    STRUCT.ribbons.push({ id: ic.id + '.' + r.kind, w: CLS.ramp.w - 0.2, p: p3.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
+    for (const run of exposedRuns(p3, sg * (CLS.ramp.w / 2 + 0.2), id, 0.3, 'barrier')) {
+      // Split the height gate into contiguous runs too: filtering vertices
+      // would reconnect opposite sides of a low section with a collider chord.
+      let high = [];
+      const flush = () => {
+        if (high.length > 1) { wallAlong(high, 0, (h) => h + 0.05, (h) => h + 0.8, CI.conc); capAlong(high, 0, 0.2, 0.8, CI.conc); addParapets(high, 0); }
+        high = [];
+      };
+      for (const p of run) { if (p[2] > 1.2) high.push(p); else flush(); } flush();
+    }
+    for (const run of exposedRuns(p3, sg * (CLS.ramp.w / 2 - 0.2), id, 0.05)) paintAlong(run, 0, 0.16, 1, 0, 0.064, CI.white);
   }
+  STRUCT.ribbons.push({ id: ic + '.' + kind, w: CLS.ramp.w - 0.2, p: p3.map((p) => [R2(p[0]), R2(p[1]), R3(p[2])]) });
 }
 // river bridges (flat decks with a slab, parapets and piers), M1 over the river
 {
@@ -703,7 +932,7 @@ for (const e of PLAN.edges) if (e.bridge === 'river') { const a = N.get(e.a), b 
 }
 for (const f of PLAN.footbridges) if (f.over === 'река') bridgeRects.push([f.at[0] - f.len / 2, f.at[1] - 1.5, f.at[0] + f.len / 2, f.at[1] + 1.5]);
 const isWater = (x, z) => inPoly(x, z, seaPoly) || (riverDist(x, z) < PLAN.water.river.w / 2 && !bridgeRects.some((r) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3]));
-const blocked = (x, z, pad = 0.6) => !!(rasterAt(x, z) || rasterAt(x + pad, z) || rasterAt(x - pad, z) || rasterAt(x, z + pad) || rasterAt(x, z - pad) || ringAt(x, z) || rangeRamp(x, z) || railBlocked(x, z) || STRUCT.blockers.some((b) => x > b[0] - 1 && x < b[2] + 1 && z > b[1] - 1 && z < b[3] + 1)) || isWater(x, z);
+const blocked = (x, z, pad = 0.6) => !!(rasterAt(x, z) || rasterAt(x + pad, z) || rasterAt(x - pad, z) || rasterAt(x, z + pad) || rasterAt(x, z - pad) || motorHosts.some((h) => { const p = [x, z]; return p[h.axis] >= h.lo && p[h.axis] <= h.hi && Math.abs(p[1 - h.axis] - h.c) < MW + pad; }) || ringAt(x, z) || rangeRamp(x, z) || railBlocked(x, z) || STRUCT.blockers.some((b) => x > b[0] - 1 && x < b[2] + 1 && z > b[1] - 1 && z < b[3] + 1)) || isWater(x, z);
 const rampSegs = rampsOut.flatMap((r) => r.pts.slice(1).map((p, i) => [r.pts[i], p]));
 const rangeRamp = (x, z) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < 2.2);
 const railBlocked = (x, z) => railOut.bed.some((b) => x >= b[0] - 1 && x <= b[2] + 1 && z >= b[1] - 1 && z <= b[3] + 1) || segDist(x, z, PLAN.rail.spur.pts[0], PLAN.rail.spur.pts[PLAN.rail.spur.pts.length - 1]) < 4;
@@ -803,7 +1032,7 @@ const graph = {
   edges: PLAN.edges.map((e) => { const a = N.get(e.a), b = N.get(e.b); return [e.id, e.a, e.b, e.cls, a.x, a.z, b.x, b.z, e.name || '']; }),
   rings: ringsOut.map((r) => [r.id, r.at[0], r.at[1], r.R, r.Ri]),
   minis: minisOut.map((r) => [r.id, r.at[0], r.at[1], r.R, r.Ri]),
-  ramps: rampsOut.map((r) => [r.ic, r.kind, r.pts.map((p) => [R2(p[0]), R2(p[1]), R2(p[2] || 0)])]),
+  ramps: rampsOut.map((r) => [r.ic, r.kind, r.pts.map((p) => [R2(p[0]), R2(p[1]), R3(p[2] || 0)])]),
   crossings: PLAN.crossings.map((c) => [c.id, c.kind, c.at[0], c.at[1], c.arm ? c.arm[0] : 0, c.arm ? c.arm[1] : 0, c.cls, c.setback == null ? 0 : c.setback]),
   signals: PLAN.junctions.filter((j) => j.type === 'signal').map((j) => [j.id, j.at[0], j.at[1]]),
   stops: stopsOut,

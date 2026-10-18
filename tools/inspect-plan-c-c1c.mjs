@@ -13,7 +13,14 @@ const stops = Object.values(D.cells).flatMap((c) => {
   const a = c.f?.stop || [], r = []; for (let i = 0; i < a.length; i += 4) r.push(a.slice(i, i + 4)); return r;
 });
 const stop = stops.find((s) => Math.abs(s[0]) < 150 && Math.abs(s[1]) < 100);
-const specs = [
+const specs = process.argv.includes('--interchanges') ? [
+  { name: 'diamond-main', at: [0, 1, -240], dist: 170, az: 0.6, el: 0.9 },
+  { name: 'diamond-east', at: [250, 1, 0], dist: 150, az: 2.1, el: 0.9 },
+  { name: 'motorway-toe', at: [-100, 0.5, -240], dist: 27, az: -1.0, el: 0.32 },
+  { name: 'merge-close', at: [250, 1.5, 68], dist: 32, az: 2.6, el: 0.5 },
+  { name: 'cloverleaf', at: [250, 1.5, -240], dist: 170, az: 0.6, el: 0.95 },
+  { name: 'trumpet', at: [245, 1, 155], dist: 160, az: 0.4, el: 0.95 },
+] : [
   { name: 'bridge-ramp', at: [123.6, 1.8, -10], dist: 42, az: 1.0, el: 0.45 },
   { name: 'underpass', at: [0, 1.5, -240], dist: 36, az: 0.6, el: 0.3 },
   { name: 'bus-stop', at: [stop[0], 0.8, stop[1]], dist: 13, az: stop[2] + 0.6, el: 0.65 },
