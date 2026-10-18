@@ -265,7 +265,7 @@
     player.position.y -= lvl;                       // the game's physics works relative to the surface
     const r = baseUpdatePlayer.apply(this, arguments);
     const rel = player.position.y, x = player.position.x, z = player.position.z;
-    let target = D.surfaceY(x, z, lvl, 0.75); if (target == null) target = lvl;
+    let target = D.surfaceY(x, z, lvl, 0.75); if (target == null) target = 0;   // no surface at all (open water beside a river footbridge): fall, never hover at the old level
     // A normal descent along a stair-ramp is still grounded. The old 5 cm
     // threshold made every step of a 40% slope a fall, reducing air control.
     // Preserve WORLD height while airborne (including a real drop off a deck),

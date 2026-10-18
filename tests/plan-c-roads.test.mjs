@@ -275,7 +275,7 @@ await run(async () => {
         for (let s = 0.5; s < L; s += 6) {
           if (D.graph.rings.some((q) => (q[0] === e[1] && s < q[3] + 1) || (q[0] === e[2] && L - s < q[3] + 1))) continue;   // inside a roundabout: island
           const x = x0 + (x1 - x0) * s / L, z = z0 + (z1 - z0) * s / L; n++;
-          if (cls === 'motorway' && D.surfaces(x, z).some((h) => h > 0.2)) continue;   // on a causeway: the deck is the surface (checked by the height tests)
+          if (cls === 'motorway' && D.surfaces(x, z).some((h) => h > 0.08)) continue;   // on a causeway: the deck is the surface (checked by the height tests)
           rc.set(new THREE.Vector3(x, 1, z), down);
           const hit = rc.intersectObjects(roots, false)[0];
           // a drawn street: the highest surface under the centre line is asphalt height (or the median / ramp / paint just above it), never the grass 5 cm below

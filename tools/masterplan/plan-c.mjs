@@ -139,15 +139,17 @@ export function buildPlan() {
 
   // ------------------------------------------------------------------ interchanges (ramps are polylines in game metres; `bridges` = parts above another road)
   const interchanges = [];
-  function diamond(id, at, k, name, cross, cwPlus, cwMinus, slipPlus = cwPlus, slipMinus = cwMinus, SC = 1) {
-    const sq = (p) => [Math.sign(p[0]) * (Math.abs(p[0]) > 10 ? 10 + (Math.abs(p[0]) - 10) * SC : Math.abs(p[0])), p[1]];   // shorten the ramps along the motorway (I2: the trumpet I4 starts 80 m south)
+  function diamond(id, at, k, name, cross, cwPlus, cwMinus, slipPlus = cwPlus, slipMinus = cwMinus, SC = 1, SH = 0) {   // SH: pulls the whole slip-lane turn + merge SH game m towards the motorway (I2: the merge must not touch the junction with Окраинная ул.)
+    // SC shortens only the SOUTH end of the ramps (the side of the trumpet I4); `south` = the local u sign that points south in this pair's frame
+    const sqf = (south) => (p) => [Math.sign(p[0]) * (Math.abs(p[0]) > 10 && Math.sign(p[0]) === south ? 10 + (Math.abs(p[0]) - 10) * SC : Math.abs(p[0])), p[1]];   // shorten the ramps along the motorway (I2: the trumpet I4 starts 80 m south)
     // real diamond: taper (1:15 real) into a parallel deceleration lane beside the carriageway, then ONE smooth curve to the terminal;
     // the ramp hugs the motorway (8-13 game m = 20-33 m real from the carriageway edge). The -v side is the same pair turned 180 degrees.
     const ramps = [], LN = MW + CLS.ramp.w / 2;   // centre of an added lane right beside the carriageway
     // + free right-turn slip lanes (channelised): from the off-ramp's parallel lane one smooth curve turns ~90 degrees, runs as its own lane
     //   beside the crossing road for ~15 game m (35-40 m real) and merges tangentially into its outer lane; the on-slip is the mirror.
     //   Left turns and straight-on stay at the two signalised terminals, so all 8 movements work.
-    const pair = (Fk, cw, cs) => {
+    const pair = (Fk, cw, cs, south) => {
+      const sq = sqf(south);
       const off = join(cubic([-104, ATT], [1, 0], 7, [-86, LN], [1, 0], 7, 10), seg([-86, LN], [-60, LN], 4), cubic([-60, LN], [1, 0], 24, [-(cw - 0.3), DT], [1, 0], 16));
       const on = join(cubic([cw - 0.3, DT], [1, 0], 16, [60, LN], [1, 0], 24), seg([60, LN], [86, LN], 4), cubic([86, LN], [1, 0], 7, [104, ATT], [1, 0], 7, 10));
       const sl = (cs ?? 0) + CLS.ramp.w / 2 + 0.6;   // slip lane centre: its own lane beside the road with a painted / kerbed island
@@ -155,14 +157,14 @@ export function buildPlan() {
       // Old end v=28, k3=28 put it at v=0 and bowed the slip back across
       // the motorway edge. A longer initial tangent and a bend 2 m outward
       // preserve >=14 m radii while keeping the original avenue merge point.
-      const slipOff = join(cubic([-80, LN], [1, 0], 44, [-sl, DT + 12], [0, 1], 22, 36), seg([-sl, DT + 12], [-sl, DT + 13], 2), cubic([-sl, DT + 13], [0, 1], 7, [-((cs ?? 0) - 0.8), DT + 28], [0, 1], 7, 12));
+      const slipOff = join(cubic([-80, LN], [1, 0], 44, [-sl, DT + 12 - SH], [0, 1], 22, 36), seg([-sl, DT + 12 - SH], [-sl, DT + 13 - SH], 2), cubic([-sl, DT + 13 - SH], [0, 1], 7, [-((cs ?? 0) - 0.8), DT + 28 - SH], [0, 1], 7, 12));
       const slipOn = slipOff.map(([u, v]) => [-u, v]).reverse();
       ramps.push({ kind: 'off', pts: off.map(sq).map(Fk), attach: ['motorway', 'cross'], decel: 26 }, { kind: 'on', pts: on.map(sq).map(Fk), attach: ['cross', 'motorway'], accel: 26 });
       if (cs == null) return;   // no room for slip lanes (P+R entrance): right turns use the signalised terminal
       ramps.push({ kind: 'slip-off', pts: slipOff.map(sq).map(Fk), attach: ['ramp', 'cross'], note: 'свободный правый поворот с хорды на проспект' }, { kind: 'slip-on', pts: slipOn.map(sq).map(Fk), attach: ['cross', 'ramp'], note: 'свободный правый поворот с проспекта на хорду' });
     };
     const F = frame(at, k);
-    pair(F, cwPlus, slipPlus); pair(frame(at, k + 2), cwMinus, slipMinus);
+    pair(F, cwPlus, slipPlus, 1); pair(frame(at, k + 2), cwMinus, slipMinus, -1);
     const terminals = [F([0, DT]), F([0, -DT])];
     interchanges.push({ id, kind: 'diamond', name, at, cross, ramps, terminals, terminalSpacing: 2 * DT, deck: [F([-(cwPlus + 4), 0]), F([cwPlus + 4, 0])], deckRoad: 'motorway' });
   }
@@ -176,11 +178,13 @@ export function buildPlan() {
     }
     interchanges.push({ id, kind: 'cloverleaf', name, at, ramps, deck: [frame(at, 0)([0, -(MW + 4)]), frame(at, 0)([0, MW + 4])], deckRoad: 'motorway', note: 'М2 проходит над М1; четыре петли (левые повороты) и четыре внешних съезда (правые)' });
   }
+  const TR_K = 5, TR_R2 = 16, TR_L = 14, TR_Y = 1.0;   // I4 semi-direct ramp: entry arc 16 (was 17), lead-in 14 -> the taper starts at x = 174.5, 14.5 m (36 m real) behind the signal at x = 160 (was 9.5); tightest radius stays 14.2
   function trumpet(id, at, name) {
     // M2 ends from the north; the through road H (z = at.z) runs east-west. Bell (loop + rim) on the far (south) side, two trunk ramps cross H on a bridge.
     const F = frame(at, 0), hw = CLS.arterial.w / 2, r = 17, C = [-TRK - r, hw + CLS.ramp.w / 2 + 0.4 + r], Rr = r + 2 * TRK, top = -72, ramps = [];
     const b = join(seg([-TRK, top], [-TRK, C[1]], 10), arc(C, r, 0, 270), seg([C[0], hw + CLS.ramp.w / 2 + 0.4], [6, hw + CLS.ramp.w / 2 + 0.4], 6), cubic([6, hw + CLS.ramp.w / 2 + 0.4], [1, 0], 7, [22, hw - 1.0], [1, 0], 7, 10));
-    const d = join(cubic([C[0] - Rr - 35, hw - 1.0], [1, 0], 8, [C[0] - Rr - 17, hw + CLS.ramp.w / 2 + 0.4], [1, 0], 8, 12), arc([C[0] - Rr - 17, C[1]], 17, -90, 0), arc(C, Rr, 180, 0), seg([TRK, C[1]], [TRK, top], 10));
+    const R2 = TR_R2, yb = hw + CLS.ramp.w / 2 + 0.4, X2 = C[0] - Rr - R2;   // entry arc radius R2 (was 17): the ramp leaves the road later, the lead-in starts TR_L m before the arc
+    const d = join(cubic([X2 - TR_L, hw - TR_Y], [1, 0], TR_K, [X2, yb], [1, 0], TR_K, 12), arc([X2, yb + R2], R2, -90, 0), ...(R2 < 17 ? [seg([C[0] - Rr, yb + R2], [C[0] - Rr, C[1]], 3)] : []), arc(C, Rr, 180, 0), seg([TRK, C[1]], [TRK, top], 10));
     const LM = MW + CLS.ramp.w / 2, LH = hw + CLS.ramp.w / 2;   // added lanes beside M2 and beside the through road
     const a = join(cubic([-ATT, -96], [0, 1], 6, [-LM, -80], [0, 1], 6, 10), seg([-LM, -80], [-LM, -66], 3), cubic([-LM, -66], [0, 1], 30, [-34, -LH], [-1, 0], 24), seg([-34, -LH], [-50, -LH], 3), cubic([-50, -LH], [-1, 0], 6, [-64, -(hw - 1.0)], [-1, 0], 6, 10));
     const c = join(cubic([64, -(hw - 1.0)], [-1, 0], 6, [50, -LH], [-1, 0], 6, 10), seg([50, -LH], [34, -LH], 3), cubic([34, -LH], [-1, 0], 24, [LM, -66], [0, -1], 30), seg([LM, -66], [LM, -80], 3), cubic([LM, -80], [0, -1], 6, [ATT, -96], [0, -1], 6, 10));
@@ -191,7 +195,7 @@ export function buildPlan() {
     interchanges.push({ id, kind: 'trumpet', name, at, ramps, trunkEnd: F([0, top]), note: 'три ветви: М2 заканчивается; раструб на стороне порта' });
   }
   diamond('I1', [0, M1_Z], 0, 'Ромб: Главный пр. × М1', 'Главный пр.', CLS.arterial.w / 2, CLS.arterial.w / 2, CLS.arterial.w / 2, CLS.collector.w / 2);
-  diamond('I2', [M2_X, 0], 1, 'Ромб: Центральная магистраль × М2', 'Центральная магистраль', CLS.arterial.w / 2, CLS.arterial.w / 2, CLS.arterial.w / 2, null, 0.82);   // east side: P+R entrance, no slips; ramps shortened (trumpet I4 starts at z 80)
+  diamond('I2', [M2_X, 0], 1, 'Ромб: Центральная магистраль × М2', 'Центральная магистраль', CLS.arterial.w / 2, CLS.arterial.w / 2, null, null, 0.82);   // no slip lanes: their merge would end at the Окраинная ул. junction (x 204 vs its kerb at 204); the right turns use the signalised terminals. Only the SOUTH ramp ends are shortened (trumpet I4 starts at z 88), the north ends keep the full 104 m
   cloverleaf('I3', [M2_X, M1_Z], 'Клеверный лист: М1 × М2');
   trumpet('I4', [M2_X, 160], 'Трубка: М2 × Портовое ш.');
 
@@ -314,7 +318,9 @@ export function buildPlan() {
     { kind: 'forest', poly: [[-300, -84], [-284, -84], [-284, 164], [-300, 164]] },
     { kind: 'industry', poly: [[4, -232], [164, -232], [164, -164], [4, -164]] },
     { kind: 'verge', poly: [[164, -232], [300, -232], [300, -164], [164, -164]] },
-    { kind: 'verge', poly: [[204, -164], [300, -164], [300, 156], [204, 156]] },
+    // the verge strip leaves the P+R lot [262,298]x[8,34] free: two flat ground polygons 4 mm apart z-fought into a grey triangle at a grazing view
+    { kind: 'verge', poly: [[204, -164], [300, -164], [300, 8], [204, 8]] }, { kind: 'verge', poly: [[204, 8], [262, 8], [262, 34], [204, 34]] },
+    { kind: 'verge', poly: [[298, 8], [300, 8], [300, 34], [298, 34]] }, { kind: 'verge', poly: [[204, 34], [300, 34], [300, 156], [204, 156]] },
     { kind: 'park', poly: [[256, 40], [300, 40], [300, 156], [256, 156]], name: 'Восточный лесопарк' },
     { kind: 'parking', poly: [[262, 8], [298, 8], [298, 34], [262, 34]], name: 'P+R' },
     { kind: 'embankment', poly: [[-236, -168], [-188, -168], [-188, 206], [-236, 206]] },

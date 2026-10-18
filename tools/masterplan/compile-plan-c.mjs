@@ -28,7 +28,7 @@ const mulberry = (a) => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imu
 // ---- palette (sRGB hex; the layer converts to linear) and heights (game metres above the old ground plane)
 const COLORS = {
   grass: 0x5f8f48, grassB: 0x6a9a50, lawn: 0x76a85c, park: 0x5d9a4a, forest: 0x3f6d37, field0: 0x9a9a52, field1: 0x6f9b45, field2: 0xb0a45a, field3: 0x7e9a4a, field4: 0x8f7a4c,
-  urban: 0x86ad68, industry: 0x8d8f86, verge: 0x6c9650, parking: 0x6a6e72, embank: 0x8b9566, beach: 0xdac99b, promenade: 0xcfc6b2, port: 0x9fa09a,
+  urban: 0x86ad68, industry: 0x8d8f86, verge: 0x5f8f48, parking: 0x6a6e72, embank: 0x8b9566, beach: 0xdac99b, promenade: 0xcfc6b2, port: 0x9fa09a,
   sea: 0x3f7fae, seaLight: 0x7fb7d2, river: 0x4a88b4, bank: 0xb9ae8c, dirt: 0x8d7a58,
   asph: 0x353a3f, ramp: 0x353a3f, walk: 0xc4bfae, kerb: 0xaaa595, median: 0xb8b4a4, medLawn: 0x6f9d57, medM: 0xa9a99f, plaza: 0xd4cab4, islandL: 0x6ea154, islandC: 0xd9d1bb,
   conc: 0xbdb9ad, concD: 0x8d8a82, sleeper: 0x4a3f36, white: 0xf2f2ec, yellow: 0xe7c85a, ballast: 0x8a8782, rail: 0x56585b, platform: 0xb8b5aa, moleC: 0x9b9a92, rock: 0x77756f,
@@ -133,6 +133,18 @@ function deckRibbon(pts, w, dy, ci) {   // road surface following [x,z,h]
 function wallAlong(pts, o, b, t, ci, from = 0, to = pts.length - 1) {   // vertical wall along an offset of the polyline; b / t are absolute heights (number) or functions of h
   const q = offsetPts3(pts, o);
   for (let i = from; i < to; i++) { const bb0 = typeof b === 'function' ? b(pts[i][2]) : b, bb1 = typeof b === 'function' ? b(pts[i + 1][2]) : b, tt0 = typeof t === 'function' ? t(pts[i][2]) : t, tt1 = typeof t === 'function' ? t(pts[i + 1][2]) : t; emitQuadS(q[i][0], q[i][1], q[i + 1][0], q[i + 1][1], bb0, tt0, bb1, tt1, ci); }
+}
+function offsetVar(pts, offs) {   // like offsetPts3 with a different sideways offset at every vertex
+  const n = pts.length, out = [];
+  for (let i = 0; i < n; i++) { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)]; let dx = b[0] - a[0], dz = b[1] - a[1]; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l; out.push([pts[i][0] - dz * offs[i], pts[i][1] + dx * offs[i], pts[i][2]]); }
+  return out;
+}
+function asymRibbon(pts, offL, offR, dy, ci) {   // road surface with its own left / right edge offsets per vertex (merge tapers)
+  const L = offsetVar(pts, offL), Rr = offsetVar(pts, offR);
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const A = [L[i][0], L[i][2] + dy, L[i][1]], B = [Rr[i][0], Rr[i][2] + dy, Rr[i][1]], C = [L[i + 1][0], L[i + 1][2] + dy, L[i + 1][1]], D = [Rr[i + 1][0], Rr[i + 1][2] + dy, Rr[i + 1][1]];
+    emitTri3(A, B, C, ci); emitTri3(B, D, C, ci);
+  }
 }
 function capAlong(pts, o, w, dy, ci, from = 0, to = pts.length - 1) { const sub = pts.slice(from, to + 1); deckRibbon(offsetPts3(sub, o), w, dy, ci); }
 function paintAlong(pts, o, w, dash, gap, dy, ci) {   // dashed (or solid when gap = 0) line on a deck
@@ -659,7 +671,7 @@ for (const ic of PLAN.interchanges) {
     constrainRampProfile(p3, S, pts.map((_, i) => i === 0 || i === pts.length - 1 ||
       ends.some((e, k) => (e.host || e.parent) && (k ? L - S[i] : S[i]) <= attached[k] + 1e-6) ||
       (sBr != null && Math.abs(S[i] - sBr) < 4)), ic.id + '.' + ri);
-    const path = { id: ic.id + '.' + ri, ic: ic.id, kind: r.kind, p3, bridge: sBr, S };
+    const path = { id: ic.id + '.' + ri, ic: ic.id, kind: r.kind, p3, bridge: sBr, S, attach: r.attach };
     done.push(path); rampPts.push(path);
     rampsOut.push({ ic: ic.id, kind: r.kind, pts: p3.map((p) => [R2(p[0]), R2(p[1]), R3(p[2])]) });
   }
@@ -814,8 +826,33 @@ for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z'
 }
 // Render the pre-resolved ramp profiles. Single-lane ramps have edge lines,
 // NOT a dashed centre line suggesting a second lane.
-for (const { id, ic, kind, p3, bridge: sBr, S } of rampPts) {
-  deckRibbon(p3, CLS.ramp.w, 0.052, CI.asph);
+for (const { id, ic, kind, p3, bridge: sBr, S, attach } of rampPts) {
+  // Merge geometry (2026-10-18 (8)): where a ramp joins a carriageway / avenue PARALLEL to it, its outer edge converges linearly onto the host's kerb line
+  // (a true wedge, one asphalt contour), the edge line on the host side turns into a dashed line, the outer edge line runs on without a break.
+  const offL = p3.map(() => -CLS.ramp.w / 2), offR = p3.map(() => CLS.ramp.w / 2), dashed = [p3.map(() => false), p3.map(() => false)];
+  for (const k of [0, 1]) {
+    const type = attach[k]; if (type !== 'motorway' && type !== 'cross') continue;
+    const i0 = k ? p3.length - 1 : 0, step = k ? -1 : 1, p = p3[i0], q = p3[i0 + step];
+    let host = null;
+    if (type === 'motorway') { const m = motorHost(p); host = { axis: m.axis, c: m.c, Hw: MW }; }
+    else {
+      const e = PLAN.edges.find((x) => { if (x.cls === 'motorway') return false; const a = N.get(x.a), b = N.get(x.b), ax = x.dir === 'x' ? 0 : 1, lat = ax === 0 ? a.z : a.x, lo = Math.min(ax === 0 ? a.x : a.z, ax === 0 ? b.x : b.z), hi = Math.max(ax === 0 ? a.x : a.z, ax === 0 ? b.x : b.z); return Math.abs(p[1 - ax] - lat) <= hw(x.cls) + 0.8 && p[ax] >= lo - 0.01 && p[ax] <= hi + 0.01; });
+      if (e) host = { axis: e.dir === 'x' ? 0 : 1, c: e.dir === 'x' ? N.get(e.a).z : N.get(e.a).x, Hw: hw(e.cls) };
+    }
+    if (!host) continue;
+    const tl = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
+    if (Math.abs(q[host.axis] - p[host.axis]) / tl < 0.8) continue;   // square-on terminals stay as they are
+    const lat = (v) => v[1 - host.axis] - host.c, dEnd = Math.abs(lat(p)), dTouch = host.Hw + CLS.ramp.w / 2;
+    if (dEnd >= dTouch - 0.2) continue;
+    const sideOut = (() => { const a = p3[Math.min(p3.length - 1, i0 + 1)], b = p3[Math.max(0, i0 - 1)], dx = a[0] - b[0], dz = a[1] - b[1], n = [-dz, dx]; return Math.sign(n[1 - host.axis] * (Math.sign(lat(p)) || 1)) || 1; })();
+    for (let i = i0; i >= 0 && i < p3.length; i += step) {
+      const d = Math.abs(lat(p3[i]));
+      if (d >= dTouch + 1e-6) break;
+      const outer = Math.max(host.Hw, Math.min(d + CLS.ramp.w / 2, host.Hw + CLS.ramp.w * (d - dEnd) / (dTouch - dEnd)));
+      if (sideOut > 0) { offR[i] = outer - d; dashed[0][i] = true; } else { offL[i] = -(outer - d); dashed[1][i] = true; }
+    }
+  }
+  asymRibbon(p3, offL, offR, 0.052, CI.asph);
   for (const sg of [-1, 1]) {
     const q = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));
     const body = offsetPts3(p3, sg * (CLS.ramp.w / 2 - 0.3));
@@ -836,7 +873,27 @@ for (const { id, ic, kind, p3, bridge: sBr, S } of rampPts) {
       };
       for (const p of run) { if (p[2] > 1.2) high.push(p); else flush(); } flush();
     }
-    for (const run of exposedRuns(p3, sg * (CLS.ramp.w / 2 - 0.2), id, 0.05)) paintAlong(run, 0, 0.16, 1, 0, 0.064, CI.white);
+    {
+      const si = sg < 0 ? 0 : 1, line = offsetVar(p3, p3.map((_, i) => sg < 0 ? offL[i] + 0.2 : offR[i] - 0.2)), n = p3.length;
+      for (let i = 0; i < n - 1;) {
+        const dz = dashed[si][i] && dashed[si][i + 1]; let j = i;
+        while (j < n - 1 && (dashed[si][j] && dashed[si][j + 1]) === dz) j++;
+        for (const run of exposedRuns(line.slice(i, j + 1), 0, id, 0.05)) paintAlong(run, 0, 0.16, dz ? 1.2 : 1, dz ? 3.6 : 0, 0.064, CI.white);
+        i = j;
+      }
+    }
+  }
+  // Direction arrows on every ramp and give-way teeth where a SLIP lane merges (2026-10-18 (8)); painted on the deck with the ramp's own heights.
+  {
+    const L = S[S.length - 1], at = (sv) => { let i = 1; while (i < S.length - 1 && S[i] < sv) i++; const a = p3[i - 1], b = p3[i], t = Math.max(0, Math.min(1, (sv - S[i - 1]) / Math.max(1e-6, S[i] - S[i - 1]))), dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1; return { x: a[0] + dx * t, z: a[1] + (b[1] - a[1]) * t, h: a[2] + (b[2] - a[2]) * t, tx: dx / l, tz: dz / l }; };
+    const tri = (o, s0, l0, s1, l1, s2, l2) => {   // vertices in (along, right) metres from o; wound like deckRibbon's (left, right, next-left)
+      const V = (s, l) => [o.x + o.tx * s - o.tz * l, o.h + 0.064, o.z + o.tz * s + o.tx * l];
+      const cross = (s1 - s0) * (l2 - l0) - (l1 - l0) * (s2 - s0);
+      if (cross < 0) emitTri3(V(s0, l0), V(s1, l1), V(s2, l2), CI.white); else emitTri3(V(s0, l0), V(s2, l2), V(s1, l1), CI.white);
+    };
+    const arrowAt = (sv) => { const o = at(sv); if (o.h > 0.4) return; tri(o, -0.9, -0.09, -0.9, 0.09, 0.4, -0.09); tri(o, -0.9, 0.09, 0.4, 0.09, 0.4, -0.09); tri(o, 0.2, -0.5, 0.2, 0.5, 1.1, 0); };
+    const teethAt = (sv) => { const o = at(sv); if (o.h > 0.4) return; for (const l of [-1.05, -0.35, 0.35, 1.05]) tri(o, 0, l - 0.3, 0, l + 0.3, -0.75, l); };   // apexes point back at the oncoming driver
+    if (/slip/.test(kind)) { arrowAt(L * 0.36); arrowAt(L * 0.62); teethAt(L - 4.5); } else if (L > 40) { arrowAt(L * 0.4); arrowAt(L * 0.6); }
   }
   STRUCT.ribbons.push({ id: ic + '.' + kind, w: CLS.ramp.w - 0.2, p: p3.map((p) => [R2(p[0]), R2(p[1]), R3(p[2])]) });
 }
@@ -856,9 +913,10 @@ for (const { id, ic, kind, p3, bridge: sBr, S } of rampPts) {
 }
 // footbridges
 for (const f of PLAN.footbridges) {
-  if (f.over === 'река') continue;   // FB2: both river banks have streets within 12 m, the road bridges (with sidewalks) carry the pedestrians; not drawn in C1
-  const isRiver = f.over === 'река', over = f.over.startsWith('М') ? MW + 3 : isRiver ? 12 : hw('arterial') + CLS.arterial.sidewalk + 1.2;
-  const top = isRiver ? 2.4 : 5.1, g = 0.4,   // stair-ramps (22 degrees): the ramps of a footbridge must end before the next street (40 m grid)
+  if (f.over === 'река') continue;   // FB2: not drawn - the east bank street x=-194 lies 3 m behind the channel edge (river x -207 +-10), no room for ramps; the road bridges carry the pedestrians
+  if (f.over === 'река') f.at = [PLAN.water.river.pts.reduce((b, q) => Math.abs(q[1] - f.at[1]) < Math.abs(b[1] - f.at[1]) ? q : b)[0], f.at[1]];   // centred on the river at its z (FB2: the flat span covers the 10 m channel + banks, the feet stay between the two bank streets)
+  const isRiver = f.over === 'река', over = f.over.startsWith('М') ? MW + 3 : isRiver ? 10 : hw('arterial') + CLS.arterial.sidewalk + 1.2;
+  const top = isRiver ? 1.0 : 5.1, g = isRiver ? 0.5 : 0.4,   // stair-ramps (22 degrees): the ramps of a footbridge must end before the next street (40 m grid)
    ramp = top / g, half = over + ramp, lat = f.id === 'FB3' || f.id === 'FB4' ? 3.6 : 0;
   // Two radius-2 smoothing passes spread the toe of the slope by 4 m. Keep that
   // entire tail in BOTH the drawn deck and the walkable ribbon: cutting at `half`
@@ -871,7 +929,7 @@ for (const f of PLAN.footbridges) {
   for (const sg of [-1, 1]) { const off = sg * 1.25; wallAlong(pts, off, (h) => h + 0.02, (h) => h + 1.1, CI.conc); capAlong(pts, off, 0.15, 1.1, CI.conc); wallAlong(pts, off, (h) => Math.max(0, h - 0.55), (h) => h, CI.concD); addParapets(pts.filter((q) => q[2] > 0.8), off); }
   deckRibbon(pts, 2.4, -0.55, CI.concD);
   // columns: at the ends of the span, and every 9 m under the ramps (higher than 0.8 m)
-  for (let i = 0; i < pts.length; i += 3) { const q = pts[i], sAx = ss[i]; if (q[2] > 0.8 && Math.abs(sAx) >= over - 0.01) box3(q[0] - 0.3, q[1] - 0.3, q[0] + 0.3, q[1] + 0.3, 0, q[2] - 0.55, CI.concD, false); }   // supports only outside the roadway (never a pier in a lane)
+  for (let i = 0; i < pts.length; i += 3) { const q = pts[i], sAx = ss[i]; if (q[2] > 0.8 && Math.abs(sAx) >= over - 0.01 && (!isRiver || Math.abs(sAx) <= over + 2)) box3(q[0] - 0.3, q[1] - 0.3, q[0] + 0.3, q[1] + 0.3, 0, q[2] - 0.55, CI.concD, false); }   // supports only outside the roadway (never a pier in a lane)
   STRUCT.ribbons.push({ id: f.id, w: 2.2, p: pts.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
   void S;
 }
@@ -930,7 +988,6 @@ for (const e of PLAN.edges) if (e.bridge === 'river') { const a = N.get(e.a), b 
 { // M1 over the river
   const near = riverPts.reduce((q, p) => Math.abs(p[1] - M1_Z) < Math.abs(q[1] - M1_Z) ? p : q); bridgeRects.push([near[0] - 24, M1_Z - MW - 1, near[0] + 24, M1_Z + MW + 1]);
 }
-for (const f of PLAN.footbridges) if (f.over === 'река') bridgeRects.push([f.at[0] - f.len / 2, f.at[1] - 1.5, f.at[0] + f.len / 2, f.at[1] + 1.5]);
 const isWater = (x, z) => inPoly(x, z, seaPoly) || (riverDist(x, z) < PLAN.water.river.w / 2 && !bridgeRects.some((r) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3]));
 const blocked = (x, z, pad = 0.6) => !!(rasterAt(x, z) || rasterAt(x + pad, z) || rasterAt(x - pad, z) || rasterAt(x, z + pad) || rasterAt(x, z - pad) || motorHosts.some((h) => { const p = [x, z]; return p[h.axis] >= h.lo && p[h.axis] <= h.hi && Math.abs(p[1 - h.axis] - h.c) < MW + pad; }) || ringAt(x, z) || rangeRamp(x, z) || railBlocked(x, z) || STRUCT.blockers.some((b) => x > b[0] - 1 && x < b[2] + 1 && z > b[1] - 1 && z < b[3] + 1)) || isWater(x, z);
 const rampSegs = rampsOut.flatMap((r) => r.pts.slice(1).map((p, i) => [r.pts[i], p]));
