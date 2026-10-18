@@ -49,7 +49,7 @@ function catmull(pts, per = 8) {   // smooth a sparse polyline (river)
 }
 
 export function buildPlan() {
-  const size = { x0: -300, x1: 300, z0: -370, z1: 250 };
+  const size = { x0: -300, x1: 300, z0: -370, z1: 262 };
   const M1_Z = -240, M2_X = 250, RAIL_Z = -120, SEA_Z = 200, RIVER = { x: -210, w: 20 };
 
   // ------------------------------------------------------------------ street lines (explicit spans; a road exists only where it serves a block)
@@ -218,22 +218,22 @@ export function buildPlan() {
     { id: 'FB2', at: [-210, 40], axis: 'x', over: 'река', len: 34, note: 'пешеходно-велосипедный мост набережного парка' },
     { id: 'FB3', at: [120, 0], axis: 'z', over: 'Центральная магистраль', len: 16, note: 'улица «право-право»: пешеходы переходят по мосту (рынок, университет)', ramps: 'пандусы' },
     { id: 'FB4', at: [-120, 0], axis: 'z', over: 'Центральная магистраль', len: 16, note: 'больница и школа по разные стороны магистрали', ramps: 'пандусы' },
-    { id: 'FB5', at: [-160, 120], axis: 'x', over: 'Западный пр.', len: 16, note: 'к стадиону', ramps: 'пандусы + лифт' },
+    { id: 'FB5', at: [-160, 108], axis: 'x', over: 'Западный пр.', len: 16, note: 'к стадиону', ramps: 'пандусы + лифт' },
     { id: 'FB6', at: [-150, M1_Z], axis: 'z', over: 'М1 Северная хорда', len: 30, note: 'лесопарк по обе стороны хорды' },
   ];
   const tunnels = [
-    { id: 'PT1', at: [-24, RAIL_Z], axis: 'z', under: 'пути вокзала', len: 22, note: 'подземный переход к платформам, выход к депо' },
-    { id: 'PT2', at: [20, RAIL_Z], axis: 'z', under: 'пути вокзала', len: 22, note: 'второй выход к автовокзалу' },
+    { id: 'PT1', at: [-28, RAIL_Z], axis: 'z', under: 'пути вокзала', len: 22, note: 'подземный переход к платформам, выход к депо' },
+    { id: 'PT2', at: [-52, RAIL_Z], axis: 'z', under: 'пути вокзала', len: 22, note: 'второй выход, к Школьной ул.' },
     { id: 'PT3', at: [0, 0], axis: 'ring', under: 'Центральная площадь (кольцо)', len: 30, note: 'подземный переход под кольцом, 4 выхода' },
   ];
 
   // ------------------------------------------------------------------ rail
-  const spur = join(cubic([46, RAIL_Z - 1.6], [1, 0], 34, [110, -142], [0, -1], 14, 20), seg([110, -142], [110, -186], 4));
+  const spur = join(cubic([90, RAIL_Z - 1.6], [1, 0], 18, [118, -140], [0, -1], 12, 20), seg([118, -140], [118, -186], 4));
   const rail = {
     id: 'RAIL1', name: 'Главный ход', pts: [[size.x0 - 20, RAIL_Z], [size.x1 + 20, RAIL_Z]], tracks: 2, gauge: 1.2,
-    stations: [{ id: 'ST1', name: 'Центральный вокзал', at: [-6, RAIL_Z], x0: -46, x1: 34, platforms: 3, tracks: 4 }],
-    spur: { pts: spur.map(P2), name: 'Подъездной путь промзоны', levelCrossings: [[110, -160]] },
-    yard: { x0: -80, x1: 40, z0: -158, z1: -128, tracks: 6, name: 'Депо' },
+    stations: [{ id: 'ST1', name: 'Центральный вокзал', at: [-40, RAIL_Z], x0: -62, x1: -18, platforms: 3, tracks: 4 }],
+    spur: { pts: spur.map(P2), name: 'Подъездной путь промзоны', levelCrossings: [[118, -160]] },
+    yard: { x0: -64, x1: -8, z0: -158, z1: -128, tracks: 5, name: 'Депо', joinX: -72 },
   };
   const grade = [];
   for (const e of edges) if (e.underRail) { const a = byId.get(e.a); grade.push({ id: 'U' + grade.length, kind: 'underpass', at: [a.x, RAIL_Z], road: e.name, cls: e.cls, len: 12, note: 'дорога под ж/д насыпью' }); }
@@ -242,12 +242,18 @@ export function buildPlan() {
   for (const e of edges) if (e.bridge) { const a = byId.get(e.a), b = byId.get(e.b); grade.push({ id: 'BR' + grade.length, kind: 'road-bridge', at: [RIVER.x, a.z], road: e.name, cls: e.cls, len: RIVER.w + 8, span: [Math.min(a.x, b.x), Math.max(a.x, b.x)] }); }
 
   // ------------------------------------------------------------------ water and land use
-  const riverPts = catmull([[-168, -380], [-180, -345], [-203, -312], [-222, -284], [-228, -256], [-219, -228], [-211, -200], [-210, -176], [-210, 0], [-210, 203]], 8);
+  // river: natural meander in the fields, a gentle meander in town that crosses every bridge line square-on (x = -210 at z = -160, -80, 0, 80, 160)
+  const townBends = []; for (let z = -170; z <= 196; z += 10) townBends.push([-210 + 5.5 * Math.sin((z + 160) / 80 * Math.PI), z]);
+  const riverPts = catmull([[-168, -380], [-180, -345], [-203, -312], [-222, -284], [-228, -256], [-219, -228], [-211, -200], ...townBends, [-212, 212]], 4);
+  const piers = [[56, 88], [112, 144], [168, 200], [228, 300]];
+  const coast = [[-320, 208], [-262, 206], [-232, 205], ...catmull([[-196, 204], [-150, 207], [-112, 208]], 6), ...catmull([[-8, 208], [20, 206], [40, 204]], 4)];
+  coast.push([40, 222]); for (const [p0, p1] of piers) { coast.push([p0, 222], [p0, 252], [p1, 252]); if (p1 < 300) coast.push([p1, 222]); } coast.push([320, 252]);
+  const ships = [[100, 238, 40, 9, 'контейнеровоз'], [156, 236, 36, 8, 'контейнеровоз'], [214, 240, 30, 8, 'балкер'], [-26, 252, 14, 4, 'яхта']];
   const water = {
-    sea: { z: SEA_Z, coast: [[-320, 203], [-262, 201.5], [-226, 202], [-200, 201], [40, 201], [40, 237], [300, 237], [320, 237]] },
-    river: { x: RIVER.x, w: RIVER.w, pts: riverPts, embankment: [-176, 201] },
-    basins: [{ x0: 58, x1: 92, z0: 202, z1: 240, name: 'Западный ковш' }, { x0: 116, x1: 150, z0: 202, z1: 240, name: 'Восточный ковш' }],
-    marina: { x0: -118, x1: -42, z0: 201, z1: 228, moles: [[[-118, 201], [-118, 226], [-92, 230]], [[-42, 201], [-42, 226], [-68, 230]]] },
+    sea: { z: SEA_Z, coast: coast.map(P2) },
+    river: { x: RIVER.x, w: RIVER.w, pts: riverPts, mouth: [[-232, 205], [-212, 186], [-196, 204]] },
+    piers: piers.map(([x0, x1]) => ({ x0, x1, z0: 222, z1: 252 })), ships: ships.map(([x, z, len, w, kind]) => ({ at: [x, z], len, w, kind })),
+    marina: { x0: -112, x1: -8, z0: 208, z1: 236, moles: [cubic([-112, 208], [0, 1], 18, [-70, 238], [1, 0], 22, 20).map(P2), cubic([-8, 208], [0, 1], 18, [-48, 238], [-1, 0], 22, 20).map(P2)] },
   };
   const areas = [
     { kind: 'forest', poly: [[-300, -240], [0, -240], [0, -168], [-300, -168]], name: 'Лесопарк' },
@@ -255,22 +261,23 @@ export function buildPlan() {
     { kind: 'forest', poly: [[-300, -84], [-284, -84], [-284, 164], [-300, 164]] },
     { kind: 'field', poly: [[-300, -370], [-6, -370], [-6, -248], [-300, -248]] },
     { kind: 'field', poly: [[6, -370], [300, -370], [300, -248], [6, -248]] },
-    { kind: 'industry', poly: [[4, -232], [204, -232], [204, -164], [4, -164]] },
-    { kind: 'verge', poly: [[204, -232], [300, -232], [300, 156], [204, 156]] },
+    { kind: 'industry', poly: [[4, -232], [164, -232], [164, -164], [4, -164]] },
+    { kind: 'verge', poly: [[164, -232], [300, -232], [300, -164], [164, -164]] },
+    { kind: 'verge', poly: [[204, -164], [300, -164], [300, 156], [204, 156]] },
     { kind: 'park', poly: [[256, 40], [300, 40], [300, 156], [256, 156]], name: 'Восточный лесопарк' },
     { kind: 'parking', poly: [[262, 8], [298, 8], [298, 34], [262, 34]], name: 'P+R' },
-    { kind: 'embankment', poly: [[-236, -168], [-188, -168], [-188, 201], [-236, 201]] },
-    { kind: 'beach', poly: [[-300, 164], [-236, 164], [-226, 192], [-226, 203], [-300, 203]] },
-    { kind: 'promenade', poly: [[-188, 191], [44, 191], [44, 203], [-188, 203]] },
-    { kind: 'port', poly: [[40, 164], [300, 164], [300, 237], [40, 237]] },
+    { kind: 'embankment', poly: [[-236, -168], [-188, -168], [-188, 206], [-236, 206]] },
+    { kind: 'beach', poly: [[-300, 164], [-236, 164], [-226, 192], [-226, 212], [-300, 212]] },
+    { kind: 'promenade', poly: [[-188, 191], [44, 191], [44, 212], [-188, 212]] },
+    { kind: 'port', poly: [[40, 164], [300, 164], [300, 256], [40, 256]] },
     { kind: 'urban', poly: [[-284, -164], [204, -164], [204, 191], [-284, 191]] },
   ];
 
   // ------------------------------------------------------------------ blocks: cells between street lines, merged where no street separates them
   const xs = [-280, -232, -194, -160, -120, -80, -40, 0, 40, 80, 120, 160, 200], zs = [-218, -190, -160, -126, -108, -80, -40, 0, 40, 80, 120, 160, 188];
   const zoneAt = (cx, cz) => {
-    if (cz < -160) return cx > 0 && cx < 200 ? 'industrial' : null;
-    if (cz < -126) { if (cx < -194) return null; if (cx > -80 && cx < 40) return 'railyard'; return 'logistics'; }
+    if (cz < -160) return cx > 0 && cx < 160 ? 'industrial' : null;
+    if (cz < -126) { if (cx < -194) return null; if (cx > -80 && cx < 0) return 'railyard'; return 'logistics'; }
     if (cz < -108) return null;
     if (cx < -232) return cz > -80 && cz < 160 ? 'villas' : null;
     if (cx < -194) return null;
@@ -321,9 +328,26 @@ export function buildPlan() {
   // ------------------------------------------------------------------ transit (stops placed by hand mid-block, ~80 game m = 200 m real apart)
   const lines = [
     { id: 'B1', name: 'Автобус 1: P+R «Восток» — Центр — Береговая', color: '#d9480f', pts: [[290, 0], [-280, 0]], stops: [286, 186, 104, 24, -56, -136, -256].map((x) => [x, 0]) },
-    { id: 'B2', name: 'Автобус 2: Вокзал — Центр — Морская площадь', color: '#1c6dd0', pts: [[0, -100], [0, 188]], stops: [-100, -24, 56, 136, 180].map((z) => [0, z]) },
+    { id: 'B2', name: 'Автобус 2: Вокзал — Центр — Морская площадь', color: '#1c6dd0', pts: [[0, -100], [0, 188]], stops: [-100, -24, 56, 136, 176].map((z) => [0, z]) },
     { id: 'B3', name: 'Автобус 3: кольцо по проспектам', color: '#2b8a3e', pts: [[-160, -160], [160, -160], [160, 160], [-160, 160], [-160, -160]], stops: [] },
   ];
+  const rbs = [{ c: [0, 0], r: 8.6 }, { c: [0, 188], r: 6.6 }];
+  const roundRoute = (pts) => {
+    const out = [pts[0]];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1], d = [Math.sign(b[0] - a[0]), Math.sign(b[1] - a[1])];
+      for (const rb of rbs) {
+        const onSeg = (d[0] ? rb.c[1] === a[1] && (rb.c[0] - a[0]) * d[0] > 0 && (b[0] - rb.c[0]) * d[0] >= 0 : rb.c[0] === a[0] && (rb.c[1] - a[1]) * d[1] > 0 && (b[1] - rb.c[1]) * d[1] >= 0); if (!onSeg) continue;
+        const ang = Math.atan2(-d[1], -d[0]) * 180 / Math.PI, end = b[0] === rb.c[0] && b[1] === rb.c[1];
+        out.push([rb.c[0] - d[0] * (rb.r + 6), rb.c[1] - d[1] * (rb.r + 6)]);
+        if (end) { out.push(...arc(rb.c, rb.r, ang, ang - 360, 10), [rb.c[0] - d[0] * (rb.r + 6), rb.c[1] - d[1] * (rb.r + 6)]); continue; }   // terminus: once round the island and back
+        out.push(...arc(rb.c, rb.r, ang, ang - 180, 10), [rb.c[0] + d[0] * (rb.r + 6), rb.c[1] + d[1] * (rb.r + 6)]);
+      }
+      if (!rbs.some((rb) => rb.c[0] === b[0] && rb.c[1] === b[1])) out.push(b);
+    }
+    return join(out.map(P2));
+  };
+  for (const l of lines) l.pts = roundRoute(l.pts);
   for (const v of [-120, -40, 40, 120]) lines[2].stops.push([v, -160], [160, v], [-v, 160], [-160, -v]);
   const transit = { lines, note: 'остановки ~80 игровых м (200 м настоящих), у перекрёстков и в середине кварталов; метро / трамвай позже (C5)' };
 
@@ -331,13 +355,13 @@ export function buildPlan() {
     { id: 'L1', kind: 'plaza', name: 'Центральная площадь', at: [0, 0] }, { id: 'L2', kind: 'market', name: 'Рынок', at: [60, -20] },
     { id: 'L3', kind: 'hospital', name: 'Больница', at: [-100, -20] }, { id: 'L4', kind: 'school', name: 'Школа', at: [-100, 20] },
     { id: 'L5', kind: 'university', name: 'Университет', at: [120, 120] }, { id: 'L6', kind: 'stadium', name: 'Стадион', at: [-120, 120] },
-    { id: 'L7', kind: 'station', name: 'Центральный вокзал', at: [-20, -96] }, { id: 'L8', kind: 'port', name: 'Порт', at: [200, 226] },
+    { id: 'L7', kind: 'station', name: 'Центральный вокзал', at: [-20, -94] }, { id: 'L8', kind: 'port', name: 'Порт', at: [120, 180] },
     { id: 'L9', kind: 'park', name: 'Набережный парк', at: [-177, 40] }, { id: 'L10', kind: 'industry', name: 'Промзона', at: [60, -205] },
-    { id: 'L11', kind: 'pnr', name: 'P+R «Восток»', at: [280, 21] }, { id: 'L12', kind: 'marina', name: 'Яхтенная гавань', at: [-80, 215] },
+    { id: 'L11', kind: 'pnr', name: 'P+R «Восток»', at: [280, 21] }, { id: 'L12', kind: 'marina', name: 'Яхтенная гавань', at: [-60, 224] },
     { id: 'L13', kind: 'cityhall', name: 'Мэрия', at: [-22, -22] }, { id: 'L14', kind: 'church', name: 'Собор', at: [22, 22] },
-    { id: 'L15', kind: 'busterm', name: 'Автовокзал', at: [20, -95] }, { id: 'L16', kind: 'depot', name: 'Депо', at: [-20, -143] },
+    { id: 'L15', kind: 'busterm', name: 'Автовокзал', at: [20, -95] }, { id: 'L16', kind: 'depot', name: 'Депо', at: [-36, -146] },
     { id: 'L17', kind: 'forest', name: 'Лесопарк', at: [-110, -205] }, { id: 'L18', kind: 'school', name: 'Школа №2', at: [180, -60] },
-    { id: 'L19', kind: 'beach', name: 'Пляж', at: [-262, 184] },
+    { id: 'L19', kind: 'beach', name: 'Пляж', at: [-262, 190] },
   ];
 
   const sig = junctions.filter((j) => j.type === 'signal');
