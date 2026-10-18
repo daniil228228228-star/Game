@@ -136,7 +136,7 @@ function landuse() {
   for (const ic of P.interchanges) if (ic.kind === 'trumpet') s += `<ellipse cx="${f(ic.at[0] - 21)}" cy="${f(ic.at[1] + 22)}" rx="31" ry="27" fill="${COL.verge}"/>`;
   for (const e of P.edges.filter((x) => x.cls === 'motorway')) s += pl(edgePts(e), `stroke="${COL.verge}" stroke-width="24" stroke-linecap="butt"`);
   for (const r of ramps) s += pl(r.pts, `stroke="${COL.verge}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"`);
-  for (const a of P.areas.filter((x) => x.kind === 'parking')) s += poly(a.poly, 'fill="url(#stalls)" stroke="#bdb6a6" stroke-width="0.3"') + `<text x="${f((a.poly[0][0] + a.poly[1][0]) / 2)}" y="${f((a.poly[0][1] + a.poly[2][1]) / 2 + 2.5)}" font-size="7" text-anchor="middle" fill="#1c6dd0" font-weight="800" opacity="0.8">P+R</text>`;
+  for (const a of P.areas.filter((x) => x.kind === 'parking')) s += poly(a.poly, 'fill="url(#stalls)" stroke="#bdb6a6" stroke-width="0.3"') + `<text x="${f((a.poly[0][0] + a.poly[1][0]) / 2)}" y="${f((a.poly[0][1] + a.poly[2][1]) / 2 + 2.5)}" font-size="9" text-anchor="middle" fill="#1c6dd0" font-weight="800" opacity="0.55">P</text>`;
   // riverside park: trees on both banks, a path on the east bank
   const rnd2 = mulberry(9), rv = P.water.river, rx = (z) => { let best = rv.pts[0]; for (const p of rv.pts) if (Math.abs(p[1] - z) < Math.abs(best[1] - z)) best = p; return best[0]; };
   s += pl(rv.pts.filter((p) => p[1] > -168 && p[1] < 196).map((p) => [p[0] + 15.5, p[1]]), 'stroke="#f3eee2" stroke-width="1.2" stroke-linejoin="round"');

@@ -66,6 +66,7 @@ export function buildPlan() {
     { x: -194, cls: 'local', name: 'Речная наб.', spans: [[-108, 188]] },
     { x: -160, cls: 'arterial', name: 'Западный пр.', spans: [[-160, 160]] },
     { x: -120, cls: 'local', spans: [[-108, 80], [160, 188]] },
+    { x: -160, cls: 'local', spans: [[160, 188]] },
     { x: -80, cls: 'collector', name: 'Школьная ул.', spans: [[-160, 188]] },
     { x: -40, cls: 'local', spans: [[-108, 188]] },
     { x: 0, cls: 'arterial', name: 'Главный пр.', spans: [[-262, 188]] },
@@ -90,7 +91,7 @@ export function buildPlan() {
     { z: 40, cls: 'local', spans: [[-280, -232], [-160, 200]] },
     { z: 80, cls: 'collector', name: 'Университетский б-р', spans: [[-300, 200]] },
     { z: 120, cls: 'local', spans: [[-280, -232], [-194, -160], [-80, 80], [160, 200]] },
-    { z: 160, cls: 'arterial', name: 'Южный пр. / Портовое ш.', spans: [[-300, 300]] },
+    { z: 160, cls: 'arterial', name: 'Южный пр. / Портовое ш.', spans: [[-300, 330]] },
     { z: 188, cls: 'collector', name: 'Набережная', spans: [[-194, 40]] },
     { z: 196, cls: 'service', name: 'Причальная ул.', spans: [[80, 160]] },
     { z: 214, cls: 'service', name: 'Контейнерный пр.', spans: [[160, 280]] },
@@ -129,11 +130,11 @@ export function buildPlan() {
   }
   // motorways (own node keys: they cross the street grid only on bridges)
   const mnode = (x, z) => node(x + 1e-3, z + 1e-3);
-  const M1x = [-300, 0, M2_X, 300];
+  const M1x = [-300, 0, M2_X, 370];   // runs on past the map edge: the east cloverleaf ramps join it there
   for (let i = 0; i + 1 < M1x.length; i++) addEdge(mnode(M1x[i], M1_Z), mnode(M1x[i + 1], M1_Z), 'motorway', 'М1 Северная хорда', { dir: 'x', ref: 'M1' });
   const M2z = [-370, M1_Z, 0, 115];
   for (let i = 0; i + 1 < M2z.length; i++) addEdge(mnode(M2_X, M2z[i]), mnode(M2_X, M2z[i + 1]), 'motorway', 'М2 Восточная хорда', { dir: 'z', ref: 'M2', ...(M2z[i] < RAIL_Z && M2z[i + 1] > RAIL_Z ? { overRail: RAIL_Z } : {}) });
-  const exits = [...nodes.values()].filter((n) => n.legs.length === 1 && (Math.abs(n.x) >= 299.9 || n.z <= size.z0 + 0.1)).map((n) => n.id);
+  const exits = [...nodes.values()].filter((n) => n.legs.length === 1 && (Math.abs(n.x) >= 299.9 || n.z <= size.z0 + 0.1)).map((n) => n.id);   // roads that leave the map (to the region)
 
   // ------------------------------------------------------------------ interchanges (ramps are polylines in game metres; `bridges` = parts above another road)
   const interchanges = [];
@@ -165,10 +166,10 @@ export function buildPlan() {
     // M2 ends from the north; the through road H (z = at.z) runs east-west. Bell (loop + rim) on the far (south) side, two trunk ramps cross H on a bridge.
     const F = frame(at, 0), hw = CLS.arterial.w / 2, r = 17, C = [-3.2 - r, hw + 1.6 + r], Rr = r + 6.4, top = -45, ramps = [];
     const b = join(seg([-3.2, top], [-3.2, C[1]], 10), arc(C, r, 0, 270), seg([C[0], hw + 1.6], [6, hw + 1.6], 6), cubic([6, hw + 1.6], [1, 0], 7, [22, hw - 1.0], [1, 0], 7, 10));
-    const d = join(cubic([C[0] - Rr - 28, hw - 1.0], [1, 0], 5, [C[0] - Rr - 18, hw + 1.6], [1, 0], 5, 10), seg([C[0] - Rr - 18, hw + 1.6], [C[0] - Rr - 12, hw + 1.6], 3), cubic([C[0] - Rr - 12, hw + 1.6], [1, 0], 9, [C[0] - Rr, C[1]], [0, 1], 9), arc(C, Rr, 180, 0), seg([3.2, C[1]], [3.2, top], 10));
+    const d = join(cubic([C[0] - Rr - 35, hw - 1.0], [1, 0], 8, [C[0] - Rr - 17, hw + 1.6], [1, 0], 8, 12), arc([C[0] - Rr - 17, C[1]], 17, -90, 0), arc(C, Rr, 180, 0), seg([3.2, C[1]], [3.2, top], 10));
     const LM = MW + CLS.ramp.w / 2, LH = hw + CLS.ramp.w / 2;   // added lanes beside M2 and beside the through road
-    const a = join(cubic([-ATT, -96], [0, 1], 6, [-LM, -80], [0, 1], 6, 10), seg([-LM, -80], [-LM, -66], 3), cubic([-LM, -66], [0, 1], 34, [-34, -LH], [-1, 0], 14), seg([-34, -LH], [-50, -LH], 3), cubic([-50, -LH], [-1, 0], 6, [-64, -(hw - 1.0)], [-1, 0], 6, 10));
-    const c = join(cubic([64, -(hw - 1.0)], [-1, 0], 6, [50, -LH], [-1, 0], 6, 10), seg([50, -LH], [34, -LH], 3), cubic([34, -LH], [-1, 0], 14, [LM, -66], [0, -1], 34), seg([LM, -66], [LM, -80], 3), cubic([LM, -80], [0, -1], 6, [ATT, -96], [0, -1], 6, 10));
+    const a = join(cubic([-ATT, -96], [0, 1], 6, [-LM, -80], [0, 1], 6, 10), seg([-LM, -80], [-LM, -66], 3), cubic([-LM, -66], [0, 1], 30, [-34, -LH], [-1, 0], 24), seg([-34, -LH], [-50, -LH], 3), cubic([-50, -LH], [-1, 0], 6, [-64, -(hw - 1.0)], [-1, 0], 6, 10));
+    const c = join(cubic([64, -(hw - 1.0)], [-1, 0], 6, [50, -LH], [-1, 0], 6, 10), seg([50, -LH], [34, -LH], 3), cubic([34, -LH], [-1, 0], 24, [LM, -66], [0, -1], 30), seg([LM, -66], [LM, -80], 3), cubic([LM, -80], [0, -1], 6, [ATT, -96], [0, -1], 6, 10));
     ramps.push({ kind: 'loop', pts: b.map(F), r, attach: ['motorway', 'cross'], bridges: [[F([-3.2, -hw - 4]), F([-3.2, hw + 4])]], note: 'М2 на юг -> Портовое ш. на восток (петля 270°)' });
     ramps.push({ kind: 'semi-direct', pts: d.map(F), attach: ['cross', 'motorway'], bridges: [[F([3.2, hw + 4]), F([3.2, -hw - 4])]], note: 'Южный пр. на восток -> М2 на север (раструб вокруг петли)' });
     ramps.push({ kind: 'direct', pts: a.map(F), attach: ['motorway', 'cross'], note: 'М2 на юг -> Южный пр. на запад' });
@@ -220,13 +221,13 @@ export function buildPlan() {
     else if (j.type === 'mini') for (const a of j.arms) crossings.push({ id: `${j.id}-z${crossings.length}`, kind: 'zebra', at: j.at, arm: a.dir, cls: a.cls, setback: 7 });
   }
   // mid-block pedestrian signals where an urban arterial runs more than 80 game m (200 m real) from the nearest crossing
-  const midBlock = [[-256, 0], [-256, 160], [-256, -160], [-256, -80], [-256, 80]];
+  const midBlock = [[-256, 0], [-256, 160], [-256, -160], [-256, -80], [-256, 80], [-140, 188], [20, 188]];
   for (const [x, z] of midBlock) {
     const e = edges.find((g) => { const a = byId.get(g.a), b = byId.get(g.b); return g.dir === 'x' && a.z === z && Math.min(a.x, b.x) < x && Math.max(a.x, b.x) > x; });
     if (e) crossings.push({ id: `MB${crossings.length}`, kind: e.cls === 'arterial' ? 'ped-signal-midblock' : 'zebra', at: [x, z], arm: null, cls: e.cls, axis: 'x', note: 'у остановки / у вилл' });
   }
   const footbridges = [
-    { id: 'FB1', at: [250, 80], axis: 'x', over: 'М2 Восточная хорда', len: 30, note: 'конец Университетского б-ра -> Восточный лесопарк', ramps: 'пандусы + лифт' },
+    { id: 'FB1', at: [250, 80], axis: 'x', over: 'М2 Восточная хорда', len: 46, note: 'конец Университетского б-ра -> Восточный лесопарк', ramps: 'пандусы + лифт' },
     { id: 'FB2', at: [-210, 40], axis: 'x', over: 'река', len: 34, note: 'пешеходно-велосипедный мост набережного парка' },
     { id: 'FB3', at: [120, 0], axis: 'z', over: 'Центральная магистраль', len: 16, note: 'улица «право-право»: пешеходы переходят по мосту (рынок, университет)', ramps: 'пандусы' },
     { id: 'FB4', at: [-120, 0], axis: 'z', over: 'Центральная магистраль', len: 16, note: 'больница и школа по разные стороны магистрали', ramps: 'пандусы' },
@@ -392,7 +393,7 @@ export function buildPlan() {
     { id: 'L5', kind: 'university', name: 'Университет', at: [120, 120] }, { id: 'L6', kind: 'stadium', name: 'Стадион', at: [-120, 120] },
     { id: 'L7', kind: 'station', name: 'Центральный вокзал', at: [-20, -94] }, { id: 'L8', kind: 'port', name: 'Порт', at: [120, 180] },
     { id: 'L9', kind: 'park', name: 'Набережный парк', at: [-177, 40] }, { id: 'L10', kind: 'industry', name: 'Промзона', at: [60, -205] },
-    { id: 'L11', kind: 'pnr', name: 'P+R «Восток»', at: [280, 21] }, { id: 'L12', kind: 'marina', name: 'Яхтенная гавань', at: [-60, 224] },
+    { id: 'L11', kind: 'pnr', name: 'P+R «Восток»', at: [280, 41] }, { id: 'L12', kind: 'marina', name: 'Яхтенная гавань', at: [-60, 224] },
     { id: 'L13', kind: 'cityhall', name: 'Мэрия', at: [-22, -22] }, { id: 'L14', kind: 'church', name: 'Собор', at: [22, 22] },
     { id: 'L15', kind: 'busterm', name: 'Автовокзал', at: [20, -95] }, { id: 'L16', kind: 'depot', name: 'Депо', at: [-36, -146] },
     { id: 'L17', kind: 'forest', name: 'Лесопарк', at: [-110, -205] }, { id: 'L18', kind: 'school', name: 'Школа №2', at: [180, -60] },
