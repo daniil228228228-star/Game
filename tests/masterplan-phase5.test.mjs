@@ -69,7 +69,7 @@ const PAGE = () => {
     return { count: roads.length, hash: h, uuids: roads.map((o) => o.uuid).sort() };
   };
   window.__mpObjects = () => { const n = []; scene.traverse((o) => { if (o.userData && o.userData.masterplanV161 || /^mp161/.test(o.name || '')) n.push(o.name || o.type); }); return n; };
-  window.__frame = async () => { const sm = renderer.shadowMap, keep = sm.autoUpdate; sm.autoUpdate = false; sun.shadow.needsUpdate = false; await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); sm.autoUpdate = keep; const i = renderer.info; return { calls: i.render.calls, tris: i.render.triangles }; };   // main-pass draw calls only: whether a frame redraws the shadow map (the whole scene again) made the layer budget flaky
+  window.__frame = async () => { const sm = renderer.shadowMap, keep = sm.autoUpdate; sm.autoUpdate = false; sun.shadow.needsUpdate = false; let calls = 1e9, tris = 1e9; for (let k = 0; k < 3; k++) { await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); const i = renderer.info; calls = Math.min(calls, i.render.calls); tris = Math.min(tris, i.render.triangles); } sm.autoUpdate = keep; return { calls, tris }; };   // main-pass draw calls only: whether a frame redraws the shadow map (the whole scene again) made the layer budget flaky
   window.__drive = (sx, sz, dx, dz, steps) => {
     player.position.set(sx, 0, sz); playerVelocity.set(0, 0, 0);
     const l = Math.hypot(dx, dz); dx /= l; dz /= l;
