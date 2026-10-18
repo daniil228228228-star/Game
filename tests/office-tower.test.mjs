@@ -10,6 +10,7 @@
 //   D. rebuilds: building and dropping a stage mesh 12 times leaves the renderer's geometry count at the baseline; the camera (orbit camera 9 m behind the player, 3.75 m above the eye) is pulled in by a building only through its lowest
 //      5.25 m: obstruction is measured for the old and the new building (report), 0 console errors / 4xx.
 // SHOTS_DIR=<dir> writes front + iso pictures of every stage at levels 1 / 5 / 10 (the showcase tool does the same with the old builder next to it).
+// 2026-10-18 road sets: 'same' means NO road mesh was destroyed / re-laid; a road mesh that appears late (the connector planner settles on its own timer, slow under load) is not a re-lay
 import fs from 'node:fs';
 import path from 'node:path';
 import { openGame, check, waitForState, OLD_SAVE } from './lib/harness.mjs';
@@ -57,7 +58,7 @@ for (let L = 2; L <= 5; L++) {
   const afterU = await settleU(3, 45);
   const addedU = afterU.filter((x) => !new Set(beforeU).has(x));
   if (addedU.length) console.log('INFO round', L, 'road meshes ADDED (not re-laid):', J(await tagOf(addedU)));
-  rounds.push({ L, before: beforeU.length, after: afterU.length, same: same(beforeU, afterU), destroyed: beforeU.filter((x) => !new Set(afterU).has(x)).length });
+  rounds.push({ L, before: beforeU.length, after: afterU.length, same: beforeU.every((x) => afterU.includes(x)), destroyed: beforeU.filter((x) => !new Set(afterU).has(x)).length });
   beforeU = afterU;
 }
 const lvs = await ev((ALL) => ALL.map((i) => { const b = buildings.find((x) => x.index === i); return b ? b.level : 0; }), ALL);

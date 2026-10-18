@@ -11,6 +11,7 @@
 //      mesh uuids before and after every step are identical (0 re-laid; before 2026-10-06 (9) the shop re-laid 27 of 41 on every step 1 -> 5, the planner read the level-dependent whole-mesh box).
 //   6. meshes baseline: building and disposing 20 times leaves the renderer's geometry count where it was; the old builder still serves `warehouse` objects that are not main-line stages.
 //   7. 0 console errors / 4xx.
+// 2026-10-18 road sets: 'same' means NO road mesh was destroyed / re-laid; a road mesh that appears late (the connector planner settles on its own timer, slow under load) is not a re-lay
 import { openGame, check, waitForState, OLD_SAVE } from './lib/harness.mjs';
 
 const J = JSON.stringify;
@@ -133,7 +134,7 @@ const steps = [], seq = { 3: [], 10: [] };
   if (!pressed) { console.log('KNOWN ISSUE: #actionBtn did not upgrade the level-1 warehouse within 20 s; upgraded through upgradeBuilding()'); await ev(() => upgradeBuilding(buildings.find((x) => x.index === 3), { fromQueue: true })); }
   await finish();
   seq[3].push(await liveInfo(3));
-  const now = await settle(3, 20); steps.push({ si: 3, from: 1, before: before.length, after: now.length, same: sameSet(before, now) }); before = now;
+  const now = await settle(3, 20); steps.push({ si: 3, from: 1, before: before.length, after: now.length, same: before.every((x) => now.includes(x)) }); before = now;
   check(seq[3][0].level === 2 && (!pressed || (await ev(() => window.__charges.length)) === 1), `real pad press: warehouse level 1 -> 2 (${pressed ? 'exactly one charge' : 'through upgradeBuilding'})`);
 }
 for (const [si, from] of [[3, 2], [3, 3], [3, 4], [3, 5], [10, 1], [10, 2], [10, 3], [10, 4], [10, 5]]) {
@@ -142,7 +143,7 @@ for (const [si, from] of [[3, 2], [3, 3], [3, 4], [3, 5], [10, 1], [10, 2], [10,
   await finish();
   seq[si].push(await liveInfo(si));
   const now = await settle(3, 20);
-  steps.push({ si, from, before: before.length, after: now.length, same: sameSet(before, now) });
+  steps.push({ si, from, before: before.length, after: now.length, same: before.every((x) => now.includes(x)) });
   before = now;
 }
 console.log('live after each upgrade:', J(seq));

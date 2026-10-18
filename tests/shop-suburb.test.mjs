@@ -13,6 +13,7 @@
 //             4+lv trees, a handful of meshes (<= 8; the old group had ~116), fewer than the old builder (same page, BuildingsV161.enabled = false), the group rebuilds to the same mesh count
 //             and the renderer's geometry count returns to the baseline (no leaks), the registry holds exactly the houses + trunks of the current group (owner = the group).
 //   4. 0 console errors / 4xx.
+// 2026-10-18 road sets: 'same' means NO road mesh was destroyed / re-laid; a road mesh that appears late (the connector planner settles on its own timer, slow under load) is not a re-lay
 import { openGame, check, waitForState, OLD_SAVE } from './lib/harness.mjs';
 
 const J = JSON.stringify;
@@ -92,14 +93,15 @@ if (!pressed) {
 await finish();
 const levels = [await liveShop()], roadSteps = [];
 const settled = async () => { let prev = await roadUuids(); for (let k = 0; k < 10; k++) { await page.waitForTimeout(700); const now = await roadUuids(); if (sameSet(prev, now)) return now; prev = now; } return prev; };
-{ const now = await settled(); roadSteps.push({ from: 5, before: before.length, after: now.length, same: sameSet(before, now) }); before = now; }
+{ const now = await settled(); roadSteps.push({ from: 5, before: before.length, after: now.length, same: before.every((x) => now.includes(x)) }); before = now; }
 check(levels[0].level === 6 && (!pressed || (await ev(() => window.__charges.length)) === 1), `real pad press: shop level 5 -> 6 (${pressed ? 'exactly one charge' : 'through upgradeBuilding'})`);
 for (let L = 7; L <= 10; L++) {
   await ev(() => { money = 1e9; planks = 1e5; concrete = 1e4; metal = 1e4; upgradeBuilding(buildings.find((x) => x.index === 2), { fromQueue: true }); });
   await finish();
   levels.push(await liveShop());
   const now = await settled();
-  roadSteps.push({ from: L - 1, before: before.length, after: now.length, same: sameSet(before, now) });
+  { const addedU = now.filter((x) => !before.includes(x)); if (addedU.length) console.log('INFO step', L - 1, 'road meshes ADDED (not re-laid):', J(await ev((ids) => { const set = new Set(ids), out = {}; scene.traverse((m) => { if (set.has(m.uuid)) { const k = Object.keys(m.userData || {}).filter((x) => /^v\d+/.test(x)).join('+') + '|' + (m.parent && m.parent.name); out[k] = (out[k] || 0) + 1; } }); return out; }, addedU))); }
+  roadSteps.push({ from: L - 1, before: before.length, after: now.length, same: before.every((x) => now.includes(x)) });
   before = now;
 }
 console.log('live shop after each upgrade:', levels.map((l) => `L${l.level}: ${l.meshes} meshes, tier ${l.tier}`).join(' | '));

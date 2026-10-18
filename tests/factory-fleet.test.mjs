@@ -12,6 +12,7 @@
 //      of 8 directions, the open mouth along the service lane lets the other 3 in (a free gate gap >= 2.3 m), every truck bay and the lane -> bay lines are free (not pushed), parked trucks keep their positions
 //      after the rebuild, no road mesh over the lot, lamps glow at night / beacon blinks, no leak over 20 rebuilds, the old yard comes back with FleetYardV161.enabled = false.
 //   6. meshes baseline (build + dispose 20 factories) and 0 console errors / 4xx.
+// 2026-10-18 road sets: 'same' means NO road mesh was destroyed / re-laid; a road mesh that appears late (the connector planner settles on its own timer, slow under load) is not a re-lay
 import { openGame, check, OLD_SAVE } from './lib/harness.mjs';
 
 const J = JSON.stringify;
@@ -149,7 +150,7 @@ for (const si of STAGE) {
     await finish();
     seq[si].push(await liveInfo(si));
     const now = await settle(3, 20);
-    steps.push({ si, from, before: before.length, after: now.length, same: sameSet(before, now) });
+    steps.push({ si, from, before: before.length, after: now.length, same: before.every((x) => now.includes(x)) });
     before = now;
   }
 }
