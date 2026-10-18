@@ -229,7 +229,7 @@ export function buildPlan() {
   for (const j of junctions) {
     if (j.type === 'signal') for (const a of j.arms) crossings.push({ id: `${j.id}-p${crossings.length}`, kind: 'ped-signal', at: j.at, arm: a.dir, cls: a.cls });
     else if (j.type === 'roundabout') for (const a of j.arms) crossings.push({ id: `${j.id}-z${crossings.length}`, kind: 'zebra-refuge', at: j.at, arm: a.dir, cls: a.cls, setback: j.R + 2.6 });
-    else if (j.type === 'mini') for (const a of j.arms) crossings.push({ id: `${j.id}-z${crossings.length}`, kind: 'zebra', at: j.at, arm: a.dir, cls: a.cls, setback: 7 });
+    else if (j.type === 'mini') for (const a of j.arms) crossings.push({ id: `${j.id}-z${crossings.length}`, kind: 'zebra', at: j.at, arm: a.dir, cls: a.cls, setback: 9 });
   }
   // mid-block pedestrian signals where an urban arterial runs more than 80 game m (200 m real) from the nearest crossing
   const midBlock = [[-256, 0], [-256, 160], [-256, -160], [-256, -80], [-256, 80], [-140, 188], [20, 188]];

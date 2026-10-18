@@ -61,7 +61,7 @@ function clipPoly(poly, x0, z0, x1, z1) {   // Sutherland-Hodgman against an axi
   return out;
 }
 const area2 = (p) => { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a[0] * b[1] - b[0] * a[1]; } return s; };
-const push = (arr, ...v) => { for (const n of v) arr.push(R2(n)); };
+const push = (arr, ...v) => { for (const n of v) arr.push(R3(n)); };   // 3 decimals: layer heights differ by 3 mm (kerb-return fillet over the sidewalk) and must survive the rounding
 
 function emitRect(layer, sub, x0, z0, x1, z1, y, ci) {
   if (x1 - x0 < 1e-4 || z1 - z0 < 1e-4) return;
@@ -173,7 +173,7 @@ function trimAt(nodeId, e) {   // how far markings / medians stay away from a no
   const n = N.get(nodeId), j = J.get(nodeId);
   if (!j) return n.legs && n.legs.length > 1 ? 1.5 : 0;
   if (j.type === 'roundabout') return j.R + 6.5;
-  if (j.type === 'mini') return 7;
+  if (j.type === 'mini') return 8;
   const cross = j.arms.filter((a) => (a.dir[0] !== 0) !== (e.dir === 'x')).map((a) => hw(a.cls));
   const ch = cross.length ? Math.max(...cross) : 0;
   if (j.type === 'signal') return ch + 5.2;
@@ -329,7 +329,7 @@ for (const j of PLAN.junctions) {
       for (let l = iw + 0.2; l < w - 0.1; l += 0.7) { const q0 = P(R + 0.35, sgn * l), q1 = P(R + 0.7, sgn * (l + 0.35)), q2 = P(R + 0.7, sgn * l); emitTri('p', q0, q1, q2, H.paint, CI.white); }
     }
   } else if (j.type === 'mini') {
-    const Ri = 1.9, Ro = Ri + 2.8;   // island r 1.9, circulatory lane 2.8 (>= 2.6), painted outer edge
+    const Ri = 2.6, Ro = Ri + 3.0;   // island r 2.6, circulatory lane 3.0 (>= 2.6), painted outer edge
     disc('r', c, Ri, H.island + 0.03, CI.islandC, 24); disc('r', c, Ri - 0.25, H.island + 0.035, CI.islandL, 24);
     for (let k = 0; k < 24; k++) { const s = k / 24 * Math.PI * 2, e = (k + 1) / 24 * Math.PI * 2; emitWall(c[0] + Math.cos(s) * Ri, c[1] + Math.sin(s) * Ri, c[0] + Math.cos(e) * Ri, c[1] + Math.sin(e) * Ri, H.asph, H.island + 0.03, CI.kerb); }
     for (let a = 0; a < 360; a += 15) annulus('p', c, Ro - 0.07, Ro + 0.07, a, a + 9, H.paint, CI.white, 3);
