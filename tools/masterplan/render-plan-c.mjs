@@ -276,14 +276,14 @@ function blockContent(b, detail) {
   let s = rect(x0, z0, w, h, `fill="${ZONE_FILL[b.zone] || COL.res}"`);
   const zone = b.zone, inset = (r, m) => [r[0] + m, r[1] + m, r[2] - m, r[3] - m];
   if (zone === 'cbd' || zone === 'mixed' || zone === 'residential' || zone === 'waterfront') {
-    if (zone === 'cbd' && Math.abs(cx + 20) < 1 && Math.abs(cz + 20) < 1) {   // city hall: U-shape opening to the square + a tower
+    if (zone === 'cbd' && b.rect[0] === -40 && b.rect[1] === -40) {   // city hall: U-shape opening to the square + a tower
       const r = inset(b.lot, 1);
       s += bld([r[0], r[1], r[2], r[1] + 7], COL.civicB, COL.civicS, 0.25) + bld([r[0], r[1] + 7, r[0] + 7, r[3]], COL.civicB, COL.civicS, 0.25) + bld([r[2] - 7, r[1] + 7, r[2], r[3] - 9], COL.civicB, COL.civicS, 0.25);
       s += rect(r[0] + 1.5, r[1] + 1.5, 4, 4, `fill="#c4a983" stroke="${COL.civicS}" stroke-width="0.25"`);
       for (let i = 0; i < 4; i++) s += tree(r[0] + 11 + i * 4.5, r[1] + 12 + (i % 2) * 5, 1.3);
       return s;
     }
-    if (zone === 'cbd' && Math.abs(cx - 20) < 1 && Math.abs(cz - 20) < 1) {   // cathedral on its own square
+    if (zone === 'cbd' && b.rect[0] === 0 && b.rect[1] === 0) {   // cathedral on its own square
       s += rect(x0, z0, w, h, 'fill="url(#pave)"');
       const c = [cx + 3, cz + 3];
       s += bld([c[0] - 9, c[1] - 3, c[0] + 9, c[1] + 3], COL.civicB, COL.civicS, 0.3) + bld([c[0] - 3, c[1] - 8, c[0] + 3, c[1] + 8], COL.civicB, COL.civicS, 0.3) + circ(c[0], c[1], 3.4, `fill="#c9a96b" stroke="${COL.civicS}" stroke-width="0.3"`);
@@ -566,7 +566,7 @@ function pedestrians(detail, ppm) {
   }
   for (const t of P.tunnels) {
     const [x, z] = t.at;
-    if (t.axis === 'ring') { s += circ(x, z, 17.5, `fill="none" stroke="${COL.tun}" stroke-width="0.6" stroke-dasharray="1.4 0.9"`); for (const [dx, dz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) s += rect(x + dx * 12.4 - 1.2, z + dz * 12.4 - 1.2, 2.4, 2.4, `fill="${COL.tun}" stroke="#fff" stroke-width="0.3"`); continue; }
+    if (t.axis === 'ring') { s += circ(x, z, 22, `fill="none" stroke="${COL.tun}" stroke-width="0.45" stroke-dasharray="1.4 0.9" opacity="0.8"`); for (const [dx, dz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) s += rect(x + dx * 15.56 - 0.8, z + dz * 15.56 - 0.8, 1.6, 1.6, `fill="${COL.tun}" stroke="#fff" stroke-width="0.25"`); continue; }
     const h = t.len / 2;
     s += rect(x - 1.4, z - h, 2.8, 2 * h, `fill="none" stroke="${COL.tun}" stroke-width="0.6" stroke-dasharray="1.2 0.8"`);
     for (const e of [-1, 1]) s += rect(x - 1.4, z + e * h - 1.2, 2.8, 2.4, `fill="${COL.tun}" stroke="#fff" stroke-width="0.3"`);
