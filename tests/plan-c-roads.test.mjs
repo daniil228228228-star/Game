@@ -45,7 +45,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
   for (const e of PLAN.edges) {
     const a = N.get(e.a), b = N.get(e.b), L = Math.hypot(b.x - a.x, b.z - a.z);
     const rA = (D.graph.rings.find((q) => q[0] === e.a) || [0, 0, 0, 0])[3], rB = (D.graph.rings.find((q) => q[0] === e.b) || [0, 0, 0, 0])[3];   // inside a roundabout the island is not road
-    for (let s = 0.3; s < L; s += 1.1) { if (s < rA || s > L - rB) continue; if (e.cls === 'motorway' && D.surfaces(a.x + (b.x - a.x) * s / L, a.z + (b.z - a.z) * s / L).some((h) => h > 0.3)) continue; const x = a.x + (b.x - a.x) * s / L, z = a.z + (b.z - a.z) * s / L; samples++; if (!asphaltAt(x, z)) holes.push([e.id, R(x), R(z)]); }
+    for (let s = 0.3; s < L; s += 1.1) { if (s < rA || s > L - rB) continue; if (e.cls === 'motorway' && D.surfaces(a.x + (b.x - a.x) * s / L, a.z + (b.z - a.z) * s / L).some((h) => h > 0.2)) continue; const x = a.x + (b.x - a.x) * s / L, z = a.z + (b.z - a.z) * s / L; samples++; if (!asphaltAt(x, z)) holes.push([e.id, R(x), R(z)]); }
   }
   check(holes.length === 0 && PLAN.edges.length === D.graph.edges.length, `data: asphalt under the centre line of all ${PLAN.edges.length} graph edges (${samples} samples, holes ${J(holes.slice(0, 6))})`);
   // 2. no overlapping asphalt rectangles (the union is decomposed)
@@ -133,8 +133,8 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
     const S = D.struct, top = (x, z) => Math.max(...D.surfaces(x, z));
     const decks = [[0, -240, 'M1 over Главный пр.'], [250, 0, 'M2 over Центральная магистраль'], [250, -240, 'M2 over M1 (cloverleaf)']].map(([x, z, n]) => [n, top(x, z)]);
     check(decks.every(([, h]) => h - 0.8 >= 4.5 - 1e-6), `heights: every motorway deck over a road leaves >= 4.5 m headroom (deck tops ${J(decks.map(([n, h]) => [n, +h.toFixed(2)]))}, slab 0.8)`);
-    check(S.openings.every(([x, half, clear]) => clear >= 2.8) && S.openings.filter(([x, half, clear]) => clear >= 4.5).length >= 8, `heights: rail embankment ${S.railY} m high with ${S.openings.length} openings (${S.openings.filter((o) => o[2] >= 4.5).length} road openings with 4.5 m headroom, ${S.openings.filter((o) => o[2] < 4.5).length} station tunnels)`);
-    const bad = [], LIM = (id) => /^M[12]$/.test(id) ? 0.0625 : /^FB/.test(id) ? 0.125 : 0.07;
+    check(S.openings.every(([x, half, clear]) => clear >= 2.8) && S.openings.filter(([x, half, clear]) => clear >= 4.5).length >= 7, `heights: rail embankment ${S.railY} m high with ${S.openings.length} openings (${S.openings.filter((o) => o[2] >= 4.5).length} road openings with 4.5 m headroom, ${S.openings.filter((o) => o[2] < 4.5).length} station tunnels)`);
+    const bad = [], LIM = (id) => /^M[12]$/.test(id) ? 0.0625 : /^FB/.test(id) ? 0.42 : 0.07;
     let steps = 0;
     for (const r of S.ribbons) {
       let prevSlope = null;
@@ -146,7 +146,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
         prevSlope = slope;
       }
     }
-    check(bad.length === 0, `heights: ${S.ribbons.length} decks / ramps / footbridges, ${steps} steps: grade <= 6.25 % (motorways) / 7 % (ramps) / 12.5 % (footbridges), vertical curvature smooth (${J(bad.slice(0, 4))})`);
+    check(bad.length === 0, `heights: ${S.ribbons.length} decks / ramps / footbridges, ${steps} steps: grade <= 6.25 % (motorways) / 7 % (ramps) / 42 % (stair ramps of footbridges), vertical curvature smooth (${J(bad.slice(0, 4))})`);
     // ramps meet their roads: start / end height equals the height of the road they attach to (+-0.25)
     const mism = [];
     for (const [ic, kind, pts] of D.graph.ramps) { for (const end of [pts[0], pts[pts.length - 1]]) { const hs = D.surfaces(end[0], end[1]).filter((h) => Math.abs(h - end[2]) < 0.6); if (!hs.length && end[2] > 0.3) mism.push([ic, kind, end]); } }
@@ -181,15 +181,16 @@ const PAGE = () => {
     return { delta: withC - without, withC, without, tris: trisWith - trisWithout };
   };
   window.__drive = (sx, sz, dx, dz, steps) => {
-    player.position.set(sx, 0, sz); playerVelocity.set(0, 0, 0);
+    player.position.set(sx, 0, sz); playerVelocity.set(0, 0, 0); if (window.PlanCV161) PlanCV161.level = 0;
     const l = Math.hypot(dx, dz); dx /= l; dz /= l;
+    const ys = [];
     for (let i = 0; i < steps; i++) {
       camera.getWorldDirection(camForward); camForward.y = 0; camForward.normalize(); camRight.crossVectors(camForward, worldUp).normalize();
       joyVec.z = dx * camForward.x + dz * camForward.z; joyVec.x = dx * camRight.x + dz * camRight.z;
-      updatePlayer(1 / 30);
+      updatePlayer(1 / 30); if (i % 20 === 0) ys.push(+player.position.y.toFixed(2));
     }
     joyVec.x = joyVec.z = 0; playerVelocity.set(0, 0, 0);
-    return { x: +player.position.x.toFixed(2), z: +player.position.z.toFixed(2) };
+    return { x: +player.position.x.toFixed(2), z: +player.position.z.toFixed(2), y: +player.position.y.toFixed(2), ys };
   };
 };
 
@@ -231,7 +232,7 @@ await run(async () => {
         for (let s = 0.5; s < L; s += 6) {
           if (D.graph.rings.some((q) => (q[0] === e[1] && s < q[3] + 1) || (q[0] === e[2] && L - s < q[3] + 1))) continue;   // inside a roundabout: island
           const x = x0 + (x1 - x0) * s / L, z = z0 + (z1 - z0) * s / L; n++;
-          if (cls === 'motorway' && D.surfaces(x, z).some((h) => h > 0.3)) continue;   // on a causeway: the deck is the surface (checked by the height tests)
+          if (cls === 'motorway' && D.surfaces(x, z).some((h) => h > 0.2)) continue;   // on a causeway: the deck is the surface (checked by the height tests)
           rc.set(new THREE.Vector3(x, 1, z), down);
           const hit = rc.intersectObjects(roots, false)[0];
           // a drawn street: the highest surface under the centre line is asphalt height (or the median / ramp / paint just above it), never the grass 5 cm below

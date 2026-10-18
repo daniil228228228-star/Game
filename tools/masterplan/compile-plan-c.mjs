@@ -569,7 +569,7 @@ for (const ic of PLAN.interchanges) {
     if (bridge) { const mid = [(bridge[0][0] + bridge[1][0]) / 2, (bridge[0][1] + bridge[1][1]) / 2]; let bi = 0, bd = 1e9; pts.forEach((q, i) => { const d = Math.hypot(q[0] - mid[0], q[1] - mid[1]); if (d < bd) { bd = d; bi = i; } }); sBr = S[bi]; knots.push([Math.max(8, sBr - 9), 5.0], [Math.min(L - 8, sBr + 9), 5.0]); }
     knots.push([L, he]);
     const kf = (s) => { for (let i = 0; i + 1 < knots.length; i++) if (s <= knots[i + 1][0]) { const t = (s - knots[i][0]) / Math.max(1e-6, knots[i + 1][0] - knots[i][0]); return knots[i][1] + (knots[i + 1][1] - knots[i][1]) * Math.min(1, Math.max(0, t)); } return knots[knots.length - 1][1]; };
-    const hf = smoothFn(kf, 0, L, 1, 3);
+    const hf = smoothFn(kf, 0, L, 1, 6);
     const p3 = pts.map((q, i) => [q[0], q[1], hf(S[i])]);
     done.push({ p3 }); rampPts.push({ ic: ic.id, kind: r.kind, p3, bridge: sBr, S });
     rampsOut.push({ ic: ic.id, kind: r.kind, pts: p3.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
@@ -608,8 +608,10 @@ for (const ic of PLAN.interchanges) {
 }
 // footbridges
 for (const f of PLAN.footbridges) {
+  if (f.over === 'река') continue;   // FB2: both river banks have streets within 12 m, the road bridges (with sidewalks) carry the pedestrians; not drawn in C1
   const isRiver = f.over === 'река', over = f.over.startsWith('М') ? MW + 3 : isRiver ? 12 : hw('arterial') + CLS.arterial.sidewalk + 1.2;
-  const top = isRiver ? 2.4 : 5.1, g = isRiver ? 0.1 : 0.12, ramp = top / g, half = over + ramp, lat = f.id === 'FB3' || f.id === 'FB4' ? 3.6 : 0;
+  const top = isRiver ? 2.4 : 5.1, g = 0.4,   // stair-ramps (22 degrees): the ramps of a footbridge must end before the next street (40 m grid)
+   ramp = top / g, half = over + ramp, lat = f.id === 'FB3' || f.id === 'FB4' ? 3.6 : 0;
   const hfn = smoothFn((s) => Math.max(0, Math.min(top, top - g * (Math.abs(s) - over))), -half - 4, half + 4, 1, 2);
   const pts = []; for (let s = -half; s <= half + 1e-6; s += 3) pts.push(f.axis === 'x' ? [f.at[0] + s, f.at[1] + lat, hfn(s)] : [f.at[0] + lat, f.at[1] + s, hfn(s)]);
   const S = arcLen(pts);
