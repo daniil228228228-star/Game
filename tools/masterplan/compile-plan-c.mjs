@@ -232,7 +232,7 @@ const shapes = [];   // {x0,z0,x1,z1,type}
 const PRIO = { walk: 1, asph: 2, med: 3 };
 const addShape = (x0, z0, x1, z1, type) => { if (x1 - x0 > 1e-4 && z1 - z0 > 1e-4) shapes.push({ x0: R3(x0), z0: R3(z0), x1: R3(x1), z1: R3(z1), type }); };
 const roundAt = (nodeId) => { const j = J.get(nodeId); return j && j.type === 'roundabout' ? j : null; };
-const mTrim = (id) => { const n = N.get(id); return n.legs.length > 1 ? (n.x === M2_X && n.z === 0 ? 12 : 1) : 0; };   // the motorway median ends 12 m before the I2 crossing (zebra, stop line)
+const mTrim = (id) => { const n = N.get(id); return n.x === M2_X && n.z === 0 ? 12 : 0; };   // (legs is a count in the plan data: the former `legs.length` trim was always 0)   // the motorway median ends 12 m before the I2 crossing (zebra, stop line)
 const edgeSpan = (e) => {   // along-axis span of the carriageway/sidewalk, trimmed to the chord of a roundabout
   const a = N.get(e.a), b = N.get(e.b), ax = e.dir === 'x' ? 0 : 1, lo = Math.min(a.x * (1 - ax) + a.z * ax, b.x * (1 - ax) + b.z * ax), hi = Math.max(a.x * (1 - ax) + a.z * ax, b.x * (1 - ax) + b.z * ax);
   const lowNode = (a.x * (1 - ax) + a.z * ax) <= (b.x * (1 - ax) + b.z * ax) ? e.a : e.b, highNode = lowNode === e.a ? e.b : e.a;
@@ -504,15 +504,15 @@ const SPLIT = { hz: 6, band: 4.8, walk: 1.8, R: 7 }, islandsOut = [];
     const nose = xm + side * (mw + SPLIT.band + 0.1 - 0.0) - side * 0.0, farX = side < 0 ? 212 : 286;   // island end on the crossing side / the far end
     const edgeM = xm + side * mw, noseX = edgeM + side * SPLIT.band;     // x of the island nose: one band width from the M2 edge
     const xa = Math.min(noseX, farX), xb = Math.max(noseX, farX), hz = SPLIT.hz;
-    const small = 0.6, far = side < 0 ? 6 : 3;
+    const small = 0.6, far = 6;   // both far ends are round (a stadium)
     const rcs = side < 0 ? [small, far, far, small] : [far, small, small, far];   // TR, TL, BL, BR
-    const inner = rr(xa, xb, hz, rcs, 0), outerB = rr(xa, xb, hz, rcs.map((r, k) => (side < 0 ? (k === 0 || k === 3) : (k === 1 || k === 2)) ? 0.01 : r), SPLIT.band, 8);
+    const inner = rr(xa, xb, hz, rcs, 0), outerB = rr(xa, xb, hz, rcs.map((r, k) => (side < 0 ? (k === 0 || k === 3) : (k === 1 || k === 2)) ? 0.01 - SPLIT.band : r), SPLIT.band, 8);   // crossing-side corners of the band are SHARP (radius 0.01)
     // outer outline: sharp corners on the crossing side
     const outer = outerB;
     const nearM = (q) => Math.abs(q[0] - edgeM) < SPLIT.R + 0.6, tipStub = (q) => (side < 0 ? q[0] < farX + 1 : q[0] > farX - 1) && Math.abs(q[1]) < hw('arterial') + CLS.arterial.sidewalk + 0.3;
     strip(inner, outer, H.asph, CI.asph);
     // sidewalk ring outside the band (not at the street stub, not at the corners)
-    const outer2 = rr(xa, xb, hz, rcs.map((r, k) => (side < 0 ? (k === 0 || k === 3) : (k === 1 || k === 2)) ? 0.01 : r), SPLIT.band + SPLIT.walk, 8);
+    const outer2 = rr(xa, xb, hz, rcs.map((r, k) => (side < 0 ? (k === 0 || k === 3) : (k === 1 || k === 2)) ? 0.01 - SPLIT.band - SPLIT.walk : r), SPLIT.band + SPLIT.walk, 8);
     strip(outer, outer2, H.walk, CI.walk, (q) => !nearM(q) && !tipStub(q));
     wall(outer, H.asph, H.walk, CI.kerb, (q) => !nearM(q) && !tipStub(q));
     // island: kerb, rim, lawn
@@ -540,9 +540,13 @@ const SPLIT = { hz: 6, band: 4.8, walk: 1.8, R: 7 }, islandsOut = [];
         for (const lat of [-1, 1]) arrow([sx + side * 10, zc + lat * 1.2], [side, 0], 0, 0);
         furniture.sig.push([sx + side * 0.8, sz * (hz + SPLIT.band + 0.7), yawOf([side, 0])], [sx + side * 0.8, sz * (hz - 0.7), yawOf([side, 0])]);
       } else {
-        for (const lat of [-1, 1]) arrow([zx - side * 9, sz * (hz + SPLIT.band / 2) + lat * 1.2], [-side, 0], 0, 0);
+        const zc = sz * (hz + SPLIT.band / 2), xA = zx + side * 3, xB = farX - side * 6;
+        dashed('x', zc, Math.min(xA, xB), Math.max(xA, xB), 0.18, 1.0, 1.4, H.paint, CI.white);
+        for (const lat of [-1, 1]) arrow([zx + side * 9, zc + lat * 1.2], [-side, 0], 0, 0);
       }
     }
+    // a second arrow pair on every branch near the round end (direction of travel: inbound towards M2, outbound away from it)
+    for (const sz of [-1, 1]) { const zc = sz * (hz + SPLIT.band / 2), xt = farX - side * 6 + side * 0, dirT = sz === inSz ? [side, 0] : [-side, 0]; for (const lat of [-1, 1]) arrow([xt - side * 4, zc + lat * 1.2], dirT, 0, 0); }
     // furniture on the island: lamps along the axis, a few trees
     for (const t of [0.22, 0.5, 0.78]) furniture.lamp.push([R2(xa + (xb - xa) * t), 0, 0]);
     for (const [t, zz] of [[0.14, 0], [0.34, 2.4], [0.34, -2.4], [0.66, 2.4], [0.66, -2.4], [0.86, 0]]) { const px = xa + (xb - xa) * t; cellOf(Math.floor(px / CELL), Math.floor(zz / CELL)).f.tree.push(R2(px), R2(zz), R2(0.9 + 0.2 * Math.abs(Math.sin(px))), R2(Math.abs(Math.cos(px * 3))));
@@ -1009,7 +1013,7 @@ const SZ = PLAN.size;
   }
   const KIND = { forest: 'forest', industry: 'industry', verge: 'verge', park: 'park', parking: 'parking', embankment: 'embank', beach: 'beach', promenade: 'promenade', port: 'port', urban: 'urban' };
   const KORDER = ['urban', 'industry', 'verge', 'park', 'parking', 'embankment', 'port', 'beach', 'promenade', 'forest'];
-  for (const a of PLAN.areas) emitPoly('g', a.poly, -0.075 + KORDER.indexOf(a.kind) * 0.002, CI[KIND[a.kind]]);
+  for (const a of PLAN.areas) emitPoly('g', a.poly, a.kind === 'parking' ? -0.0615 : -0.075 + KORDER.indexOf(a.kind) * 0.002, CI[KIND[a.kind]]);   // a lot lies well above the park / verge polygons under it (2 mm apart z-fought into stripes)
   // parking lots are paved and have bay lines (two rows of 2.8 m bays + a 6 m aisle), painted on the lot
   for (const a of PLAN.areas) if (a.kind === 'parking') {
     const xs = a.poly.map((q) => q[0]), zs = a.poly.map((q) => q[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs), zm = (z0 + z1) / 2;

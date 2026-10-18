@@ -99,7 +99,7 @@ export function buildPlan() {
   ];
   // extra split points: diamond terminals, the P+R entrance
   const DT = 18;   // half spacing of the diamond ramp terminals (36 game m = 90 m real, the 300 ft desirable spacing)
-  const extraZ = { 0: [M1_Z - DT, M1_Z + DT] }, extraX = { 0: [207, M2_X, 291, 296] };   // I2 (Svetlanovskaya-style split street): the split starts at x 207 / 291, the main crossing is at x 250; P+R entrance at 296
+  const extraZ = { 0: [M1_Z - DT, M1_Z + DT] }, extraX = { 0: [208, M2_X, 290, 296] };   // I2 (Svetlanovskaya-style split street): the split starts at x 207 / 291, the main crossing is at x 250; P+R entrance at 296
 
   // ------------------------------------------------------------------ graph
   const nodes = new Map(), edges = [], key = (x, z) => `${R(x)},${R(z)}`;
@@ -124,7 +124,7 @@ export function buildPlan() {
     for (let i = 0; i + 1 < xs.length; i++) {
       const x0 = xs[i], x1 = xs[i + 1], ex = { dir: 'x' };
       if (riverOver(x0, x1) && l.z > -175) ex.bridge = 'river';
-      if (l.z === 0 && x0 >= 207 - 1e-6 && x1 <= 291 + 1e-6) ex.split = true;   // I2: the street here is two one-way carriageways round an island (drawn by compile-plan-c.mjs), the graph edge is only its axis
+      if (l.z === 0 && x0 >= 208 - 1e-6 && x1 <= 290 + 1e-6) ex.split = true;   // I2: the street here is two one-way carriageways round an island (drawn by compile-plan-c.mjs), the graph edge is only its axis
       if (x0 < M2_X && x1 > M2_X && l.z === 160) ex.underRamps = 'I4';
       addEdge(node(x0, l.z), node(x1, l.z), l.cls, l.name, ex);
     }

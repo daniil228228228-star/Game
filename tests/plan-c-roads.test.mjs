@@ -64,6 +64,26 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
     }
     check(D.graph.islands.length === 2 && bad.length === 0, `data: I2 split street: 2 islands, asphalt band all round, islands free of asphalt (${J(bad.slice(0, 4))})`);
   }
+  // 1c. I2: a continuous way through the crossing for EACH direction separately. Flood fill over the drawn asphalt (0.5 m cells); eastbound may not use the
+  //     northern (westbound) branches of the islands, westbound not the southern ones, so a one-way branch used against its sign is not a route.
+  {
+    const walk = (x0, z0, x1, z1, forbid) => {
+      const key = (i, j) => i + ',' + j, S = 0.5, seen = new Set(), q = [[Math.round(x0 / S), Math.round(z0 / S)]]; seen.add(key(...q[0]));
+      const ok = (x, z) => asphaltAt(x, z) && !forbid.some((f) => x >= f[0] && x <= f[2] && z >= f[1] && z <= f[3]);
+      if (!ok(x0, z0)) return false;
+      const gi = Math.round(x1 / S), gj = Math.round(z1 / S);
+      while (q.length) {
+        const [i, j] = q.pop(); if (Math.abs(i - gi) <= 1 && Math.abs(j - gj) <= 1) return true;
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = i + di, b = j + dj, k = key(a, b); if (seen.has(k) || a * S < 185 || a * S > 312 || Math.abs(b * S) > 40) continue; if (ok(a * S, b * S)) { seen.add(k); q.push([a, b]); } }
+      }
+      return false;
+    };
+    const north = [[200, -10.9, 262, -5.9], [262, -10.9, 292, -5.9]], south = [[200, 5.9, 262, 10.9], [262, 5.9, 292, 10.9]];
+    // right-hand traffic: eastbound uses the southern lane of the stub streets, westbound the northern one
+    const eb = walk(196, 2.3, 298, 2.3, [[208, -10.9, 239, -5.9], [261.2, -10.9, 290, -5.9]]), wb = walk(298, -2.3, 196, -2.3, [[208, 5.9, 239, 10.9], [261.2, 5.9, 290, 10.9]]);
+    void north; void south;
+    check(eb && wb, `data: I2 has a continuous asphalt way across the crossing eastbound (${eb}) and westbound (${wb}), each avoiding the opposite one-way branches`);
+  }
   // 2. no overlapping asphalt rectangles (the union is decomposed)
   let overlaps = 0;
   for (const list of byCell.values()) { list.sort((p, q) => p.x0 - q.x0); for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length && list[j].x0 < list[i].x1 - 1e-3; j++) { const ox = Math.min(list[i].x1, list[j].x1) - Math.max(list[i].x0, list[j].x0), oz = Math.min(list[i].z1, list[j].z1) - Math.max(list[i].z0, list[j].z0); if (ox > 0.01 && oz > 0.01) overlaps++; } }
