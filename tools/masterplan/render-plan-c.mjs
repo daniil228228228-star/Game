@@ -120,30 +120,47 @@ function landuse() {
     s += rect(x, z, w, h, `fill="${rnd() < 0.5 ? 'url(#field)' : 'url(#field2)'}" stroke="#c9d6a8" stroke-width="0.8"`);
   }
   for (const [cx, cz, r] of [[-120, -320, 26], [-40, -300, 18], [140, -330, 22], [70, -276, 14], [-250, -300, 20]]) s += `<ellipse cx="${cx}" cy="${cz}" rx="${r * 1.4}" ry="${r}" fill="url(#forest)"/>`;
-  // interchange infields
-  for (const ic of P.interchanges) {
-    if (ic.kind === 'trumpet') { const lp = ic.ramps[0]; s += `<ellipse cx="${f(ic.at[0] - 21)}" cy="${f(ic.at[1] + 22)}" rx="31" ry="27" fill="${COL.verge}"/>`; }
+  // interchange infields and motorway verges (grass under every ramp, not farmland / factories)
+  for (const ic of P.interchanges) if (ic.kind === 'trumpet') s += `<ellipse cx="${f(ic.at[0] - 21)}" cy="${f(ic.at[1] + 22)}" rx="31" ry="27" fill="${COL.verge}"/>`;
+  for (const e of P.edges.filter((x) => x.cls === 'motorway')) s += pl(edgePts(e), `stroke="${COL.verge}" stroke-width="24" stroke-linecap="butt"`);
+  for (const r of ramps) s += pl(r.pts, `stroke="${COL.verge}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"`);
+  // riverside park: trees on both banks, a path on the east bank
+  const rnd2 = mulberry(9), rv = P.water.river, rx = (z) => { let best = rv.pts[0]; for (const p of rv.pts) if (Math.abs(p[1] - z) < Math.abs(best[1] - z)) best = p; return best[0]; };
+  s += pl(rv.pts.filter((p) => p[1] > -168 && p[1] < 196).map((p) => [p[0] + 15.5, p[1]]), 'stroke="#f3eee2" stroke-width="1.2" stroke-linejoin="round"');
+  for (let i = 0; i < 300; i++) {
+    const z = -166 + rnd2() * 362, side = rnd2() < 0.5 ? -1 : 1, x = rx(z) + side * (11.6 + rnd2() * 9);
+    if ([-160, -120, -80, 0, 80, 160].some((zz) => Math.abs(z - zz) < 7) || x < -229.5 || x > -197.5 || Math.abs(x - rx(z) - 15.5) < 1.4) continue;
+    s += tree(x, z, 1.0 + rnd2() * 0.7, rnd2() < 0.5 ? COL.tree : COL.treeDark);
   }
+  // waterfront boulevard along the sea: lawn, curved path, a row of trees (the marina keeps its quay open)
+  const cst = P.water.sea.coast.filter((p) => p[0] >= -196 && p[0] <= 40);
+  s += pl(cst.map((p) => [p[0], p[1] - 6]), `stroke="${COL.park}" stroke-width="7" stroke-linejoin="round"`) + pl(cst.map((p) => [p[0], p[1] - 6]), 'stroke="#f3eee2" stroke-width="1.2"');
+  for (let x = -190; x <= 36; x += 6) { if (x > -116 && x < -4) continue; const p = cst.reduce((b, q) => Math.abs(q[0] - x) < Math.abs(b[0] - x) ? q : b, cst[0]); s += tree(x, p[1] - 8.6, 1.1, COL.treeDark); }
   return s;
 }
 
 function water() {
   let s = '';
-  const W = P.water, coast = W.sea.coast, sea = [...coast, [420, 420], [-420, 420]];
-  // river first (its mouth runs under the sea polygon)
-  s += pl(W.river.pts, `stroke="${COL.waterEdge}" stroke-width="${W.river.w + 1.6}" stroke-linejoin="round" stroke-linecap="butt"`);
-  s += pl(W.river.pts, `stroke="${COL.water}" stroke-width="${W.river.w}" stroke-linejoin="round" stroke-linecap="butt"`);
+  const W = P.water, sea = [...W.sea.coast, [420, 420], [-420, 420]], rv = W.river;
+  s += pl(rv.pts, `stroke="${COL.waterEdge}" stroke-width="${rv.w + 1.4}" stroke-linejoin="round"`) + poly(rv.mouth, `fill="${COL.water}"`);
+  s += pl(rv.pts, `stroke="${COL.water}" stroke-width="${rv.w}" stroke-linejoin="round"`);
   s += poly(sea, `fill="${COL.water}"`);
-  s += pl(coast.slice(0, 5), `stroke="${COL.waterEdge}" stroke-width="0.8"`);
-  // embanked river in town: quay walls
-  for (const o of [-1, 1]) s += line([W.river.x + o * W.river.w / 2, W.river.embankment[0]], [W.river.x + o * W.river.w / 2, 201], `stroke="${COL.quay}" stroke-width="0.7"`);
-  // port basins (water cut into the port land) and the quay edge
-  for (const b of W.basins) s += rect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0 + 4, `fill="${COL.water}"`) + pl([[b.x0, b.z1 + 4], [b.x0, b.z0], [b.x1, b.z0], [b.x1, b.z1 + 4]], `stroke="${COL.quay}" stroke-width="0.9"`);
-  s += pl([[40, 201], [40, 237], [58, 237]], `stroke="${COL.quay}" stroke-width="0.9"`) + pl([[92, 237], [116, 237]], `stroke="${COL.quay}" stroke-width="0.9"`) + pl([[150, 237], [300, 237]], `stroke="${COL.quay}" stroke-width="0.9"`);
-  // marina: two moles + pontoons
+  // shoreline: soft edge + surf lines on the beach / promenade, quay walls along the port
+  const cst = W.sea.coast, portStart = cst.findIndex((p) => p[0] >= 40);
+  s += pl(cst.slice(0, portStart + 1), `stroke="${COL.waterEdge}" stroke-width="0.9"`) + pl(cst.slice(portStart), `stroke="${COL.quay}" stroke-width="1.1"`);
+  for (let i = 0; i < 3; i++) s += pl(cst.slice(0, portStart).filter((p) => p[0] < -116 || p[0] > -4).map((p) => [p[0], p[1] + 3 + i * 3.2]), `stroke="#ffffff" stroke-width="0.35" opacity="${0.4 - i * 0.1}" stroke-dasharray="${6 + i * 3} ${4 + i * 2}"`);
+  // marina: two curved breakwaters with a light at each head, pontoons with berths
   const M = W.marina;
-  for (const m of M.moles) s += pl(m, `stroke="#d9d3c4" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"`) + pl(m, `stroke="${COL.quay}" stroke-width="0.25" stroke-linecap="round"`);
-  for (let i = 0; i < 7; i++) { const x = M.x0 + 8 + i * 10; s += rect(x - 0.35, 202, 0.7, 16, `fill="#fbfaf7" stroke="#b5ad9c" stroke-width="0.1"`); for (let k = 0; k < 5; k++) s += rect(x + 0.4, 204 + k * 3, 2.6, 1.0, `fill="#ffffff" stroke="#9aa7b4" stroke-width="0.08"`); }
+  for (const m of M.moles) { s += pl(m, `stroke="#bfb7a3" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"`) + pl(m, `stroke="#e8e2d3" stroke-width="2.2" stroke-linecap="round"`); const e = m[m.length - 1]; s += circ(e[0], e[1], 1.4, `fill="#d6332a" stroke="#fff" stroke-width="0.4"`); }
+  for (let i = 0; i < 6; i++) { const x = M.x0 + 20 + i * 12.5; s += rect(x - 0.4, 209, 0.8, 17, `fill="#fbfaf7" stroke="#b5ad9c" stroke-width="0.1"`); for (let k = 0; k < 5; k++) for (const sd of [-1, 1]) s += rect(sd < 0 ? x - 3.6 : x + 0.6, 211 + k * 3, 3.0, 1.1, `fill="#ffffff" stroke="#8fa3b5" stroke-width="0.08"`); }
+  // ships alongside the piers
+  for (const sh of W.ships) {
+    const [x, z] = sh.at, L = sh.len, w = sh.w;
+    s += poly([[x - w / 2, z - L / 2 + w * 0.6], [x, z - L / 2], [x + w / 2, z - L / 2 + w * 0.6], [x + w / 2, z + L / 2], [x - w / 2, z + L / 2]], `fill="${sh.kind === 'яхта' ? '#ffffff' : '#6b7480'}" stroke="#3f454d" stroke-width="0.3"`);
+    if (sh.kind === 'контейнеровоз') for (let k = 0; k < Math.floor(L / 4) - 2; k++) s += rect(x - w / 2 + 1, z - L / 2 + w * 0.8 + k * 4, w - 2, 3.2, `fill="${['#c97b5b', '#6a8fb0', '#c9a24d', '#9aa864'][k % 4]}"`);
+    else if (sh.kind === 'балкер') for (let k = 0; k < 4; k++) s += rect(x - w / 2 + 1.2, z - L / 2 + w + k * 5.5, w - 2.4, 4, `fill="#4f5762"`);
+    s += rect(x - w / 2 + 0.8, z + L / 2 - 4.5, w - 1.6, 3.4, `fill="#f1efe9"`);
+  }
   return s;
 }
 
@@ -270,7 +287,7 @@ function blockContent(b, detail) {
     for (let i = 0; i < 7; i++) s += pl([[x0 + 5 + i * 4, z0 + 9], [x0 + 7 + i * 4, z0 + 12], [x0 + 9 + i * 4, z0 + 9]], 'stroke="#8b939b" stroke-width="0.25"');
     return s;
   }
-  if (zone === 'railyard') { s += bld([x0 + 3, z0 + 2, x0 + 30, z0 + 9], COL.logB, COL.logS, 0.25); return s; }
+  if (zone === 'railyard') return s;
   if (zone === 'logistics') {
     const n = Math.max(1, Math.round(w / 34));
     for (let i = 0; i < n; i++) { const a = x0 + 2 + i * w / n, c = a + w / n - 4; s += bld([a, z0 + 3, c, z0 + h * 0.6], COL.logB, COL.logS, 0.25); for (let k = a + 2; k < c - 1; k += 3) s += rect(k, z0 + h * 0.6, 1.8, 1.2, `fill="#bfb7a8"`); }
@@ -292,27 +309,43 @@ function blockContent(b, detail) {
 
 function port() {
   let s = '';
-  const rnd = mulberry(71), cols = ['#c97b5b', '#6a8fb0', '#9aa864', '#c9a24d', '#8c7aa8'];
-  const stack = (x0, z0, x1, z1) => { for (let z = z0; z + 2.4 <= z1; z += 3.2) for (let x = x0; x + 6 <= x1; x += 7) s += rect(x, z, 6, 2.4, `fill="${cols[Math.floor(rnd() * cols.length)]}" opacity="0.8"`); };
-  stack(166, 218, 296, 233); stack(258, 166, 296, 208); stack(96, 200, 112, 233); stack(166, 166, 200, 192);
-  s += bld([44, 166, 76, 192], COL.logB, COL.logS, 0.3) + bld([84, 166, 156, 192], COL.logB, COL.logS, 0.3);
-  for (let i = 0; i < 3; i++) s += circ(48 + i * 0, 204 + i * 10, 3.4, `fill="#e7e3d7" stroke="#9c968a" stroke-width="0.3"`);
-  for (const x of [178, 210, 242, 274]) s += line([x, 239], [x, 226], 'stroke="#d64b2a" stroke-width="1.1"') + line([x - 4, 228], [x + 4, 228], 'stroke="#d64b2a" stroke-width="0.8"');
-  for (const z of [208, 222]) s += line([92, z], [99, z], 'stroke="#d64b2a" stroke-width="0.9"') + line([150, z], [143, z], 'stroke="#d64b2a" stroke-width="0.9"');
+  const rnd = mulberry(71), cols = ['#c97b5b', '#6a8fb0', '#9aa864', '#c9a24d', '#8c7aa8', '#5f8f8b'];
+  const stack = (x0, z0, x1, z1, vert) => {
+    if (vert) { for (let x = x0; x + 2.4 <= x1; x += 3.1) for (let z = z0; z + 6 <= z1; z += 6.8) s += rect(x, z, 2.4, 6, `fill="${cols[Math.floor(rnd() * cols.length)]}" opacity="0.85"`); }
+    else for (let z = z0; z + 2.4 <= z1; z += 3.1) for (let x = x0; x + 6 <= x1; x += 6.8) s += rect(x, z, 6, 2.4, `fill="${cols[Math.floor(rnd() * cols.length)]}" opacity="0.85"`);
+  };
+  for (const p of P.water.piers) {
+    stack(p.x0 + 6, p.z0 + 3, Math.min(p.x1, 296) - 6, p.z1 - 3, true);
+    for (const x of [p.x0 + 1.8, p.x1 - 1.8]) {   // crane rails along the quay + ship-to-shore gantry cranes with their booms over the water
+      if (x > 298) continue;
+      const out = x < p.x0 + 5 ? -1 : 1;
+      s += line([x, p.z0 + 1], [x, p.z1 - 1], 'stroke="#7d848c" stroke-width="0.3"');
+      for (let z = p.z0 + 6; z < p.z1 - 3; z += 12) s += line([x - out * 2, z], [x + out * 9, z], 'stroke="#e05a2a" stroke-width="0.8"') + rect(x - 2.2, z - 1.3, 4.4, 2.6, `fill="#e05a2a" stroke="#8a2f12" stroke-width="0.2"`);
+    }
+  }
+  stack(258, 168, 296, 208); stack(204, 216, 296, 220);
+  s += bld([44, 168, 76, 192], COL.logB, COL.logS, 0.3) + line([44, 180], [76, 180], `stroke="${COL.logS}" stroke-width="0.2"`) + bld([86, 168, 152, 190], COL.logB, COL.logS, 0.3) + line([86, 179], [152, 179], `stroke="${COL.logS}" stroke-width="0.2"`);
+  for (let i = 0; i < 3; i++) s += circ(50 + i * 10, 209, 3.6, `fill="#ece8dc" stroke="#9c968a" stroke-width="0.3"`) + circ(50 + i * 10, 209, 1.2, `fill="none" stroke="#bdb6a6" stroke-width="0.2"`);
+  s += bld([166, 168, 198, 190], '#d9d5ce', '#9a948a', 0.3) + bld([86, 200, 152, 212], COL.logB, COL.logS, 0.3);
   return s;
 }
 
-function plaza() {   // the circus around the central roundabout: paved ring + the curved facade line
-  return circ(0, 0, 25, `fill="url(#pave)" stroke="${COL.cbdS}" stroke-width="0.35"`) + circ(0, 0, 25, `fill="none" stroke="#d6cdbb" stroke-width="2.4" opacity="0.6"`);
+function plaza() {   // the circus: paved ring, a landscaped tree ring, two towers on the free corners (city hall and cathedral hold the other two)
+  let s = circ(0, 0, 25, `fill="url(#pave)" stroke="${COL.cbdS}" stroke-width="0.35"`);
+  s += circ(0, 0, 19.2, `fill="${COL.park}" stroke="#b9cf9f" stroke-width="0.3"`) + circ(0, 0, 16.2, 'fill="url(#pave)"');
+  for (let k = 0; k < 16; k++) { const a = (k + 0.5) * Math.PI / 8; s += tree(Math.cos(a) * 17.7, Math.sin(a) * 17.7, 0.95, COL.treeDark); }
+  for (const [x, z] of [[27, -27], [-27, 27]]) s += bld([x - 5, z - 5, x + 5, z + 5], '#9f9585', '#6f6658', 0.3) + bld([x - 2.6, z - 2.6, x + 2.6, z + 2.6], '#887d6d', '#6f6658', 0.2);
+  return s;
 }
 
 // rail ------------------------------------------------------------------------------------------------
 const RZ = P.rail.pts[0][1];
+const riverX = (z) => P.water.river.pts.reduce((b, p) => Math.abs(p[1] - z) < Math.abs(b[1] - z) ? p : b)[0];
 const underX = P.grade.filter((g) => g.kind === 'underpass').map((g) => [g.at[0], halfW(g.cls) + CLS[g.cls].sidewalk + 0.4]);
 function railEmbankment() {
   let s = '';
   const xs = [[-330, 330]];
-  const gaps = [...underX, [P.water.river.x, P.water.river.w / 2 + 0.5]].sort((a, b) => a[0] - b[0]);
+  const gaps = [...underX, [riverX(RZ), P.water.river.w / 2 + 0.5]].sort((a, b) => a[0] - b[0]);
   let cur = -330;
   const st = P.rail.stations[0];
   for (const [x, hw] of gaps) { s += rect(cur, RZ - 6, x - hw - cur, 12, `fill="${COL.ballast}"`); cur = x + hw; }
@@ -329,18 +362,19 @@ function railTracks(detail) {
   const trackSet = (z) => s += pl([[-330, z], [330, z]], `stroke="${COL.rail}" stroke-width="0.55"`) + pl([[-330, z], [330, z]], `stroke="#ffffff" stroke-width="0.32" stroke-dasharray="1.2 1.2"`);
   trackSet(RZ - 1.6); trackSet(RZ + 1.6);
   // station tracks + platforms
-  for (const z of [RZ - 6.4, RZ + 6.4]) s += pl([[st.x0 - 14, z > RZ ? RZ + 1.6 : RZ - 1.6], [st.x0, z], [st.x1, z], [st.x1 + 14, z > RZ ? RZ + 1.6 : RZ - 1.6]], `stroke="${COL.rail}" stroke-width="0.5"`);
+  for (const z of [RZ - 6.4, RZ + 6.4]) s += pl([[st.x0 - 11, z > RZ ? RZ + 1.6 : RZ - 1.6], [st.x0, z], [st.x1, z], [st.x1 + 11, z > RZ ? RZ + 1.6 : RZ - 1.6]], `stroke="${COL.rail}" stroke-width="0.5"`);
   for (const z of [RZ - 4, RZ + 4]) s += rect(st.x0, z - 1.2, st.x1 - st.x0, 2.4, `fill="#f1ece0" stroke="#9b9384" stroke-width="0.2"`);
   s += rect(st.x0, RZ + 8, st.x1 - st.x0, 1.6, `fill="#f1ece0" stroke="#9b9384" stroke-width="0.2"`);
   // yard fan
   const y = P.rail.yard;
-  for (let k = 0; k < 5; k++) { const z = y.z1 - 2 - k * 3; s += pl([[y.x1 + 18, RZ - 1.6], [y.x1, z], [y.x0 + 6, z]], `stroke="${COL.rail}" stroke-width="0.4"`); }
+  for (let k = 0; k < 5; k++) { const z = y.z1 - 2 - k * 3; s += pl([[y.joinX, RZ - 1.6], [y.x0 + 4 + k * 2, z], [y.x1 - 2, z]], `stroke="${COL.rail}" stroke-width="0.4"`); }
+  s += bld([y.x1 - 22, y.z0 + 1, y.x1 - 1, y.z0 + 9], COL.logB, COL.logS, 0.25);
   // industrial spur + level crossing
   s += pl(P.rail.spur.pts, `stroke="${COL.ballast}" stroke-width="3.2"`) + pl(P.rail.spur.pts, `stroke="${COL.rail}" stroke-width="0.5"`) + pl(P.rail.spur.pts, 'stroke="#fff" stroke-width="0.3" stroke-dasharray="1.2 1.2"');
   for (const [x, z] of P.rail.spur.levelCrossings) s += rect(x - 2, z - 4.2, 4, 8.4, `fill="none" stroke="${COL.sig}" stroke-width="0.35" stroke-dasharray="0.8 0.6"`);
   // bridges over underpasses: deck edges
   for (const [x, hw] of underX) for (const o of [-3.2, 3.2]) s += line([x - hw - 0.6, RZ + o], [x + hw + 0.6, RZ + o], `stroke="${COL.deckEdge}" stroke-width="0.4"`);
-  const rv = P.water.river; for (const o of [-3.2, 3.2]) s += line([rv.x - rv.w / 2 - 1.5, RZ + o], [rv.x + rv.w / 2 + 1.5, RZ + o], `stroke="${COL.deckEdge}" stroke-width="0.5"`);
+  const rv = P.water.river, rxx = riverX(RZ); for (const o of [-3.2, 3.2]) s += line([rxx - rv.w / 2 - 1.5, RZ + o], [rxx + rv.w / 2 + 1.5, RZ + o], `stroke="${COL.deckEdge}" stroke-width="0.5"`);
   return s;
 }
 
@@ -439,11 +473,11 @@ function bridgesAndDecks(detail) {
   for (const r of ramps) for (const [a, b] of r.bridges || []) { deck([a, b], CLS.ramp.w, COL.ramp); if (detail) s += arrowsAlong([a, b], 6, '#9b6229'); }
   // road bridges over the river: parapets + piers
   for (const g of P.grade.filter((x) => x.kind === 'road-bridge')) {
-    const w = CLS[g.cls].w, rv = P.water.river, x0 = rv.x - rv.w / 2 - 2.5, x1 = rv.x + rv.w / 2 + 2.5, z = g.at[1];
+    const w = CLS[g.cls].w, rv = P.water.river, z = g.at[1], x0 = riverX(z) - rv.w / 2 - 2.5, x1 = riverX(z) + rv.w / 2 + 2.5;
     for (const o of [-(w / 2 + 0.5), w / 2 + 0.5]) s += line([x0, z + o], [x1, z + o], `stroke="${COL.deckEdge}" stroke-width="0.55"`);
   }
   // M1 over the river
-  { const rv = P.water.river, x = -221.5; for (const o of [-(MW + 0.5), MW + 0.5]) s += line([x - 14, -240 + o], [x + 14, -240 + o], `stroke="${COL.deckEdge}" stroke-width="0.6"`); }
+  { const x = riverX(-240); for (const o of [-(MW + 0.5), MW + 0.5]) s += line([x - 14, -240 + o], [x + 14, -240 + o], `stroke="${COL.deckEdge}" stroke-width="0.6"`); }
   return s;
 }
 
