@@ -621,8 +621,12 @@ for (const f of PLAN.footbridges) {
   const isRiver = f.over === 'река', over = f.over.startsWith('М') ? MW + 3 : isRiver ? 12 : hw('arterial') + CLS.arterial.sidewalk + 1.2;
   const top = isRiver ? 2.4 : 5.1, g = 0.4,   // stair-ramps (22 degrees): the ramps of a footbridge must end before the next street (40 m grid)
    ramp = top / g, half = over + ramp, lat = f.id === 'FB3' || f.id === 'FB4' ? 3.6 : 0;
-  const hfn = smoothFn((s) => Math.max(0, Math.min(top, top - g * (Math.abs(s) - over))), -half - 4, half + 4, 1, 2);
-  const pts = []; const ss = []; for (let s = -half; s < half - 0.3; s += 3) ss.push(s); ss.push(half); for (const s of ss) pts.push(f.axis === 'x' ? [f.at[0] + s, f.at[1] + lat, hfn(s)] : [f.at[0] + lat, f.at[1] + s, hfn(s)]);
+  // Two radius-2 smoothing passes spread the toe of the slope by 4 m. Keep that
+  // entire tail in BOTH the drawn deck and the walkable ribbon: cutting at `half`
+  // left a 0.32-0.34 m step at either entrance even after the endpoint fix in C1c.
+  const toe = half + 4;
+  const hfn = smoothFn((s) => Math.max(0, Math.min(top, top - g * (Math.abs(s) - over))), -toe, toe, 1, 2);
+  const pts = []; const ss = []; for (let s = -toe; s < toe - 0.3; s += 3) ss.push(s); ss.push(toe); for (const s of ss) pts.push(f.axis === 'x' ? [f.at[0] + s, f.at[1] + lat, hfn(s)] : [f.at[0] + lat, f.at[1] + s, hfn(s)]);
   const S = arcLen(pts);
   deckRibbon(pts, 2.4, 0, CI.conc);
   for (const sg of [-1, 1]) { const off = sg * 1.25; wallAlong(pts, off, (h) => h + 0.02, (h) => h + 1.1, CI.conc); capAlong(pts, off, 0.15, 1.1, CI.conc); wallAlong(pts, off, (h) => Math.max(0, h - 0.55), (h) => h, CI.concD); addParapets(pts.filter((q) => q[2] > 0.8), off); }
