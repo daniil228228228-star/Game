@@ -232,6 +232,8 @@ const shapes = [];   // {x0,z0,x1,z1,type}
 const PRIO = { walk: 1, asph: 2, med: 3 };
 const addShape = (x0, z0, x1, z1, type) => { if (x1 - x0 > 1e-4 && z1 - z0 > 1e-4) shapes.push({ x0: R3(x0), z0: R3(z0), x1: R3(x1), z1: R3(z1), type }); };
 const roundAt = (nodeId) => { const j = J.get(nodeId); return j && j.type === 'roundabout' ? j : null; };
+const pendingTapers = [];   // asphalt triangles of the M2 lane tapers near I2, emitted after the raster
+const I2W = { half: CLS.motorway3.w / 2, flat: 36, taper: 31 };   // M2 near I2: half width 8.4, flat for |z| <= 36, tapers back to 6.3 at |z| = 67
 const mTrim = (id) => { const n = N.get(id); return n.x === M2_X && n.z === 0 ? 18.5 : 0; };   // (legs is a count in the plan data: the former `legs.length` trim was always 0)   // the motorway median ends 18.5 m before the I2 crossing (just past the corner fillets; the zebra at 20.3 m stands on it) (zebra, stop line)
 const edgeSpan = (e) => {   // along-axis span of the carriageway/sidewalk, trimmed to the chord of a roundabout
   const a = N.get(e.a), b = N.get(e.b), ax = e.dir === 'x' ? 0 : 1, lo = Math.min(a.x * (1 - ax) + a.z * ax, b.x * (1 - ax) + b.z * ax), hi = Math.max(a.x * (1 - ax) + a.z * ax, b.x * (1 - ax) + b.z * ax);
@@ -253,6 +255,8 @@ for (const e of PLAN.edges) {
     const mlo = e.cls === 'motorway' ? lo0 + mTrim(s.lowNode) : lo0 + t0, mhi = e.cls === 'motorway' ? hi0 - mTrim(s.highNode) : hi0 - t1;
     if (mhi - mlo > 1) for (const [lo, hi] of subtractIntervals(mlo, mhi, cuts)) put(lo, hi, -mh, mh, e.cls === 'motorway' ? 'medM' : 'med');
   }
+  if (e.ref === 'M2' && !I2W.tapers) { I2W.tapers = true; for (const sg of [-1, 1]) for (const zs of [-1, 1]) { const x0 = c + sg * half, x1 = c + sg * I2W.half, za = zs * I2W.flat, zb = zs * (I2W.flat + I2W.taper); pendingTapers.push([[x0, za], [x1, za], [x0, zb]]); } }
+  if (e.ref === 'M2') for (const sg of [-1, 1]) addShape(sg < 0 ? c - I2W.half : c + half, -I2W.flat, sg < 0 ? c - half : c + I2W.half, I2W.flat, 'asph');   // third lane of M2 round I2 (flat part)
 }
 
 // ---- 2. raster decomposition per cell -> disjoint rectangles + kerb walls
@@ -402,8 +406,21 @@ for (const e of PLAN.edges) {
   for (const [pl, ph] of parts) {
     if (mo) {
       const mh = CLS.motorway.median / 2, mdv = mh + CLS.motorway.lane, edge = MW - CLS.motorway.shoulder;
-      for (const o of [-edge, edge, -(mh + 0.3), mh + 0.3]) solid(ax, c + o, pl, ph, 0.18, H.paint, CI.white);
+      for (const o of [-(mh + 0.3), mh + 0.3]) solid(ax, c + o, pl, ph, 0.18, H.paint, CI.white);
       for (const o of [-mdv, mdv]) dashed(ax, c + o, pl, ph, 0.18, 1.6, 1.8, H.paint, CI.white);
+      if (e.ref === 'M2') {
+        // I2: outside |z| 67 the usual solid edge line at +-5.3; between 36 and 67 the third lane fades in (dashed divider at 5.3, a slanting edge line); |z| <= 36: three lanes, edge line at 7.4
+        const zA = I2W.flat, zB = I2W.flat + I2W.taper, cut = (a, b, lo2, hi2) => [Math.max(a, lo2), Math.min(b, hi2)];
+        for (const [a0, b0, kind] of [[-1e4, -zB, 'out'], [-zB, -zA, 'taper'], [-zA, zA, 'flat'], [zA, zB, 'taper'], [zB, 1e4, 'out']]) {
+          const [a, b] = cut(pl, ph, a0, b0); if (b - a < 0.2) continue;
+          for (const o of [-edge, edge]) {
+            if (kind === 'out') solid(ax, c + o, a, b, 0.18, H.paint, CI.white);
+            else dashed(ax, c + o, a, b, 0.18, 1.6, 1.8, H.paint, CI.white);
+          }
+          if (kind === 'flat') for (const o of [-(I2W.half - 1.0), I2W.half - 1.0]) solid(ax, c + o, a, b, 0.18, H.paint, CI.white);
+        }
+        for (const sg of [-1, 1]) for (const zs of [-1, 1]) { const pa = [c + sg * (I2W.half - 1.0), zs * zA], pb = [c + sg * edge, zs * zB]; if (Math.min(zs * zA, zs * zB) >= pl - 1e-6 && Math.max(zs * zA, zs * zB) <= ph + 1e-6) ribbon('p', [pa, pb], 0.18, H.paint, CI.white); }
+      } else for (const o of [-edge, edge]) solid(ax, c + o, pl, ph, 0.18, H.paint, CI.white);
     } else if (e.cls === 'arterial') {
       for (const o of [-(CLS.arterial.median / 2 + CLS.arterial.lane), CLS.arterial.median / 2 + CLS.arterial.lane]) dashed(ax, c + o, pl, ph, 0.18, 1.0, 1.4, H.paint, CI.white);
     } else if (e.cls === 'collector') dashed(ax, c, pl, ph, 0.18, 1.0, 1.2, H.paint, CI.white);
@@ -473,11 +490,11 @@ for (const j of PLAN.junctions) {
     for (const a of j.arms) {
       const w = hw(a.cls), along = (a.dir[0] !== 0 ? hx : hz) + 2.2;
       if (!PLAN.crossings.some((cr) => cr.id.startsWith(j.id + '-') && cr.arm && cr.arm[0] === a.dir[0] && cr.arm[1] === a.dir[1])) zebra(c, a.dir, along, a.cls, 1.4);
-      if (a.cls === 'arterial' || a.cls === 'collector' || a.cls === 'motorway') stopLine(c, a.dir, along + 1.7, a.cls);
-      if (a.cls === 'arterial' || a.cls === 'motorway') for (let k = 0; k < 2; k++) arrow(c, a.dir, along + 6.5, CLS[a.cls].median / 2 + CLS[a.cls].lane * (k + 0.5));
+      if (a.cls === 'arterial' || a.cls === 'collector' || a.cls.startsWith('motorway')) stopLine(c, a.dir, along + 1.7, a.cls);
+      if (a.cls === 'arterial' || a.cls.startsWith('motorway')) for (let k = 0; k < (a.cls === 'motorway3' ? 3 : 2); k++) arrow(c, a.dir, along + 6.5, CLS[a.cls].median / 2 + CLS[a.cls].lane * (k + 0.5));
       const r = [a.dir[1], -a.dir[0]];
       furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) + r[0] * (w + 0.55), c[1] + a.dir[1] * (along + 1.2) + r[1] * (w + 0.55), yawOf(a.dir)]);
-      if (a.cls === 'motorway') furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) - r[0] * (CLS[a.cls].median / 2 - 0.3), c[1] + a.dir[1] * (along + 1.2) - r[1] * (CLS[a.cls].median / 2 - 0.3), yawOf(a.dir)]);   // second head on the median: two per approach
+      if (a.cls.startsWith('motorway')) furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) - r[0] * (CLS[a.cls].median / 2 - 0.3), c[1] + a.dir[1] * (along + 1.2) - r[1] * (CLS[a.cls].median / 2 - 0.3), yawOf(a.dir)]);   // second head on the median: two per approach
     }
   } else if (j.type === 'roundabout') {
     for (const a of j.arms) {
@@ -491,8 +508,9 @@ for (const j of PLAN.junctions) {
 // West island: oval (round tip away from the crossing), east island: rounded rectangle; carriageway band 4.8 m = 2 lanes of 2.4, island half width 6, sidewalks outside,
 // the band ends square at the M2 edge with 7 m kerb returns (right-turn corners), zebra + signal heads on every branch, stop line + arrows + lane dashes on the inbound one.
 const SPLIT = { hz: 6, band: 4.8, walk: 1.8, R: 7 }, islandsOut = [], splitZones = [];   // splitZones: outline of band + sidewalk of each island (nothing random may stand there)
+for (const t of pendingTapers) { emitTri('r', t[0], t[1], t[2], H.asph, CI.asph); splitZones.push(t); }   // M2 lane tapers: asphalt triangles, nothing may stand on them
 {
-  const xm = M2_X, mw = MW;
+  const xm = M2_X, mw = CLS.motorway3.w / 2;   // the junction is 3+3 lanes wide
   const rr = (xa, xb, hz, rcs, d, n = 8) => {   // rounded-rectangle outline, CCW from the right-bottom side; corner order TR, TL, BL, BR; offset d
     const cs = [[xb, hz, 0], [xa, hz, 90], [xa, -hz, 180], [xb, -hz, 270]], out = [];
     cs.forEach(([cx, cz, a0], k) => { const r = rcs[k], ccx = cx + (cx === xb ? -r : r), ccz = cz + (cz === hz ? -r : r); for (let i = 0; i <= n; i++) { const t = (a0 + 90 * i / n) * Math.PI / 180; out.push([ccx + Math.cos(t) * (r + d), ccz + Math.sin(t) * (r + d)]); } });

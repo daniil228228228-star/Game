@@ -16,6 +16,7 @@ const P2 = (p) => [R(p[0]), R(p[1])];
 export const CLS = {
   // widths from the REAL game vehicles (car 1.4 x 2.14, truck 1.15 x 2.11), not from the 0.4 scale: lane >= 1.9 (car + 0.25 clearance each side)
   motorway: { w: 12.6, lanes: 2, median: 2.2, speed: 90, sidewalk: 0, lane: 2.1, shoulder: 1.0 },
+  motorway3: { w: 16.8, lanes: 3, median: 2.2, speed: 90, sidewalk: 0, lane: 2.1, shoulder: 1.0 },   // M2 at the I2 crossing: three lanes each way (flat +-36 m, tapers to z +-67)
   arterial: { w: 9.2, lanes: 2, median: 1.2, speed: 60, sidewalk: 1.8, lane: 2.0 },
   collector: { w: 4.4, lanes: 1, median: 0, speed: 40, sidewalk: 1.4, lane: 2.2 },
   local: { w: 4.0, lanes: 1, median: 0, speed: 30, sidewalk: 1.2, lane: 2.0 },
@@ -234,7 +235,7 @@ export function buildPlan() {
     else if (hi === 'collector') j = { type: 'priority', major: 'collector' };
     else j = { type: 'priority', major: null };
     n.kind = j.type;
-    junctions.push({ id: n.id, at: [n.x, n.z], ...j, ...(atI2 ? { boxZ: 18.1, splitArms: L.filter((e) => e.split).map((e) => e.id) } : {}), legs: L.length, classes: cl, arms: L.filter((e) => !e.split).map((e) => { const o = byId.get(e.a === n.id ? e.b : e.a); return { edge: e.id, cls: e.cls, dir: [Math.sign(R(o.x - n.x)), Math.sign(R(o.z - n.z))] }; }) });
+    junctions.push({ id: n.id, at: [n.x, n.z], ...j, ...(atI2 ? { boxZ: 18.1, splitArms: L.filter((e) => e.split).map((e) => e.id) } : {}), legs: L.length, classes: cl, arms: L.filter((e) => !e.split).map((e) => { const o = byId.get(e.a === n.id ? e.b : e.a); return { edge: e.id, cls: atI2 && e.cls === 'motorway' ? 'motorway3' : e.cls, dir: [Math.sign(R(o.x - n.x)), Math.sign(R(o.z - n.z))] }; }) });
   }
 
   // ------------------------------------------------------------------ crossings (pedestrian), footbridges, tunnels
