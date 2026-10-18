@@ -439,7 +439,7 @@ const SZ = PLAN.size;
 }
 
 // ---- 8. run the raster for every cell that has shapes
-const cxs = cellRange(SZ.x0 - 1, SZ.x1 + 1), czs = cellRange(SZ.z0 - 1, SZ.z1 + 1);
+const cxs = cellRange(Math.min(SZ.x0, ...shapes.map((q) => q.x0)) - 1, Math.max(SZ.x1, ...shapes.map((q) => q.x1)) + 1), czs = cellRange(Math.min(SZ.z0, ...shapes.map((q) => q.z0)) - 1, Math.max(SZ.z1, ...shapes.map((q) => q.z1)) + 1);   // roads run on past the map edge (M1 to x 370, Northern road to z -370)
 for (const cx of cxs) for (const cz of czs) rasterCell(cx, cz);
 const rasterAt = (x, z) => { const r = rasterOut.get(ck(Math.floor(x / CELL), Math.floor(z / CELL))); return r ? r.find((q) => x >= q.x0 && x <= q.x1 && z >= q.z0 && z <= q.z1) : null; };
 const ringAt = (x, z) => ringsOut.find((r) => Math.hypot(x - r.at[0], z - r.at[1]) < r.R + 2.5);

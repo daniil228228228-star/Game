@@ -153,7 +153,7 @@
     }
     return out.sort((a, b) => a.d - b.d);
   };
-  function ensureNear(x, z, maxBuild = 99) {
+  function ensureNear(x, z, maxBuild = Infinity) {
     let n = 0, changed = false;
     for (const w of wanted(x, z, api.R_BUILD)) { if (n >= maxBuild) break; if (!cells.has(w.cx + ',' + w.cz)) { addCell(w.cx, w.cz); n++; changed = true; } }
     for (const key of [...cells.keys()]) {
