@@ -1,231 +1,351 @@
 // Masterplan C (2026-10-18), step C0: the new city layout on paper.  node tools/masterplan/plan-c.mjs  ->  tools/masterplan/plan-C.json
-// Game metres (x east, z south). Scale of the game: 1 game metre = 2.5 real metres (cars are ~0.4 of real size, see docs/ROAD_STANDARDS_V161.md).
-// Everything here is DATA (roads as graph edges, junctions, interchanges with ramp polylines, crossings, rail, water, transit, zones, blocks); the picture is tools/masterplan/render-plan-c.mjs,
-// the norm check is tools/masterplan/audit-plan-c.mjs. Nothing of this is in the game yet (docs/MASTERPLAN_C_PLAN.md, stage C1+).
+// Game metres (x east, z south). Scale: 1 game metre = 2.5 real metres (cars are ~0.4 of real size, docs/ROAD_STANDARDS_V161.md).
+// Right-hand traffic in the plan (as on real Russian roads): a carriageway heading +x lies on the +z side.
+// Everything here is DATA: street lines -> graph (nodes / edges), junction types, interchanges with ramp polylines built from
+// circular arcs and cubic tapers in a local frame, crossings, footbridges, tunnels, rail, water, transit, land use, blocks.
+// Picture: tools/masterplan/render-plan-c.mjs. Norm check: tools/masterplan/audit-plan-c.mjs. Not in the game yet (docs/MASTERPLAN_C_PLAN.md, C1+).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const R = (n) => Math.round(n * 100) / 100;
-const mulberry = (a) => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+const P2 = (p) => [R(p[0]), R(p[1])];
 
-// ---- classes: width of the carriageway strip in game metres (real = x2.5), lanes per direction, speed (km/h real)
+// ---- classes: carriageway width (game m; real = x2.5), lanes per direction, median, design speed (km/h real), sidewalk per side
 export const CLS = {
   motorway: { w: 10.5, lanes: 2, median: 2.2, speed: 90, sidewalk: 0 },
-  arterial: { w: 6.4, lanes: 2, median: 0.9, speed: 60, sidewalk: 1.0 },
-  collector: { w: 3.6, lanes: 1, median: 0, speed: 40, sidewalk: 0.9 },
-  local: { w: 2.4, lanes: 1, median: 0, speed: 30, sidewalk: 0.7 },
+  arterial: { w: 6.4, lanes: 2, median: 1.0, speed: 60, sidewalk: 1.4 },
+  collector: { w: 3.6, lanes: 1, median: 0, speed: 40, sidewalk: 1.1 },
+  local: { w: 2.4, lanes: 1, median: 0, speed: 30, sidewalk: 0.9 },
+  service: { w: 2.8, lanes: 1, median: 0, speed: 20, sidewalk: 0 },
   ramp: { w: 2.0, lanes: 1, median: 0, speed: 50, sidewalk: 0 },
 };
+const MW = CLS.motorway.w / 2, ATT = MW - 1.0;   // ramps leave / join a motorway with their centre line inside the outer lane
+
+// ---- small geometry kit (screen frame: x right, z down; a right turn = increasing angle)
+const add = (a, b) => [a[0] + b[0], a[1] + b[1]], sub = (a, b) => [a[0] - b[0], a[1] - b[1]], mul = (a, k) => [a[0] * k, a[1] * k];
+export function cubic(p0, h0, k0, p3, h3, k3, n = 28) {   // tangent-continuous taper: leaves p0 along h0, arrives at p3 along h3
+  const p1 = add(p0, mul(h0, k0)), p2 = sub(p3, mul(h3, k3)), out = [];
+  for (let i = 0; i <= n; i++) { const t = i / n, a = (1 - t) ** 3, b = 3 * (1 - t) ** 2 * t, c = 3 * (1 - t) * t * t, d = t ** 3; out.push([a * p0[0] + b * p1[0] + c * p2[0] + d * p3[0], a * p0[1] + b * p1[1] + c * p2[1] + d * p3[1]]); }
+  return out;
+}
+export function arc(c, r, a0, a1, step = 6) {   // degrees; a1 > a0 = right turn (clockwise on screen)
+  const n = Math.max(2, Math.ceil(Math.abs(a1 - a0) / step)), out = [];
+  for (let i = 0; i <= n; i++) { const a = (a0 + (a1 - a0) * i / n) * Math.PI / 180; out.push([c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r]); }
+  return out;
+}
+const seg = (a, b, n = 6) => { const out = []; for (let i = 0; i <= n; i++) out.push([a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n]); return out; };
+const join = (...parts) => { const out = []; for (const p of parts) for (const q of p) { const l = out[out.length - 1]; if (!l || Math.hypot(l[0] - q[0], l[1] - q[1]) > 1e-6) out.push(q); } return out; };
+// local interchange frame: u along the main road (+u = the direction of the carriageway on the +v side), rotated by k * 90 degrees, then moved to `at`
+const frame = (at, k) => (p) => { const [u, v] = p, r = [[u, v], [-v, u], [-u, -v], [v, -u]][k & 3]; return [R(at[0] + r[0]), R(at[1] + r[1])]; };
+function catmull(pts, per = 8) {   // smooth a sparse polyline (river)
+  const out = [];
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+    for (let s = 0; s < per; s++) { const t = s / per, t2 = t * t, t3 = t2 * t; out.push([0, 1].map((k) => 0.5 * (2 * p1[k] + (-p0[k] + p2[k]) * t + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * t2 + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * t3))); }
+  }
+  out.push(pts[pts.length - 1]); return out.map(P2);
+}
 
 export function buildPlan() {
-  const rnd = mulberry(20261018);
-  const size = { x0: -300, x1: 300, z0: -290, z1: 250 };
-  const SEA_Z = 200, RIVER_X = -205, RIVER_W = 22, RAIL_Z = -120, M1_Z = -250, M2_X = 250;
+  const size = { x0: -300, x1: 300, z0: -370, z1: 250 };
+  const M1_Z = -240, M2_X = 250, RAIL_Z = -120, SEA_Z = 200, RIVER = { x: -210, w: 20 };
 
-  // ------------------------------------------------------------------ the street lines (name, class, extent)
-  const V = [   // N-S lines at x
-    { x: -240, cls: 'collector', name: 'Береговая', z: [-160, 190] },
-    { x: -160, cls: 'arterial', name: 'Западный проспект', z: [-160, 190], bus: 'B3' },
-    { x: -120, cls: 'local' }, { x: -80, cls: 'collector', name: 'Школьная', z: [-160, 190] },
-    { x: -40, cls: 'local' }, { x: 0, cls: 'arterial', name: 'Главный проспект', z: [-250, 200], bus: 'B2' },
-    { x: 40, cls: 'local' }, { x: 80, cls: 'collector', name: 'Университетская', z: [-160, 190] },
-    { x: 120, cls: 'local' }, { x: 160, cls: 'arterial', name: 'Восточный проспект', z: [-160, 190], bus: 'B3' },
-    { x: 200, cls: 'local' },
+  // ------------------------------------------------------------------ street lines (explicit spans; a road exists only where it serves a block)
+  const V = [
+    { x: -280, cls: 'local', name: 'ул. Дачная', spans: [[-80, 160]] },
+    { x: -232, cls: 'collector', name: 'Береговая ул.', spans: [[-160, 160]] },
+    { x: -194, cls: 'local', name: 'Речная наб.', spans: [[-108, 188]] },
+    { x: -160, cls: 'arterial', name: 'Западный пр.', spans: [[-160, 160]] },
+    { x: -120, cls: 'local', spans: [[-108, 80], [160, 188]] },
+    { x: -80, cls: 'collector', name: 'Школьная ул.', spans: [[-160, 188]] },
+    { x: -40, cls: 'local', spans: [[-108, 188]] },
+    { x: 0, cls: 'arterial', name: 'Главный пр.', spans: [[-262, 188]] },
+    { x: 0, cls: 'collector', name: 'Северное ш.', spans: [[-370, -262]] },
+    { x: 40, cls: 'local', spans: [[-108, 188]] },
+    { x: 80, cls: 'collector', name: 'Университетская ул.', spans: [[-190, 160]] },
+    { x: 80, cls: 'service', name: 'Портовая ул.', spans: [[160, 196]] },
+    { x: 120, cls: 'local', spans: [[-108, 80]] },
+    { x: 160, cls: 'arterial', name: 'Восточный пр.', spans: [[-190, 160]] },
+    { x: 160, cls: 'service', name: 'Портовый пр.', spans: [[160, 214]] },
+    { x: 200, cls: 'local', name: 'Окраинная ул.', spans: [[-108, 120]] },
+    { x: 280, cls: 'service', name: 'Терминальный пр.', spans: [[160, 214]] },
+    { x: 290, cls: 'service', name: 'въезд P+R', spans: [[0, 10]], lot: 'P+R' },
   ];
-  const H = [   // E-W lines at z
-    { z: -160, cls: 'arterial', name: 'Северный проспект', x: [-285, 245], bus: 'B3' },
-    { z: -80, cls: 'collector', name: 'Вокзальная', x: [-285, 245] },
-    { z: -40, cls: 'local' }, { z: 0, cls: 'arterial', name: 'Центральная магистраль', x: [-285, 245], bus: 'B1' },
-    { z: 40, cls: 'local' }, { z: 80, cls: 'collector', name: 'Университетский б-р', x: [-285, 245] },
-    { z: 120, cls: 'local' }, { z: 160, cls: 'arterial', name: 'Южный проспект', x: [-285, 245], bus: 'B3' },
+  const H = [
+    { z: -190, cls: 'collector', name: 'Промышленная ул.', spans: [[0, 160]] },
+    { z: -160, cls: 'arterial', name: 'Северный пр.', spans: [[-300, 160]] },
+    { z: -108, cls: 'local', name: 'Привокзальная ул.', spans: [[-194, -40], [40, 200]] },
+    { z: -80, cls: 'collector', name: 'Вокзальная ул.', spans: [[-300, 200]] },
+    { z: -40, cls: 'local', spans: [[-280, -232], [-194, 200]] },
+    { z: 0, cls: 'arterial', name: 'Центральная магистраль', spans: [[-300, 300]] },
+    { z: 40, cls: 'local', spans: [[-280, -232], [-160, 200]] },
+    { z: 80, cls: 'collector', name: 'Университетский б-р', spans: [[-300, 200]] },
+    { z: 120, cls: 'local', spans: [[-280, -232], [-194, -160], [-80, 80], [160, 200]] },
+    { z: 160, cls: 'arterial', name: 'Южный пр. / Портовое ш.', spans: [[-300, 300]] },
+    { z: 188, cls: 'collector', name: 'Набережная', spans: [[-194, 40]] },
+    { z: 196, cls: 'service', name: 'Причальная ул.', spans: [[80, 160]] },
+    { z: 214, cls: 'service', name: 'Контейнерный пр.', spans: [[160, 280]] },
   ];
+  // extra split points: diamond terminals, the P+R entrance
+  const DT = 22;   // half spacing of the diamond ramp terminals (44 game m = 110 m real, the 300 ft desirable minimum)
+  const extraZ = { 0: [M1_Z - DT, M1_Z + DT] }, extraX = { 0: [M2_X - DT, M2_X + DT, 290] };
 
-  // ------------------------------------------------------------------ land use of a cell (x0,x1,z0,z1)
-  const inRiver = (x0, x1) => x1 > RIVER_X - RIVER_W / 2 && x0 < RIVER_X + RIVER_W / 2;
-  function zoneOf(x0, x1, z0, z1) {
-    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
-    if (inRiver(x0, x1)) return 'water';
-    if (cz > SEA_Z - 1) return 'water';
-    if (cz > 160 && cz < SEA_Z) return cx > 20 ? 'port' : 'waterfront';
-    if (cz < M1_Z + 8) return 'verge';
-    if (cz < -160) return cx > 40 ? 'industrial' : 'wood';
-    if (cz > -160 && cz < RAIL_Z) return Math.abs(cx) < 100 ? 'station' : 'warehouse';
-    if (cx < -216) return 'villas';
-    if (cx < -160) return 'park';
-    if (Math.abs(cx) < 80 && Math.abs(cz) < 80) return 'cbd';
-    if (cx > -160 && cx < -80 && cz > 80 && cz < 160) return 'stadium';
-    if (cx > 80 && cx < 160 && cz > 80 && cz < 160) return 'campus';
-    if (cx > 160 && cz > -40 && cz < 40 && false) return 'hospital';
-    if (cx > 160) return 'east';
-    if (Math.abs(cx) < 160 && Math.abs(cz) < 160) return rnd() < 0.18 ? 'mixed' : 'residential';
-    return 'residential';
-  }
-  const urban = (z) => ['cbd', 'residential', 'mixed', 'east', 'villas', 'station', 'campus'].includes(z);
-
-  // ------------------------------------------------------------------ graph: nodes + edges (every line split at the crossings)
+  // ------------------------------------------------------------------ graph
   const nodes = new Map(), edges = [], key = (x, z) => `${R(x)},${R(z)}`;
-  const node = (x, z) => { const k = key(x, z); let n = nodes.get(k); if (!n) { n = { id: 'n' + nodes.size, x: R(x), z: R(z), legs: [], kind: 'priority' }; nodes.set(k, n); } return n; };
+  const node = (x, z) => { const k = key(x, z); let n = nodes.get(k); if (!n) { n = { id: 'n' + nodes.size, x: R(x), z: R(z), legs: [] }; nodes.set(k, n); } return n; };
   const addEdge = (a, b, cls, name, extra = {}) => { const e = { id: 'e' + edges.length, a: a.id, b: b.id, cls, name: name || null, w: CLS[cls].w, ...extra }; edges.push(e); a.legs.push(e.id); b.legs.push(e.id); return e; };
-  const xsAll = V.map((l) => l.x), zsAll = H.map((l) => l.z);
-  const inSpan = (v, span) => !span || (v >= span[0] - 1e-6 && v <= span[1] + 1e-6);
-  const bridgeXs = [];
-  for (const l of V) {
-    const zs = [...new Set([...zsAll, ...(l.z || [])])].sort((a, b) => a - b).filter((z) => (l.z ? inSpan(z, l.z) : true));
+  const covers = (spans, v) => spans.some(([a, b]) => v >= a - 1e-6 && v <= b + 1e-6);
+  const riverOver = (x0, x1) => Math.max(x0, x1) > RIVER.x - RIVER.w / 2 && Math.min(x0, x1) < RIVER.x + RIVER.w / 2;
+  for (const l of V) for (const [a, b] of l.spans) {
+    const cuts = [a, b, ...H.filter((h) => covers(h.spans, l.x) && h.z > a && h.z < b).map((h) => h.z), ...((extraZ[l.x] || []).filter((z) => z > a && z < b))];
+    const zs = [...new Set(cuts)].sort((p, q) => p - q);
     for (let i = 0; i + 1 < zs.length; i++) {
-      const z0 = zs[i], z1 = zs[i + 1], cz = (z0 + z1) / 2;
-      let draw = !!l.z;
-      if (!l.z) { const left = zoneOf(l.x - 20, l.x, z0, z1), right = zoneOf(l.x, l.x + 20, z0, z1); draw = (urban(left) || urban(right)) && cz > RAIL_Z + 1 && cz < SEA_Z - 40; }
-      if (draw) addEdge(node(l.x, z0), node(l.x, z1), l.cls, l.name, { dir: 'z', bus: l.bus || null });
+      const z0 = zs[i], z1 = zs[i + 1], ex = { dir: 'z' };
+      if (z0 < RAIL_Z && z1 > RAIL_Z) ex.underRail = RAIL_Z;
+      if (z0 < M1_Z && z1 > M1_Z && l.x === 0) ex.underMotorway = 'M1';
+      if (l.lot) ex.lot = l.lot;
+      addEdge(node(l.x, z0), node(l.x, z1), l.cls, l.name, ex);
     }
   }
-  for (const l of H) {
-    const xs = [...new Set([...xsAll, -285, -205 - RIVER_W / 2, -205 + RIVER_W / 2, 245, ...(l.x || [])])].sort((a, b) => a - b).filter((x) => (l.x ? inSpan(x, l.x) : true));
+  for (const l of H) for (const [a, b] of l.spans) {
+    const cuts = [a, b, ...V.filter((v) => covers(v.spans, l.z) && v.x > a && v.x < b).map((v) => v.x), ...((extraX[l.z] || []).filter((x) => x > a && x < b))];
+    const xs = [...new Set(cuts)].sort((p, q) => p - q);
     for (let i = 0; i + 1 < xs.length; i++) {
-      const x0 = xs[i], x1 = xs[i + 1], cx = (x0 + x1) / 2;
-      let draw = !!l.x;
-      if (!l.x) { const up = zoneOf(x0, x1, l.z - 20, l.z), dn = zoneOf(x0, x1, l.z, l.z + 20); draw = (urban(up) || urban(dn)) && !inRiver(x0, x1); }
-      if (!draw) continue;
-      const over = inRiver(x0, x1) ? 'river' : null;
-      addEdge(node(x0, l.z), node(x1, l.z), l.cls, l.name, { dir: 'x', bus: l.bus || null, ...(over ? { bridge: over } : {}) });
+      const x0 = xs[i], x1 = xs[i + 1], ex = { dir: 'x' };
+      if (riverOver(x0, x1) && l.z > -175) ex.bridge = 'river';
+      if (x0 < M2_X && x1 > M2_X && l.z === 0) ex.underMotorway = 'M2';
+      if (x0 < M2_X && x1 > M2_X && l.z === 160) ex.underRamps = 'I4';
+      addEdge(node(x0, l.z), node(x1, l.z), l.cls, l.name, ex);
     }
   }
-  // motorways (not part of the grid: their own nodes)
-  const M1 = []; for (const x of [-300, -160, 0, M2_X, 300]) M1.push(node(x, M1_Z));
-  for (let i = 0; i + 1 < M1.length; i++) addEdge(M1[i], M1[i + 1], 'motorway', 'М1 Северная хорда', { dir: 'x' });
-  const M2z = [-290, M1_Z, -125, 0, 100, 160, 190];
-  for (let i = 0; i + 1 < M2z.length; i++) addEdge(node(M2_X, M2z[i]), node(M2_X, M2z[i + 1]), 'motorway', 'М2 Восточная хорда', { dir: 'z' });
-  // the main avenue joins M1 at the diamond; the east end of the central artery joins M2 at the second diamond; the southern avenue ends at the port trumpet
-  // ------------------------------------------------------------------ the rail line and its crossings
-  const rail = { id: 'RAIL1', name: 'Главный ход', pts: [[-300, RAIL_Z], [300, RAIL_Z]], gauge: 1.2, stations: [{ id: 'ST1', name: 'Центральный вокзал', at: [0, RAIL_Z], len: 70, platforms: 4 }], spur: { pts: [[110, RAIL_Z], [110, -205], [150, -205]], name: 'Подъездной путь промзоны' } };
-  const grade = [];  // grade separations: road passes UNDER the rail embankment (underpass) or OVER the river (bridge)
-  for (const e of edges) {
-    const a = [...nodes.values()].find((n) => n.id === e.a), b = [...nodes.values()].find((n) => n.id === e.b);
-    if (e.dir === 'z' && Math.min(a.z, b.z) < RAIL_Z && Math.max(a.z, b.z) > RAIL_Z) {   // a line crossing the rail: split into two edges at the rail
-      e.railCrossing = true;
-    }
-  }
-  // roads crossing the rail get an underpass node at z = RAIL_Z (arterials and collectors only; locals dead-end at the embankment)
-  const xLines = V.filter((l) => l.z && l.z[0] < RAIL_Z - 1 && l.z[1] > RAIL_Z + 1 || (l.x === 0));
-  for (const l of V) {
-    if (l.cls === 'local') continue;
-    const z0 = l.z ? l.z[0] : -160, z1 = l.z ? l.z[1] : 190;
-    if (z0 < RAIL_Z && z1 > RAIL_Z) grade.push({ id: 'U' + grade.length, kind: 'underpass', at: [l.x, RAIL_Z], road: l.name, len: 24, note: 'дорога под насыпью железной дороги' });
-  }
-  grade.push({ id: 'BR-RAIL', kind: 'rail-bridge', at: [RIVER_X, RAIL_Z], note: 'железнодорожный мост через реку', len: RIVER_W + 8 });
-  for (const e of edges) if (e.bridge) { const a = [...nodes.values()].find((n) => n.id === e.a); grade.push({ id: 'BR' + grade.length, kind: 'road-bridge', at: [R(a.x + (RIVER_W / 2)), a.z], road: e.name, cls: e.cls, len: RIVER_W + 8 }); }
+  // motorways (own node keys: they cross the street grid only on bridges)
+  const mnode = (x, z) => node(x + 1e-3, z + 1e-3);
+  const M1x = [-300, 0, M2_X, 300];
+  for (let i = 0; i + 1 < M1x.length; i++) addEdge(mnode(M1x[i], M1_Z), mnode(M1x[i + 1], M1_Z), 'motorway', 'М1 Северная хорда', { dir: 'x', ref: 'M1' });
+  const M2z = [-370, M1_Z, 0, 115];
+  for (let i = 0; i + 1 < M2z.length; i++) addEdge(mnode(M2_X, M2z[i]), mnode(M2_X, M2z[i + 1]), 'motorway', 'М2 Восточная хорда', { dir: 'z', ref: 'M2', ...(M2z[i] < RAIL_Z && M2z[i + 1] > RAIL_Z ? { overRail: RAIL_Z } : {}) });
+  const exits = [...nodes.values()].filter((n) => n.legs.length === 1 && (Math.abs(n.x) >= 299.9 || n.z <= size.z0 + 0.1)).map((n) => n.id);
 
-  // ------------------------------------------------------------------ interchanges (ramps as polylines / curves, game metres)
+  // ------------------------------------------------------------------ interchanges (ramps are polylines in game metres; `bridges` = parts above another road)
   const interchanges = [];
-  const map = (at, main, u, v) => main === 'x' ? [R(at[0] + u), R(at[1] + v)] : [R(at[0] + v), R(at[1] + u)];
-  function diamond(id, at, main, name, cross) {
-    const mw = CLS.motorway.w / 2, cw = CLS.arterial.w / 2, dT = 22, ramps = [];
-    for (const su of [-1, 1]) for (const sv of [-1, 1]) {
-      const p0 = map(at, main, su * 90, sv * (mw + 0.6)), p1 = map(at, main, su * 34, sv * (mw + 7)), p2 = map(at, main, su * (cw + 3.6), sv * dT);
-      ramps.push({ kind: su * sv > 0 ? 'on' : 'off', pts: [p0, p1, p2] });
-    }
-    interchanges.push({ id, kind: 'diamond', name, at, main, cross, ramps, terminals: [[-1], [1]].map(([s]) => map(at, main, 0, s * dT)), terminalSpacing: 2 * dT });
+  function diamond(id, at, k, name, cross, cwPlus, cwMinus) {
+    const F = frame(at, k), L = 95, ramps = [];
+    const mk = (kind, pts, att) => ramps.push({ kind, pts: pts.map(F), attach: att });
+    mk('off', cubic([-L, ATT], [1, 0], 52, [-(cwPlus - 0.3), DT], [1, 0], 30), ['motorway', 'cross']);
+    mk('on', cubic([cwPlus - 0.3, DT], [1, 0], 30, [L, ATT], [1, 0], 52), ['cross', 'motorway']);
+    mk('off', cubic([L, -ATT], [-1, 0], 52, [cwMinus - 0.3, -DT], [-1, 0], 30), ['motorway', 'cross']);
+    mk('on', cubic([-(cwMinus - 0.3), -DT], [-1, 0], 30, [-L, -ATT], [-1, 0], 52), ['cross', 'motorway']);
+    const terminals = [F([0, DT]), F([0, -DT])];
+    interchanges.push({ id, kind: 'diamond', name, at, cross, ramps, terminals, terminalSpacing: 2 * DT, deck: [F([-(cwPlus + 4), 0]), F([cwPlus + 4, 0])], deckRoad: 'motorway' });
   }
   function cloverleaf(id, at, name) {
-    const mw = CLS.motorway.w / 2, Rl = 24, ramps = [], loops = [];
-    for (const su of [-1, 1]) for (const sv of [-1, 1]) {
-      loops.push({ c: [R(at[0] + su * (mw + Rl + 1.5)), R(at[1] + sv * (mw + Rl + 1.5))], r: Rl, quadrant: [su, sv] });
-      ramps.push({ kind: 'outer', pts: [[R(at[0] + su * 105), R(at[1] + sv * (mw + 0.6))], [R(at[0] + su * (mw + 2 * Rl + 14)), R(at[1] + sv * (mw + 2 * Rl + 14))], [R(at[0] + su * (mw + 0.6)), R(at[1] + sv * 105)]], curve: 'quad' });
+    const r = 18, a = MW + 4, L = 110, kk = 30, ramps = [];
+    for (let q = 0; q < 4; q++) {
+      const F = frame(at, q), C = [a + r, a + r];
+      const loop = join(cubic([MW + 2.8, ATT], [1, 0], 8, [a + r, a], [1, 0], 9), arc(C, r, -90, 180), cubic([a, a + r], [0, -1], 9, [ATT, MW + 2.8], [0, -1], 8));
+      ramps.push({ kind: 'loop', pts: loop.map(F), r, attach: ['motorway', 'motorway'] });
+      ramps.push({ kind: 'outer', pts: cubic([ATT, L], [0, -1], kk, [L, ATT], [1, 0], kk, 36).map(F), attach: ['motorway', 'motorway'] });
     }
-    interchanges.push({ id, kind: 'cloverleaf', name, at, main: 'x', cross: 'M2', ramps, loops });
+    interchanges.push({ id, kind: 'cloverleaf', name, at, ramps, deck: [frame(at, 0)([0, -(MW + 4)]), frame(at, 0)([0, MW + 4])], deckRoad: 'motorway', note: 'М2 проходит над М1; четыре петли (левые повороты) и четыре внешних съезда (правые)' });
   }
   function trumpet(id, at, name) {
-    // M2 (N-S) ends in the port; the Southern avenue (z = 160) leaves to the west: one loop ramp + two direct ramps (three-leg interchange)
-    const mw = CLS.motorway.w / 2, ramps = [], loops = [];
-    loops.push({ c: [R(at[0] - mw - 24), R(at[1] - 26)], r: 24, quadrant: [-1, -1] });
-    ramps.push({ kind: 'direct', pts: [[at[0] - mw, at[1] - 90], [at[0] - mw - 1, at[1] - 40], [at[0] - mw - 14, at[1] - 4]], curve: 'quad' });
-    ramps.push({ kind: 'direct', pts: [[at[0] - mw - 3, at[1] + 6], [at[0] - 6, at[1] + 30], [at[0] - mw + 1, at[1] + 90]], curve: 'quad' });
-    interchanges.push({ id, kind: 'trumpet', name, at, main: 'z', cross: 'Южный проспект', ramps, loops });
+    // M2 ends from the north; the through road H (z = at.z) runs east-west. Bell (loop + rim) on the far (south) side, two trunk ramps cross H on a bridge.
+    const F = frame(at, 0), hw = CLS.arterial.w / 2, r = 17, C = [-3.2 - r, hw + 1.6 + r], Rr = r + 6.4, top = -45, ramps = [];
+    const b = join(seg([-3.2, top], [-3.2, C[1]], 10), arc(C, r, 0, 270), cubic([C[0], hw + 1.6], [1, 0], 10, [12, hw - 1.0], [1, 0], 14));
+    const d = join(cubic([C[0] - Rr - 22, hw - 1.0], [1, 0], 16, [C[0] - Rr, C[1]], [0, 1], 12), arc(C, Rr, 180, 0), seg([3.2, C[1]], [3.2, top], 10));
+    const a = cubic([-4.2, -62], [0, 1], 28, [-44, -(hw - 1.0)], [-1, 0], 22);
+    const c = cubic([44, -(hw - 1.0)], [-1, 0], 22, [4.2, -62], [0, -1], 28);
+    ramps.push({ kind: 'loop', pts: b.map(F), r, attach: ['motorway', 'cross'], bridges: [[F([-3.2, -hw - 4]), F([-3.2, hw + 4])]], note: 'М2 на юг -> Портовое ш. на восток (петля 270°)' });
+    ramps.push({ kind: 'semi-direct', pts: d.map(F), attach: ['cross', 'motorway'], bridges: [[F([3.2, hw + 4]), F([3.2, -hw - 4])]], note: 'Южный пр. на восток -> М2 на север (раструб вокруг петли)' });
+    ramps.push({ kind: 'direct', pts: a.map(F), attach: ['motorway', 'cross'], note: 'М2 на юг -> Южный пр. на запад' });
+    ramps.push({ kind: 'direct', pts: c.map(F), attach: ['cross', 'motorway'], note: 'Портовое ш. на запад -> М2 на север' });
+    interchanges.push({ id, kind: 'trumpet', name, at, ramps, trunkEnd: F([0, top]), note: 'три ветви: М2 заканчивается; раструб на стороне порта' });
   }
-  diamond('I1', [0, M1_Z], 'x', 'Развязка «ромб» Главный проспект × М1', 'Главный проспект');
-  diamond('I2', [M2_X, 0], 'z', 'Развязка «ромб» Центральная магистраль × М2', 'Центральная магистраль');
-  cloverleaf('I3', [M2_X, M1_Z], 'Клеверный лист М1 × М2 (две автомагистрали)');
-  trumpet('I4', [M2_X, 160], 'Трубка М2 × порт (три ветви)');
+  diamond('I1', [0, M1_Z], 0, 'Ромб: Главный пр. × М1', 'Главный пр.', CLS.arterial.w / 2, CLS.arterial.w / 2);
+  diamond('I2', [M2_X, 0], 1, 'Ромб: Центральная магистраль × М2', 'Центральная магистраль', CLS.arterial.w / 2, CLS.arterial.w / 2);
+  cloverleaf('I3', [M2_X, M1_Z], 'Клеверный лист: М1 × М2');
+  trumpet('I4', [M2_X, 160], 'Трубка: М2 × Портовое ш.');
 
   // ------------------------------------------------------------------ junction types
-  const nl = (n) => n.legs.map((id) => edges.find((e) => e.id === id));
+  const nodeArr = [...nodes.values()], byId = new Map(nodeArr.map((n) => [n.id, n])), eById = new Map(edges.map((e) => [e.id, e]));
+  const inner = (x, z) => Math.abs(x) <= 160 && Math.abs(z) <= 160;
+  const SPECIAL = {
+    '0,0': { type: 'roundabout', R: 12, lanes: 2, name: 'Центральная площадь' },
+    '0,188': { type: 'roundabout', R: 9, lanes: 1, name: 'Морская площадь' },
+    '-232,-160': { type: 'roundabout', R: 9, lanes: 1 }, '-232,0': { type: 'roundabout', R: 9, lanes: 1 }, '-232,160': { type: 'roundabout', R: 9, lanes: 1 },
+    '160,-190': { type: 'roundabout', R: 9, lanes: 1 }, '0,-190': { type: 'riro' },
+  };
   const junctions = [];
-  for (const n of nodes.values()) {
-    const L = nl(n); if (L.length < 3) continue;
-    const cl = L.map((e) => e.cls), has = (c) => cl.includes(c);
-    let type = 'priority';
-    if (n.x === 0 && n.z === 0) type = 'roundabout-2lane';
-    else if (new Set(L.filter((e) => e.cls === 'arterial').map((e) => e.dir)).size === 2) type = 'signal';   // two arterials cross (grid points, 160 game m = 400 m real apart: the quarter-mile minimum)
-    else if (has('arterial') && has('collector')) type = Math.abs(n.x) <= 160 && Math.abs(n.z) <= 160 ? 'signal' : 'riro';   // downtown signals every 80 game m (200 m real, a downtown block), outside the inner city right-in / right-out
-    else if (has('arterial')) type = 'riro-local';
-    else if (cl.filter((c) => c === 'collector').length >= 2) type = 'roundabout-mini';
-    else if (has('collector')) type = 'priority-zebra';
-    n.kind = type; junctions.push({ id: n.id, at: [n.x, n.z], type, legs: L.length, classes: cl });
+  for (const n of nodeArr) {
+    const L = n.legs.map((id) => eById.get(id)), isTerm = interchanges.some((ic) => (ic.terminals || []).some((t) => Math.hypot(t[0] - n.x, t[1] - n.z) < 0.5));
+    if (L.length < 3 && !isTerm && !(L.length === 2 && L[0].dir !== L[1].dir)) continue;
+    if (L.some((e) => e.cls === 'motorway')) continue;
+    const cl = L.map((e) => e.cls), k = `${n.x},${n.z}`, RANK = { arterial: 4, collector: 3, service: 2, local: 1 };
+    const ax = { x: null, z: null }; for (const e of L) if (!ax[e.dir] || RANK[e.cls] > RANK[ax[e.dir]]) ax[e.dir] = e.cls;
+    const pair = [ax.x, ax.z].sort((p, q) => RANK[q] - RANK[p]), [hi, lo] = pair;
+    let j = { type: 'priority' };
+    if (SPECIAL[k]) j = { ...SPECIAL[k] };
+    else if (isTerm) j = { type: 'signal', terminal: true };
+    else if (L.length === 2) j = { type: 'corner' };
+    else if (hi === 'arterial' && lo === 'arterial') j = { type: 'signal' };
+    else if (hi === 'arterial' && lo === 'collector') j = inner(n.x, n.z) ? { type: 'signal' } : { type: 'roundabout', R: 9, lanes: 1 };
+    else if (hi === 'arterial' && lo === 'service' && !L.some((e) => e.lot) && (n.x === 160 || n.x === 80)) j = { type: 'signal' };
+    else if (hi === 'arterial') j = { type: 'riro' };
+    else if (hi === 'collector' && lo === 'collector') j = { type: 'mini' };
+    else if (hi === 'collector') j = { type: 'priority', major: 'collector' };
+    else j = { type: 'priority', major: null };
+    n.kind = j.type;
+    junctions.push({ id: n.id, at: [n.x, n.z], ...j, legs: L.length, classes: cl, arms: L.map((e) => { const o = byId.get(e.a === n.id ? e.b : e.a); return { edge: e.id, cls: e.cls, dir: [Math.sign(R(o.x - n.x)), Math.sign(R(o.z - n.z))] }; }) });
   }
-  for (const ic of interchanges) if (ic.kind === 'diamond') for (const t of ic.terminals) junctions.push({ id: ic.id + '-t' + t.join('_'), at: t, type: 'signal-ramp-terminal', legs: 4, classes: ['arterial', 'ramp', 'ramp'] });
 
-  // ------------------------------------------------------------------ pedestrian crossings and grade-separated crossings
+  // ------------------------------------------------------------------ crossings (pedestrian), footbridges, tunnels
   const crossings = [];
   for (const j of junctions) {
-    if (j.type === 'signal') for (let k = 0; k < 4; k++) crossings.push({ id: `${j.id}-p${k}`, kind: 'ped-signal', at: j.at, leg: k });
-    else if (j.type === 'roundabout-2lane') for (let k = 0; k < 4; k++) crossings.push({ id: `${j.id}-z${k}`, kind: 'zebra-refuge', at: j.at, leg: k, setback: 9 });
-    else if (j.type === 'roundabout-mini' || j.type === 'priority-zebra') crossings.push({ id: `${j.id}-z`, kind: 'zebra', at: j.at });
-    else if (j.type === 'riro') crossings.push({ id: `${j.id}-hawk`, kind: 'ped-signal-midblock', at: j.at, note: 'пешеходный светофор у съезда «право-право»' });
+    if (j.type === 'signal') for (const a of j.arms) crossings.push({ id: `${j.id}-p${crossings.length}`, kind: 'ped-signal', at: j.at, arm: a.dir, cls: a.cls });
+    else if (j.type === 'roundabout') for (const a of j.arms) crossings.push({ id: `${j.id}-z${crossings.length}`, kind: 'zebra-refuge', at: j.at, arm: a.dir, cls: a.cls, setback: j.R + 2.6 });
+    else if (j.type === 'mini') for (const a of j.arms) crossings.push({ id: `${j.id}-z${crossings.length}`, kind: 'zebra', at: j.at, arm: a.dir, cls: a.cls, setback: 7 });
+  }
+  // mid-block pedestrian signals where an urban arterial runs more than 80 game m (200 m real) from the nearest crossing
+  const midBlock = [[-256, 0], [-256, 160], [-256, -160], [-256, -80], [-256, 80]];
+  for (const [x, z] of midBlock) {
+    const e = edges.find((g) => { const a = byId.get(g.a), b = byId.get(g.b); return g.dir === 'x' && a.z === z && Math.min(a.x, b.x) < x && Math.max(a.x, b.x) > x; });
+    if (e) crossings.push({ id: `MB${crossings.length}`, kind: e.cls === 'arterial' ? 'ped-signal-midblock' : 'zebra', at: [x, z], arm: null, cls: e.cls, axis: 'x', note: 'у остановки / у вилл' });
   }
   const footbridges = [
-    { id: 'FB1', at: [250, -80], over: 'М2 Восточная хорда', len: 30, note: 'к парку-и-езжай (P+R) и остановке Б1', ramps: 'пандусы + лифт' },
-    { id: 'FB2', at: [-205, 40], over: 'река', len: 34, note: 'набережная: пешеходно-велосипедный мост' },
-    { id: 'FB3', at: [120, 0], over: 'Центральная магистраль', len: 20, note: 'у университета и рынка', ramps: 'пандусы' },
-    { id: 'FB4', at: [-120, 0], over: 'Центральная магистраль', len: 20, note: 'у больницы и школы', ramps: 'пандусы' },
-    { id: 'FB5', at: [-160, 120], over: 'Западный проспект', len: 20, note: 'к стадиону', ramps: 'пандусы + лифт' },
+    { id: 'FB1', at: [250, 80], axis: 'x', over: 'М2 Восточная хорда', len: 30, note: 'конец Университетского б-ра -> Восточный лесопарк', ramps: 'пандусы + лифт' },
+    { id: 'FB2', at: [-210, 40], axis: 'x', over: 'река', len: 34, note: 'пешеходно-велосипедный мост набережного парка' },
+    { id: 'FB3', at: [120, 0], axis: 'z', over: 'Центральная магистраль', len: 16, note: 'улица «право-право»: пешеходы переходят по мосту (рынок, университет)', ramps: 'пандусы' },
+    { id: 'FB4', at: [-120, 0], axis: 'z', over: 'Центральная магистраль', len: 16, note: 'больница и школа по разные стороны магистрали', ramps: 'пандусы' },
+    { id: 'FB5', at: [-160, 120], axis: 'x', over: 'Западный пр.', len: 16, note: 'к стадиону', ramps: 'пандусы + лифт' },
+    { id: 'FB6', at: [-150, M1_Z], axis: 'z', over: 'М1 Северная хорда', len: 30, note: 'лесопарк по обе стороны хорды' },
   ];
   const tunnels = [
-    { id: 'PT1', at: [-14, RAIL_Z], under: 'ж/д пути вокзала', len: 34, note: 'вокзал: подземный переход между платформами и привокзальной площадью' },
-    { id: 'PT2', at: [14, RAIL_Z], under: 'ж/д пути вокзала', len: 34, note: 'второй выход' },
-    { id: 'PT3', at: [0, 0], under: 'Центральное кольцо', len: 26, note: 'подземный переход под центральной площадью (4 выхода)' },
+    { id: 'PT1', at: [-24, RAIL_Z], axis: 'z', under: 'пути вокзала', len: 22, note: 'подземный переход к платформам, выход к депо' },
+    { id: 'PT2', at: [20, RAIL_Z], axis: 'z', under: 'пути вокзала', len: 22, note: 'второй выход к автовокзалу' },
+    { id: 'PT3', at: [0, 0], axis: 'ring', under: 'Центральная площадь (кольцо)', len: 30, note: 'подземный переход под кольцом, 4 выхода' },
   ];
-  const sig = junctions.filter((j) => j.type === 'signal');
-  // mid-block signals on long arterial segments (no crossing within 90 game metres)
-  const arterialSegments = edges.filter((e) => e.cls === 'arterial');
 
-  // ------------------------------------------------------------------ transit (buses; stops near the junctions, about every 80-100 game metres)
-  const lines = [
-    { id: 'B1', name: 'Автобус 1: P+R восток — Центр — набережная', color: '#e4572e', road: 'Центральная магистраль', pts: [[245, 0], [-285, 0]], stops: [] },
-    { id: 'B2', name: 'Автобус 2: Вокзал — Центр — Порт', color: '#2e86e4', road: 'Главный проспект', pts: [[0, -118], [0, 195]], stops: [] },
-    { id: 'B3', name: 'Автобус 3: кольцо по проспектам', color: '#3aa655', road: 'проспекты', pts: [[-160, -160], [160, -160], [160, 160], [-160, 160], [-160, -160]], stops: [] },
+  // ------------------------------------------------------------------ rail
+  const spur = join(cubic([46, RAIL_Z - 1.6], [1, 0], 34, [110, -142], [0, -1], 14, 20), seg([110, -142], [110, -186], 4));
+  const rail = {
+    id: 'RAIL1', name: 'Главный ход', pts: [[size.x0 - 20, RAIL_Z], [size.x1 + 20, RAIL_Z]], tracks: 2, gauge: 1.2,
+    stations: [{ id: 'ST1', name: 'Центральный вокзал', at: [-6, RAIL_Z], x0: -46, x1: 34, platforms: 3, tracks: 4 }],
+    spur: { pts: spur.map(P2), name: 'Подъездной путь промзоны', levelCrossings: [[110, -160]] },
+    yard: { x0: -80, x1: 40, z0: -158, z1: -128, tracks: 6, name: 'Депо' },
+  };
+  const grade = [];
+  for (const e of edges) if (e.underRail) { const a = byId.get(e.a); grade.push({ id: 'U' + grade.length, kind: 'underpass', at: [a.x, RAIL_Z], road: e.name, cls: e.cls, len: 12, note: 'дорога под ж/д насыпью' }); }
+  grade.push({ id: 'BR-RAIL', kind: 'rail-bridge', at: [RIVER.x, RAIL_Z], len: RIVER.w + 8, note: 'ж/д мост через реку' });
+  grade.push({ id: 'OV-M2-RAIL', kind: 'motorway-over-rail', at: [M2_X, RAIL_Z], len: 16 });
+  for (const e of edges) if (e.bridge) { const a = byId.get(e.a), b = byId.get(e.b); grade.push({ id: 'BR' + grade.length, kind: 'road-bridge', at: [RIVER.x, a.z], road: e.name, cls: e.cls, len: RIVER.w + 8, span: [Math.min(a.x, b.x), Math.max(a.x, b.x)] }); }
+
+  // ------------------------------------------------------------------ water and land use
+  const riverPts = catmull([[-168, -380], [-180, -345], [-203, -312], [-222, -284], [-228, -256], [-219, -228], [-211, -200], [-210, -176], [-210, 0], [-210, 203]], 8);
+  const water = {
+    sea: { z: SEA_Z, coast: [[-320, 203], [-262, 201.5], [-226, 202], [-200, 201], [40, 201], [40, 237], [300, 237], [320, 237]] },
+    river: { x: RIVER.x, w: RIVER.w, pts: riverPts, embankment: [-176, 201] },
+    basins: [{ x0: 58, x1: 92, z0: 202, z1: 240, name: 'Западный ковш' }, { x0: 116, x1: 150, z0: 202, z1: 240, name: 'Восточный ковш' }],
+    marina: { x0: -118, x1: -42, z0: 201, z1: 228, moles: [[[-118, 201], [-118, 226], [-92, 230]], [[-42, 201], [-42, 226], [-68, 230]]] },
+  };
+  const areas = [
+    { kind: 'forest', poly: [[-300, -240], [0, -240], [0, -168], [-300, -168]], name: 'Лесопарк' },
+    { kind: 'forest', poly: [[-300, -168], [-236, -168], [-236, -84], [-300, -84]] },
+    { kind: 'forest', poly: [[-300, -84], [-284, -84], [-284, 164], [-300, 164]] },
+    { kind: 'field', poly: [[-300, -370], [-6, -370], [-6, -248], [-300, -248]] },
+    { kind: 'field', poly: [[6, -370], [300, -370], [300, -248], [6, -248]] },
+    { kind: 'industry', poly: [[4, -232], [204, -232], [204, -164], [4, -164]] },
+    { kind: 'verge', poly: [[204, -232], [300, -232], [300, 156], [204, 156]] },
+    { kind: 'park', poly: [[256, 40], [300, 40], [300, 156], [256, 156]], name: 'Восточный лесопарк' },
+    { kind: 'parking', poly: [[262, 8], [298, 8], [298, 34], [262, 34]], name: 'P+R' },
+    { kind: 'embankment', poly: [[-236, -168], [-188, -168], [-188, 201], [-236, 201]] },
+    { kind: 'beach', poly: [[-300, 164], [-236, 164], [-226, 192], [-226, 203], [-300, 203]] },
+    { kind: 'promenade', poly: [[-188, 191], [44, 191], [44, 203], [-188, 203]] },
+    { kind: 'port', poly: [[40, 164], [300, 164], [300, 237], [40, 237]] },
+    { kind: 'urban', poly: [[-284, -164], [204, -164], [204, 191], [-284, 191]] },
   ];
-  const stopsAlong = (pts, step) => { const out = []; for (let i = 0; i + 1 < pts.length; i++) { const [a, b] = [pts[i], pts[i + 1]], L = Math.hypot(b[0] - a[0], b[1] - a[1]); for (let s = step / 2; s < L; s += step) out.push([R(a[0] + (b[0] - a[0]) * s / L), R(a[1] + (b[1] - a[1]) * s / L)]); } return out; };
-  for (const l of lines) l.stops = stopsAlong(l.pts, l.id === 'B3' ? 160 : 80);
-  const transit = { lines, note: 'остановки в 80 м игровых (200 м настоящих); выделенная полоса на проспектах, остановочные карманы; метро / трамвай - позже (C5)' };
 
-  // ------------------------------------------------------------------ zones and blocks (cells between the street lines)
-  const X = [...new Set([...xsAll, -285, 245])].sort((a, b) => a - b), Z = [-250, ...zsAll, SEA_Z].sort((a, b) => a - b).filter((z, i, a) => a.indexOf(z) === i);
-  const blocks = [];
-  const xr = [-285, ...X.filter((x) => x > -285 && x < -205 - RIVER_W / 2), -205 - RIVER_W / 2, -205 + RIVER_W / 2, ...X.filter((x) => x > -205 + RIVER_W / 2), 245].sort((a, b) => a - b);
-  const zr = [M1_Z, -160, RAIL_Z, ...zsAll.filter((z) => z > RAIL_Z), SEA_Z].filter((z, i, a) => a.indexOf(z) === i).sort((a, b) => a - b);
-  for (let i = 0; i + 1 < xr.length; i++) for (let j = 0; j + 1 < zr.length; j++) {
-    const x0 = xr[i], x1 = xr[i + 1], z0 = zr[j], z1 = zr[j + 1];
-    if (x1 - x0 < 6 || z1 - z0 < 6) continue;
-    const zone = zoneOf(x0, x1, z0, z1);
-    if (zone === 'water' || zone === 'verge') continue;
-    blocks.push({ id: `b${blocks.length}`, rect: [x0, z0, x1, z1], zone });
+  // ------------------------------------------------------------------ blocks: cells between street lines, merged where no street separates them
+  const xs = [-280, -232, -194, -160, -120, -80, -40, 0, 40, 80, 120, 160, 200], zs = [-218, -190, -160, -126, -108, -80, -40, 0, 40, 80, 120, 160, 188];
+  const zoneAt = (cx, cz) => {
+    if (cz < -160) return cx > 0 && cx < 200 ? 'industrial' : null;
+    if (cz < -126) { if (cx < -194) return null; if (cx > -80 && cx < 40) return 'railyard'; return 'logistics'; }
+    if (cz < -108) return null;
+    if (cx < -232) return cz > -80 && cz < 160 ? 'villas' : null;
+    if (cx < -194) return null;
+    if (cz > 160) return cx < 40 ? 'waterfront' : null;
+    if (cz < -80) { if (cx > -40 && cx < 0) return 'station'; if (cx > 0 && cx < 40) return 'busterm'; return 'residential'; }
+    if (cx < -160) return cz > -40 && cz < 120 ? 'park' : 'residential';
+    if (cx > -120 && cx < -80 && cz > -40 && cz < 0) return 'hospital';
+    if (cx > -120 && cx < -80 && cz > 0 && cz < 40) return 'school';
+    if (cx > 40 && cx < 80 && cz > -40 && cz < 0) return 'market';
+    if (cx > -160 && cx < -80 && cz > 80) return 'stadium';
+    if (cx > 80 && cx < 160 && cz > 80) return 'campus';
+    if (cx > 160) return cz > -80 && cz < -40 ? 'school' : 'east';
+    if (Math.abs(cx) < 80 && Math.abs(cz) < 80) return 'cbd';
+    return Math.abs(cx) < 120 && Math.abs(cz) < 120 ? 'mixed' : 'residential';
+  };
+  const streetAlong = (axis, c, a, b) => {   // the street on a cell side (V line at x = c covering z in [a, b], or H line at z = c)
+    const L = axis === 'x' ? V.filter((l) => l.x === c) : H.filter((l) => l.z === c);
+    for (const l of L) for (const [s0, s1] of l.spans) if (s0 <= a + 1e-6 && s1 >= b - 1e-6) return l;
+    if (axis === 'x' && c === 0 && a >= -262 && b <= 188) return V.find((l) => l.x === 0 && l.cls === 'arterial');
+    return null;
+  };
+  const cells = [];
+  for (let i = 0; i + 1 < xs.length; i++) for (let j = 0; j + 1 < zs.length; j++) {
+    const x0 = xs[i], x1 = xs[i + 1], z0 = zs[j], z1 = zs[j + 1], zone = zoneAt((x0 + x1) / 2, (z0 + z1) / 2);
+    if (zone) cells.push({ i, j, x0, x1, z0, z1, zone, g: cells.length });
   }
-  // a hand-placed landmarks list (positions are plan-level, the game decides the exact building later)
+  const anyStreet = (axis, c, a, b) => (axis === 'x' ? V.filter((l) => l.x === c) : H.filter((l) => l.z === c)).some((l) => l.spans.some(([s0, s1]) => s0 < b - 1e-6 && s1 > a + 1e-6));
+  let rects = cells.map((c) => ({ x0: c.x0, x1: c.x1, z0: c.z0, z1: c.z1, zone: c.zone, n: 1 }));
+  for (let changed = true; changed;) {
+    changed = false;
+    outer: for (let i = 0; i < rects.length; i++) for (let k = 0; k < rects.length; k++) {
+      const A = rects[i], B = rects[k]; if (i === k || A.zone !== B.zone) continue;
+      const hz = A.x1 === B.x0 && A.z0 === B.z0 && A.z1 === B.z1 && !anyStreet('x', A.x1, A.z0, A.z1);
+      const vt = A.z1 === B.z0 && A.x0 === B.x0 && A.x1 === B.x1 && !anyStreet('z', A.z1, A.x0, A.x1);
+      if (hz || vt) { rects[i] = { x0: A.x0, z0: A.z0, x1: hz ? B.x1 : A.x1, z1: vt ? B.z1 : A.z1, zone: A.zone, n: A.n + B.n }; rects.splice(k, 1); changed = true; break outer; }
+    }
+  }
+  const blocks = [];
+  for (const g of rects) {
+    const { x0, x1, z0, z1 } = g, list = [g];
+    const half = (l) => l ? CLS[l.cls].w / 2 + CLS[l.cls].sidewalk + 0.4 : 1.5;
+    const sides = { w: streetAlong('x', x0, z0, z1) || streetAlong('x', x0, z0 + 1, z0 + 2), e: streetAlong('x', x1, z0, z1) || streetAlong('x', x1, z0 + 1, z0 + 2), n: streetAlong('z', z0, x0, x1) || streetAlong('z', z0, x0 + 1, x0 + 2), s: streetAlong('z', z1, x0, x1) || streetAlong('z', z1, x0 + 1, x0 + 2) };
+    const lot = [x0 + half(sides.w), z0 + half(sides.n), x1 - half(sides.e), z1 - half(sides.s)].map(R);
+    blocks.push({ id: 'b' + blocks.length, rect: [x0, z0, x1, z1], lot, zone: g.zone, cells: g.n, frontage: Object.entries(sides).filter(([, l]) => l).map(([k, l]) => `${k}:${l.cls}`) });
+  }
+  blocks.sort((a, b) => a.rect[1] - b.rect[1] || a.rect[0] - b.rect[0]); blocks.forEach((b, i) => { b.id = 'b' + i; });
+
+  // ------------------------------------------------------------------ transit (stops placed by hand mid-block, ~80 game m = 200 m real apart)
+  const lines = [
+    { id: 'B1', name: 'Автобус 1: P+R «Восток» — Центр — Береговая', color: '#d9480f', pts: [[290, 0], [-280, 0]], stops: [286, 186, 104, 24, -56, -136, -256].map((x) => [x, 0]) },
+    { id: 'B2', name: 'Автобус 2: Вокзал — Центр — Морская площадь', color: '#1c6dd0', pts: [[0, -100], [0, 188]], stops: [-100, -24, 56, 136, 180].map((z) => [0, z]) },
+    { id: 'B3', name: 'Автобус 3: кольцо по проспектам', color: '#2b8a3e', pts: [[-160, -160], [160, -160], [160, 160], [-160, 160], [-160, -160]], stops: [] },
+  ];
+  for (const v of [-120, -40, 40, 120]) lines[2].stops.push([v, -160], [160, v], [-v, 160], [-160, -v]);
+  const transit = { lines, note: 'остановки ~80 игровых м (200 м настоящих), у перекрёстков и в середине кварталов; метро / трамвай позже (C5)' };
+
   const landmarks = [
     { id: 'L1', kind: 'plaza', name: 'Центральная площадь', at: [0, 0] }, { id: 'L2', kind: 'market', name: 'Рынок', at: [60, -20] },
-    { id: 'L3', kind: 'hospital', name: 'Больница', at: [-100, -20] }, { id: 'L4', kind: 'school', name: 'Школа', at: [-60, 20] },
+    { id: 'L3', kind: 'hospital', name: 'Больница', at: [-100, -20] }, { id: 'L4', kind: 'school', name: 'Школа', at: [-100, 20] },
     { id: 'L5', kind: 'university', name: 'Университет', at: [120, 120] }, { id: 'L6', kind: 'stadium', name: 'Стадион', at: [-120, 120] },
-    { id: 'L7', kind: 'station', name: 'Центральный вокзал', at: [0, -140] }, { id: 'L8', kind: 'port', name: 'Порт', at: [130, 182] },
-    { id: 'L9', kind: 'park', name: 'Набережный парк', at: [-180, 20] }, { id: 'L10', kind: 'industry', name: 'Промзона', at: [150, -205] },
-    { id: 'L11', kind: 'pnr', name: 'Парк-и-езжай (P+R)', at: [230, -60] }, { id: 'L12', kind: 'marina', name: 'Яхтенная гавань', at: [-60, 182] },
+    { id: 'L7', kind: 'station', name: 'Центральный вокзал', at: [-20, -96] }, { id: 'L8', kind: 'port', name: 'Порт', at: [200, 226] },
+    { id: 'L9', kind: 'park', name: 'Набережный парк', at: [-177, 40] }, { id: 'L10', kind: 'industry', name: 'Промзона', at: [60, -205] },
+    { id: 'L11', kind: 'pnr', name: 'P+R «Восток»', at: [280, 21] }, { id: 'L12', kind: 'marina', name: 'Яхтенная гавань', at: [-80, 215] },
+    { id: 'L13', kind: 'cityhall', name: 'Мэрия', at: [-22, -22] }, { id: 'L14', kind: 'church', name: 'Собор', at: [22, 22] },
+    { id: 'L15', kind: 'busterm', name: 'Автовокзал', at: [20, -95] }, { id: 'L16', kind: 'depot', name: 'Депо', at: [-20, -143] },
+    { id: 'L17', kind: 'forest', name: 'Лесопарк', at: [-110, -205] }, { id: 'L18', kind: 'school', name: 'Школа №2', at: [180, -60] },
+    { id: 'L19', kind: 'beach', name: 'Пляж', at: [-262, 184] },
   ];
 
+  const sig = junctions.filter((j) => j.type === 'signal');
   return {
-    version: 'C0', generated: 'tools/masterplan/plan-c.mjs', scale: 0.4, unit: 'game metre (x east, z south); real = x2.5',
-    size, water: { sea: { z: SEA_Z, coast: 'port basins at x 60..220' }, river: { x: RIVER_X, w: RIVER_W, from: [RIVER_X, size.z0], to: [RIVER_X, SEA_Z] } },
-    classes: CLS, nodes: [...nodes.values()].map(({ legs, ...n }) => ({ ...n, legs: legs.length })), edges, junctions, interchanges, crossings, footbridges, tunnels, rail, grade, transit, blocks, landmarks,
-    counts: { nodes: nodes.size, edges: edges.length, junctions: junctions.length, signals: sig.length, interchanges: interchanges.length, crossings: crossings.length, footbridges: footbridges.length, tunnels: tunnels.length },
+    version: 'C0', generated: 'tools/masterplan/plan-c.mjs', scale: 0.4, unit: 'game metre (x east, z south); real = x2.5', traffic: 'right-hand',
+    size, water, areas, classes: CLS, lines: { V, H },
+    nodes: nodeArr.map(({ legs, ...n }) => ({ ...n, legs: legs.length })), edges, exits, junctions, interchanges, crossings, footbridges, tunnels, rail, grade, transit, blocks, landmarks,
+    counts: { nodes: nodes.size, edges: edges.length, junctions: junctions.length, signals: sig.length, roundabouts: junctions.filter((j) => j.type === 'roundabout').length, interchanges: interchanges.length, ramps: interchanges.reduce((s, i) => s + i.ramps.length, 0), crossings: crossings.length, footbridges: footbridges.length, tunnels: tunnels.length, blocks: blocks.length, busStops: lines.reduce((s, l) => s + l.stops.length, 0) },
   };
 }
 
