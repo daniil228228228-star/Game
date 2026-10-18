@@ -919,6 +919,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 </script>
 <script src="vendor/three_r128/three.min.js"></script>
 <script src="vendor/three_r128/OrbitControls.js"></script>
+<script src="assets/layout-v161.js"></script>
 <!-- standaloneAssetsV161 [global]: textures/height/roughness maps live in assets/ (inlined by tools/standalone.mjs build) -->
 <script src="assets/materials-v152.js"></script>
 <script src="assets/plates-v161.js"></script>
@@ -936,6 +937,7 @@ body.guided-mode .v30Panel .guide-primary{opacity:1!important;filter:none!import
 <script src="assets/site-v161.js"></script>
 <script src="assets/props-v161.js"></script>
 <script src="assets/masterplan-port-data-v161.js"></script>
+<script src="assets/plan-c-data-v161.js"></script>
 <script src="assets/foliage-v154.js"></script>
 <script src="assets/work-session-v158.js"></script>
 <script src="assets/development-core-v160.js"></script>
@@ -1371,12 +1373,19 @@ function masterplanFloorV161(x,z){
   return true;
 }
 function masterplanAccessV161(x,z,margin=.65){
+  if (window.LAYOUT_V161 === 'C') return !!(window.PlanCDataV161 && window.PlanCDataV161.access(x,z,margin)); // plan C: the whole land of the plan is walkable floor (assets/plan-c-data-v161.js)
   if (!masterplanStateV161.B01 || !masterplanFloorV161(x,z)) return false;
   // margin against the UNION of paid floors (no invisible seam at a parcel entrance)
   for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; if (!masterplanFloorV161(x + Math.cos(a) * margin, z + Math.sin(a) * margin)) return false; }
   return true;
 }
 function clampPlayerBoundsV161(x,z,margin=1){
+  if(window.LAYOUT_V161==='C'){   // plan C: floor is the compiled land, the layer slides along its edge
+    if(Math.abs(x)<=GROUND_HALF-margin&&Math.abs(z)<=GROUND_HALF-margin)return {x,z};
+    if(window.PlanCV161)return window.PlanCV161.clamp(x,z,margin);
+    if(masterplanAccessV161(x,z))return {x,z};
+    return {x:THREE.MathUtils.clamp(x,-GROUND_HALF+margin,GROUND_HALF-margin),z:THREE.MathUtils.clamp(z,-GROUND_HALF+margin,GROUND_HALF-margin)};
+  }
   if(window.MasterplanV161)return window.MasterplanV161.clamp(x,z,margin);
   if(masterplanStateV161.B01&&(Math.abs(x)>GROUND_HALF-margin||Math.abs(z)>GROUND_HALF-margin)&&masterplanAccessV161(x,z))return {x,z};   // layer not loaded yet (boot): the paid floor is data, keep a saved spot on it
   return {x:THREE.MathUtils.clamp(x,-GROUND_HALF+margin,GROUND_HALF-margin),z:THREE.MathUtils.clamp(z,-GROUND_HALF+margin,GROUND_HALF-margin)};
@@ -1431,7 +1440,7 @@ const SPIRAL_ANGLE_STEP = 0.8; // radians per stage (v161 roundabout 2026-10-18:
 // radius 2.7, giving 1.23 units of clearance to the NEAREST spoke centerline -- safely outside
 // the 1.15 hard-stop radius (unlike, e.g., the same radius on the X or Z axis, which sits right
 // on top of a spoke and re-creates the same freeze).
-const PLAYER_SPAWN_POS = new THREE.Vector3(-2.656, 0, -0.489);
+const PLAYER_SPAWN_POS = window.LAYOUT_V161 === 'C' ? new THREE.Vector3(11, 0, -11) : new THREE.Vector3(-2.656, 0, -0.489); // layout C: on the paved circus beside the central ring
 
 /* v29.2 pacing pass: the old late-game cash curve produced ~25 minutes of passive-only
    waiting before resource/logistics gates were even counted. This curve keeps early choices
@@ -2175,7 +2184,7 @@ const innerPlaza = new THREE.Mesh(
 innerPlaza.rotation.x = -Math.PI / 2;
 innerPlaza.position.y = 0.03;
 innerPlaza.receiveShadow = true;
-scene.add(innerPlaza);
+if (window.LAYOUT_V161 !== 'C') scene.add(innerPlaza); // layout C: the central plaza is the plan's circus
 
 const pathMaterial = new THREE.MeshStandardMaterial({ map: roadTexture, color: 0x858a91, roughness: 0.96, bumpMap: getDetailBump('asphalt'), bumpScale: 0.032 });
 const lineMaterial = new THREE.MeshStandardMaterial({ color: 0xf5d77d, roughness: 0.64, emissive: 0x3d310b, emissiveIntensity: 0.08 });
@@ -2426,7 +2435,7 @@ const plotRing = new THREE.Mesh(
 );
 plotRing.rotation.x = -Math.PI / 2;
 plotRing.position.y = 0.06;
-scene.add(plotRing);
+if (window.LAYOUT_V161 !== 'C') scene.add(plotRing); // layout C: no island ring
 
 const outerRingRoad = new THREE.Mesh(
   new THREE.RingGeometry(GROUND_HALF * 0.78, GROUND_HALF * 0.86, 96),
@@ -2434,7 +2443,7 @@ const outerRingRoad = new THREE.Mesh(
 );
 outerRingRoad.rotation.x = -Math.PI / 2;
 outerRingRoad.position.y = 0.045;
-scene.add(outerRingRoad);
+if (window.LAYOUT_V161 !== 'C') scene.add(outerRingRoad); // layout C: no island ring
 
 const outerRingMark = new THREE.Mesh(
   new THREE.RingGeometry(GROUND_HALF * 0.815, GROUND_HALF * 0.818, 140),
@@ -2448,7 +2457,7 @@ outerRingMark.rotation.x = -Math.PI / 2;
 // matched that margin here too, scaled up a bit further since this ring is viewed from
 // even greater distances.
 outerRingMark.position.y = 0.09;
-scene.add(outerRingMark);
+if (window.LAYOUT_V161 !== 'C') scene.add(outerRingMark); // layout C: no island ring
 // v161 feel (user: "тонкая белая кривая на траве к западу от лесопилки, x≈-53.5"): that curve is innerPromenadeCurb (r 54.0-54.5, the white inner curb of the outer ring road), which was always drawn
 // while the ring road it borders (outerRingRoad, r 54.6-60.2) stays hidden until total road levels >= 8 -> a stray line on the lawn. It now follows outerRingRoad's visibility.
 function setRingRoadEdgeVisibleV161(on) { const m = scene.getObjectByName('innerPromenadeCurbV161'); if (m) m.visible = !!on; }
@@ -2473,7 +2482,7 @@ const waterRing = new THREE.Mesh(
 );
 waterRing.rotation.x = -Math.PI / 2;
 waterRing.position.y = -0.22;
-scene.add(waterRing);
+if (window.LAYOUT_V161 !== 'C') scene.add(waterRing); // layout C: no island ring
 scene.userData.waterTexture = waterTexture;
 
 const shoreRing = new THREE.Mesh(
@@ -2482,7 +2491,7 @@ const shoreRing = new THREE.Mesh(
 );
 shoreRing.rotation.x = -Math.PI / 2;
 shoreRing.position.y = 0.01;
-scene.add(shoreRing);
+if (window.LAYOUT_V161 !== 'C') scene.add(shoreRing); // layout C: no island ring
 
 function makeSkyTexture() {
   const c = document.createElement('canvas');
@@ -2550,7 +2559,8 @@ function makeSkyTexture() {
   }
 
   const hillMat = new THREE.MeshStandardMaterial({ color: 0x5b8d57, roughness: 0.98 });
-  for (let i = 0; i < 24; i++) {
+  const planCBackdropOff = window.LAYOUT_V161 === 'C'; // layout C: the city fills the world, no ring of hills / skyline boxes at r 76-87
+  for (let i = 0; i < 24 && !planCBackdropOff; i++) {
     const angle = (i / 24) * Math.PI * 2;
     const r = GROUND_HALF * (1.08 + Math.random() * 0.16);
     const hill = new THREE.Mesh(
@@ -2568,7 +2578,7 @@ function makeSkyTexture() {
   }
 
   const skylinePalette = [0x6e7b89, 0x778495, 0x66717d, 0x5c6672];
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 30 && !planCBackdropOff; i++) {
     const angle = (i / 30) * Math.PI * 2;
     const r = GROUND_HALF * (1.12 + (i % 4) * .025);
     const w = 3 + Math.random() * 4.5;
@@ -2701,6 +2711,7 @@ function makeFireHydrant() {
 }
 
 (function createRoadsideDetails() {
+  if (window.LAYOUT_V161 === 'C') return; // layout C: the old island core (decor, rings, lawn courts, legacy roadside) does not exist; the city is assets/plan-c-v161.js
   // Placed at each road SEGMENT's midpoint using that segment's own direction (matching the
   // road/curb/sidewalk loop exactly), not at a stage corner using the radial direction from
   // the map's origin. The old corner-based placement had two bugs: (1) the offset tangent was
@@ -2954,6 +2965,7 @@ function distToNearestRoadSegment(x, z) {
 }
 
 (function scatterScenery() {
+  if (window.LAYOUT_V161 === 'C') return; // layout C: the old island core (decor, rings, lawn courts, legacy roadside) does not exist; the city is assets/plan-c-v161.js
   const stagePositions = STAGES.map((_, i) => stagePosition(i));
   const MIN_CLEAR = 3.7;
   const ROAD_CLEAR = 2.6; // clears the road (1.15 half-width) + sidewalk (out to ~2.17) + a margin for the decor's own footprint
@@ -3006,6 +3018,7 @@ function distToNearestRoadSegment(x, z) {
 /*  world a deliberate landscaped look instead of random empty patches.   */
 /* ---------------------------------------------------------------------- */
 (function polishEnvironment() {
+  if (window.LAYOUT_V161 === 'C') return; // layout C: the old island core (decor, rings, lawn courts, legacy roadside) does not exist; the city is assets/plan-c-v161.js
   const polishedSidewalkMat = createConcreteMaterial(0xddd8cf, { roughness: 0.93 });
   const polishedCurbMat = createConcreteMaterial(0xc8c2b8, { roughness: 0.9 });
   const planterMat = createConcreteMaterial(0xbeb8ad, { roughness: 0.95 });
@@ -3122,6 +3135,7 @@ function distToNearestRoadSegment(x, z) {
 /*  the map into hundreds of independent draw calls.                       */
 /* ---------------------------------------------------------------------- */
 (function createGroundMicroDetail() {
+  if (window.LAYOUT_V161 === 'C') return; // layout C: the old island core (decor, rings, lawn courts, legacy roadside) does not exist; the city is assets/plan-c-v161.js
   const total = VISUAL_MOBILE ? 110 : 240;
   const geom = new THREE.ConeGeometry(0.055, 0.24, 4);
   const mats = [
@@ -3786,6 +3800,7 @@ function updateMetalPlantProduction(dt) {
 /*  sparsely decorated between the functional gameplay props.              */
 /* ---------------------------------------------------------------------- */
 (function addEnvironmentPolishPlus() {
+  if (window.LAYOUT_V161 === 'C') return; // layout C: the old island core (decor, rings, lawn courts, legacy roadside) does not exist; the city is assets/plan-c-v161.js
   const mulchMat = new THREE.MeshStandardMaterial({ color: 0x9a744d, roughness: 1 });
   const flowerColors = [0xf6f1e7, 0xf59ab3, 0xffd46f, 0x9ed9ff, 0xd6b6ff];
 
@@ -3930,6 +3945,7 @@ function updateMetalPlantProduction(dt) {
 /*  friendly decor placement to eliminate the last bare-looking sectors.   */
 /* ---------------------------------------------------------------------- */
 (function fullEnvironmentAuditPass() {
+  if (window.LAYOUT_V161 === 'C') return; // layout C: the old island core (decor, rings, lawn courts, legacy roadside) does not exist; the city is assets/plan-c-v161.js
   const walkMat = createConcreteMaterial(0xdfd9ce, { roughness: 0.95 });
   const curbMat = createConcreteMaterial(0xc7c0b5, { roughness: 0.91 });
   const mulchMat = new THREE.MeshStandardMaterial({ color: 0x98714a, roughness: 1 });
@@ -13279,6 +13295,7 @@ function save() {
       saveVersion: 64, // Backward-compatible addition: persisted reward deadlines.
       strategicPacingV124: true,
       masterplanV161: {...masterplanStateV161},
+      layoutV161: window.LAYOUT_V161 === 'C' ? 'C' : 'B', // city layout (assets/layout-v161.js): absent = old core + plan B
       /* v160 integration begin */
       developmentV160: typeof companyDevelopmentV160 === 'undefined' ? undefined : companyDevelopmentV160.snapshot(),
       /* v160 integration end */
@@ -13719,10 +13736,10 @@ function load() {
         player.position.copy(PLAYER_SPAWN_POS);
       } else {
         // the paid floor is the compiled data (walkable polygons per pad, masterplanFloorV161), no hard-coded rectangles
-        const paidPort = masterplanStateV161.B01 && Number.isFinite(savedX) && Number.isFinite(savedZ) && Math.max(Math.abs(savedX), Math.abs(savedZ)) > GROUND_HALF - 2 && masterplanAccessV161(savedX, savedZ);
+        const paidPort = (masterplanStateV161.B01 || window.LAYOUT_V161 === 'C') && Number.isFinite(savedX) && Number.isFinite(savedZ) && Math.max(Math.abs(savedX), Math.abs(savedZ)) > GROUND_HALF - 2 && masterplanAccessV161(savedX, savedZ);
         player.position.set(paidPort ? savedX : THREE.MathUtils.clamp(savedX,-GROUND_HALF+2,GROUND_HALF-2),0,paidPort ? savedZ : THREE.MathUtils.clamp(savedZ,-GROUND_HALF+2,GROUND_HALF-2));
       }
-      const safe = !window.MasterplanV161 && masterplanStateV161.B01 && masterplanAccessV161(player.position.x, player.position.z) ? {x:player.position.x,z:player.position.z} : nearestSafePlayerPosition(player.position);
+      const safe = (window.LAYOUT_V161 === 'C' || (!window.MasterplanV161 && masterplanStateV161.B01)) && masterplanAccessV161(player.position.x, player.position.z) ? {x:player.position.x,z:player.position.z} : nearestSafePlayerPosition(player.position);
       player.position.x = safe.x;
       player.position.z = safe.z;
     }
@@ -39758,6 +39775,7 @@ body.v165-polish :is(.projectProgress,.cityProgress,.fleetCondition)>i{backgroun
 <script src="assets/panel-stable-v161.js"></script>
 <script src="assets/masterplan-v161.js"></script>
 <script src="assets/roundabout-v161.js"></script>
+<script src="assets/plan-c-v161.js"></script>
 <link rel="stylesheet" href="assets/premium-ui-v161.css">
 </body>
 
