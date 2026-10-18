@@ -232,7 +232,7 @@ const shapes = [];   // {x0,z0,x1,z1,type}
 const PRIO = { walk: 1, asph: 2, med: 3 };
 const addShape = (x0, z0, x1, z1, type) => { if (x1 - x0 > 1e-4 && z1 - z0 > 1e-4) shapes.push({ x0: R3(x0), z0: R3(z0), x1: R3(x1), z1: R3(z1), type }); };
 const roundAt = (nodeId) => { const j = J.get(nodeId); return j && j.type === 'roundabout' ? j : null; };
-const mTrim = (id) => { const n = N.get(id); return n.x === M2_X && n.z === 0 ? 12 : 0; };   // (legs is a count in the plan data: the former `legs.length` trim was always 0)   // the motorway median ends 12 m before the I2 crossing (zebra, stop line)
+const mTrim = (id) => { const n = N.get(id); return n.x === M2_X && n.z === 0 ? 18.5 : 0; };   // (legs is a count in the plan data: the former `legs.length` trim was always 0)   // the motorway median ends 18.5 m before the I2 crossing (just past the corner fillets; the zebra at 20.3 m stands on it) (zebra, stop line)
 const edgeSpan = (e) => {   // along-axis span of the carriageway/sidewalk, trimmed to the chord of a roundabout
   const a = N.get(e.a), b = N.get(e.b), ax = e.dir === 'x' ? 0 : 1, lo = Math.min(a.x * (1 - ax) + a.z * ax, b.x * (1 - ax) + b.z * ax), hi = Math.max(a.x * (1 - ax) + a.z * ax, b.x * (1 - ax) + b.z * ax);
   const lowNode = (a.x * (1 - ax) + a.z * ax) <= (b.x * (1 - ax) + b.z * ax) ? e.a : e.b, highNode = lowNode === e.a ? e.b : e.a;
@@ -490,7 +490,7 @@ for (const j of PLAN.junctions) {
 // ---- 5b. I2: the street splits into two one-way carriageways round a green island on each side of the main road (the Svetlanovskaya Square scheme, simplified).
 // West island: oval (round tip away from the crossing), east island: rounded rectangle; carriageway band 4.8 m = 2 lanes of 2.4, island half width 6, sidewalks outside,
 // the band ends square at the M2 edge with 7 m kerb returns (right-turn corners), zebra + signal heads on every branch, stop line + arrows + lane dashes on the inbound one.
-const SPLIT = { hz: 6, band: 4.8, walk: 1.8, R: 7 }, islandsOut = [];
+const SPLIT = { hz: 6, band: 4.8, walk: 1.8, R: 7 }, islandsOut = [], splitZones = [];   // splitZones: outline of band + sidewalk of each island (nothing random may stand there)
 {
   const xm = M2_X, mw = MW;
   const rr = (xa, xb, hz, rcs, d, n = 8) => {   // rounded-rectangle outline, CCW from the right-bottom side; corner order TR, TL, BL, BR; offset d
@@ -509,24 +509,38 @@ const SPLIT = { hz: 6, band: 4.8, walk: 1.8, R: 7 }, islandsOut = [];
     const inner = rr(xa, xb, hz, rcs, 0), outerB = rr(xa, xb, hz, rcs.map((r, k) => (side < 0 ? (k === 0 || k === 3) : (k === 1 || k === 2)) ? 0.01 - SPLIT.band : r), SPLIT.band, 8);   // crossing-side corners of the band are SHARP (radius 0.01)
     // outer outline: sharp corners on the crossing side
     const outer = outerB;
-    const nearM = (q) => Math.abs(q[0] - edgeM) < SPLIT.R + 0.6, tipStub = (q) => (side < 0 ? q[0] < farX + 1 : q[0] > farX - 1) && Math.abs(q[1]) < hw('arterial') + CLS.arterial.sidewalk + 0.3;
+    const nearM = (q) => Math.abs(q[0] - edgeM) < SPLIT.R - 0.05, tipStub = (q) => (side < 0 ? q[0] < farX + 1 : q[0] > farX - 1) && Math.abs(q[1]) < hw('arterial') + CLS.arterial.sidewalk + 0.3;
     strip(inner, outer, H.asph, CI.asph);
     // sidewalk ring outside the band (not at the street stub, not at the corners)
     const outer2 = rr(xa, xb, hz, rcs.map((r, k) => (side < 0 ? (k === 0 || k === 3) : (k === 1 || k === 2)) ? 0.01 - SPLIT.band - SPLIT.walk : r), SPLIT.band + SPLIT.walk, 8);
-    strip(outer, outer2, H.walk, CI.walk, (q) => !nearM(q) && !tipStub(q));
-    wall(outer, H.asph, H.walk, CI.kerb, (q) => !nearM(q) && !tipStub(q));
+    // sidewalk: the round far end as a polygon strip, the straight parts as rectangles that stop exactly at the tangent point of the corner fillet
+    const tipOnly = (q) => (side < 0 ? q[0] < farX + 6 + 0.01 : q[0] > farX - 6 - 0.01) && !tipStub(q);
+    strip(outer, outer2, H.walk, CI.walk, tipOnly);
+    wall(outer, H.asph, H.walk, CI.kerb, tipOnly);
+    for (const sz of [-1, 1]) {
+      const xA = side < 0 ? farX + 6 : edgeM + side * SPLIT.R, xB = side < 0 ? edgeM + side * SPLIT.R : farX - 6, z0 = sz * (hz + SPLIT.band), z1 = sz * (hz + SPLIT.band + SPLIT.walk);
+      emitRect('r', 'q', xA, Math.min(z0, z1), xB, Math.max(z0, z1), H.walk, CI.walk);
+      emitWall(xA, z0, xB, z0, H.asph, H.walk, CI.kerb);
+    }
     // island: kerb, rim, lawn
     wall(inner, H.asph, H.island + 0.03, CI.kerb);
     const c0 = [(xa + xb) / 2, 0];
     for (let i = 0; i < inner.length; i++) { const j = (i + 1) % inner.length; emitTri('r', c0, inner[i], inner[j], H.island + 0.03, CI.islandC); }
     const lawn = rr(xa, xb, hz, rcs, -0.7);
     for (let i = 0; i < lawn.length; i++) { const j = (i + 1) % lawn.length; emitTri('r', c0, lawn[i], lawn[j], H.island + 0.035, CI.islandL); }
+    splitZones.push(outer2.map((q) => [q[0], q[1]]));
     islandsOut.push({ side, poly: inner.map((q) => [R2(q[0]), R2(q[1])]), outer: outer.map((q) => [R2(q[0]), R2(q[1])]) });
     // kerb returns at the crossing: asphalt fillets between the band edge and the M2 edge
     for (const sz of [-1, 1]) {
       const K = [edgeM, sz * (hz + SPLIT.band)], Rr = SPLIT.R, O = [edgeM + side * Rr, sz * (hz + SPLIT.band + Rr)], arc = [];
       for (let k = 0; k <= 12; k++) { const t = k / 12 * Math.PI / 2; arc.push([O[0] - side * Rr * Math.sin(t), O[1] - sz * Rr * Math.cos(t)]); }
       for (let k = 0; k + 1 < arc.length; k++) { emitTri('r', K, arc[k], arc[k + 1], H.asph, CI.asph); emitWall(arc[k][0], arc[k][1], arc[k + 1][0], arc[k + 1][1], H.asph, H.walk, CI.kerb); }
+      // sidewalk round the corner (the ring just outside the arc) and a landing strip along the M2 edge: the zebra over M2 ends on it
+      const arc2 = []; for (let k = 0; k <= 12; k++) { const t = k / 12 * Math.PI / 2; arc2.push([O[0] - side * (Rr - SPLIT.walk) * Math.sin(t), O[1] - sz * (Rr - SPLIT.walk) * Math.cos(t)]); }
+      for (let k = 0; k + 1 < arc.length; k++) { emitTri('r', arc[k], arc2[k], arc[k + 1], H.walk, CI.walk); emitTri('r', arc2[k], arc2[k + 1], arc[k + 1], H.walk, CI.walk); }
+      { const zA = sz * (hz + SPLIT.band + Rr), zB = sz * (hz + SPLIT.band + Rr + 16), xA = edgeM, xB = edgeM + side * SPLIT.walk;
+        emitRect('r', 'q', Math.min(xA, xB), Math.min(zA, zB), Math.max(xA, xB), Math.max(zA, zB), H.walk, CI.walk);
+        emitWall(edgeM, zA, edgeM, zB, H.asph, H.walk, CI.kerb); }
     }
     // markings: zebra on both branches, stop line + arrows + lane dashes on the inbound one (west: south branch eastbound, east: north branch westbound)
     const inSz = side < 0 ? 1 : -1, zx = noseX - side * 3.2, sx = zx + side * 3.0;   // zebra in front of the nose, the stop line 3 m before it (away from M2)
@@ -1063,7 +1077,8 @@ for (const e of PLAN.edges) if (e.bridge === 'river') { const a = N.get(e.a), b 
   const near = riverPts.reduce((q, p) => Math.abs(p[1] - M1_Z) < Math.abs(q[1] - M1_Z) ? p : q); bridgeRects.push([near[0] - 24, M1_Z - MW - 1, near[0] + 24, M1_Z + MW + 1]);
 }
 const isWater = (x, z) => inPoly(x, z, seaPoly) || (riverDist(x, z) < PLAN.water.river.w / 2 && !bridgeRects.some((r) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3]));
-const blocked = (x, z, pad = 0.6) => !!(rasterAt(x, z) || rasterAt(x + pad, z) || rasterAt(x - pad, z) || rasterAt(x, z + pad) || rasterAt(x, z - pad) || motorHosts.some((h) => { const p = [x, z]; return p[h.axis] >= h.lo && p[h.axis] <= h.hi && Math.abs(p[1 - h.axis] - h.c) < MW + pad; }) || ringAt(x, z) || rangeRamp(x, z) || railBlocked(x, z) || STRUCT.blockers.some((b) => x > b[0] - 1 && x < b[2] + 1 && z > b[1] - 1 && z < b[3] + 1)) || isWater(x, z);
+const inSplitZone = (x, z, pad) => splitZones.some((poly) => inPoly(x, z, poly) || poly.some((p, i) => segDist(x, z, p, poly[(i + 1) % poly.length]) < pad));
+const blocked = (x, z, pad = 0.6) => !!(inSplitZone(x, z, pad) || rasterAt(x, z) || rasterAt(x + pad, z) || rasterAt(x - pad, z) || rasterAt(x, z + pad) || rasterAt(x, z - pad) || motorHosts.some((h) => { const p = [x, z]; return p[h.axis] >= h.lo && p[h.axis] <= h.hi && Math.abs(p[1 - h.axis] - h.c) < MW + pad; }) || ringAt(x, z) || rangeRamp(x, z) || railBlocked(x, z) || STRUCT.blockers.some((b) => x > b[0] - 1 && x < b[2] + 1 && z > b[1] - 1 && z < b[3] + 1)) || isWater(x, z);
 const rampSegs = rampsOut.flatMap((r) => r.pts.slice(1).map((p, i) => [r.pts[i], p]));
 const rangeRamp = (x, z) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < 2.2);
 const railBlocked = (x, z) => railOut.bed.some((b) => x >= b[0] - 1 && x <= b[2] + 1 && z >= b[1] - 1 && z <= b[3] + 1) || segDist(x, z, PLAN.rail.spur.pts[0], PLAN.rail.spur.pts[PLAN.rail.spur.pts.length - 1]) < 4;

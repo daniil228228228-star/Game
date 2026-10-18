@@ -139,6 +139,7 @@ export function buildPlan() {
 
   // ------------------------------------------------------------------ interchanges (ramps are polylines in game metres; `bridges` = parts above another road)
   const interchanges = [];
+  const SLIPU = -36, SLIPK = 12, SLIPA = 0, SLIPV = 20, SLIPK2 = 14;   // slip lane: gore at ramp u -36, right-turn curve to the avenue lane at v DT+20, merge 17 m later (radius >= 14, no overlap with the ramp)
   function diamond(id, at, k, name, cross, cwPlus, cwMinus, slipPlus = cwPlus, slipMinus = cwMinus, SC = 1, SH = 0) {   // SH: pulls the whole slip-lane turn + merge SH game m towards the motorway (I2: the merge must not touch the junction with Окраинная ул.)
     // SC shortens only the SOUTH end of the ramps (the side of the trumpet I4); `south` = the local u sign that points south in this pair's frame
     const sqf = (south) => (p) => [Math.sign(p[0]) * (Math.abs(p[0]) > 10 && Math.sign(p[0]) === south ? 10 + (Math.abs(p[0]) - 10) * SC : Math.abs(p[0])), p[1]];   // shorten the ramps along the motorway (I2: the trumpet I4 starts 80 m south)
@@ -157,7 +158,10 @@ export function buildPlan() {
       // Old end v=28, k3=28 put it at v=0 and bowed the slip back across
       // the motorway edge. A longer initial tangent and a bend 2 m outward
       // preserve >=14 m radii while keeping the original avenue merge point.
-      const slipOff = join(cubic([-80, LN], [1, 0], 44, [-sl, DT + 12 - SH], [0, 1], 22, 36), seg([-sl, DT + 12 - SH], [-sl, DT + 13 - SH], 2), cubic([-sl, DT + 13 - SH], [0, 1], 7, [-((cs ?? 0) - 0.8), DT + 28 - SH], [0, 1], 7, 12));
+      // the slip branches off the ramp at a gore ~50 m before the terminal (it used to start 20 m earlier on the ramp's own lane and ran on top of it)
+      let k0 = 0; for (let i = 0; i < off.length; i++) if (Math.abs(off[i][0] - SLIPU) < Math.abs(off[k0][0] - SLIPU)) k0 = i;
+      const sp = off[k0], sn = off[Math.min(off.length - 1, k0 + 1)], sd = Math.hypot(sn[0] - sp[0], sn[1] - sp[1]) || 1, st0 = [(sn[0] - sp[0]) / sd, (sn[1] - sp[1]) / sd], ca = Math.cos(SLIPA * Math.PI / 180), sa = Math.sin(SLIPA * Math.PI / 180), st = [st0[0] * ca - st0[1] * sa, st0[0] * sa + st0[1] * ca];   // leaves the ramp at SLIPA degrees towards the avenue side
+      const slipOff = join(cubic(sp, st, SLIPK, [-sl, DT + SLIPV - SH], [0, 1], SLIPK2, 36), seg([-sl, DT + SLIPV - SH], [-sl, DT + SLIPV + 1 - SH], 2), cubic([-sl, DT + SLIPV + 1 - SH], [0, 1], 7, [-((cs ?? 0) - 0.8), DT + SLIPV + 16 - SH], [0, 1], 7, 12));
       const slipOn = slipOff.map(([u, v]) => [-u, v]).reverse();
       ramps.push({ kind: 'off', pts: off.map(sq).map(Fk), attach: ['motorway', 'cross'], decel: 26 }, { kind: 'on', pts: on.map(sq).map(Fk), attach: ['cross', 'motorway'], accel: 26 });
       if (cs == null) return;   // no room for slip lanes (P+R entrance): right turns use the signalised terminal
@@ -194,7 +198,7 @@ export function buildPlan() {
     ramps.push({ kind: 'direct', pts: c.map(F), attach: ['cross', 'motorway'], note: 'Портовое ш. на запад -> М2 на север' });
     interchanges.push({ id, kind: 'trumpet', name, at, ramps, trunkEnd: F([0, top]), note: 'три ветви: М2 заканчивается; раструб на стороне порта' });
   }
-  diamond('I1', [0, M1_Z], 0, 'Ромб: Главный пр. × М1', 'Главный пр.', CLS.arterial.w / 2, CLS.arterial.w / 2, CLS.arterial.w / 2, CLS.collector.w / 2);
+  diamond('I1', [0, M1_Z], 0, 'Ромб: Главный пр. × М1', 'Главный пр.', CLS.arterial.w / 2, CLS.arterial.w / 2, null, CLS.collector.w / 2);   // no slip lanes on the south side: their merge would end 4 m before the junction z -190 (like the Okrainnaya junction at I2)
   // I2 (M2 x Centralnaya) is a plain at-grade signalised crossing with the street split round two islands (see compile-plan-c.mjs 'split street'); no interchange object
   cloverleaf('I3', [M2_X, M1_Z], 'Клеверный лист: М1 × М2');
   trumpet('I4', [M2_X, 160], 'Трубка: М2 × Портовое ш.');
@@ -230,7 +234,7 @@ export function buildPlan() {
     else if (hi === 'collector') j = { type: 'priority', major: 'collector' };
     else j = { type: 'priority', major: null };
     n.kind = j.type;
-    junctions.push({ id: n.id, at: [n.x, n.z], ...j, ...(atI2 ? { boxZ: 10.8, splitArms: L.filter((e) => e.split).map((e) => e.id) } : {}), legs: L.length, classes: cl, arms: L.filter((e) => !e.split).map((e) => { const o = byId.get(e.a === n.id ? e.b : e.a); return { edge: e.id, cls: e.cls, dir: [Math.sign(R(o.x - n.x)), Math.sign(R(o.z - n.z))] }; }) });
+    junctions.push({ id: n.id, at: [n.x, n.z], ...j, ...(atI2 ? { boxZ: 18.1, splitArms: L.filter((e) => e.split).map((e) => e.id) } : {}), legs: L.length, classes: cl, arms: L.filter((e) => !e.split).map((e) => { const o = byId.get(e.a === n.id ? e.b : e.a); return { edge: e.id, cls: e.cls, dir: [Math.sign(R(o.x - n.x)), Math.sign(R(o.z - n.z))] }; }) });
   }
 
   // ------------------------------------------------------------------ crossings (pedestrian), footbridges, tunnels

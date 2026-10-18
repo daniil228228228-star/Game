@@ -67,7 +67,7 @@ for (const r of ramps) for (const k of [0, 1]) {
     ? ramps.filter((a) => a !== r && a.ic === r.ic && !/slip/.test(a.kind)).map((a) => heightOn(p, a.path)).sort((a, b) => a.distance - b.distance)[0].h : 0;
   assert.ok(Math.abs(p[2] - h) < 0.025, `${r.ic}/${r.kind} end ${k} is at its OTHER road's level: ${p[2]} vs ${h}`); ends++;
 }
-assert.equal(ends, 40); console.log(`PASS ${ends} ramp endpoints meet an independently selected host surface`);
+assert.equal(ends, 36); console.log(`PASS ${ends} ramp endpoints meet an independently selected host surface`);
 
 // The slip must turn AWAY from the motorway, not hook back into its edge.
 for (const r of ramps.filter((r) => /slip/.test(r.kind))) {

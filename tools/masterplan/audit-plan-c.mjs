@@ -156,6 +156,43 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
   check('motorways have no at-grade junctions or signals (except I2, the owner-mandated crossing)', !bad.length, bad.length ? bad.map((j) => j.at).join('; ') : `${P.interchanges.length} interchanges (${P.interchanges.map((i) => i.kind).join(', ')}); at-grade: ${atGrade.map((j) => j.at).join(' ')}`);
 }
 
+// 12. duplicates and redundant roads (2026-10-18): no two street edges on the same line overlap, no two ramps run on top of each other, no ramp lies on a street without joining it,
+//     every edge / ramp has an endpoint that leads somewhere (a graph node of degree >= 2, another ramp, a ring, a parking lot, or a map exit)
+{
+  const dup = [];
+  // (a) collinear edges of the same axis that overlap by more than a node point
+  for (let i = 0; i < E.length; i++) for (let k = i + 1; k < E.length; k++) {
+    const a = E[i], b = E[k]; if (a.dir !== b.dir) continue;
+    const A = [N.get(a.a), N.get(a.b)], B = [N.get(b.a), N.get(b.b)], ax = a.dir === 'x' ? 0 : 1, lat = (q) => q[1 - ax === 0 ? 'x' : 'z'];
+    const la = A[0][a.dir === 'x' ? 'z' : 'x'], lb = B[0][b.dir === 'x' ? 'z' : 'x'];
+    if (Math.abs(la - lb) > 1.5) continue;
+    const a0 = Math.min(A[0][ax ? 'z' : 'x'], A[1][ax ? 'z' : 'x']), a1 = Math.max(A[0][ax ? 'z' : 'x'], A[1][ax ? 'z' : 'x']), b0 = Math.min(B[0][ax ? 'z' : 'x'], B[1][ax ? 'z' : 'x']), b1 = Math.max(B[0][ax ? 'z' : 'x'], B[1][ax ? 'z' : 'x']);
+    if (Math.min(a1, b1) - Math.max(a0, b0) > 0.5) dup.push(`edges ${a.id}/${b.id} (${a.name || a.cls} / ${b.name || b.cls}) overlap on ${a.dir} ${la.toFixed(1)}..`);
+    void lat;
+  }
+  // (b) two ramps on top of each other: more than 25 % of the points of one lie within 2.4 m of the other
+  const samp = (r) => { const out = []; for (let i = 1; i < r.pts.length; i++) { const p = r.pts[i - 1], q = r.pts[i], n = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / 2)); for (let t = 0; t < n; t++) out.push([p[0] + (q[0] - p[0]) * t / n, p[1] + (q[1] - p[1]) * t / n]); } return out; };
+  const dseg = (p, a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], l = dx * dx + dz * dz, t = l ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / l)) : 0; return Math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dz * t); };
+  const dpoly = (p, r) => { let m = 1e9; for (let i = 1; i < r.pts.length; i++) m = Math.min(m, dseg(p, r.pts[i - 1], r.pts[i])); return m; };
+  for (let i = 0; i < ramps.length; i++) for (let k = i + 1; k < ramps.length; k++) {
+    const a = ramps[i], b = ramps[k], sa = samp(a), near = sa.filter((p) => dpoly(p, b) < 2.4).length;
+    // ramps are meant to share their first / last metres (a slip leaves its ramp); more than a quarter is a duplicate
+    if (near / sa.length > 0.25) dup.push(`ramps ${a.id}/${b.id} (${a.kind}/${b.kind}) share ${Math.round(100 * near / sa.length)} % of their length`);
+  }
+  // (c) a ramp running along a street edge closer than 2.4 m for > 12 m without being attached to it
+  for (const r of ramps) for (const e of E) {
+    if (e.cls === 'motorway') continue;
+    const a = N.get(e.a), b = N.get(e.b); let near = 0; for (const p of samp(r)) if (dseg(p, [a.x, a.z], [b.x, b.z]) < CLS[e.cls].w / 2 + 0.3) near += 2;
+    if (near > 14 && !(r.attach || []).includes('cross')) dup.push(`ramp ${r.id} lies on street ${e.id} (${e.name || e.cls}) for ${near} m but is not attached to a cross street`);
+  }
+  // (d) ramps never leave the same motorway lane twice: two ramps starting within 3 m of each other
+  for (let i = 0; i < ramps.length; i++) for (let k = i + 1; k < ramps.length; k++) for (const pi of [0, ramps[i].pts.length - 1]) for (const pk of [0, ramps[k].pts.length - 1]) {
+    const A0 = ramps[i].pts[pi], B0 = ramps[k].pts[pk];
+    if (Math.hypot(A0[0] - B0[0], A0[1] - B0[1]) < 3 && ramps[i].kind === ramps[k].kind && ramps[i].ic === ramps[k].ic && pi === pk) dup.push(`ramps ${ramps[i].id}/${ramps[k].id} of the same kind start / end at the same point ${A0}`);
+  }
+  check('no duplicate roads: no overlapping street edges, no ramp on top of another or on a street, no coincident ramp ends', !dup.length, dup.length ? dup.join('; ') : `${E.length} edges and ${ramps.length} ramps pairwise checked`);
+}
+
 if (process.argv.includes('--json')) console.log(JSON.stringify(results, null, 1));
 else {
   console.log(`Masterplan C audit: ${P.counts.junctions} junctions (${P.counts.signals} signals, ${P.counts.roundabouts} roundabouts), ${P.counts.interchanges} interchanges, ${P.counts.blocks} blocks`);
