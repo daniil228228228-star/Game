@@ -74,13 +74,14 @@ const H = await page.evaluate(() => {
   window.__w = w; window.__b = b;
   player.position.set(w.group.position.x + 5, 0, w.group.position.z + 5); playerVelocity.set(0, 0, 0);
   w.target = new THREE.Vector3(w.group.position.x, 0, w.group.position.z); w.workBuild = b; w.idle = 1e6; w.velocity?.set(0, 0, 0);
+  // keep the site in its first (helpable) phase from this frame on (the camera settling below takes long enough for a slow frame to reach the first delivery gate, 12 %)
+  window.__keepOn = true; const keep = () => { if (!window.__keepOn) return; b.timer = Math.min(b.timer, b.duration * 0.05); b.phase = 0; if (w.workBuild) { w.idle = 1e6; } requestAnimationFrame(keep); }; keep();
   return { role: w.role, under: !!b.entry?.underConstruction, wait: !!b.waitingForDelivery };
 });
 await settleCamera();
 check(!!H, `a builder and an active construction site exist ${J(H)}`);
 const WSRC = '() => [__w.group.rotation.x, __w.armL.rotation.x, __w.armR.rotation.x, __w.cv ? __w.cv.work : -1]';
 // keep the site in its first (helpable) phase and the builder at its spot: the game's own phase gate (workerCanHelpPhase) would otherwise send it away
-await page.evaluate(() => { window.__keepOn = true; const keep = () => { if (!window.__keepOn) return; __b.timer = Math.min(__b.timer, __b.duration * 0.05); __b.phase = 0; if (__w.workBuild) { __w.idle = 1e6; } requestAnimationFrame(keep); }; keep(); });
 await frames(30);
 const act = await record(80, WSRC);
 await page.evaluate(() => { window.__keepOn = false; __w.workBuild = null; __w.idle = 1e6; __w.target = new THREE.Vector3(__w.group.position.x, 0, __w.group.position.z); });
