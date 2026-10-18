@@ -232,7 +232,7 @@ export function buildPlan() {
   const rail = {
     id: 'RAIL1', name: 'Главный ход', pts: [[size.x0 - 20, RAIL_Z], [size.x1 + 20, RAIL_Z]], tracks: 2, gauge: 1.2,
     stations: [{ id: 'ST1', name: 'Центральный вокзал', at: [-40, RAIL_Z], x0: -62, x1: -18, platforms: 3, tracks: 4 }],
-    spur: { pts: spur.map(P2), name: 'Подъездной путь промзоны', levelCrossings: [[118, -160]] },
+    spur: { pts: spur.map(P2), name: 'Подъездной путь промзоны', levelCrossings: [], roadBridges: [[118, -160]] },
     yard: { x0: -64, x1: -8, z0: -158, z1: -128, tracks: 5, name: 'Депо', joinX: -72 },
   };
   const grade = [];

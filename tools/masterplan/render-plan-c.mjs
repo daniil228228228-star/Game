@@ -469,6 +469,7 @@ function bridgesAndDecks(detail) {
   };
   for (const ic of P.interchanges) if (ic.deck) motorDeck(ic.deck[0], ic.deck[1]);
   motorDeck([250, RZ - 9], [250, RZ + 9]);   // M2 over the rail
+  for (const [x, z] of P.rail.spur.roadBridges || []) deck([[x - 6, z], [x + 6, z]], CLS.arterial.w, COL.art);   // Северный пр. over the industrial spur (no level crossings)
   // trumpet: the trunk ramps cross the through road on a bridge
   for (const r of ramps) for (const [a, b] of r.bridges || []) { deck([a, b], CLS.ramp.w, COL.ramp); if (detail) s += arrowsAlong([a, b], 6, '#9b6229'); }
   // road bridges over the river: parapets + piers
@@ -515,48 +516,63 @@ function transit(detail, ppm) {
 }
 
 // labels ------------------------------------------------------------------------------------------------
+const KEY_OBJECTS = ['L1', 'L7', 'L8', 'L5', 'L6', 'L3', 'L4', 'L13', 'L14', 'L2', 'L15', 'L10', 'L9', 'L12', 'L11', 'L16', 'L18', 'L19', 'L17'];
 function labels(ppm, vb, detail) {
   const L = Labels(ppm); let s = '';
-  // reserve symbols that must stay readable: junction centres (signals / roundabouts) and interchange cores
-  for (const j of P.junctions) if (j.type !== 'priority' && j.type !== 'corner') L.reserve([j.at[0] - 5, j.at[1] - 5, j.at[0] + 5, j.at[1] + 5]);
   const inView = (x, z, m = 4) => x > vb.x0 + m && x < vb.x1 - m && z > vb.z0 + m && z < vb.z1 - m;
-  // motorway shields
-  const shield = (x, z, ref) => { if (!inView(x, z)) return ''; const fs = 15 / ppm, w = fs * 2.4, h = fs * 1.5; L.reserve([x - w / 2, z - h / 2, x + w / 2, z + h / 2]); return rect(x - w / 2, z - h / 2, w, h, `rx="${f(h * 0.25)}" fill="#1f6f43" stroke="#ffffff" stroke-width="${f(fs * 0.14)}"`) + `<text x="${f(x)}" y="${f(z + fs * 0.36)}" font-size="${f(fs)}" text-anchor="middle" fill="#ffffff" font-weight="800">${ref}</text>`; };
-  for (const [x, z, ref] of [[-120, -240, 'М1'], [130, -240, 'М1'], [-260, -240, 'М1'], [250, -170, 'М2'], [250, 50, 'М2'], [250, -330, 'М2'], [210, -240, 'М1']]) s += shield(x, z, ref);
-  // street names: along their own carriageway, at a few candidates per line
-  const named = new Map();
-  for (const e of P.edges) if (e.name && e.cls !== 'motorway') { if (!named.has(e.name)) named.set(e.name, []); named.get(e.name).push(e); }
-  const pxOf = { arterial: detail ? 15 : 13.5, collector: detail ? 13 : 11.5, service: detail ? 11 : 9.5, local: detail ? 11 : 9.5 };
-  for (const [name, es] of named) {
-    const cls = es[0].cls, px = pxOf[cls]; if (!detail && cls === 'service' && name !== 'Портовая ул.') continue;
-    const segs = es.map((e) => edgePts(e)).filter(([a, b]) => Math.hypot(b[0] - a[0], b[1] - a[1]) >= 30).sort((a, b) => Math.abs((a[0][0] + a[1][0]) / 2 + (a[0][1] + a[1][1]) / 2) - Math.abs((b[0][0] + b[1][0]) / 2 + (b[0][1] + b[1][1]) / 2));
-    let placed = 0; const want = detail ? 3 : (cls === 'arterial' ? 2 : 1), done = [];
-    for (const [a, b] of segs) {
-      if (placed >= want) break;
-      const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; if (!inView(m[0], m[1], 12)) continue;
-      if (done.some((p) => Math.hypot(p[0] - m[0], p[1] - m[1]) < (detail ? 90 : 200))) continue;
-      const vert = a[0] === b[0], txt = name.replace(' / Портовое ш.', '');
-      const fsm = px / ppm, len = 0.56 * fsm * txt.length + fsm; if (len > Math.hypot(b[0] - a[0], b[1] - a[1]) - 8) continue;
-      const t = L.text(m[0], m[1], txt, px, { rot: vert ? -90 : 0, weight: cls === 'arterial' ? 700 : 600, haloW: 0.28, fill: cls === 'arterial' ? '#4a3a12' : COL.inkSoft });
-      if (t) { s += t; placed++; done.push(m); }
+  // keep symbols readable: junction furniture, motorways, ramps, the rail corridor and decks are no place for text
+  for (const j of P.junctions) {
+    if (j.type === 'roundabout') { const r = j.R + 8; L.reserve([j.at[0] - r, j.at[1] - r, j.at[0] + r, j.at[1] + r]); }
+    else if (j.type === 'signal' || j.type === 'mini') L.reserve([j.at[0] - 9, j.at[1] - 9, j.at[0] + 9, j.at[1] + 9]);
+  }
+  for (const e of P.edges.filter((x) => x.cls === 'motorway')) { const [a, b] = edgePts(e); L.reserve([Math.min(a[0], b[0]) - 7, Math.min(a[1], b[1]) - 7, Math.max(a[0], b[0]) + 7, Math.max(a[1], b[1]) + 7]); }
+  for (const r of ramps) for (let i = 0; i < r.pts.length; i += 2) { const p = r.pts[i]; L.reserve([p[0] - 2, p[1] - 2, p[0] + 2, p[1] + 2]); }
+  L.reserve([vb.x0 - 50, RZ - 8, vb.x1 + 50, RZ + 8]);
+  const fb = [...P.footbridges, ...P.tunnels]; for (const o of fb) L.reserve([o.at[0] - 4, o.at[1] - 4, o.at[0] + 4, o.at[1] + 4]);
+  // motorway shields (on the median, away from ramps)
+  const shield = (x, z, ref) => { if (!inView(x, z)) return ''; const fs = (detail ? 20 : 18) / ppm, w = fs * 2.3, h = fs * 1.45; return rect(x - w / 2, z - h / 2, w, h, `rx="${f(h * 0.25)}" fill="#1f6f43" stroke="#ffffff" stroke-width="${f(fs * 0.13)}"`) + `<text x="${f(x)}" y="${f(z + fs * 0.36)}" font-size="${f(fs)}" text-anchor="middle" fill="#ffffff" font-weight="800">${ref}</text>`; };
+  for (const [x, z, ref] of [[-80, -240, 'М1'], [120, -240, 'М1'], [-262, -240, 'М1'], [250, -175, 'М2'], [250, 60, 'М2'], [250, -320, 'М2']]) s += shield(x, z, ref);
+  // street names ON their own line: candidates every 10 m along the line, first free spot nearest to the preferred point
+  const pxOf = { arterial: detail ? 24 : 19, collector: detail ? 20 : 15.5, service: detail ? 17 : 13, local: detail ? 17 : 13 };
+  const lines = [...P.lines.V.map((l) => ({ ...l, vert: true, c: l.x })), ...P.lines.H.map((l) => ({ ...l, vert: false, c: l.z }))].filter((l) => l.name && !l.lot);
+  for (const l of lines) {
+    if (!detail && l.cls === 'service' && l.name !== 'Портовая ул.') continue;
+    const px = pxOf[l.cls], fsm = px / ppm, want = detail ? 2 : (l.cls === 'arterial' ? 2 : 1), done = [];
+    for (const [a, b] of l.spans) {
+      const names = l.name.split(' / '), txtOf = (t) => (names.length > 1 && t > 170 ? names[1] : names[0]);
+      const cands = []; for (let t = a + 12; t <= b - 12; t += 10) cands.push(t);
+      const pref = l.vert ? (a + b) / 2 + (l.c > 0 ? 30 : -30) : (a + b) / 2 + (l.c > 0 ? -50 : 50);
+      cands.sort((p, q) => Math.abs(p - pref) - Math.abs(q - pref));
+      for (const t of cands) {
+        if (done.length >= want) break;
+        const x = l.vert ? l.c : t, z = l.vert ? t : l.c; if (!inView(x, z, 14)) continue;
+        if (done.some((d) => Math.abs(d - t) < (detail ? 110 : 190))) continue;
+        const txt = txtOf(t), len = 0.56 * fsm * txt.length + fsm * 0.4;
+        if (t - len / 2 < a + 4 || t + len / 2 > b - 4) continue;
+        const out = L.text(x, z, txt, px, { rot: l.vert ? -90 : 0, weight: l.cls === 'arterial' ? 700 : 600, haloW: 0.3, fill: l.cls === 'arterial' ? '#4a3a12' : '#4b4f56' });
+        if (out) { s += out; done.push(t); }
+      }
     }
   }
-  { const t = L.text(272, 168, 'Портовое ш.', detail ? 14 : 12, { weight: 700, fill: '#4a3a12' }); s += t; }
   // water
-  s += L.text(P.water.river.x, 40, 'р. Светлая', detail ? 18 : 16, { rot: -90, italic: true, fill: COL.waterInk, weight: 600, haloCol: COL.water, haloW: 0.0001 });
-  s += L.text(-150, 236, 'Светлый залив', detail ? 22 : 22, { italic: true, fill: COL.waterInk, weight: 600, halo: false, ls: 0.12 });
-  // districts (big, light)
-  if (!detail) for (const [x, z, t, rot] of [[-118, -60, 'ЦЕНТР', 0], [-118, -142, 'ВОКЗАЛЬНЫЙ', 0], [-258, 20, 'ЗАРЕЧЬЕ', -90], [180, 40, 'ВОСТОЧНЫЙ', -90], [100, -212, 'ПРОМЗОНА', 0], [222, 230, 'ПОРТ', 0], [-140, -290, 'ПОЛЯ', 0], [-60, 176, 'НАБЕРЕЖНАЯ', 0]]) s += L.text(x, z, t, 20, { rot, fill: '#8a7f6c', op: 0.75, weight: 700, ls: 0.25, haloW: 0.2 });
-  // landmarks
+  s += L.text(-205, 120, 'р. Светлая', detail ? 24 : 21, { rot: -90, italic: true, fill: COL.waterInk, weight: 600, halo: false });
+  s += L.text(-150, 246, 'С В Е Т Л Ы Й   З А Л И В', detail ? 26 : 30, { italic: true, fill: COL.waterInk, weight: 600, halo: false, wf: 0.5 });
+  // districts
+  if (!detail) for (const [x, z, t, rot] of [[-120, -61, 'ЦЕНТР', 0], [-118, -145, 'ВОКЗАЛЬНЫЙ', 0], [-257, 20, 'ЗАРЕЧЬЕ', -90], [180, 100, 'ВОСТОЧНЫЙ', -90], [100, -226, 'ПРОМЗОНА', 0], [222, 196, 'ПОРТ', 0], [-140, -300, 'ПОЛЯ', 0], [-135, 174, 'НАБЕРЕЖНАЯ', 0]]) s += L.text(x, z, t, 30, { rot, fill: '#7d7262', op: 0.7, weight: 800, ls: 0.3, haloW: 0.18, wf: 0.75 });
+  // key objects: numbered badge + name
+  const badgeR = (detail ? 13 : 12) / ppm;
   for (const lm of P.landmarks) {
     if (!inView(lm.at[0], lm.at[1])) continue;
-    const px = detail ? 13 : 11.5;
-    s += L.text(lm.at[0], lm.at[1] + (lm.kind === 'plaza' ? 30 : 0), lm.name, px, { weight: 700, fill: lm.kind === 'park' || lm.kind === 'forest' ? '#3d6b2a' : '#3a3f46', haloW: 0.34 });
+    const num = KEY_OBJECTS.indexOf(lm.id) + 1, px = detail ? 21 : 16, z = lm.at[1] + (lm.kind === 'plaza' ? 31 : 0);
+    const t = L.text(lm.at[0] + (num ? badgeR * 1.2 : 0), z, lm.name, px, { weight: 700, fill: lm.kind === 'park' || lm.kind === 'forest' ? '#2f5d1f' : '#30353c', haloW: 0.36 });
+    if (!t) continue;
+    s += t;
+    if (num) { const w = 0.56 * px / ppm * lm.name.length + 0.4 * px / ppm, bx = lm.at[0] + badgeR * 1.2 - w / 2 - badgeR * 1.1; s += circ(bx, z, badgeR, `fill="#1f242b" stroke="#ffffff" stroke-width="${f(badgeR * 0.18)}"`) + `<text x="${f(bx)}" y="${f(z + badgeR * 0.42)}" font-size="${f(badgeR * 1.15)}" text-anchor="middle" fill="#ffffff" font-weight="800">${num}</text>`; }
   }
   // interchange tags
   for (const ic of P.interchanges) {
-    const pos = { I1: [-62, -262], I2: [292, -40], I3: [196, -290], I4: [206, 120] }[ic.id], txt = { I1: 'I1 · ромб', I2: 'I2 · ромб', I3: 'I3 · клеверный лист', I4: 'I4 · трубка' }[ic.id];
-    if (inView(pos[0], pos[1])) s += L.text(pos[0], pos[1], txt, detail ? 16 : 13, { weight: 800, fill: '#7a4a12', haloW: 0.34, force: true });
+    const pos = { I1: [-60, -268], I2: [286, -52], I3: [196, -300], I4: [212, 128] }[ic.id], txt = { I1: 'I1 · ромб', I2: 'I2 · ромб', I3: 'I3 · клеверный лист', I4: 'I4 · трубка' }[ic.id];
+    if (inView(pos[0], pos[1])) s += L.text(pos[0], pos[1], txt, detail ? 22 : 19, { weight: 800, fill: '#7a4a12', haloW: 0.34, force: true });
   }
   return s;
 }
@@ -576,35 +592,39 @@ function scaleBar(vb, ppm, onDark) {
 }
 function northArrow(x, z, ppm) { const r = 22 / ppm; return `<g transform="translate(${f(x)} ${f(z)})"><circle r="${f(r)}" fill="#ffffff" stroke="#bdb6a6" stroke-width="${f(1 / ppm)}"/><path d="M0 ${f(-r * 0.78)} L${f(r * 0.34)} ${f(r * 0.45)} L0 ${f(r * 0.22)} L${f(-r * 0.34)} ${f(r * 0.45)}Z" fill="${COL.ink}"/><text y="${f(-r * 1.15)}" font-size="${f(13 / ppm)}" text-anchor="middle" font-weight="800" fill="${COL.ink}">С</text></g>`; }
 
+const LEGEND_PX = 470;
 function legend(vb, ppm) {
-  const px = (v) => v / ppm, top = vb.z1, H = px(430), x0 = vb.x0, W = vb.x1 - vb.x0, fs = px(15), row = px(27);
-  let s = rect(x0, top, W, H, `fill="#fbfaf7"`) + line([x0, top], [vb.x1, top], `stroke="#cfc8b8" stroke-width="${f(px(2))}"`);
-  const colW = W / 4, head = (i, t) => `<text x="${f(x0 + i * colW + px(24))}" y="${f(top + px(38))}" font-size="${f(px(17))}" font-weight="800" fill="${COL.ink}">${esc(t)}</text>`;
-  const item = (i, k, sym, t) => { const x = x0 + i * colW + px(24), z = top + px(70) + k * row; return sym(x, z) + `<text x="${f(x + px(64))}" y="${f(z + fs * 0.36)}" font-size="${f(fs)}" fill="${COL.ink}" font-weight="500">${esc(t)}</text>`; };
-  const roadSym = (cls, wpx) => (x, z) => line([x, z], [x + px(50), z], `stroke="${ROAD[cls][1]}" stroke-width="${f(px(wpx + 3))}"`) + line([x, z], [x + px(50), z], `stroke="${ROAD[cls][0]}" stroke-width="${f(px(wpx))}"`) + (cls === 'arterial' ? line([x, z], [x + px(50), z], `stroke="${COL.median}" stroke-width="${f(px(3))}"`) : cls === 'motorway' ? line([x, z], [x + px(50), z], `stroke="${COL.medianM}" stroke-width="${f(px(4))}"`) : '');
-  const dot = (fill, stroke, r = 7) => (x, z) => circ(x + px(25), z, px(r), `fill="${fill}" stroke="${stroke}" stroke-width="${f(px(2))}"`);
-  const box = (fill, stroke) => (x, z) => rect(x + px(8), z - px(9), px(34), px(18), `fill="${fill}" stroke="${stroke || '#b9b2a2'}" stroke-width="${f(px(1))}"`);
+  const px = (v) => v / ppm, top = vb.z1, H = px(LEGEND_PX), x0 = vb.x0, W = vb.x1 - vb.x0, fs = px(19), row = px(37);
+  let s = rect(x0, top, W, H, `fill="#fbfaf7"`) + line([x0, top], [vb.x1, top], `stroke="#cfc8b8" stroke-width="${f(px(3))}"`);
+  const cols = [0, 610, 1190, 1760, 2330].map(px), head = (i, t) => `<text x="${f(x0 + cols[i] + px(26))}" y="${f(top + px(46))}" font-size="${f(px(22))}" font-weight="800" fill="${COL.ink}">${esc(t)}</text>`;
+  const item = (i, k, sym, t) => { const x = x0 + cols[i] + px(26), z = top + px(86) + k * row; return sym(x, z) + `<text x="${f(x + px(66))}" y="${f(z + fs * 0.36)}" font-size="${f(fs)}" fill="${COL.ink}" font-weight="500">${esc(t)}</text>`; };
+  const roadSym = (cls, wpx) => (x, z) => line([x, z], [x + px(52), z], `stroke="${ROAD[cls][1]}" stroke-width="${f(px(wpx + 3))}"`) + line([x, z], [x + px(52), z], `stroke="${ROAD[cls][0]}" stroke-width="${f(px(wpx))}"`) + (cls === 'arterial' ? line([x, z], [x + px(52), z], `stroke="${COL.median}" stroke-width="${f(px(3))}"`) : cls === 'motorway' ? line([x, z], [x + px(52), z], `stroke="${COL.medianM}" stroke-width="${f(px(4))}"`) : '');
+  const box = (fill, stroke) => (x, z) => rect(x + px(8), z - px(10), px(36), px(20), `fill="${fill}" stroke="${stroke || '#b9b2a2'}" stroke-width="${f(px(1.2))}"`);
   s += head(0, 'Улицы и дороги');
-  [['motorway', 14, 'Автомагистраль М1, М2 (2+2, только развязки)'], ['ramp', 7, 'Съезд развязки (стрелки = направление)'], ['arterial', 12, 'Проспект (2+2, разделительная полоса)'], ['collector', 8, 'Улица районная (1+1)'], ['local', 6, 'Улица местная'], ['service', 6, 'Проезд (порт, P+R)']].forEach(([c, w, t], k) => { s += item(0, k, roadSym(c, w), t); });
-  s += item(0, 6, (x, z) => line([x, z], [x + px(50), z], `stroke="${COL.deckEdge}" stroke-width="${f(px(14))}"`) + line([x, z], [x + px(50), z], `stroke="${COL.motor}" stroke-width="${f(px(10))}"`), 'Мост / эстакада (верхний уровень)');
-  s += item(0, 7, (x, z) => line([x, z], [x + px(50), z], `stroke="${COL.ballast}" stroke-width="${f(px(12))}"`) + line([x, z - px(3)], [x + px(50), z - px(3)], `stroke="${COL.rail}" stroke-width="${f(px(2.5))}"`) + line([x, z + px(3)], [x + px(50), z + px(3)], `stroke="${COL.rail}" stroke-width="${f(px(2.5))}"`), 'Железная дорога, вокзал, депо');
-  s += head(1, 'Перекрёстки');
-  s += item(1, 0, (x, z) => circ(x + px(25), z, px(7), `fill="#2d3136" stroke="#fff" stroke-width="${f(px(2))}"`) + circ(x + px(25), z, px(3.5), `fill="${COL.sig}"`), 'Светофор (центр: через 80 м игровых)');
-  s += item(1, 1, (x, z) => circ(x + px(25), z, px(12), `fill="${COL.art}" stroke="${COL.artC}" stroke-width="${f(px(2))}"`) + circ(x + px(25), z, px(6), `fill="${COL.park}"`), 'Кольцо: центр 2 полосы, окраины 1');
-  s += item(1, 2, (x, z) => circ(x + px(25), z, px(10), `fill="#ffffff" stroke="${COL.collC}" stroke-width="${f(px(2))}"`) + circ(x + px(25), z, px(4), `fill="#e4ddcb"`), 'Мини-кольцо (районная × районная)');
-  s += item(1, 3, (x, z) => line([x, z], [x + px(50), z], `stroke="${COL.art}" stroke-width="${f(px(12))}"`) + line([x, z], [x + px(50), z], `stroke="${COL.median}" stroke-width="${f(px(3))}"`) + line([x + px(25), z - px(14)], [x + px(25), z - px(6)], `stroke="${COL.locC}" stroke-width="${f(px(7))}"`), '«Право-право»: местная к проспекту');
-  s += item(1, 4, (x, z) => line([x + px(8), z], [x + px(42), z], `stroke="#9a9384" stroke-width="${f(px(12))}"`) + line([x + px(8), z], [x + px(42), z], `stroke="#ffffff" stroke-width="${f(px(12))}" stroke-dasharray="${f(px(3))} ${f(px(3))}"`), 'Пешеходный переход «зебра»');
-  s += item(1, 5, (x, z) => line([x, z], [x + px(50), z], `stroke="${COL.ped}" stroke-width="${f(px(8))}"`) + rect(x - px(2), z - px(6), px(12), px(12), `fill="${COL.ped}"`) + rect(x + px(40), z - px(6), px(12), px(12), `fill="${COL.ped}"`), 'Надземный пешеходный мост');
-  s += item(1, 6, (x, z) => rect(x + px(4), z - px(6), px(42), px(12), `fill="none" stroke="${COL.tun}" stroke-width="${f(px(2.5))}" stroke-dasharray="${f(px(5))} ${f(px(3))}"`), 'Подземный пешеходный переход');
-  s += item(1, 7, (x, z) => rect(x + px(4), z - px(9), px(42), px(18), `fill="none" stroke="${COL.sig}" stroke-width="${f(px(2))}" stroke-dasharray="${f(px(4))} ${f(px(3))}"`), 'Ж/д переезд со шлагбаумом');
+  [['motorway', 16, 'Автомагистраль М1, М2 (2+2)'], ['ramp', 8, 'Съезд развязки (стрелки: направление)'], ['arterial', 13, 'Проспект 2+2 с разделительной полосой'], ['collector', 9, 'Районная улица 1+1'], ['local', 7, 'Местная улица'], ['service', 7, 'Проезд (порт, P+R)']].forEach(([c, w, t], k) => { s += item(0, k, roadSym(c, w), t); });
+  s += item(0, 6, (x, z) => line([x, z], [x + px(52), z], `stroke="${COL.deckEdge}" stroke-width="${f(px(16))}"`) + line([x, z], [x + px(52), z], `stroke="${COL.motor}" stroke-width="${f(px(11))}"`), 'Мост, эстакада (верхний уровень)');
+  s += item(0, 7, (x, z) => line([x, z], [x + px(52), z], `stroke="${COL.ballast}" stroke-width="${f(px(14))}"`) + line([x, z - px(3.5)], [x + px(52), z - px(3.5)], `stroke="${COL.rail}" stroke-width="${f(px(2.5))}"`) + line([x, z + px(3.5)], [x + px(52), z + px(3.5)], `stroke="${COL.rail}" stroke-width="${f(px(2.5))}"`), 'Железная дорога, вокзал, депо');
+  s += head(1, 'Перекрёстки и переходы');
+  s += item(1, 0, (x, z) => circ(x + px(26), z, px(8), `fill="#2d3136" stroke="#fff" stroke-width="${f(px(2))}"`) + circ(x + px(26), z, px(4), `fill="${COL.sig}"`), 'Светофор (в центре через 80 м)');
+  s += item(1, 1, (x, z) => circ(x + px(26), z, px(14), `fill="${COL.art}" stroke="${COL.artC}" stroke-width="${f(px(2))}"`) + circ(x + px(26), z, px(7), `fill="${COL.park}"`), 'Кольцо (центр 2 полосы)');
+  s += item(1, 2, (x, z) => circ(x + px(26), z, px(11), `fill="#ffffff" stroke="${COL.collC}" stroke-width="${f(px(2))}"`) + circ(x + px(26), z, px(4.5), `fill="#e4ddcb"`), 'Мини-кольцо');
+  s += item(1, 3, (x, z) => line([x, z], [x + px(52), z], `stroke="${COL.art}" stroke-width="${f(px(13))}"`) + line([x, z], [x + px(52), z], `stroke="${COL.median}" stroke-width="${f(px(3))}"`) + line([x + px(26), z - px(16)], [x + px(26), z - px(7)], `stroke="${COL.locC}" stroke-width="${f(px(8))}"`), '«Право-право» (разделитель не прерван)');
+  s += item(1, 4, (x, z) => line([x + px(8), z], [x + px(44), z], `stroke="#9a9384" stroke-width="${f(px(13))}"`) + line([x + px(8), z], [x + px(44), z], `stroke="#ffffff" stroke-width="${f(px(13))}" stroke-dasharray="${f(px(3))} ${f(px(3))}"`), 'Пешеходный переход «зебра»');
+  s += item(1, 5, (x, z) => line([x, z], [x + px(52), z], `stroke="${COL.ped}" stroke-width="${f(px(8))}"`) + rect(x - px(2), z - px(7), px(14), px(14), `fill="${COL.ped}"`) + rect(x + px(40), z - px(7), px(14), px(14), `fill="${COL.ped}"`), 'Надземный пешеходный мост');
+  s += item(1, 6, (x, z) => rect(x + px(4), z - px(7), px(44), px(14), `fill="none" stroke="${COL.tun}" stroke-width="${f(px(3))}" stroke-dasharray="${f(px(6))} ${f(px(3))}"`), 'Подземный пешеходный переход');
+  s += item(1, 7, (x, z) => line([x + px(26), z - px(14)], [x + px(26), z + px(14)], `stroke="${COL.rail}" stroke-width="${f(px(3))}"`) + rect(x + px(4), z - px(6), px(44), px(12), `fill="${COL.art}" stroke="${COL.deckEdge}" stroke-width="${f(px(2.5))}"`), 'Дорога над ж/д (переездов нет)');
   s += head(2, 'Транспорт');
-  P.transit.lines.forEach((l, k) => { s += item(2, k, (x, z) => line([x, z], [x + px(50), z], `stroke="${l.color}" stroke-width="${f(px(5))}"${l.id === 'B3' ? ` stroke-dasharray="${f(px(16))} ${f(px(5))}"` : ''}`) + rect(x + px(19), z - px(7), px(14), px(14), `rx="${f(px(4))}" fill="#fff" stroke="${l.color}" stroke-width="${f(px(3))}"`), l.name.replace('Автобус ', '№')); });
-  s += item(2, 3, box('url(#stalls)'), 'Перехватывающая стоянка P+R');
+  P.transit.lines.forEach((l, k) => { s += item(2, k, (x, z) => line([x, z], [x + px(52), z], `stroke="${l.color}" stroke-width="${f(px(6))}"${l.id === 'B3' ? ` stroke-dasharray="${f(px(16))} ${f(px(5))}"` : ''}`) + rect(x + px(19), z - px(8), px(16), px(16), `rx="${f(px(4))}" fill="#fff" stroke="${l.color}" stroke-width="${f(px(3))}"`), `№${l.id.slice(1)} ` + l.name.split(': ')[1]); });
+  s += item(2, 3, box('url(#stalls)'), 'P+R, перехватывающая стоянка');
   const c = P.counts;
-  const stats = [`Узлов ${c.junctions}: светофоров ${c.signals}, колец ${c.roundabouts}`, `Развязок ${c.interchanges}, съездов ${c.ramps}`, `Переходов ${c.crossings}, мостов ${c.footbridges}, тоннелей ${c.tunnels}`, `Кварталов ${c.blocks}, остановок ${c.busStops}`];
-  stats.forEach((t, k) => { s += `<text x="${f(x0 + 2 * colW + px(24))}" y="${f(top + px(70) + (4.4 + k * 0.85) * row)}" font-size="${f(px(13.5))}" fill="${COL.inkSoft}">${esc(t)}</text>`; });
+  [`Узлов ${c.junctions}: светофоров ${c.signals}, колец ${c.roundabouts}`, `Развязок ${c.interchanges}, съездов ${c.ramps}`, `Переходов ${c.crossings}; мостов ${c.footbridges}; тоннелей ${c.tunnels}`, `Кварталов ${c.blocks}; остановок ${c.busStops}`].forEach((t, k) => { s += `<text x="${f(x0 + cols[2] + px(26))}" y="${f(top + px(86) + (4.3 + k * 0.9) * row)}" font-size="${f(px(17))}" fill="${COL.inkSoft}">${esc(t)}</text>`; });
   s += head(3, 'Застройка и природа');
-  [[COL.cbdB, COL.cbdS, 'Деловой центр, кварталы с дворами'], [COL.resB, COL.resS, 'Жилые кварталы'], [COL.villa, '#b9c59a', 'Виллы (Заречье)'], [COL.eastB, COL.eastS, 'Микрорайон Восточный'], [COL.civicB, COL.civicS, 'Мэрия, школы, больница, рынок, вуз'], [COL.indB, COL.indS, 'Промзона, склады, порт'], [COL.park, '#93b97b', 'Парки, лес, газоны развязок'], [COL.water, COL.waterEdge, 'Река, залив, гавани']].forEach(([fl, st, t], k) => { s += item(3, k, box(fl, st), t); });
+  [[COL.cbdB, COL.cbdS, 'Центр: кварталы с дворами'], [COL.resB, COL.resS, 'Жилые кварталы'], [COL.villa, '#b9c59a', 'Виллы (Заречье)'], [COL.eastB, COL.eastS, 'Микрорайон Восточный'], [COL.civicB, COL.civicS, 'Общественные здания'], [COL.indB, COL.indS, 'Промзона, склады, порт'], [COL.park, '#93b97b', 'Парки, лес, газоны'], [COL.water, COL.waterEdge, 'Река, залив, гавани']].forEach(([fl, st, t], k) => { s += item(3, k, box(fl, st), t); });
+  s += head(4, 'Основные объекты');
+  KEY_OBJECTS.forEach((id, k) => {
+    const lm = P.landmarks.find((l) => l.id === id), col = k < 10 ? 0 : 1, kk = k % 10, x = x0 + cols[4] + px(26) + col * px(330), z = top + px(80) + kk * px(36.5), r = px(13);
+    s += circ(x + r, z, r, `fill="#1f242b"`) + `<text x="${f(x + r)}" y="${f(z + r * 0.42)}" font-size="${f(r * 1.15)}" text-anchor="middle" fill="#fff" font-weight="800">${k + 1}</text><text x="${f(x + r * 2.6)}" y="${f(z + fs * 0.36)}" font-size="${f(fs)}" fill="${COL.ink}" font-weight="500">${esc(lm.name)}</text>`;
+  });
   return s;
 }
 
@@ -621,8 +641,8 @@ function svgDoc(full, pxW, inner) {
 }
 const views = [];
 {
-  const vb = { x0: -305, z0: -372, x1: 305, z1: 252 }, px = 3000, ppm = px / (vb.x1 - vb.x0);
-  const full = { x0: vb.x0, z0: vb.z0 - 92 / ppm, x1: vb.x1, z1: vb.z1 + 430 / ppm };
+  const vb = { x0: -305, z0: -372, x1: 305, z1: 262 }, px = 3000, ppm = px / (vb.x1 - vb.x0);
+  const full = { x0: vb.x0, z0: vb.z0 - 92 / ppm, x1: vb.x1, z1: vb.z1 + LEGEND_PX / ppm };
   const inner = `<clipPath id="mapclip"><rect x="${vb.x0}" y="${vb.z0}" width="${vb.x1 - vb.x0}" height="${vb.z1 - vb.z0}"/></clipPath><g clip-path="url(#mapclip)">${body(vb, ppm, false)}${scaleBar(vb, ppm)}${northArrow(vb.x1 - 40 / ppm, vb.z0 + 40 / ppm, ppm)}</g>` +
     header(vb, ppm, 'Генплан C · схема города (этап C0)', 'Магистрали, развязки, светофоры, переходы, мосты и тоннели, автобусы. Игровые метры (1 игровой = 2,5 настоящих), правостороннее движение. Данные: tools/masterplan/plan-C.json') + legend(vb, ppm);
   views.push({ name: 'plan-C-overview', px, ...svgDoc(full, px, inner) });
