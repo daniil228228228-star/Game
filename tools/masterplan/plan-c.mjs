@@ -96,7 +96,7 @@ export function buildPlan() {
     { z: 214, cls: 'service', name: 'Контейнерный пр.', spans: [[160, 280]] },
   ];
   // extra split points: diamond terminals, the P+R entrance
-  const DT = 22;   // half spacing of the diamond ramp terminals (44 game m = 110 m real, the 300 ft desirable minimum)
+  const DT = 18;   // half spacing of the diamond ramp terminals (36 game m = 90 m real, the 300 ft desirable spacing)
   const extraZ = { 0: [M1_Z - DT, M1_Z + DT] }, extraX = { 0: [M2_X - DT, M2_X + DT, 290] };
 
   // ------------------------------------------------------------------ graph
@@ -138,12 +138,16 @@ export function buildPlan() {
   // ------------------------------------------------------------------ interchanges (ramps are polylines in game metres; `bridges` = parts above another road)
   const interchanges = [];
   function diamond(id, at, k, name, cross, cwPlus, cwMinus) {
-    const F = frame(at, k), L = 95, ramps = [];
-    const mk = (kind, pts, att) => ramps.push({ kind, pts: pts.map(F), attach: att });
-    mk('off', cubic([-L, ATT], [1, 0], 52, [-(cwPlus - 0.3), DT], [1, 0], 30), ['motorway', 'cross']);
-    mk('on', cubic([cwPlus - 0.3, DT], [1, 0], 30, [L, ATT], [1, 0], 52), ['cross', 'motorway']);
-    mk('off', cubic([L, -ATT], [-1, 0], 52, [cwMinus - 0.3, -DT], [-1, 0], 30), ['motorway', 'cross']);
-    mk('on', cubic([-(cwMinus - 0.3), -DT], [-1, 0], 30, [-L, -ATT], [-1, 0], 52), ['cross', 'motorway']);
+    // real diamond: taper (1:15 real) into a parallel deceleration lane beside the carriageway, then ONE smooth curve to the terminal;
+    // the ramp hugs the motorway (8-13 game m = 20-33 m real from the carriageway edge). The -v side is the same pair turned 180 degrees.
+    const ramps = [], LN = MW + CLS.ramp.w / 2;   // centre of an added lane right beside the carriageway
+    const pair = (Fk, cw) => {
+      const off = join(cubic([-104, ATT], [1, 0], 7, [-86, LN], [1, 0], 7, 10), seg([-86, LN], [-60, LN], 4), cubic([-60, LN], [1, 0], 24, [-(cw - 0.3), DT], [1, 0], 16));
+      const on = join(cubic([cw - 0.3, DT], [1, 0], 16, [60, LN], [1, 0], 24), seg([60, LN], [86, LN], 4), cubic([86, LN], [1, 0], 7, [104, ATT], [1, 0], 7, 10));
+      ramps.push({ kind: 'off', pts: off.map(Fk), attach: ['motorway', 'cross'], decel: 26 }, { kind: 'on', pts: on.map(Fk), attach: ['cross', 'motorway'], accel: 26 });
+    };
+    const F = frame(at, k);
+    pair(F, cwPlus); pair(frame(at, k + 2), cwMinus);
     const terminals = [F([0, DT]), F([0, -DT])];
     interchanges.push({ id, kind: 'diamond', name, at, cross, ramps, terminals, terminalSpacing: 2 * DT, deck: [F([-(cwPlus + 4), 0]), F([cwPlus + 4, 0])], deckRoad: 'motorway' });
   }
@@ -160,10 +164,11 @@ export function buildPlan() {
   function trumpet(id, at, name) {
     // M2 ends from the north; the through road H (z = at.z) runs east-west. Bell (loop + rim) on the far (south) side, two trunk ramps cross H on a bridge.
     const F = frame(at, 0), hw = CLS.arterial.w / 2, r = 17, C = [-3.2 - r, hw + 1.6 + r], Rr = r + 6.4, top = -45, ramps = [];
-    const b = join(seg([-3.2, top], [-3.2, C[1]], 10), arc(C, r, 0, 270), cubic([C[0], hw + 1.6], [1, 0], 10, [12, hw - 1.0], [1, 0], 14));
-    const d = join(cubic([C[0] - Rr - 22, hw - 1.0], [1, 0], 16, [C[0] - Rr, C[1]], [0, 1], 12), arc(C, Rr, 180, 0), seg([3.2, C[1]], [3.2, top], 10));
-    const a = cubic([-4.2, -62], [0, 1], 28, [-44, -(hw - 1.0)], [-1, 0], 22);
-    const c = cubic([44, -(hw - 1.0)], [-1, 0], 22, [4.2, -62], [0, -1], 28);
+    const b = join(seg([-3.2, top], [-3.2, C[1]], 10), arc(C, r, 0, 270), seg([C[0], hw + 1.6], [6, hw + 1.6], 6), cubic([6, hw + 1.6], [1, 0], 7, [22, hw - 1.0], [1, 0], 7, 10));
+    const d = join(cubic([C[0] - Rr - 28, hw - 1.0], [1, 0], 5, [C[0] - Rr - 18, hw + 1.6], [1, 0], 5, 10), seg([C[0] - Rr - 18, hw + 1.6], [C[0] - Rr - 12, hw + 1.6], 3), cubic([C[0] - Rr - 12, hw + 1.6], [1, 0], 9, [C[0] - Rr, C[1]], [0, 1], 9), arc(C, Rr, 180, 0), seg([3.2, C[1]], [3.2, top], 10));
+    const LM = MW + CLS.ramp.w / 2, LH = hw + CLS.ramp.w / 2;   // added lanes beside M2 and beside the through road
+    const a = join(cubic([-ATT, -96], [0, 1], 6, [-LM, -80], [0, 1], 6, 10), seg([-LM, -80], [-LM, -66], 3), cubic([-LM, -66], [0, 1], 34, [-34, -LH], [-1, 0], 14), seg([-34, -LH], [-50, -LH], 3), cubic([-50, -LH], [-1, 0], 6, [-64, -(hw - 1.0)], [-1, 0], 6, 10));
+    const c = join(cubic([64, -(hw - 1.0)], [-1, 0], 6, [50, -LH], [-1, 0], 6, 10), seg([50, -LH], [34, -LH], 3), cubic([34, -LH], [-1, 0], 14, [LM, -66], [0, -1], 34), seg([LM, -66], [LM, -80], 3), cubic([LM, -80], [0, -1], 6, [ATT, -96], [0, -1], 6, 10));
     ramps.push({ kind: 'loop', pts: b.map(F), r, attach: ['motorway', 'cross'], bridges: [[F([-3.2, -hw - 4]), F([-3.2, hw + 4])]], note: 'М2 на юг -> Портовое ш. на восток (петля 270°)' });
     ramps.push({ kind: 'semi-direct', pts: d.map(F), attach: ['cross', 'motorway'], bridges: [[F([3.2, hw + 4]), F([3.2, -hw - 4])]], note: 'Южный пр. на восток -> М2 на север (раструб вокруг петли)' });
     ramps.push({ kind: 'direct', pts: a.map(F), attach: ['motorway', 'cross'], note: 'М2 на юг -> Южный пр. на запад' });

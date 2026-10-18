@@ -230,7 +230,7 @@ function urbanBlock(b, rnd, zone) {
     return s + yardTrees(x0, z0 + 8, x1, z1 - 9, 4);
   }
   if (cbd && roll < 0.28) {   // office tower on a podium
-    s += bld([x0, z0, x1, z1], pal[1], stroke, 0.2);
+    s += bld([x0, z0, x1, z1], '#ddd5c8', stroke, 0.2) + rect(x0 + 2, z0 + 2, w - 4, h - 4, 'fill="url(#pave)" opacity="0.6"');
     const tx = x0 + 3 + rnd() * (w - 17), tz = z0 + 3 + rnd() * (h - 17);
     s += bld([tx, tz, tx + 13, tz + 13], COL.tall, stroke, 0.35) + bld([tx + 3, tz + 3, tx + 10, tz + 10], '#a99d8b', stroke, 0.2) + line([tx + 6.5, tz + 3], [tx + 6.5, tz + 10], `stroke="${stroke}" stroke-width="0.12"`);
     return s;
@@ -260,12 +260,13 @@ function urbanBlock(b, rnd, zone) {
   for (const [px, pz] of [[x0 + 1, z0 + 1], [x1 - 10, z0 + 1], [x0 + 1, z1 - 10], [x1 - 10, z1 - 10], [cx - 4.5, cz - 4.5]]) s += bld([px, pz, px + 9, pz + 9], pal[Math.floor(rnd() * pal.length)], stroke, 0.22);   // point towers in a green
   return s + yardTrees(x0 + 11, z0 + 2, x1 - 11, z1 - 2, 5);
 }
+const rampPts = ramps.flatMap((r) => r.pts), nearRamp = (p, d) => rampPts.some((q) => Math.abs(q[0] - p[0]) < d && Math.abs(q[1] - p[1]) < d);
 function streetTrees() {   // rows on the sidewalks of avenues and district streets, never inside a junction
   let s = '';
   for (const e of P.edges.filter((x) => (x.cls === 'arterial' || x.cls === 'collector') && !x.bridge && !x.underRail)) {
     const [a, b] = edgePts(e), L = Math.hypot(b[0] - a[0], b[1] - a[1]), d = norm([b[0] - a[0], b[1] - a[1]]), r = rightOf(d), o = CLS[e.cls].w / 2 + CLS[e.cls].sidewalk * 0.55;
     const n0 = N.get(e.a), n1 = N.get(e.b); if (n0.z < -164 || n1.z < -164 || n0.z > 190 || Math.abs(n0.x) > 282 || Math.abs(n1.x) > 282) continue;
-    for (let t = 9; t < L - 9; t += 6) { const p = [a[0] + d[0] * t, a[1] + d[1] * t]; if (Math.hypot(p[0], p[1]) < 27) continue; for (const sd of [-1, 1]) s += circ(p[0] + r[0] * o * sd, p[1] + r[1] * o * sd, 0.75, `fill="${COL.treeDark}" opacity="0.9"`); }
+    for (let t = 9; t < L - 9; t += 6) { const p = [a[0] + d[0] * t, a[1] + d[1] * t]; if (Math.hypot(p[0], p[1]) < 27 || nearRamp(p, 9)) continue; for (const sd of [-1, 1]) s += circ(p[0] + r[0] * o * sd, p[1] + r[1] * o * sd, 0.75, `fill="${COL.treeDark}" opacity="0.9"`); }
   }
   return s;
 }
@@ -725,7 +726,7 @@ const crops = [
   ['detail-hub', { x0: -72, z0: -62, x1: 72, z1: 62 }, 'Центральная площадь: двухполосное кольцо R 12, подземный переход, светофоры через 80 м'],
   ['detail-downtown', { x0: -176, z0: -132, x1: 176, z1: 176 }, 'Центр: сетка 40 м, проспекты через 160 м, светофоры через 80 м, «право-право» на местных'],
   ['detail-interchange-I1-diamond', { x0: -108, z0: -292, x1: 108, z1: -188 }, 'I1 ромб: Главный пр. под М1, светофоры на концах съездов через 44 м'],
-  ['detail-interchange-I2-diamond', { x0: 186, z0: -106, x1: 306, z1: 106 }, 'I2 ромб: Центральная магистраль под М2, выход к P+R'],
+  ['detail-interchange-I2-diamond', { x0: 186, z0: -106, x1: 306, z1: 106 }, 'I2 ромб: Центральная магистраль под М2, полосы торможения и разгона, светофоры на концах съездов, рядом P+R'],
   ['detail-interchange-I3-cloverleaf', { x0: 128, z0: -366, x1: 304, z1: -112 }, 'I3 клеверный лист: М2 над М1, четыре петли R 18 (левые повороты) и четыре внешних съезда'],
   ['detail-station', { x0: -112, z0: -168, x1: 132, z1: -72 }, 'Вокзал: проезды под насыпью, подземные переходы к платформам, автовокзал, депо'],
   ['detail-port-trumpet', { x0: 146, z0: 96, x1: 304, z1: 242 }, 'I4 трубка: М2 заканчивается у порта, петля R 17 и раструб, эстакада над Портовым ш.'],
