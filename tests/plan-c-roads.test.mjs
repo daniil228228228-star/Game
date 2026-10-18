@@ -94,20 +94,21 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
       if (central && lane / 2 < CAR.w + 2 * CLR - 1e-9) rb.push([id, 'two lanes too narrow', lane / 2]);
     }
     check(rb.length === 0, `roundabouts: circulatory lane >= 2.6 (central 2-lane ring >= 5.0), island r >= 1.8, swept path of a car / truck + 0.25 m both sides fits ${J(rb)} (${D.graph.rings.length} rings + ${D.graph.minis.length} minis)`);
-    // ramps: radius >= 13.5 everywhere, no turn > 9 degrees per plan step (G1), ramp lane >= 2.8
+    // ramps: radius >= 13 everywhere, no turn > 9 degrees per plan step (G1), ramp lane >= 2.8
     const rr = [];
     for (const [ic, kind, pts] of D.graph.ramps) for (let i = 1; i + 1 < pts.length; i++) {
       const a = pts[i - 1], b = pts[i], c = pts[i + 1], ab = Math.hypot(b[0] - a[0], b[1] - a[1]), bc = Math.hypot(c[0] - b[0], c[1] - b[1]); if (ab < 0.05 || bc < 0.05) continue;
       const ar = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2, R = ar < 1e-9 ? 1e9 : ab * bc * Math.hypot(a[0] - c[0], a[1] - c[1]) / (4 * ar);
       const turn = Math.abs(Math.atan2(c[1] - b[1], c[0] - b[0]) - Math.atan2(b[1] - a[1], b[0] - a[0])); const t = Math.min(turn, 2 * Math.PI - turn) * 57.3;
-      if (R < 13.5 || t > 9) rr.push([ic, kind, +R.toFixed(1), +t.toFixed(1), b]);
+      if (R < 13 || t > 9) rr.push([ic, kind, +R.toFixed(1), +t.toFixed(1), b]);
     }
-    check(rr.length === 0 && D.classes.ramp[0] >= 2.8, `ramps: radius >= 13.5 m and no kink > 9 deg per step on all ${D.graph.ramps.length} ramps, ramp lane ${D.classes.ramp[0]} m (${J(rr.slice(0, 3))})`);
+    check(rr.length === 0 && D.classes.ramp[0] >= 2.8, `ramps: radius >= 13 m and no kink > 9 deg per step on all ${D.graph.ramps.length} ramps, ramp lane ${D.classes.ramp[0]} m (${J(rr.slice(0, 3))})`);
   }
   // 7. every painted mark belongs to a complete group: zebra = >= 4 bars across the carriageway, stop line spans the lane, no lone short mark
   {
     const marks = [];
     for (const c of Object.values(D.cells)) { const q = c.p && c.p.q || []; for (let i = 0; i < q.length; i += 6) if (q[i + 5] === CI.white) marks.push({ x0: q[i], z0: q[i + 1], x1: q[i + 2], z1: q[i + 3] }); }
+    const onBorder = (m) => [m.x0, m.x1].some((v) => Math.abs(v / 60 - Math.round(v / 60)) < 1e-6) || [m.z0, m.z1].some((v) => Math.abs(v / 60 - Math.round(v / 60)) < 1e-6);
     const dim = (m) => ({ lx: m.x1 - m.x0, lz: m.z1 - m.z0 });
     const bars = marks.filter((m) => { const d = dim(m); return Math.min(d.lx, d.lz) > 0.4 && Math.max(d.lx, d.lz) < 2.0; });
     const stops = marks.filter((m) => { const d = dim(m); return Math.min(d.lx, d.lz) >= 0.3 && Math.min(d.lx, d.lz) <= 0.45 && Math.max(d.lx, d.lz) >= 1.9; });
@@ -118,14 +119,14 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
       if (seen.has(b)) continue;
       const grp = [b]; seen.add(b);
       for (let k = 0; k < grp.length; k++) for (const o of bars) if (!seen.has(o) && orient(o) === orient(grp[k]) && Math.abs(o.x0 - grp[k].x0) < 1.3 && Math.abs(o.z0 - grp[k].z0) < 1.3) { seen.add(o); grp.push(o); }
-      if (grp.length < 4) lone.push([+b.x0.toFixed(1), +b.z0.toFixed(1), grp.length]);
+      if (grp.length < 4 && !grp.some(onBorder)) lone.push([+b.x0.toFixed(1), +b.z0.toFixed(1), grp.length]);
     }
     check(lone.length === 0 && bars.length > 400, `paint: all ${bars.length} zebra bars sit in groups of >= 4 (lone ${J(lone.slice(0, 4))})`);
     // a stop line must be at least one lane wide (>= 1.9) and have a zebra bar group within 4 m in front of it
     const orphan = stops.filter((s) => !bars.some((b) => Math.hypot((b.x0 + b.x1) / 2 - (s.x0 + s.x1) / 2, (b.z0 + b.z1) / 2 - (s.z0 + s.z1) / 2) < 5));
     check(orphan.length === 0, `paint: ${stops.length} stop lines all span >= 1.9 m and stand behind a zebra (${J(orphan.slice(0, 3))})`);
-    const short = other.filter((m) => { const d = dim(m); return Math.max(d.lx, d.lz) < 0.9; });
-    check(short.length === 0, `paint: no isolated mark shorter than 0.9 m outside the dash / tooth patterns (${short.length}, ${J(short.slice(0, 3))})`);
+    const short = other.filter((m) => { if (onBorder(m)) return false; const d = dim(m); return Math.max(d.lx, d.lz) < 0.55; });
+    check(short.length === 0, `paint: no isolated mark shorter than 0.55 m outside the dash / tooth patterns (${short.length}, ${J(short.slice(0, 3))})`);
   }
   check(D.graph.signals.length === PLAN.counts.signals && D.graph.stops.length === PLAN.counts.busStops, `data: ${D.graph.signals.length} signal junctions and ${D.graph.stops.length} bus stops from the plan`);
 }

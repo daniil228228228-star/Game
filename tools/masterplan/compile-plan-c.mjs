@@ -291,7 +291,7 @@ function smoothRamp(pts) {   // centripetal-free Catmull-Rom through the plan po
   out.push(pts[pts.length - 1]); return out;
 }
 for (const ic of PLAN.interchanges) for (const r0 of ic.ramps) {
-  const r = { ...r0, pts: smoothRamp(r0.pts) };
+  const r = r0;   // the plan polylines are already arcs / cubic tapers sampled every 1-2 m (G1 by construction); resampling through Catmull-Rom overshot at the joins
   ribbon('r', r.pts, CLS.ramp.w, H.ramp, CI.ramp);
   rampsOut.push({ ic: ic.id, kind: r.kind, pts: r.pts });
   // dashed centre line every 4 m
@@ -307,7 +307,7 @@ for (const ic of PLAN.interchanges) for (const r0 of ic.ramps) {
 
 // ---- 4. markings of the straight streets
 function dashed(axis, c, lo, hi, width, dash, gap, y, ci, phase = 0) {   // axis 'x': line along x at z = c
-  for (let s = lo + phase; s < hi; s += dash + gap) { const e = Math.min(s + dash, hi); if (e - s < 0.2) continue; if (axis === 'x') emitRect('p', 'q', s, c - width / 2, e, c + width / 2, y, ci); else emitRect('p', 'q', c - width / 2, s, c + width / 2, e, y, ci); }
+  for (let s = lo + phase; s < hi; s += dash + gap) { const e = Math.min(s + dash, hi); if (e - s < Math.min(0.6, dash * 0.6)) continue; if (axis === 'x') emitRect('p', 'q', s, c - width / 2, e, c + width / 2, y, ci); else emitRect('p', 'q', c - width / 2, s, c + width / 2, e, y, ci); }
 }
 function solid(axis, c, lo, hi, width, y, ci) { if (hi - lo < 0.1) return; if (axis === 'x') emitRect('p', 'q', lo, c - width / 2, hi, c + width / 2, y, ci); else emitRect('p', 'q', c - width / 2, lo, c + width / 2, hi, y, ci); }
 for (const e of PLAN.edges) {
@@ -333,12 +333,12 @@ for (const e of PLAN.edges) {
 
 // ---- 5. junction furniture: zebra crossings, stop lines, signal / sign points
 const poleSet = [];   // pole / head positions for the cell furniture lists, filled below
-function zebra(c, dir, at, cls, len = 1.6) {
-  const w = hw(cls), med = CLS[cls].median / 2, p = [c[0] + dir[0] * at, c[1] + dir[1] * at];
-  for (let l = -(w - 0.35); l <= w - 0.34; l += 0.95) {
-    if (Math.abs(l) < med + 0.1) continue;
-    if (dir[0] === 0) emitRect('p', 'q', p[0] + l - 0.25, p[1] - len / 2, p[0] + l + 0.25, p[1] + len / 2, H.paint, CI.white);
-    else emitRect('p', 'q', p[0] - len / 2, p[1] + l - 0.25, p[0] + len / 2, p[1] + l + 0.25, H.paint, CI.white);
+function zebra(c, dir, at, cls, len = 1.6) {   // bars parallel to the street, symmetric about the centre line / median
+  const w = hw(cls), med = CLS[cls].median / 2, p = [c[0] + dir[0] * at, c[1] + dir[1] * at], start = med > 0 ? med + 0.4 : 0.475;
+  for (const sg of [-1, 1]) for (let l = start; l <= w - 0.4; l += 0.95) {
+    const o = sg * l;
+    if (dir[0] === 0) emitRect('p', 'q', p[0] + o - 0.25, p[1] - len / 2, p[0] + o + 0.25, p[1] + len / 2, H.paint, CI.white);
+    else emitRect('p', 'q', p[0] - len / 2, p[1] + o - 0.25, p[0] + len / 2, p[1] + o + 0.25, H.paint, CI.white);
   }
 }
 function stopLine(c, dir, at, cls) {   // across the incoming half of an arm
