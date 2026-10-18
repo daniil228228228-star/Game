@@ -14414,7 +14414,8 @@ function updatePlayer(dt) {
   camera.position.x += movedX;
   camera.position.z += movedZ;
 
-  const cameraJumpLift=player.position.y*.28;
+  const levelV161=window.PlanCV161?window.PlanCV161.level||0:0;   // plan C: the surface the player stands on (decks, ramps, footbridges)
+  const cameraJumpLift=(player.position.y-levelV161)*.28+levelV161;
   camEyeTarget.set(player.position.x, PLAYER_EYE_HEIGHT+cameraJumpLift, player.position.z);
   camOffsetVec.subVectors(camera.position, camEyeTarget);
   let currentDistance = camOffsetVec.length();
@@ -33007,6 +33008,7 @@ window.__TYCOON_V74_BUILD__={
     }
 
     window.MasterplanV161?.syncColliders();
+    window.PlanCV161?.syncColliders?.();
     lastStats={
       total:registry.size,
       byCategory:[...registry.values()].reduce((a,e)=>(a[e.category]=(a[e.category]||0)+1,a),{})

@@ -37,8 +37,24 @@
     if (!data) return null;
     const pos = [], nor = [], col = [];
     const v = (x, y, z, nx, ny, nz, c) => { pos.push(x, y, z); nor.push(nx, ny, nz); col.push(c.r, c.g, c.b); };
-    for (const layer of ['g', 'r', 'p']) {
+    for (const layer of ['g', 'r', 'p', 'd']) {
       const L = data[layer]; if (!L) continue;
+      const dv = L.v;
+      if (dv) for (let i = 0; i < dv.length; i += 10) {
+        const c = lin[dv[i + 9]];
+        let ax = dv[i], ay = dv[i + 1], az = dv[i + 2], bx = dv[i + 3], by = dv[i + 4], bz = dv[i + 5], cx2 = dv[i + 6], cy2 = dv[i + 7], cz2 = dv[i + 8];
+        let nx = (by - ay) * (cz2 - az) - (bz - az) * (cy2 - ay), ny = (bz - az) * (cx2 - ax) - (bx - ax) * (cz2 - az), nz = (bx - ax) * (cy2 - ay) - (by - ay) * (cx2 - ax);
+        const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+        if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; [bx, cx2] = [cx2, bx]; [by, cy2] = [cy2, by]; [bz, cz2] = [cz2, bz]; }
+        v(ax, ay, az, nx, ny, nz, c); v(bx, by, bz, nx, ny, nz, c); v(cx2, cy2, cz2, nx, ny, nz, c);
+      }
+      const ds = L.s;
+      if (ds) for (let i = 0; i < ds.length; i += 9) {
+        const x0 = ds[i], z0 = ds[i + 1], x1 = ds[i + 2], z1 = ds[i + 3], b0 = ds[i + 4], t0 = ds[i + 5], b1 = ds[i + 6], t1 = ds[i + 7], c = lin[ds[i + 8]];
+        const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1, nx = dz / l, nz = -dx / l;
+        v(x0, b0, z0, nx, 0, nz, c); v(x1, b1, z1, nx, 0, nz, c); v(x1, t1, z1, nx, 0, nz, c);
+        v(x0, b0, z0, nx, 0, nz, c); v(x1, t1, z1, nx, 0, nz, c); v(x0, t0, z0, nx, 0, nz, c);
+      }
       const q = L.q;
       if (q) for (let i = 0; i < q.length; i += 6) {
         const x0 = q[i], z0 = q[i + 1], x1 = q[i + 2], z1 = q[i + 3], y = q[i + 4], c = lin[q[i + 5]];
@@ -65,8 +81,8 @@
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    g.boundingBox = new THREE.Box3(new THREE.Vector3(cx * CELL, -0.1, cz * CELL), new THREE.Vector3((cx + 1) * CELL, 0.2, (cz + 1) * CELL));
-    g.boundingSphere = new THREE.Sphere(new THREE.Vector3((cx + 0.5) * CELL, 0, (cz + 0.5) * CELL), CELL * 0.72);
+    g.boundingBox = new THREE.Box3(new THREE.Vector3(cx * CELL, -3, cz * CELL), new THREE.Vector3((cx + 1) * CELL, 8, (cz + 1) * CELL));
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3((cx + 0.5) * CELL, 2, (cz + 0.5) * CELL), CELL * 0.8);
     const mesh = new THREE.Mesh(g, mat);
     mesh.name = 'planC_' + key; mesh.receiveShadow = true; mesh.castShadow = false; mesh.matrixAutoUpdate = false;
     mesh.userData.v83CollisionIgnore = true; mesh.userData.planCCell = key; mesh.userData.v152Skip = true;
@@ -110,6 +126,7 @@
     pole: () => mergeGeoms([cyl(0.04, 0.04, 2.3, 5, 0x8d9298, 0, 1.15, 0)]),
     plate: () => mergeGeoms([box(0.6, 0.6, 0.04, 0xffffff, 0, 2.3, 0.04)]),
     stop: () => mergeGeoms([box(2.2, 0.08, 1.1, 0xe07a2f, 0, 2.3, 0), box(0.07, 2.3, 0.07, 0x4a4f55, -1.0, 1.15, 0.45), box(0.07, 2.3, 0.07, 0x4a4f55, 1.0, 1.15, 0.45), box(2.0, 1.6, 0.04, 0xaed0dc, 0, 1.3, -0.5), box(1.4, 0.07, 0.35, 0x8a6a45, 0, 0.5, -0.3)]),
+    cat: () => mergeGeoms([cyl(0.1, 0.08, 6.0, 5, 0x5d6268, 0, 3.0, 0), box(0.08, 0.08, 2.0, 0x5d6268, 0, 5.6, 1.0), box(0.06, 0.06, 1.6, 0x2c2f33, 0, 5.2, 0.9)]),
     tree: () => mergeGeoms([cyl(0.14, 0.1, 1.1, 5, 0x6b4a2b, 0, 0.55, 0), cone(1.0, 1.9, 7, 0x3f7a3a, 0, 1.9, 0), cone(0.78, 1.5, 7, 0x4a8a42, 0, 2.8, 0)]),
   };
   const PLATE_COLORS = [0xd33a2e, 0xf1efe6, 0x2a6fb5, 0xe7c23a];   // stop / yield / roundabout / priority road
@@ -130,16 +147,17 @@
   const geoCache = {};
   function sharedGeo(name) { return geoCache[name] || (geoCache[name] = PROTO[name]()); }
   function rebuildFurniture() {
-    const lists = { lamp: [], sig: [], pole: [], plate: [], stop: [], tree: [] };
+    const lists = { lamp: [], sig: [], pole: [], plate: [], stop: [], tree: [], cat: [] };
     for (const [key, c] of cells) {
       const f = D.cells[key] && D.cells[key].f; if (!f) continue;
       for (const k of Object.keys(lists)) { const src = k === 'plate' ? f.pole : f[k]; if (src) lists[k].push(src); }
     }
-    const strideOf = { lamp: 3, sig: 3, pole: 4, plate: 4, stop: 4, tree: 4 };
+    const strideOf = { lamp: 3, sig: 3, pole: 4, plate: 4, stop: 4, tree: 4, cat: 3 };
     const count = (k) => lists[k].reduce((s, a) => s + a.length / strideOf[k], 0);
     const each = (k, fn) => { let n = 0; for (const a of lists[k]) for (let i = 0; i < a.length; i += strideOf[k]) fn(a, i, n++); };
     const setM = (inst, n, x, y, z, yaw, s = 1) => { dummy.position.set(x, y, z); dummy.rotation.set(0, yaw, 0); dummy.scale.setScalar(s); dummy.updateMatrix(); inst.setMatrixAt(n, dummy.matrix); };
     for (const k of ['lamp', 'sig', 'pole', 'stop']) makeInstanced(k, count(k), (inst) => each(k, (a, i, n) => setM(inst, n, a[i], 0, a[i + 1], a[i + 2])), { geo: sharedGeo(k), shadow: k === 'lamp' });
+    makeInstanced('cat', count('cat'), (inst) => each('cat', (a, i, n) => setM(inst, n, a[i], D.struct.railY, a[i + 1], a[i + 2])), { geo: sharedGeo('cat') });
     makeInstanced('plate', count('plate'), (inst) => each('plate', (a, i, n) => { setM(inst, n, a[i], 0, a[i + 1], a[i + 2]); tint.setHex(PLATE_COLORS[a[i + 3]] || 0xffffff).convertSRGBToLinear(); inst.setColorAt(n, tint); }), { geo: sharedGeo('plate'), material: new THREE.MeshStandardMaterial({ roughness: 0.6 }) });
     makeInstanced('tree', count('tree'), (inst) => each('tree', (a, i, n) => { const t = a[i + 3]; setM(inst, n, a[i], 0, a[i + 1], t * 6.28, a[i + 2]); tint.setRGB(0.78 + t * 0.35, 0.85 + t * 0.25, 0.75 + t * 0.3); inst.setColorAt(n, tint); }), { geo: sharedGeo('tree'), shadow: false });
   }
@@ -216,7 +234,45 @@
     api.retired = (api.retired || 0) + n;
   }
   api.syncScenery = (now = 1e9) => { sceneryAt = 0; syncScenery(now); };
+  // ---- height layer: ONE function for the surface under a point (decks, causeways, ramps, footbridges), read by the player, the camera and the colliders
+  window.groundHeightV161 = (x, z, hint = 0) => { const y = D.surfaceY(x, z, hint, 0.75); return y == null ? 0 : y; };
+  api.level = 0;
+  const baseUpdatePlayer = updatePlayer;
+  updatePlayer = function (dt) {
+    let lvl = api.level;
+    if (player.position.y < lvl - 0.3) lvl = D.surfaceY(player.position.x, player.position.z, player.position.y, 0.75) || 0;   // someone put the player on the ground (reset / teleport)
+    player.position.y -= lvl;                       // the game's physics works relative to the surface
+    const r = baseUpdatePlayer.apply(this, arguments);
+    const rel = player.position.y, x = player.position.x, z = player.position.z;
+    let target = D.surfaceY(x, z, lvl, 0.75); if (target == null) target = lvl;
+    if (target < lvl - 0.05 && playerGrounded) { playerGrounded = false; playerVerticalVelocity = Math.min(playerVerticalVelocity, 0); }   // walked off a deck edge: fall
+    player.position.y = rel + (target < lvl - 0.05 ? lvl - target : 0) + target;
+    api.level = target;
+    return r;
+  };
+  // parapets of decks / ramps / footbridges are solid only for a player at their level (the registry asks active())
+  function syncColliders() {
+    const reg = window.__TYCOON_V83_COLLISIONS__; if (!reg) return;
+    reg.unregisterOwner(root);
+    for (const q of D.struct.rails) {
+      const dx = q[2] - q[0], dz = q[3] - q[1], len = Math.hypot(dx, dz); if (len < 0.05) continue;
+      const lvl = q[4];
+      reg.register({ owner: root, category: 'decor', label: 'planC:parapet', shape: 'obb', pos: new THREE.Vector3((q[0] + q[2]) / 2, 0, (q[1] + q[3]) / 2), hx: 0.15, hz: len / 2 + 0.05, yaw: Math.atan2(dx, dz), flags: { player: true, agent: false, camera: false, placement: false }, active: () => Math.abs(api.level - lvl) < 1.4 });
+    }
+  }
+  api.syncColliders = syncColliders;
+  // the camera never goes above the underside of a deck the player stands under
+  if (typeof window.resolveCameraObstructionV85 === 'function') {
+    const baseResolve = window.resolveCameraObstructionV85;
+    window.resolveCameraObstructionV85 = function () {
+      const r = baseResolve.apply(this, arguments);
+      const cap = D.overhead(player.position.x, player.position.z, api.level);
+      if (cap != null && camera.position.y > cap - 0.3) { const d = camera.position.y - (cap - 0.3); camera.position.y -= d; if (typeof cameraResolverShiftV163 !== 'undefined') cameraResolverShiftV163.y -= d; }
+      return r;
+    };
+  }
   retireOldCore();
+  syncColliders();
   syncScenery(1e9);
   ensureNear(player.position.x, player.position.z);
   let last = 0;

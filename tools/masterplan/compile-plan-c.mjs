@@ -31,7 +31,7 @@ const COLORS = {
   urban: 0x86ad68, industry: 0x8d8f86, verge: 0x6c9650, parking: 0x6a6e72, embank: 0x8b9566, beach: 0xdac99b, promenade: 0xcfc6b2, port: 0x9fa09a,
   sea: 0x3f7fae, seaLight: 0x7fb7d2, river: 0x4a88b4, bank: 0xb9ae8c, dirt: 0x8d7a58,
   asph: 0x353a3f, ramp: 0x353a3f, walk: 0xc4bfae, kerb: 0xaaa595, median: 0xb8b4a4, medLawn: 0x6f9d57, medM: 0xa9a99f, plaza: 0xd4cab4, islandL: 0x6ea154, islandC: 0xd9d1bb,
-  white: 0xf2f2ec, yellow: 0xe7c85a, ballast: 0x8a8782, rail: 0x56585b, platform: 0xb8b5aa, moleC: 0x9b9a92, rock: 0x77756f,
+  conc: 0xbdb9ad, concD: 0x8d8a82, sleeper: 0x4a3f36, white: 0xf2f2ec, yellow: 0xe7c85a, ballast: 0x8a8782, rail: 0x56585b, platform: 0xb8b5aa, moleC: 0x9b9a92, rock: 0x77756f,
   resid: 0x82b064, mixed: 0x95b57a, cbd: 0xaaa898, indus: 0x959890, school: 0x90bd72, hospital: 0xa4b88e, station: 0xa9a79b, villas: 0x78b45f, waterf: 0xa6b88f, market: 0xb4ae98, stadium: 0x6fae55,
 };
 const PAL = Object.keys(COLORS), CI = Object.fromEntries(PAL.map((k, i) => [k, i]));
@@ -42,7 +42,7 @@ const cells = new Map();
 const ck = (cx, cz) => cx + ',' + cz;
 function cellOf(cx, cz) {
   const k = ck(cx, cz); let c = cells.get(k);
-  if (!c) { c = { g: { q: [], t: [] }, r: { q: [], t: [], w: [] }, p: { q: [], t: [] }, f: { lamp: [], sig: [], pole: [], plate: [], stop: [], tree: [] } }; cells.set(k, c); }
+  if (!c) { c = { g: { q: [], t: [] }, r: { q: [], t: [], w: [] }, p: { q: [], t: [] }, d: { v: [], s: [] }, f: { lamp: [], sig: [], pole: [], plate: [], stop: [], tree: [], cat: [] } }; cells.set(k, c); }
   return c;
 }
 const cellRange = (a, b) => { const out = []; for (let i = Math.floor(a / CELL + 1e-9); i <= Math.floor((b - 1e-9) / CELL); i++) out.push(i); return out; };
@@ -96,6 +96,61 @@ function ribbon(layer, pts, w, y, ci, join = true) {   // constant-width strip a
   }
   for (let i = 0; i + 1 < n; i++) { emitTri(layer, L[i], Rr[i], L[i + 1], y, ci); emitTri(layer, Rr[i], Rr[i + 1], L[i + 1], y, ci); }
 }
+// 3D primitives for decks / ramps / bridges (layer d): v = triangle with its own y per vertex [x y z x y z x y z ci], s = vertical quad with sloped bottom/top [x0 z0 x1 z1 b0 t0 b1 t1 ci]
+function emitTri3(a, b, c, ci) {   // a,b,c = [x, y, z]
+  const x0 = Math.min(a[0], b[0], c[0]), x1 = Math.max(a[0], b[0], c[0]), z0 = Math.min(a[2], b[2], c[2]), z1 = Math.max(a[2], b[2], c[2]);
+  const den = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
+  if (Math.abs(den) < 1e-9) return;
+  const yAt = (x, z) => { const u = ((b[2] - c[2]) * (x - c[0]) + (c[0] - b[0]) * (z - c[2])) / den, v = ((c[2] - a[2]) * (x - c[0]) + (a[0] - c[0]) * (z - c[2])) / den; return u * a[1] + v * b[1] + (1 - u - v) * c[1]; };
+  for (const cx of cellRange(x0, x1 + 1e-6)) for (const cz of cellRange(z0, z1 + 1e-6)) {
+    const poly = clipPoly([[a[0], a[2]], [b[0], b[2]], [c[0], c[2]]], cx * CELL, cz * CELL, (cx + 1) * CELL, (cz + 1) * CELL);
+    if (poly.length < 3 || Math.abs(area2(poly)) < 1e-5) continue;
+    const arr = cellOf(cx, cz).d.v, V = (q) => [q[0], yAt(q[0], q[1]), q[1]];
+    for (let i = 1; i + 1 < poly.length; i++) { const p0 = V(poly[0]), p1 = V(poly[i]), p2 = V(poly[i + 1]); push(arr, p0[0], p0[1], p0[2], p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]); arr.push(ci); }
+  }
+}
+function emitQuadS(x0, z0, x1, z1, b0, t0, b1, t1, ci) {   // vertical quad between two ground points, bottom / top heights at both ends
+  if (Math.hypot(x1 - x0, z1 - z0) < 1e-4) return;
+  const arr = cellOf(Math.floor((x0 + x1) / 2 / CELL), Math.floor((z0 + z1) / 2 / CELL)).d.s;
+  push(arr, x0, z0, x1, z1, b0, t0, b1, t1); arr.push(ci);
+}
+function box3(x0, z0, x1, z1, y0, y1, ci, top = true) {   // axis-aligned solid: 4 walls (+ top)
+  emitQuadS(x0, z0, x1, z0, y0, y1, y0, y1, ci); emitQuadS(x1, z0, x1, z1, y0, y1, y0, y1, ci); emitQuadS(x1, z1, x0, z1, y0, y1, y0, y1, ci); emitQuadS(x0, z1, x0, z0, y0, y1, y0, y1, ci);
+  if (top) { emitTri3([x0, y1, z0], [x0, y1, z1], [x1, y1, z1], ci); emitTri3([x0, y1, z0], [x1, y1, z1], [x1, y1, z0], ci); }
+}
+function offsetPts3(pts, o) {   // [x,z,h] polyline shifted sideways (o > 0 = right of travel, screen frame)
+  const n = pts.length, out = [];
+  for (let i = 0; i < n; i++) { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)]; let dx = b[0] - a[0], dz = b[1] - a[1]; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l; out.push([pts[i][0] - dz * o, pts[i][1] + dx * o, pts[i][2]]); }
+  return out;
+}
+function deckRibbon(pts, w, dy, ci) {   // road surface following [x,z,h]
+  const L = offsetPts3(pts, -w / 2), Rr = offsetPts3(pts, w / 2);
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const A = [L[i][0], L[i][2] + dy, L[i][1]], B = [Rr[i][0], Rr[i][2] + dy, Rr[i][1]], C = [L[i + 1][0], L[i + 1][2] + dy, L[i + 1][1]], D = [Rr[i + 1][0], Rr[i + 1][2] + dy, Rr[i + 1][1]];
+    emitTri3(A, B, C, ci); emitTri3(B, D, C, ci);
+  }
+}
+function wallAlong(pts, o, b, t, ci, from = 0, to = pts.length - 1) {   // vertical wall along an offset of the polyline; b / t are absolute heights (number) or functions of h
+  const q = offsetPts3(pts, o);
+  for (let i = from; i < to; i++) { const bb0 = typeof b === 'function' ? b(pts[i][2]) : b, bb1 = typeof b === 'function' ? b(pts[i + 1][2]) : b, tt0 = typeof t === 'function' ? t(pts[i][2]) : t, tt1 = typeof t === 'function' ? t(pts[i + 1][2]) : t; emitQuadS(q[i][0], q[i][1], q[i + 1][0], q[i + 1][1], bb0, tt0, bb1, tt1, ci); }
+}
+function capAlong(pts, o, w, dy, ci, from = 0, to = pts.length - 1) { const sub = pts.slice(from, to + 1); deckRibbon(offsetPts3(sub, o), w, dy, ci); }
+function paintAlong(pts, o, w, dash, gap, dy, ci) {   // dashed (or solid when gap = 0) line on a deck
+  const q = offsetPts3(pts, o); let acc = 0, on = true, cur = [];
+  const flush = () => { if (cur.length > 1) deckRibbon(cur, w, dy, ci); cur = []; };
+  for (let i = 0; i + 1 < q.length; i++) {
+    const a = q[i], b = q[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 1e-6) continue;
+    if (!gap) { if (!cur.length) cur.push(a); cur.push(b); continue; }
+    let s = 0;
+    while (s < L) {
+      const lim = on ? dash : gap, take = Math.min(L - s, lim - acc), t0 = s / L, t1 = (s + take) / L, p0 = [a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0, a[2] + (b[2] - a[2]) * t0], p1 = [a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1, a[2] + (b[2] - a[2]) * t1];
+      if (on) { if (!cur.length) cur.push(p0); cur.push(p1); }
+      s += take; acc += take; if (acc >= lim - 1e-9) { if (on) flush(); on = !on; acc = 0; }
+    }
+  }
+  flush();
+}
+const arcLen = (pts) => { const out = [0]; for (let i = 1; i < pts.length; i++) out.push(out[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])); return out; };
 function disc(layer, c, r, y, ci, seg = 28) { for (let i = 0; i < seg; i++) { const a0 = i / seg * Math.PI * 2, a1 = (i + 1) / seg * Math.PI * 2; emitTri(layer, c, [c[0] + Math.cos(a0) * r, c[1] + Math.sin(a0) * r], [c[0] + Math.cos(a1) * r, c[1] + Math.sin(a1) * r], y, ci); } }
 function annulus(layer, c, r0, r1, a0, a1, y, ci, step = 6) {   // angles in degrees, screen frame
   const n = Math.max(1, Math.ceil(Math.abs(a1 - a0) / step));
@@ -125,10 +180,27 @@ function trimAt(nodeId, e) {   // how far markings / medians stay away from a no
   if (j.type === 'riro' && e.cls === 'arterial') return 0;
   return ch + 0.8;
 }
-// intervals along an edge's axis where a higher road / the railway owns the surface (flat model of step C1; heights come in C6)
+// ---- vertical profiles: motorways climb to DECKH over the roads that cross them (6 % grades, rounded vertical curves); everything else stays at 0
+const SLOPE = 0.06, FLATH = 11, DECKH = 5.3, CLEAR = 4.5;   // deck top 5.3, slab 0.8 -> 4.5 m headroom for trucks
+function smoothFn(fn, lo, hi, step = 2, k = 2) {
+  const n = Math.round((hi - lo) / step); let arr = Array.from({ length: n + 1 }, (_, i) => fn(lo + i * step));
+  for (let pass = 0; pass < 2; pass++) { const src = arr; arr = src.map((_, i) => { let sum = 0, c = 0; for (let j = -k; j <= k; j++) { sum += src[Math.min(n, Math.max(0, i + j))]; c++; } return sum / c; }); }
+  return (v) => { const t = Math.max(0, Math.min(n - 1e-9, (v - lo) / step)), i = Math.floor(t), f = t - i; return arr[i] * (1 - f) + arr[i + 1] * f; };
+}
+const trap = (d) => Math.max(0, Math.min(DECKH, DECKH - SLOPE * Math.max(0, d - FLATH)));
+const hM1 = smoothFn((x) => trap(Math.abs(x)), -330, 390), hM2 = smoothFn((z) => Math.max(trap(Math.abs(z - M1_Z)), trap(Math.abs(z))), -390, 100);
+const intervalsAbove = (fn, lo, hi, th) => { const out = []; let a = null; for (let v = lo; v <= hi + 1e-9; v += 1) { const on = fn(v) > th; if (on && a == null) a = v; if (!on && a != null) { out.push([a, v]); a = null; } } if (a != null) out.push([a, hi]); return out; };
+const M1_UP = intervalsAbove(hM1, -330, 390, 0.25), M2_UP = intervalsAbove(hM2, -390, 100, 0.25);
+function lookupH(x, z) { const d1 = Math.abs(z - M1_Z), d2 = Math.abs(x - M2_X); if (d1 < MW + 5 && d1 <= d2) return hM1(x); if (d2 < MW + 5) return hM2(z); return 0; }
+// raster cuts: the ground surface of a motorway disappears where its deck stands on a causeway (the crossing road keeps its own surface under the deck)
 function cutsOf(e) {
-  const a = N.get(e.a), b = N.get(e.b), cuts = [];
-  if (e.underRail != null) { const c = e.dir === 'z' ? e.underRail : null; if (c != null) cuts.push([c - 5.4, c + 5.4]); }
+  if (e.cls !== 'motorway') return [];
+  return e.ref === 'M1' ? M1_UP : e.ref === 'M2' ? M2_UP : [];
+}
+// old flat-crossing intervals, still used to keep lamps / trees away from the crossings
+function furnCuts(e) {
+  const cuts = [];
+  if (e.underRail != null && e.dir === 'z') cuts.push([e.underRail - 7, e.underRail + 7]);
   if (e.underMotorway === 'M1') cuts.push([M1_Z - MW - 0.8, M1_Z + MW + 0.8]);
   if (e.underMotorway === 'M2') cuts.push([M2_X - MW - 0.8, M2_X + MW + 0.8]);
   if (e.underRamps === 'I4') cuts.push([M2_X - MW - 6, M2_X + MW + 6]);
@@ -156,8 +228,8 @@ const edgeSpan = (e) => {   // along-axis span of the carriageway/sidewalk, trim
 for (const e of PLAN.edges) {
   const a = N.get(e.a), s = edgeSpan(e), cl = CLS[e.cls], half = cl.w / 2, sw = cl.sidewalk, c = e.dir === 'x' ? a.z : a.x;
   const put = (lo, hi, l0, l1, type) => e.dir === 'x' ? addShape(lo, c + l0, hi, c + l1, type) : addShape(c + l0, lo, c + l1, hi, type);
-  put(s.lo, s.hi, -half, half, 'asph');
   const cuts = cutsOf(e);
+  for (const [lo, hi] of subtractIntervals(s.lo, s.hi, cuts)) put(lo, hi, -half, half, 'asph');
   if (sw > 0) for (const [lo, hi] of subtractIntervals(s.lo, s.hi, cuts)) { put(lo, hi, half, half + sw, 'walk'); put(lo, hi, -half - sw, -half, 'walk'); }
   if (cl.median > 0) {
     const t0 = trimAt(s.lowNode, e), t1 = trimAt(s.highNode, e), mh = cl.median / 2;
@@ -222,7 +294,7 @@ function rasterCell(cx, cz) {
 }
 
 // ---- 3. curved pieces: roundabouts, mini roundabouts, ramps, plaza
-const ringsOut = [], minisOut = [];
+const ringsOut = [], minisOut = [], rampsOut = [];
 for (const j of PLAN.junctions) {
   const c = j.at;
   if (j.type === 'roundabout') {
@@ -281,29 +353,8 @@ for (const j of PLAN.junctions) {
   }
 }
 // ramps (interchanges): 2 m ribbons with white edge dashes
-const rampsOut = [];
-function smoothRamp(pts) {   // centripetal-free Catmull-Rom through the plan points, ~0.8 m steps: no polyline kinks in the game geometry
-  const out = [];
-  for (let i = 0; i + 1 < pts.length; i++) {
-    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)], L = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), n = Math.max(1, Math.round(L / 0.8));
-    for (let k = 0; k < n; k++) { const t = k / n, t2 = t * t, t3 = t2 * t; out.push([0, 1].map((a) => 0.5 * (2 * p1[a] + (-p0[a] + p2[a]) * t + (2 * p0[a] - 5 * p1[a] + 4 * p2[a] - p3[a]) * t2 + (-p0[a] + 3 * p1[a] - 3 * p2[a] + p3[a]) * t3))); }
-  }
-  out.push(pts[pts.length - 1]); return out;
-}
-for (const ic of PLAN.interchanges) for (const r0 of ic.ramps) {
-  const r = r0;   // the plan polylines are already arcs / cubic tapers sampled every 1-2 m (G1 by construction); resampling through Catmull-Rom overshot at the joins
-  ribbon('r', r.pts, CLS.ramp.w, H.ramp, CI.ramp);
-  rampsOut.push({ ic: ic.id, kind: r.kind, pts: r.pts });
-  // dashed centre line every 4 m
-  let acc = 0;
-  for (let i = 1; i < r.pts.length; i++) {
-    const a = r.pts[i - 1], b = r.pts[i], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    if (L < 1e-6) continue;
-    const d = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], nrm = [-d[1], d[0]];
-    if ((acc % 4) < 1.5 && L > 0.5) { const e0 = [a[0] + nrm[0] * 0.04, a[1] + nrm[1] * 0.04], e1 = [b[0] + nrm[0] * 0.04, b[1] + nrm[1] * 0.04]; ribbon('p', [e0, e1], 0.08, H.paint + 0.001, CI.white); }
-    acc += L;
-  }
-}
+
+
 
 // ---- 4. markings of the straight streets
 function dashed(axis, c, lo, hi, width, dash, gap, y, ci, phase = 0) {   // axis 'x': line along x at z = c
@@ -332,7 +383,7 @@ for (const e of PLAN.edges) {
 }
 
 // ---- 5. junction furniture: zebra crossings, stop lines, signal / sign points
-const poleSet = [];   // pole / head positions for the cell furniture lists, filled below
+const poleSet = [], furnCat = [];   // pole / head positions for the cell furniture lists, filled below
 function zebra(c, dir, at, cls, len = 1.6) {   // bars parallel to the street, symmetric about the centre line / median
   const w = hw(cls), med = CLS[cls].median / 2, p = [c[0] + dir[0] * at, c[1] + dir[1] * at], start = med > 0 ? med + 0.4 : 0.475;
   for (const sg of [-1, 1]) for (let l = start; l <= w - 0.4; l += 0.95) {
@@ -348,7 +399,7 @@ function stopLine(c, dir, at, cls) {   // across the incoming half of an arm
   if (dir[0] === 0) emitRect('p', 'q', Math.min(A[0], B[0]), p[1] - 0.2, Math.max(A[0], B[0]), p[1] + 0.2, H.paint, CI.white);
   else emitRect('p', 'q', p[0] - 0.2, Math.min(A[1], B[1]), p[0] + 0.2, Math.max(A[1], B[1]), H.paint, CI.white);
 }
-const furniture = { lamp: [], sig: [], pole: [], plate: [], stop: [] };   // world lists, then split into cells
+const furniture = { lamp: [], sig: [], pole: [], plate: [], stop: [], cat: [] };   // world lists, then split into cells
 const yawOf = (d) => Math.atan2(d[0], d[1]);
 const crossingKey = new Set();
 for (const cr of PLAN.crossings) {
@@ -405,27 +456,170 @@ for (const cr of PLAN.crossings) if (cr.kind === 'ped-signal-midblock') {
   for (const sgn of [-1, 1]) furniture.sig.push([cr.at[0] + r[0] * sgn * (w + 0.6) + d[0] * 1.2, cr.at[1] + r[1] * sgn * (w + 0.6) + d[1] * 1.2, yawOf([-r[0] * sgn, -r[1] * sgn])]);
 }
 
-// ---- 6. rail
+// ---- 6. rail: the main line stands on a 5.2 m embankment, streets and the M2 run through openings (4.5 m headroom), the station widens it
+const RAIL_Y = 5.2;
 const railOut = { bed: [], tracks: 0 };
+const STRUCT = { ribbons: [], blockers: [], rails: [], openings: [] };   // runtime data: walkable decks / ramps, solid ground rectangles, parapet pieces (level-aware colliders)
+const stRail = PLAN.rail.stations[0];
 {
-  const crossX = PLAN.edges.filter((e) => e.underRail != null && e.dir === 'z').map((e) => [N.get(e.a).x - hw(e.cls) - CLS[e.cls].sidewalk - 0.4, N.get(e.a).x + hw(e.cls) + CLS[e.cls].sidewalk + 0.4]);
-  crossX.push([M2_X - MW - 0.8, M2_X + MW + 0.8]);
-  const st = PLAN.rail.stations[0];
-  const run = (x0, x1, z, tracks, halfBed) => {
-    for (const [a, b] of subtractIntervals(x0, x1, crossX)) {
-      emitRect('g', 'q', a, z - halfBed, b, z + halfBed, H.rail, CI.ballast);
-      for (let k = 0; k < tracks; k++) { const zz = z + (k - (tracks - 1) / 2) * 3.2; for (const o of [-0.6, 0.6]) emitRect('g', 'q', a, zz + o - 0.07, b, zz + o + 0.07, H.railPaint, CI.rail); }
+  const openings = [];
+  for (const e of PLAN.edges) if (e.underRail != null && e.dir === 'z') openings.push({ x: N.get(e.a).x, half: hw(e.cls) + CLS[e.cls].sidewalk + 0.5, clear: CLEAR });
+  openings.push({ x: M2_X, half: MW + 0.9, clear: CLEAR });
+  for (const t of PLAN.tunnels) if (t.under === 'пути вокзала') openings.push({ x: t.at[0], half: 1.9, clear: 2.8 });
+  openings.sort((a, b) => a.x - b.x);
+  STRUCT.openings = openings.map((o) => [o.x, o.half, o.clear]);
+  const X0 = -330, X1 = 330, zoneHalf = (x) => (x > stRail.x0 - 4 && x < stRail.x1 + 4) ? 14 : 5;
+  const brk = [X0, X1, stRail.x0 - 4, stRail.x1 + 4];
+  for (const o of openings) brk.push(o.x - o.half, o.x + o.half);
+  const xs = [...new Set(brk)].sort((a, b) => a - b);
+  const inOpening = (x) => openings.find((o) => x > o.x - o.half && x < o.x + o.half);
+  for (let i = 0; i + 1 < xs.length; i++) {
+    const xa = xs[i], xb = xs[i + 1], mid = (xa + xb) / 2, hz = zoneHalf(mid), op = inOpening(mid), zA = RAIL_Z - hz, zB = RAIL_Z + hz;
+    emitRect('g', 'q', xa, zA, xb, zB, RAIL_Y, CI.ballast);   // ballast bed = embankment top (also the deck over an opening)
+    if (op) {
+      // deck over the opening: underside, fascia on both faces
+      emitTri3([xa, op.clear, zA], [xa, op.clear, zB], [xb, op.clear, zB], CI.concD); emitTri3([xa, op.clear, zA], [xb, op.clear, zB], [xb, op.clear, zA], CI.concD);
+      emitQuadS(xa, zA, xb, zA, op.clear, RAIL_Y, op.clear, RAIL_Y, CI.conc); emitQuadS(xb, zB, xa, zB, op.clear, RAIL_Y, op.clear, RAIL_Y, CI.conc);
+      // abutment walls lining the opening
+      if (Math.abs(xa - (op.x - op.half)) < 1e-6) emitQuadS(xa, zA, xa, zB, 0, op.clear, 0, op.clear, CI.concD);
+      if (Math.abs(xb - (op.x + op.half)) < 1e-6) emitQuadS(xb, zA, xb, zB, 0, op.clear, 0, op.clear, CI.concD);
+    } else {
+      emitQuadS(xa, zA, xb, zA, 0, RAIL_Y, 0, RAIL_Y, CI.conc); emitQuadS(xb, zB, xa, zB, 0, RAIL_Y, 0, RAIL_Y, CI.conc);
+      STRUCT.blockers.push([xa, zA, xb, zB]);
+      railOut.bed.push([xa, zA, xb, zB]);
     }
-    railOut.bed.push([x0, z - halfBed, x1, z + halfBed]);
+  }
+  for (const xe of [stRail.x0 - 4, stRail.x1 + 4]) for (const sg of [-1, 1]) emitQuadS(xe, RAIL_Z + sg * 5, xe, RAIL_Z + sg * 14, 0, RAIL_Y, 0, RAIL_Y, CI.conc);   // step where the station widens the embankment
+  // tracks: rails + sleepers
+  const track = (zz, x0, x1) => {
+    for (const o of [-0.6, 0.6]) emitRect('g', 'q', x0, zz + o - 0.07, x1, zz + o + 0.07, RAIL_Y + 0.035, CI.rail);
+    for (let x = x0 + 0.6; x < x1 - 0.3; x += 1.5) emitRect('g', 'q', x - 0.17, zz - 1.0, x + 0.17, zz + 1.0, RAIL_Y + 0.012, CI.sleeper);
   };
-  run(-320, st.x0, RAIL_Z, 2, 3.6); run(st.x0, st.x1, RAIL_Z, 4, 7.2); run(st.x1, 320, RAIL_Z, 2, 3.6);
-  emitRect('g', 'q', st.x0 + 2, RAIL_Z - 12.2, st.x1 - 2, RAIL_Z - 8.8, H.walk, CI.platform);
-  emitRect('g', 'q', st.x0 + 2, RAIL_Z + 8.8, st.x1 - 2, RAIL_Z + 12.2, H.walk, CI.platform);
+  for (const zz of [RAIL_Z - 1.6, RAIL_Z + 1.6]) { track(zz, X0, stRail.x0 - 4); track(zz, stRail.x1 + 4, X1); }
+  for (const zz of [RAIL_Z - 4.8, RAIL_Z - 1.6, RAIL_Z + 1.6, RAIL_Z + 4.8]) track(zz, stRail.x0 - 4, stRail.x1 + 4);
+  emitRect('g', 'q', stRail.x0 + 2, RAIL_Z - 12.2, stRail.x1 - 2, RAIL_Z - 8.8, RAIL_Y + 0.1, CI.platform);
+  emitRect('g', 'q', stRail.x0 + 2, RAIL_Z + 8.8, stRail.x1 - 2, RAIL_Z + 12.2, RAIL_Y + 0.1, CI.platform);
+  for (const z of [RAIL_Z - 12.2, RAIL_Z - 8.8, RAIL_Z + 8.8, RAIL_Z + 12.2]) emitQuadS(stRail.x0 + 2, z, stRail.x1 - 2, z, RAIL_Y, RAIL_Y + 0.1, RAIL_Y, RAIL_Y + 0.1, CI.conc);
+  // catenary poles (instanced furniture, y = RAIL_Y)
+  for (let x = X0 + 15; x < X1; x += 30) { if (inOpening(x)) continue; const hz = zoneHalf(x); furnCat.push([x, RAIL_Z - (hz - 0.9), 0], [x, RAIL_Z + (hz - 0.9), Math.PI]); }
+  // yard (ground) and spur (ground, starts at the embankment wall)
   const y = PLAN.rail.yard; emitRect('g', 'q', y.x0, y.z0, y.x1, y.z1, H.rail, CI.ballast);
   for (let k = 0; k < y.tracks; k++) { const zz = y.z0 + 3 + k * (y.z1 - y.z0 - 6) / (y.tracks - 1); for (const o of [-0.6, 0.6]) emitRect('g', 'q', y.x0, zz + o - 0.07, y.x1, zz + o + 0.07, H.railPaint, CI.rail); }
-  const sp = PLAN.rail.spur.pts; ribbon('g', sp, 2.6, H.rail, CI.ballast);
-  const lines = [[-0.6], [0.6]];
-  for (const [o] of lines) { const off = sp.map((p, i) => { const q = sp[Math.min(sp.length - 1, i + 1)], r = sp[Math.max(0, i - 1)]; let dx = q[0] - r[0], dz = q[1] - r[1]; const l = Math.hypot(dx, dz) || 1; return [p[0] - dz / l * o, p[1] + dx / l * o]; }); ribbon('g', off, 0.14, H.railPaint, CI.rail); }
+  const sp = PLAN.rail.spur.pts.filter((q) => q[1] < RAIL_Z - 5.4); ribbon('g', sp, 2.6, H.rail, CI.ballast);
+  for (const o of [-0.6, 0.6]) { const off = sp.map((p, i) => { const q = sp[Math.min(sp.length - 1, i + 1)], r = sp[Math.max(0, i - 1)]; let dx = q[0] - r[0], dz = q[1] - r[1]; const l = Math.hypot(dx, dz) || 1; return [p[0] - dz / l * o, p[1] + dx / l * o]; }); ribbon('g', off, 0.14, H.railPaint, CI.rail); }
+}
+
+// ---- 6b. decks, causeways, ramps, bridges, footbridges
+function addParapets(pts, o, level0 = null) {   // level-aware collider pieces along an offset of a [x,z,h] path
+  const q = offsetPts3(pts, o); let acc = 0, start = 0;
+  for (let i = 1; i < q.length; i++) { acc += Math.hypot(q[i][0] - q[i - 1][0], q[i][1] - q[i - 1][1]); if (acc >= 10 || i === q.length - 1) { const a = q[start], b = q[i]; STRUCT.rails.push([R2(a[0]), R2(a[1]), R2(b[0]), R2(b[1]), R2((a[2] + b[2]) / 2 + (level0 || 0))]); start = i; acc = 0; } }
+}
+function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median half or 0), crossings: [[s0,s1]] along arc length, paint: {edge, divider}, kerbC, walls: true}
+  const S = arcLen(pts);
+  const inCross = (s) => o.crossings.some(([a, b]) => s > a && s < b);
+  deckRibbon(pts, o.w, 0.05, CI.asph);
+  // parapets (both sides) + caps
+  for (const sg of [-1, 1]) { const off = sg * (o.w / 2 + 0.15); wallAlong(pts, off, (h) => h + 0.05, (h) => h + 0.95, CI.conc); capAlong(pts, off, 0.3, 0.95, CI.conc); addParapets(pts, off); }
+  if (o.med) for (const sg of [-1, 1]) { wallAlong(pts, sg * o.med, (h) => h + 0.05, (h) => h + 0.85, CI.conc); capAlong(pts, sg * o.med, 0.2, 0.85, CI.conc); }
+  // sides: retaining wall to the ground, a fascia beam in front of every crossing
+  for (const sg of [-1, 1]) {
+    const q = offsetPts3(pts, sg * (o.w / 2 + 0.3));
+    for (let i = 0; i + 1 < q.length; i++) {
+      const cross = inCross((S[i] + S[i + 1]) / 2);
+      emitQuadS(q[i][0], q[i][1], q[i + 1][0], q[i + 1][1], cross ? q[i][2] - 0.8 : 0, q[i][2] + 0.05, cross ? q[i + 1][2] - 0.8 : 0, q[i + 1][2] + 0.05, CI.conc);
+    }
+  }
+  // ceiling + abutments at crossings
+  for (const [a, b] of o.crossings) {
+    const idx = pts.map((_, i) => i).filter((i) => S[i] >= a - 1e-6 && S[i] <= b + 1e-6);
+    if (idx.length > 1) deckRibbon(pts.slice(idx[0], idx[idx.length - 1] + 1), o.w + 0.6, -0.8 + 0.05, CI.concD);
+    for (const sv of [a, b]) { const i = S.findIndex((v) => v >= sv - 1e-6); if (i < 0) continue; const L = offsetPts3(pts, -(o.w / 2 + 0.3))[i], Rr = offsetPts3(pts, o.w / 2 + 0.3)[i]; emitQuadS(L[0], L[1], Rr[0], Rr[1], 0, L[2] - 0.8, 0, Rr[2] - 0.8, CI.concD); }
+  }
+  // paint
+  if (o.paint) {
+    for (const sg of [-1, 1]) { paintAlong(pts, sg * o.paint.edge, 0.13, 1, 0, 0.062, CI.white); if (o.paint.divider) paintAlong(pts, sg * o.paint.divider, 0.14, 1.6, 1.8, 0.062, CI.white); if (o.paint.inner) paintAlong(pts, sg * o.paint.inner, 0.13, 1, 0, 0.062, CI.white); }
+    if (o.paint.center) paintAlong(pts, 0, 0.11, 1.0, 3.0, 0.062, CI.white);
+  }
+}
+function sampleAxis(axis, c, lo, hi, hfn, step = 3) {
+  const out = []; for (let v = lo; v <= hi + 1e-6; v += step) { const vv = Math.min(v, hi); out.push(axis === 'x' ? [vv, c, hfn(vv)] : [c, vv, hfn(vv)]); } if (out.length && (axis === 'x' ? out[out.length - 1][0] : out[out.length - 1][1]) < hi - 1e-6) out.push(axis === 'x' ? [hi, c, hfn(hi)] : [c, hi, hfn(hi)]); return out;
+}
+// motorway causeways
+const MOTOR_CROSS = { M1: [0], M2: [M1_Z, 0] };   // axis coordinates where another road passes underneath
+for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z', M2_X, M2_UP, hM2]]) for (const [a, b] of up) {
+  const pts = sampleAxis(axis, c, a, b, hfn, 3), S = arcLen(pts), s0 = axis === 'x' ? pts[0][0] : pts[0][1];
+  const crossings = MOTOR_CROSS[ref].map((v) => [v - 7.4 - s0, v + 7.4 - s0]).filter(([x0, x1]) => x1 > 0 && x0 < S[S.length - 1]).map(([x0, x1]) => [Math.max(0, x0), Math.min(S[S.length - 1], x1)]);
+  structureDeck(pts, { w: 2 * (MW - 0.5), med: CLS.motorway.median / 2, crossings, paint: { edge: MW - 1.1, divider: CLS.motorway.median / 2 + CLS.motorway.lane, inner: CLS.motorway.median / 2 + 0.3 } });
+  STRUCT.ribbons.push({ id: ref, w: 2 * (MW - 0.5), p: pts.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
+  // solid body: ground floor is closed under the walls where the deck is higher than 0.3 m, except under the crossing roads
+  for (const [x0, x1] of intervalsAbove(hfn, a, b, 0.3)) for (const [y0, y1] of subtractIntervals(x0, x1, MOTOR_CROSS[ref].map((v) => [v - 8, v + 8]))) STRUCT.blockers.push(axis === 'x' ? [y0, c - MW - 0.6, y1, c + MW + 0.6] : [c - MW - 0.6, y0, c + MW + 0.6, y1]);
+}
+// ramps with heights
+const rampPts = [];   // {ic, kind, pts3}
+for (const ic of PLAN.interchanges) {
+  const done = [];
+  const order = [...ic.ramps.keys()].sort((p, q) => (/slip/.test(ic.ramps[p].kind) ? 1 : 0) - (/slip/.test(ic.ramps[q].kind) ? 1 : 0));
+  for (const ri of order) {
+    const r = ic.ramps[ri], pts = r.pts, S = arcLen(pts), L = S[S.length - 1], near = (pt) => { let best = null, bd = 1e9; for (const d of done) for (const q of d.p3) { const dd = Math.hypot(q[0] - pt[0], q[1] - pt[1]); if (dd < bd) { bd = dd; best = q; } } return best && bd < 4 ? best[2] : 0; };
+    const slip = /slip/.test(r.kind);
+    const hs = slip && r.attach[0] === 'ramp' ? near(pts[0]) : lookupH(pts[0][0], pts[0][1]), he = slip && r.attach[1] === 'ramp' ? near(pts[pts.length - 1]) : lookupH(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+    const knots = [[0, hs]];
+    const bridge = (r.bridges || [])[0];
+    let sBr = null;
+    if (bridge) { const mid = [(bridge[0][0] + bridge[1][0]) / 2, (bridge[0][1] + bridge[1][1]) / 2]; let bi = 0, bd = 1e9; pts.forEach((q, i) => { const d = Math.hypot(q[0] - mid[0], q[1] - mid[1]); if (d < bd) { bd = d; bi = i; } }); sBr = S[bi]; knots.push([Math.max(8, sBr - 9), 5.0], [Math.min(L - 8, sBr + 9), 5.0]); }
+    knots.push([L, he]);
+    const kf = (s) => { for (let i = 0; i + 1 < knots.length; i++) if (s <= knots[i + 1][0]) { const t = (s - knots[i][0]) / Math.max(1e-6, knots[i + 1][0] - knots[i][0]); return knots[i][1] + (knots[i + 1][1] - knots[i][1]) * Math.min(1, Math.max(0, t)); } return knots[knots.length - 1][1]; };
+    const hf = smoothFn(kf, 0, L, 1, 3);
+    const p3 = pts.map((q, i) => [q[0], q[1], hf(S[i])]);
+    done.push({ p3 }); rampPts.push({ ic: ic.id, kind: r.kind, p3, bridge: sBr, S });
+    rampsOut.push({ ic: ic.id, kind: r.kind, pts: p3.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
+    // surface
+    deckRibbon(p3, CLS.ramp.w, 0.052, CI.asph);
+    const hMax = Math.max(...p3.map((q) => q[2]));
+    for (const sg of [-1, 1]) {
+      const q = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));
+      for (let i = 0; i + 1 < q.length; i++) {
+        const h0 = q[i][2], h1 = q[i + 1][2];
+        if (Math.max(h0, h1) < 0.3) continue;
+        const cross = sBr != null && Math.abs((S[i] + S[i + 1]) / 2 - sBr) < 9;
+        emitQuadS(q[i][0], q[i][1], q[i + 1][0], q[i + 1][1], cross ? h0 - 0.6 : 0, h0 + 0.05, cross ? h1 - 0.6 : 0, h1 + 0.05, CI.conc);
+        if (Math.max(h0, h1) > 1.2) emitQuadS(q[i][0], q[i][1], q[i + 1][0], q[i + 1][1], h0 + 0.05, h0 + 0.8, h1 + 0.05, h1 + 0.8, CI.conc);
+      }
+      if (hMax > 1.2) addParapets(p3.filter((v) => v[2] > 1.0), sg * (CLS.ramp.w / 2 + 0.2));
+    }
+    paintAlong(p3, 0, 0.1, 1.0, 3.0, 0.064, CI.white);
+    for (const sg of [-1, 1]) paintAlong(p3, sg * (CLS.ramp.w / 2 - 0.2), 0.1, 1, 0, 0.064, CI.white);
+    STRUCT.ribbons.push({ id: ic.id + '.' + r.kind, w: CLS.ramp.w - 0.2, p: p3.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
+  }
+}
+// river bridges (flat decks with a slab, parapets and piers), M1 over the river
+{
+  const riverXat = (z) => PLAN.water.river.pts.reduce((b, p) => Math.abs(p[1] - z) < Math.abs(b[1] - z) ? p : b)[0];
+  const br = [];
+  for (const e of PLAN.edges) if (e.bridge === 'river') { const z = N.get(e.a).z, rx = riverXat(z), half = hw(e.cls) + CLS[e.cls].sidewalk; br.push({ axis: 'x', c: z, a: rx - PLAN.water.river.w / 2 - 3.2, b: rx + PLAN.water.river.w / 2 + 3.2, half }); }
+  { const rx = riverXat(M1_Z); br.push({ axis: 'x', c: M1_Z, a: rx - PLAN.water.river.w / 2 - 6, b: rx + PLAN.water.river.w / 2 + 6, half: MW }); }
+  for (const b of br) {
+    const lo = b.c - b.half, hi = b.c + b.half;
+    deckRibbon([[b.a, b.c, 0], [b.b, b.c, 0]], 2 * b.half, -0.75, CI.concD);
+    emitQuadS(b.a, lo, b.b, lo, -0.75, 0.12, -0.75, 0.12, CI.conc); emitQuadS(b.a, hi, b.b, hi, -0.75, 0.12, -0.75, 0.12, CI.conc);
+    for (const z of [lo + 0.1, hi - 0.1]) { emitQuadS(b.a, z, b.b, z, 0.12, 1.0, 0.12, 1.0, CI.conc); emitRect('r', 'q', b.a, z - 0.15, b.b, z + 0.15, 1.0, CI.conc); }
+    for (const fx of [b.a + (b.b - b.a) * 0.3, b.a + (b.b - b.a) * 0.7]) box3(fx - 0.5, lo + 0.6, fx + 0.5, hi - 0.6, -2.6, -0.75, CI.concD, false);
+  }
+}
+// footbridges
+for (const f of PLAN.footbridges) {
+  const isRiver = f.over === 'река', over = f.over.startsWith('М') ? MW + 3 : isRiver ? 12 : hw('arterial') + CLS.arterial.sidewalk + 1.2;
+  const top = isRiver ? 2.4 : 5.1, g = isRiver ? 0.1 : 0.12, ramp = top / g, half = over + ramp, lat = f.id === 'FB3' || f.id === 'FB4' ? 3.6 : 0;
+  const hfn = smoothFn((s) => Math.max(0, Math.min(top, top - g * (Math.abs(s) - over))), -half - 4, half + 4, 1, 2);
+  const pts = []; for (let s = -half; s <= half + 1e-6; s += 3) pts.push(f.axis === 'x' ? [f.at[0] + s, f.at[1] + lat, hfn(s)] : [f.at[0] + lat, f.at[1] + s, hfn(s)]);
+  const S = arcLen(pts);
+  deckRibbon(pts, 2.4, 0, CI.conc);
+  for (const sg of [-1, 1]) { const off = sg * 1.25; wallAlong(pts, off, (h) => h + 0.02, (h) => h + 1.1, CI.conc); capAlong(pts, off, 0.15, 1.1, CI.conc); wallAlong(pts, off, (h) => Math.max(0, h - 0.55), (h) => h, CI.concD); addParapets(pts.filter((q) => q[2] > 0.8), off); }
+  deckRibbon(pts, 2.4, -0.55, CI.concD);
+  // columns: at the ends of the span, and every 9 m under the ramps (higher than 0.8 m)
+  for (let i = 0; i < pts.length; i += 3) { const q = pts[i]; if (q[2] > 0.8) box3(q[0] - 0.3, q[1] - 0.3, q[0] + 0.3, q[1] + 0.3, 0, q[2] - 0.55, CI.concD, false); }
+  STRUCT.ribbons.push({ id: f.id, w: 2.0, p: pts.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
+  void S;
 }
 
 // ---- 7. landscape: base grass, areas, blocks, fields, forests, water
@@ -484,7 +678,7 @@ for (const e of PLAN.edges) if (e.bridge === 'river') { const a = N.get(e.a), b 
 }
 for (const f of PLAN.footbridges) if (f.over === 'река') bridgeRects.push([f.at[0] - f.len / 2, f.at[1] - 1.5, f.at[0] + f.len / 2, f.at[1] + 1.5]);
 const isWater = (x, z) => inPoly(x, z, seaPoly) || (riverDist(x, z) < PLAN.water.river.w / 2 && !bridgeRects.some((r) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3]));
-const blocked = (x, z, pad = 0.6) => !!(rasterAt(x, z) || rasterAt(x + pad, z) || rasterAt(x - pad, z) || rasterAt(x, z + pad) || rasterAt(x, z - pad) || ringAt(x, z) || rangeRamp(x, z) || railBlocked(x, z)) || isWater(x, z);
+const blocked = (x, z, pad = 0.6) => !!(rasterAt(x, z) || rasterAt(x + pad, z) || rasterAt(x - pad, z) || rasterAt(x, z + pad) || rasterAt(x, z - pad) || ringAt(x, z) || rangeRamp(x, z) || railBlocked(x, z) || STRUCT.blockers.some((b) => x > b[0] - 1 && x < b[2] + 1 && z > b[1] - 1 && z < b[3] + 1)) || isWater(x, z);
 const rampSegs = rampsOut.flatMap((r) => r.pts.slice(1).map((p, i) => [r.pts[i], p]));
 const rangeRamp = (x, z) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < 2.2);
 const railBlocked = (x, z) => railOut.bed.some((b) => x >= b[0] - 1 && x <= b[2] + 1 && z >= b[1] - 1 && z <= b[3] + 1) || segDist(x, z, PLAN.rail.spur.pts[0], PLAN.rail.spur.pts[PLAN.rail.spur.pts.length - 1]) < 4;
@@ -497,7 +691,7 @@ for (const e of PLAN.edges) {
   const a = N.get(e.a), b = N.get(e.b), ax = e.dir, cl = CLS[e.cls], c = ax === 'x' ? a.z : a.x;
   const lo = ax === 'x' ? Math.min(a.x, b.x) : Math.min(a.z, b.z), hi = ax === 'x' ? Math.max(a.x, b.x) : Math.max(a.z, b.z);
   const lowNode = (ax === 'x' ? a.x <= b.x : a.z <= b.z) ? e.a : e.b, highNode = lowNode === e.a ? e.b : e.a;
-  const t0 = trimAt(lowNode, e) + 3, t1 = trimAt(highNode, e) + 3, step = lampsPer[e.cls], cuts = cutsOf(e);
+  const t0 = trimAt(lowNode, e) + 3, t1 = trimAt(highNode, e) + 3, step = lampsPer[e.cls], cuts = furnCuts(e);
   const sideOff = hw(e.cls) + cl.sidewalk * 0.5;
   const n = Math.floor((hi - lo - t0 - t1) / step);
   for (let k = 0; k <= n; k++) {
@@ -554,6 +748,7 @@ for (const line of PLAN.transit.lines) for (const s of line.stops) {
   for (let k = 0; k < 16; k++) { const a = (k + 0.5) * Math.PI / 8; const px = Math.cos(a) * 19.5, pz = Math.sin(a) * 19.5; if (!rasterAt(px, pz)) cellOf(Math.floor(px / CELL), Math.floor(pz / CELL)).f.tree.push(R2(px), R2(pz), 0.95, R2(rnd())); }
   for (const j of PLAN.junctions) if (j.type === 'roundabout' && j.R < 12) cellOf(Math.floor(j.at[0] / CELL), Math.floor(j.at[1] / CELL)).f.tree.push(j.at[0], j.at[1], 1.1, 0.5);
 }
+furniture.cat = furnCat;
 for (const [kind, list] of Object.entries(furniture)) for (const f of list) { const c = cellOf(Math.floor(f[0] / CELL), Math.floor(f[1] / CELL)).f[kind]; for (const v of f) c.push(typeof v === 'number' ? R2(v) : v); }
 
 // ---- 10. graph (for tests and later steps), walkable floor
@@ -562,7 +757,7 @@ const graph = {
   edges: PLAN.edges.map((e) => { const a = N.get(e.a), b = N.get(e.b); return [e.id, e.a, e.b, e.cls, a.x, a.z, b.x, b.z, e.name || '']; }),
   rings: ringsOut.map((r) => [r.id, r.at[0], r.at[1], r.R, r.Ri]),
   minis: minisOut.map((r) => [r.id, r.at[0], r.at[1], r.R, r.Ri]),
-  ramps: rampsOut.map((r) => [r.ic, r.kind, r.pts.map((p) => [R2(p[0]), R2(p[1])])]),
+  ramps: rampsOut.map((r) => [r.ic, r.kind, r.pts.map((p) => [R2(p[0]), R2(p[1]), R2(p[2] || 0)])]),
   crossings: PLAN.crossings.map((c) => [c.id, c.kind, c.at[0], c.at[1], c.arm ? c.arm[0] : 0, c.arm ? c.arm[1] : 0, c.cls, c.setback == null ? 0 : c.setback]),
   signals: PLAN.junctions.filter((j) => j.type === 'signal').map((j) => [j.id, j.at[0], j.at[1]]),
   stops: stopsOut,
@@ -576,11 +771,11 @@ const cellsOut = {};
 const keys = [...cells.keys()].sort((a, b) => { const [ax, az] = a.split(',').map(Number), [bx, bz] = b.split(',').map(Number); return ax - bx || az - bz; });
 for (const k of keys) {
   const c = cells.get(k), o = {};
-  for (const L of ['g', 'r', 'p']) { const l = {}; for (const [s, arr] of Object.entries(c[L])) if (arr.length) l[s] = arr; if (Object.keys(l).length) o[L] = l; }
+  for (const L of ['g', 'r', 'p', 'd']) { const l = {}; for (const [s, arr] of Object.entries(c[L])) if (arr.length) l[s] = arr; if (Object.keys(l).length) o[L] = l; }
   const f = {}; for (const [s, arr] of Object.entries(c.f)) if (arr.length) f[s] = arr; if (Object.keys(f).length) o.f = f;
   cellsOut[k] = o;
 }
-const data = { version: 1, cell: CELL, size: SZ, classes: Object.fromEntries(Object.entries(CLS).map(([k, c]) => [k, [c.w, c.sidewalk, c.median, c.lanes]])), colors: PAL.map((k) => COLORS[k]), palette: CI, heights: H, cells: cellsOut, graph, floor: floorData, counts: PLAN.counts };
+const data = { struct: { ...STRUCT, deckH: DECKH, clear: CLEAR, slope: SLOPE, railY: RAIL_Y }, version: 1, cell: CELL, size: SZ, classes: Object.fromEntries(Object.entries(CLS).map(([k, c]) => [k, [c.w, c.sidewalk, c.median, c.lanes]])), colors: PAL.map((k) => COLORS[k]), palette: CI, heights: H, cells: cellsOut, graph, floor: floorData, counts: PLAN.counts };
 const FLOOR_FN = `
 (function(D){
   var F=D.floor;
@@ -595,15 +790,30 @@ const FLOOR_FN = `
     if(!D.onBridge(x,z)){var best=1e9;for(var i=0;i+1<F.river.length;i++){var d=segd(x,z,F.river[i],F.river[i+1]);if(d<best)best=d;}if(best<F.riverW/2)return false;}
     return true;
   };
-  // a point is accessible when the ring of 8 samples around it is floor too (no standing on the very edge of the water)
-  D.access=function(x,z,m){m=m==null?.65:m;if(!D.floor(x,z))return false;for(var i=0;i<8;i++){var a=i*Math.PI/4;if(!D.floor(x+Math.cos(a)*m,z+Math.sin(a)*m))return false;}return true;};
+  // ---- levels: the ground (land minus sea / river / solid bodies of embankments and causeways) and the walkable ribbons of decks, ramps and footbridges
+  var S=D.struct, blk=S.blockers, rib=S.ribbons;
+  for(var ri=0;ri<rib.length;ri++){var r=rib[ri],x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;for(var k=0;k<r.p.length;k++){var q=r.p[k];if(q[0]<x0)x0=q[0];if(q[0]>x1)x1=q[0];if(q[1]<z0)z0=q[1];if(q[1]>z1)z1=q[1];}r.bb=[x0-r.w,z0-r.w,x1+r.w,z1+r.w];}
+  D.ground=function(x,z){if(!D.floor(x,z))return false;for(var i=0;i<blk.length;i++){var b=blk[i];if(x>=b[0]&&x<=b[2]&&z>=b[1]&&z<=b[3])return false;}return true;};
+  // heights of every walkable surface above (x, z): [0 if ground] + ribbon heights (a ribbon counts inside its half width)
+  D.surfaces=function(x,z){
+    var out=[];if(D.ground(x,z))out.push(0);
+    for(var i=0;i<rib.length;i++){var r=rib[i],bb=r.bb;if(x<bb[0]||x>bb[2]||z<bb[1]||z>bb[3])continue;var p=r.p,hw=r.w/2,best=1e9,bh=0;
+      for(var k=0;k+1<p.length;k++){var a=p[k],b=p[k+1],dx=b[0]-a[0],dz=b[1]-a[1],l=dx*dx+dz*dz,t=l?Math.max(0,Math.min(1,((x-a[0])*dx+(z-a[1])*dz)/l)):0,d=Math.hypot(x-(a[0]+dx*t),z-(a[1]+dz*t));if(d<best){best=d;bh=a[2]+(b[2]-a[2])*t;}}
+      if(best<=hw)out.push(bh);}
+    return out;
+  };
+  // the surface the player stands on: the highest one not more than step above hint (the current level), else the lowest above
+  D.surfaceY=function(x,z,hint,step){step=step==null?.75:step;var s=D.surfaces(x,z),best=null;for(var i=0;i<s.length;i++)if(s[i]<=hint+step&&(best==null||s[i]>best))best=s[i];if(best==null&&s.length){best=s[0];for(i=1;i<s.length;i++)if(s[i]<best)best=s[i];}return best;};
+  // underside of the lowest deck above a point that stands at y (camera clearance); null when open sky
+  D.overhead=function(x,z,y){var s=D.surfaces(x,z),low=null;for(var i=0;i<s.length;i++)if(s[i]>y+1.6&&(low==null||s[i]<low))low=s[i];return low==null?null:low-.8;};
+  D.access=function(x,z,m){m=m==null?.65:m;if(!D.surfaces(x,z).length)return false;for(var i=0;i<8;i++){var a=i*Math.PI/4;if(!D.surfaces(x+Math.cos(a)*m,z+Math.sin(a)*m).length)return false;}return true;};
   D.cellKey=function(x,z){return Math.floor(x/D.cell)+','+Math.floor(z/D.cell);};
 })(window.PlanCDataV161);
 `;
 const text = '// Generated by tools/masterplan/compile-plan-c.mjs from tools/masterplan/plan-C.json (masterplan C, step C1); do not edit.\nwindow.PlanCDataV161=' + JSON.stringify(data) + ';' + FLOOR_FN;
 
 if (process.argv.includes('--stats')) {
-  let q = 0, t = 0, w = 0; for (const c of Object.values(cellsOut)) for (const L of ['g', 'r', 'p']) { q += (c[L]?.q?.length || 0) / 6; t += (c[L]?.t?.length || 0) / 8; w += (c[L]?.w?.length || 0) / 7; }
+  let q = 0, t = 0, w = 0; for (const c of Object.values(cellsOut)) for (const L of ['g', 'r', 'p', 'd']) { q += (c[L]?.q?.length || 0) / 6; t += (c[L]?.t?.length || 0) / 8; w += (c[L]?.w?.length || 0) / 7; }
   console.log('cells', keys.length, 'quads', q, 'tris', t, 'walls', w, 'bytes', text.length, 'palette', PAL.length);
   let trees = 0, lamps = 0, sigs = 0, poles = 0, stops = 0; for (const c of Object.values(cellsOut)) { trees += (c.f?.tree?.length || 0) / 4; lamps += (c.f?.lamp?.length || 0) / 3; sigs += (c.f?.sig?.length || 0) / 3; poles += (c.f?.pole?.length || 0) / 4; stops += (c.f?.stop?.length || 0) / 4; }
   console.log({ trees, lamps, sigs, poles, stops });

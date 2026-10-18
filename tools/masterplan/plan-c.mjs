@@ -133,13 +133,14 @@ export function buildPlan() {
   const mnode = (x, z) => node(x + 1e-3, z + 1e-3);
   const M1x = [-300, 0, M2_X, 370];   // runs on past the map edge: the east cloverleaf ramps join it there
   for (let i = 0; i + 1 < M1x.length; i++) addEdge(mnode(M1x[i], M1_Z), mnode(M1x[i + 1], M1_Z), 'motorway', 'М1 Северная хорда', { dir: 'x', ref: 'M1' });
-  const M2z = [-370, M1_Z, 0, 115];
+  const M2z = [-370, M1_Z, 0, 88];
   for (let i = 0; i + 1 < M2z.length; i++) addEdge(mnode(M2_X, M2z[i]), mnode(M2_X, M2z[i + 1]), 'motorway', 'М2 Восточная хорда', { dir: 'z', ref: 'M2', ...(M2z[i] < RAIL_Z && M2z[i + 1] > RAIL_Z ? { overRail: RAIL_Z } : {}) });
   const exits = [...nodes.values()].filter((n) => n.legs.length === 1 && (Math.abs(n.x) >= 299.9 || n.z <= size.z0 + 0.1)).map((n) => n.id);   // roads that leave the map (to the region)
 
   // ------------------------------------------------------------------ interchanges (ramps are polylines in game metres; `bridges` = parts above another road)
   const interchanges = [];
-  function diamond(id, at, k, name, cross, cwPlus, cwMinus, slipPlus = cwPlus, slipMinus = cwMinus) {
+  function diamond(id, at, k, name, cross, cwPlus, cwMinus, slipPlus = cwPlus, slipMinus = cwMinus, SC = 1) {
+    const sq = (p) => [Math.sign(p[0]) * (Math.abs(p[0]) > 10 ? 10 + (Math.abs(p[0]) - 10) * SC : Math.abs(p[0])), p[1]];   // shorten the ramps along the motorway (I2: the trumpet I4 starts 80 m south)
     // real diamond: taper (1:15 real) into a parallel deceleration lane beside the carriageway, then ONE smooth curve to the terminal;
     // the ramp hugs the motorway (8-13 game m = 20-33 m real from the carriageway edge). The -v side is the same pair turned 180 degrees.
     const ramps = [], LN = MW + CLS.ramp.w / 2;   // centre of an added lane right beside the carriageway
@@ -152,9 +153,9 @@ export function buildPlan() {
       const sl = (cs ?? 0) + CLS.ramp.w / 2 + 0.6;   // slip lane centre: its own lane beside the road with a painted / kerbed island
       const slipOff = join(cubic([-80, LN], [1, 0], 40, [-sl, DT + 10], [0, 1], 28, 36), seg([-sl, DT + 10], [-sl, DT + 13], 2), cubic([-sl, DT + 13], [0, 1], 7, [-((cs ?? 0) - 0.8), DT + 28], [0, 1], 7, 12));
       const slipOn = slipOff.map(([u, v]) => [-u, v]).reverse();
-      ramps.push({ kind: 'off', pts: off.map(Fk), attach: ['motorway', 'cross'], decel: 26 }, { kind: 'on', pts: on.map(Fk), attach: ['cross', 'motorway'], accel: 26 });
+      ramps.push({ kind: 'off', pts: off.map(sq).map(Fk), attach: ['motorway', 'cross'], decel: 26 }, { kind: 'on', pts: on.map(sq).map(Fk), attach: ['cross', 'motorway'], accel: 26 });
       if (cs == null) return;   // no room for slip lanes (P+R entrance): right turns use the signalised terminal
-      ramps.push({ kind: 'slip-off', pts: slipOff.map(Fk), attach: ['ramp', 'cross'], note: 'свободный правый поворот с хорды на проспект' }, { kind: 'slip-on', pts: slipOn.map(Fk), attach: ['cross', 'ramp'], note: 'свободный правый поворот с проспекта на хорду' });
+      ramps.push({ kind: 'slip-off', pts: slipOff.map(sq).map(Fk), attach: ['ramp', 'cross'], note: 'свободный правый поворот с хорды на проспект' }, { kind: 'slip-on', pts: slipOn.map(sq).map(Fk), attach: ['cross', 'ramp'], note: 'свободный правый поворот с проспекта на хорду' });
     };
     const F = frame(at, k);
     pair(F, cwPlus, slipPlus); pair(frame(at, k + 2), cwMinus, slipMinus);
@@ -173,7 +174,7 @@ export function buildPlan() {
   }
   function trumpet(id, at, name) {
     // M2 ends from the north; the through road H (z = at.z) runs east-west. Bell (loop + rim) on the far (south) side, two trunk ramps cross H on a bridge.
-    const F = frame(at, 0), hw = CLS.arterial.w / 2, r = 17, C = [-TRK - r, hw + CLS.ramp.w / 2 + 0.4 + r], Rr = r + 2 * TRK, top = -45, ramps = [];
+    const F = frame(at, 0), hw = CLS.arterial.w / 2, r = 17, C = [-TRK - r, hw + CLS.ramp.w / 2 + 0.4 + r], Rr = r + 2 * TRK, top = -72, ramps = [];
     const b = join(seg([-TRK, top], [-TRK, C[1]], 10), arc(C, r, 0, 270), seg([C[0], hw + CLS.ramp.w / 2 + 0.4], [6, hw + CLS.ramp.w / 2 + 0.4], 6), cubic([6, hw + CLS.ramp.w / 2 + 0.4], [1, 0], 7, [22, hw - 1.0], [1, 0], 7, 10));
     const d = join(cubic([C[0] - Rr - 35, hw - 1.0], [1, 0], 8, [C[0] - Rr - 17, hw + CLS.ramp.w / 2 + 0.4], [1, 0], 8, 12), arc([C[0] - Rr - 17, C[1]], 17, -90, 0), arc(C, Rr, 180, 0), seg([TRK, C[1]], [TRK, top], 10));
     const LM = MW + CLS.ramp.w / 2, LH = hw + CLS.ramp.w / 2;   // added lanes beside M2 and beside the through road
@@ -186,7 +187,7 @@ export function buildPlan() {
     interchanges.push({ id, kind: 'trumpet', name, at, ramps, trunkEnd: F([0, top]), note: 'три ветви: М2 заканчивается; раструб на стороне порта' });
   }
   diamond('I1', [0, M1_Z], 0, 'Ромб: Главный пр. × М1', 'Главный пр.', CLS.arterial.w / 2, CLS.arterial.w / 2, CLS.arterial.w / 2, CLS.collector.w / 2);
-  diamond('I2', [M2_X, 0], 1, 'Ромб: Центральная магистраль × М2', 'Центральная магистраль', CLS.arterial.w / 2, CLS.arterial.w / 2, CLS.arterial.w / 2, null);   // east side: P+R entrance, no slips
+  diamond('I2', [M2_X, 0], 1, 'Ромб: Центральная магистраль × М2', 'Центральная магистраль', CLS.arterial.w / 2, CLS.arterial.w / 2, CLS.arterial.w / 2, null, 0.82);   // east side: P+R entrance, no slips; ramps shortened (trumpet I4 starts at z 80)
   cloverleaf('I3', [M2_X, M1_Z], 'Клеверный лист: М1 × М2');
   trumpet('I4', [M2_X, 160], 'Трубка: М2 × Портовое ш.');
 
@@ -237,7 +238,7 @@ export function buildPlan() {
     if (e) crossings.push({ id: `MB${crossings.length}`, kind: e.cls === 'arterial' ? 'ped-signal-midblock' : 'zebra', at: [x, z], arm: null, cls: e.cls, axis: 'x', note: 'у остановки / у вилл' });
   }
   const footbridges = [
-    { id: 'FB1', at: [250, 80], axis: 'x', over: 'М2 Восточная хорда', len: 46, note: 'конец Университетского б-ра -> Восточный лесопарк', ramps: 'пандусы + лифт' },
+    { id: 'FB1', at: [250, -104], axis: 'x', over: 'М2 Восточная хорда', len: 46, note: 'конец Университетского б-ра -> Восточный лесопарк', ramps: 'пандусы + лифт' },
     { id: 'FB2', at: [-210, 40], axis: 'x', over: 'река', len: 34, note: 'пешеходно-велосипедный мост набережного парка' },
     { id: 'FB3', at: [120, 0], axis: 'z', over: 'Центральная магистраль', len: 16, note: 'улица «право-право»: пешеходы переходят по мосту (рынок, университет)', ramps: 'пандусы' },
     { id: 'FB4', at: [-120, 0], axis: 'z', over: 'Центральная магистраль', len: 16, note: 'больница и школа по разные стороны магистрали', ramps: 'пандусы' },
