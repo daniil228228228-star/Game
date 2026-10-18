@@ -112,18 +112,31 @@ function landuse() {
   const fillOf = { forest: 'url(#forest)', field: 'url(#field)', industry: COL.ind, verge: COL.verge, park: 'url(#forest)', parking: 'url(#stalls)', embankment: COL.embank, beach: 'url(#sand)', promenade: 'url(#pave)', port: COL.port, urban: COL.urban };
   const order = ['field', 'forest', 'verge', 'park', 'industry', 'urban', 'embankment', 'beach', 'promenade', 'port', 'parking'];
   for (const k of order) for (const a of P.areas.filter((x) => x.kind === k)) s += poly(a.poly, `fill="${fillOf[k]}"`);
-  // farmland: a few field parcels with hedges north of M1
-  const rnd = mulberry(5);
-  for (let x = -296; x < 296; x += 52) for (let z = -366; z < -252; z += 38) {
-    if (Math.abs(x + 26) < 30 || Math.abs(x + 26 - 250) < 40) continue;
-    const w = 46 + rnd() * 4, h = 33 + rnd() * 3;
-    s += rect(x, z, w, h, `fill="${rnd() < 0.5 ? 'url(#field)' : 'url(#field2)'}" stroke="#c9d6a8" stroke-width="0.8"`);
+  // countryside north of M1: field parcels split into crop strips, hedgerows, irregular woods, farmsteads, unpaved lanes
+  const R = P.rural, crops = [['#ece4b8', '#e3d9a2'], ['#dce8b6', '#cfe0a3'], ['#e9dfc3', '#dfd2b0'], ['#e8e0a0', '#dccf86'], ['#d6e4c0', '#c8dbad']];
+  R.fields.forEach((fd, i) => {
+    const xs = fd.poly.map((p) => p[0]), zs = fd.poly.map((p) => p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs), [c1, c2] = crops[fd.crop];
+    s += `<clipPath id="fld${i}"><path d="${pathOf(fd.poly, true)}"/></clipPath><g clip-path="url(#fld${i})">` + poly(fd.poly, `fill="${c1}"`);
+    const n = fd.strips, along = fd.angle === 0;
+    for (let k = 1; k < n; k += 2) s += along ? rect(x0, z0 + (z1 - z0) * k / n, x1 - x0, (z1 - z0) / n, `fill="${c2}"`) : rect(x0 + (x1 - x0) * k / n, z0, (x1 - x0) / n, z1 - z0, `fill="${c2}"`);
+    for (let t = 0; t < (along ? z1 - z0 : x1 - x0); t += 2.2) s += along ? line([x0, z0 + t], [x1, z0 + t], 'stroke="#ffffff" stroke-width="0.25" opacity="0.25"') : line([x0 + t, z0], [x0 + t, z1], 'stroke="#ffffff" stroke-width="0.25" opacity="0.25"');
+    s += `</g>` + poly(fd.poly, 'fill="none" stroke="#a9c58c" stroke-width="1.1" stroke-dasharray="1.6 0.7" stroke-linejoin="round"');
+  });
+  for (const fo of R.forests) s += poly(fo, `fill="url(#forest)" stroke="#94bb7b" stroke-width="0.6" stroke-linejoin="round"`);
+  for (const ln of R.lanes) s += pl(ln, 'stroke="#d9c9a3" stroke-width="2.0" stroke-linejoin="round"') + pl(ln, 'stroke="#c4b086" stroke-width="0.3" stroke-dasharray="1.2 1.2"');
+  for (const fm of R.farms) {
+    const [x, z] = fm.at;
+    s += rect(x - 10, z - 7, 20, 14, `fill="#ece6d4" stroke="#cbbf9f" stroke-width="0.3"`) + bld([x - 8, z - 5, x + 1, z - 1], '#d8b48c', '#9c7b55', 0.25) + bld([x + 3, z - 5, x + 8, z + 4], '#c9c3b5', '#8f897b', 0.25) + bld([x - 8, z + 1, x - 2, z + 5], '#e0cfb2', '#a68f6a', 0.2) + circ(x + 0, z + 3.2, 1.6, `fill="#d9d3c3" stroke="#8f897b" stroke-width="0.2"`);
+    for (let k = 0; k < 4; k++) s += tree(x - 11 + k * 2.4, z - 8.5, 1.2, COL.treeDark);
   }
-  for (const [cx, cz, r] of [[-120, -320, 26], [-40, -300, 18], [140, -330, 22], [70, -276, 14], [-250, -300, 20]]) s += `<ellipse cx="${cx}" cy="${cz}" rx="${r * 1.4}" ry="${r}" fill="url(#forest)"/>`;
+  // Лесопарк south of M1: paths through the wood and a pond in a clearing
+  s += `<path d="M -296 -200 C -250 -222 -200 -180 -150 -205 S -60 -228 -6 -196" stroke="#efe6cf" stroke-width="1.2" fill="none"/><path d="M -120 -238 C -110 -210 -140 -190 -118 -168" stroke="#efe6cf" stroke-width="1.1" fill="none"/>`;
+  s += `<ellipse cx="-70" cy="-202" rx="15" ry="8" fill="${COL.park}"/><ellipse cx="-70" cy="-202" rx="9" ry="4.6" fill="${COL.water}" stroke="${COL.waterEdge}" stroke-width="0.3"/>`;
   // interchange infields and motorway verges (grass under every ramp, not farmland / factories)
   for (const ic of P.interchanges) if (ic.kind === 'trumpet') s += `<ellipse cx="${f(ic.at[0] - 21)}" cy="${f(ic.at[1] + 22)}" rx="31" ry="27" fill="${COL.verge}"/>`;
   for (const e of P.edges.filter((x) => x.cls === 'motorway')) s += pl(edgePts(e), `stroke="${COL.verge}" stroke-width="24" stroke-linecap="butt"`);
   for (const r of ramps) s += pl(r.pts, `stroke="${COL.verge}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"`);
+  for (const a of P.areas.filter((x) => x.kind === 'parking')) s += poly(a.poly, 'fill="url(#stalls)" stroke="#bdb6a6" stroke-width="0.3"') + `<text x="${f((a.poly[0][0] + a.poly[1][0]) / 2)}" y="${f((a.poly[0][1] + a.poly[2][1]) / 2 + 2.5)}" font-size="7" text-anchor="middle" fill="#1c6dd0" font-weight="800" opacity="0.8">P+R</text>`;
   // riverside park: trees on both banks, a path on the east bank
   const rnd2 = mulberry(9), rv = P.water.river, rx = (z) => { let best = rv.pts[0]; for (const p of rv.pts) if (Math.abs(p[1] - z) < Math.abs(best[1] - z)) best = p; return best[0]; };
   s += pl(rv.pts.filter((p) => p[1] > -168 && p[1] < 196).map((p) => [p[0] + 15.5, p[1]]), 'stroke="#f3eee2" stroke-width="1.2" stroke-linejoin="round"');
@@ -142,9 +155,15 @@ function landuse() {
 function water() {
   let s = '';
   const W = P.water, sea = [...W.sea.coast, [420, 420], [-420, 420]], rv = W.river;
-  s += pl(rv.pts, `stroke="${COL.waterEdge}" stroke-width="${rv.w + 1.4}" stroke-linejoin="round"`) + poly(rv.mouth, `fill="${COL.water}"`);
-  s += pl(rv.pts, `stroke="${COL.water}" stroke-width="${rv.w}" stroke-linejoin="round"`);
+  const riverPoly = [...rv.banks.left, ...rv.banks.right.slice().reverse()];
+  s += poly(rv.mouth, `fill="url(#sand)"`) + poly(riverPoly, `fill="${COL.water}" stroke="${COL.waterEdge}" stroke-width="0.8" stroke-linejoin="round"`);
+  { // reeds on the inside of the bends, a sand bar where the river meets the sea
+    const rr = mulberry(31);
+    for (const side of [rv.banks.left, rv.banks.right]) for (let i = 2; i < side.length - 2; i += 1) { if (rr() < 0.55) continue; const p = side[i], q = side[i + 1], d = norm([q[0] - p[0], q[1] - p[1]]), n = rightOf(d), o = side === rv.banks.left ? -1 : 1; for (let k = 0; k < 3; k++) { const b = [p[0] + d[0] * k * 1.2 + n[0] * o * 0.4, p[1] + d[1] * k * 1.2 + n[1] * o * 0.4]; s += line(b, [b[0] + n[0] * o * 1.3 + d[0] * 0.3, b[1] + n[1] * o * 1.3 + d[1] * 0.3], 'stroke="#7fa866" stroke-width="0.28"'); } }
+    s += `<path d="M -226 206 Q -214 201 -204 205 Q -214 208 -226 206 Z" fill="url(#sand)" stroke="#e0cf9e" stroke-width="0.2"/>`;
+  }
   s += poly(sea, `fill="${COL.water}"`);
+  for (const [x, z, r] of W.rocks) s += circ(x, z, r, `fill="#b7b2a6" stroke="#8a857a" stroke-width="0.25"`) + circ(x + r * 0.7, z + r * 0.4, r * 0.55, `fill="#c5c0b4" stroke="#8a857a" stroke-width="0.2"`);
   // shoreline: soft edge + surf lines on the beach / promenade, quay walls along the port
   const cst = W.sea.coast, portStart = cst.findIndex((p) => p[0] >= 40);
   s += pl(cst.slice(0, portStart + 1), `stroke="${COL.waterEdge}" stroke-width="0.9"`) + pl(cst.slice(portStart), `stroke="${COL.quay}" stroke-width="1.1"`);
@@ -185,6 +204,72 @@ function bars(lot, depth, rnd, gapP) {   // perimeter block: four bars, optional
 const bld = (r, fill, stroke, sw = 0.18) => rect(r[0], r[1], r[2] - r[0], r[3] - r[1], `fill="${fill}" stroke="${stroke}" stroke-width="${sw}"`);
 const tree = (x, z, r, c = COL.tree) => circ(x, z, r, `fill="${c}" stroke="#86ad6e" stroke-width="0.12"`);
 
+// varied perimeter building: the street facade stays on the building line, the courtyard side is ragged, each unit its own shade
+const SHADES = { res: ['#dccdb5', '#d5c4a8', '#e3d6c0', '#cdbb9e', '#d9cbb8'], cbd: ['#d1c7b7', '#c7bcab', '#d9d0c2', '#bdb2a1', '#cfc3b0'] };
+function frontage(side, lot, depth, rnd, pal, stroke, gapP) {   // side: 'n' | 's' | 'w' | 'e'; returns svg of units along that side
+  const [x0, z0, x1, z1] = lot, horiz = side === 'n' || side === 's', a = horiz ? x0 + (side === 'n' ? 0 : 0) : z0 + depth, b = horiz ? x1 : z1 - depth;
+  let s = '', t = a;
+  while (t < b - 2) {
+    let L = Math.min(b - t, 7 + rnd() * 7); if (b - (t + L) < 4) L = b - t;
+    if (rnd() < gapP && L < b - a - 4 && t > a + 3) { t += 2.8; continue; }   // a passage into the courtyard
+    const d = depth + (rnd() - 0.4) * 2.2, c = pal[Math.floor(rnd() * pal.length)];
+    const r = side === 'n' ? [t, z0, t + L, z0 + d] : side === 's' ? [t, z1 - d, t + L, z1] : side === 'w' ? [x0, t, x0 + d, t + L] : [x1 - d, t, x1, t + L];
+    s += bld(r, c, stroke, 0.16); t += L;
+  }
+  return s;
+}
+function urbanBlock(b, rnd, zone) {
+  const lot = [b.lot[0] + 0.6, b.lot[1] + 0.6, b.lot[2] - 0.6, b.lot[3] - 0.6], [x0, z0, x1, z1] = lot, w = x1 - x0, h = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  const cbd = zone === 'cbd', pal = cbd ? SHADES.cbd : SHADES.res, stroke = cbd ? COL.cbdS : COL.resS, depth = cbd ? 7 : zone === 'waterfront' ? 6 : 5.6;
+  const yardTrees = (ix0, iz0, ix1, iz1, n) => { let s = ''; if (ix1 - ix0 < 5 || iz1 - iz0 < 5) return s; for (let i = 0; i < n; i++) s += tree(ix0 + 1.5 + rnd() * (ix1 - ix0 - 3), iz0 + 1.5 + rnd() * (iz1 - iz0 - 3), 0.9 + rnd() * 0.8, rnd() < 0.5 ? COL.tree : COL.treeDark); return s; };
+  const roll = rnd();
+  let s = '';
+  if (zone === 'waterfront') {   // mid-rise terraces facing the sea, gardens behind
+    s += frontage('n', lot, 6, rnd, pal, stroke, 0.25);
+    for (let x = x0 + 2; x + 8 < x1; x += 13) s += bld([x, z1 - 8, x + 8, z1], pal[Math.floor(rnd() * pal.length)], stroke, 0.18);
+    return s + yardTrees(x0, z0 + 8, x1, z1 - 9, 4);
+  }
+  if (cbd && roll < 0.28) {   // office tower on a podium
+    s += bld([x0, z0, x1, z1], pal[1], stroke, 0.2);
+    const tx = x0 + 3 + rnd() * (w - 17), tz = z0 + 3 + rnd() * (h - 17);
+    s += bld([tx, tz, tx + 13, tz + 13], COL.tall, stroke, 0.35) + bld([tx + 3, tz + 3, tx + 10, tz + 10], '#a99d8b', stroke, 0.2) + line([tx + 6.5, tz + 3], [tx + 6.5, tz + 10], `stroke="${stroke}" stroke-width="0.12"`);
+    return s;
+  }
+  if (cbd || roll < 0.38) {   // closed perimeter block with a courtyard
+    for (const sd of ['n', 's', 'w', 'e']) s += frontage(sd, lot, depth, rnd, pal, stroke, cbd ? 0.06 : 0.16);
+    return s + yardTrees(x0 + depth + 2, z0 + depth + 2, x1 - depth - 2, z1 - depth - 2, cbd ? 3 : 5);
+  }
+  if (roll < 0.58) {   // U-shape open to one side, playground in the yard
+    const open = ['n', 's', 'w', 'e'][Math.floor(rnd() * 4)];
+    for (const sd of ['n', 's', 'w', 'e']) if (sd !== open) s += frontage(sd, lot, depth, rnd, pal, stroke, 0.1);
+    s += rect(cx - 3, cz - 2.5, 6, 5, `fill="#e8d9b7" stroke="#c9b48d" stroke-width="0.15"`);
+    return s + yardTrees(x0 + depth + 1, z0 + depth + 1, x1 - depth - 1, z1 - depth - 1, 6);
+  }
+  if (roll < 0.74) {   // L-shape on the corner + two point houses
+    const sx = rnd() < 0.5 ? 'w' : 'e', sz = rnd() < 0.5 ? 'n' : 's';
+    s += frontage(sz, lot, depth, rnd, pal, stroke, 0.1) + frontage(sx, lot, depth, rnd, pal, stroke, 0.1);
+    const px = sx === 'w' ? x1 - 9 : x0 + 1, pz = sz === 'n' ? z1 - 9 : z0 + 1;
+    s += bld([px, pz, px + 8, pz + 8], pal[2], stroke, 0.2) + bld([sx === 'w' ? px - 11 : px + 11, pz, (sx === 'w' ? px - 11 : px + 11) + 8, pz + 8], pal[3], stroke, 0.2);
+    return s + yardTrees(x0 + depth + 1, z0 + depth + 1, x1 - depth - 1, z1 - depth - 1, 5);
+  }
+  if (roll < 0.9) {   // parallel slabs along the longer side
+    const n = 3;
+    for (let k = 0; k < n; k++) { if (w >= h) { const zz = z0 + k * (h - 5.5) / (n - 1); s += bld([x0 + 1 + rnd() * 2, zz, x1 - 1 - rnd() * 2, zz + 5.5], pal[k % pal.length], stroke, 0.18); } else { const xx = x0 + k * (w - 5.5) / (n - 1); s += bld([xx, z0 + 1 + rnd() * 2, xx + 5.5, z1 - 1 - rnd() * 2], pal[k % pal.length], stroke, 0.18); } }
+    return s + yardTrees(x0 + 2, z0 + 2, x1 - 2, z1 - 2, 4);
+  }
+  for (const [px, pz] of [[x0 + 1, z0 + 1], [x1 - 10, z0 + 1], [x0 + 1, z1 - 10], [x1 - 10, z1 - 10], [cx - 4.5, cz - 4.5]]) s += bld([px, pz, px + 9, pz + 9], pal[Math.floor(rnd() * pal.length)], stroke, 0.22);   // point towers in a green
+  return s + yardTrees(x0 + 11, z0 + 2, x1 - 11, z1 - 2, 5);
+}
+function streetTrees() {   // rows on the sidewalks of avenues and district streets, never inside a junction
+  let s = '';
+  for (const e of P.edges.filter((x) => (x.cls === 'arterial' || x.cls === 'collector') && !x.bridge && !x.underRail)) {
+    const [a, b] = edgePts(e), L = Math.hypot(b[0] - a[0], b[1] - a[1]), d = norm([b[0] - a[0], b[1] - a[1]]), r = rightOf(d), o = CLS[e.cls].w / 2 + CLS[e.cls].sidewalk * 0.55;
+    const n0 = N.get(e.a), n1 = N.get(e.b); if (n0.z < -164 || n1.z < -164 || n0.z > 190 || Math.abs(n0.x) > 282 || Math.abs(n1.x) > 282) continue;
+    for (let t = 9; t < L - 9; t += 6) { const p = [a[0] + d[0] * t, a[1] + d[1] * t]; if (Math.hypot(p[0], p[1]) < 27) continue; for (const sd of [-1, 1]) s += circ(p[0] + r[0] * o * sd, p[1] + r[1] * o * sd, 0.75, `fill="${COL.treeDark}" opacity="0.9"`); }
+  }
+  return s;
+}
+
 function blockContent(b, detail) {
   const rnd = mulberry(1000 + +b.id.slice(1) * 97), [x0, z0, x1, z1] = b.lot, w = x1 - x0, h = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
   let s = rect(x0, z0, w, h, `fill="${ZONE_FILL[b.zone] || COL.res}"`);
@@ -204,18 +289,7 @@ function blockContent(b, detail) {
       for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) s += tree(c[0] + dx * 12, c[1] + dz * 11, 1.4);
       return s;
     }
-    const depth = zone === 'cbd' ? 7 : zone === 'waterfront' ? 6 : 5.6;
-    const { out, seps } = bars(inset(b.lot, 0.6), depth, rnd, zone === 'cbd' ? 0.12 : 0.45);
-    const fill = zone === 'cbd' ? COL.cbdB : COL.resB, stroke = zone === 'cbd' ? COL.cbdS : COL.resS;
-    for (const r of out) s += bld(r, fill, stroke);
-    for (const [a, c] of seps) s += line(a, c, `stroke="${stroke}" stroke-width="0.14"`);
-    if (zone === 'cbd' && rnd() < 0.45) { const tx = rnd() < 0.5 ? x0 + 0.6 : x1 - 10.6, tz = rnd() < 0.5 ? z0 + 0.6 : z1 - 10.6; s += bld([tx, tz, tx + 10, tz + 10], COL.tall, COL.cbdS, 0.3) + bld([tx + 2.5, tz + 2.5, tx + 7.5, tz + 7.5], '#a99d8b', COL.cbdS, 0.15); }
-    const ix0 = x0 + depth + 2.5, ix1 = x1 - depth - 2.5, iz0 = z0 + depth + 2.5, iz1 = z1 - depth - 2.5;
-    if (ix1 - ix0 > 6 && iz1 - iz0 > 6) {
-      if (zone === 'mixed' && rnd() < 0.6) s += bld([cx - 4, cz - 3, cx + 4, cz + 3], fill, stroke);
-      else for (let i = 0; i < 4; i++) s += tree(ix0 + 1.5 + rnd() * (ix1 - ix0 - 3), iz0 + 1.5 + rnd() * (iz1 - iz0 - 3), 1.1 + rnd() * 0.6);
-    }
-    return s;
+    return s + urbanBlock(b, rnd, zone);
   }
   if (zone === 'villas') {
     const nx = Math.max(1, Math.floor(w / 12)), nz = Math.max(1, Math.floor(h / 12)), pw = w / nx, ph = h / nz;
@@ -556,7 +630,7 @@ function labels(ppm, vb, detail) {
   }
   // water
   s += L.text(-205, 120, 'р. Светлая', detail ? 24 : 21, { rot: -90, italic: true, fill: COL.waterInk, weight: 600, halo: false });
-  s += L.text(-150, 246, 'С В Е Т Л Ы Й   З А Л И В', detail ? 26 : 30, { italic: true, fill: COL.waterInk, weight: 600, halo: false, wf: 0.5 });
+  s += L.text(-150, 248, 'СВЕТЛЫЙ ЗАЛИВ', detail ? 26 : 30, { italic: true, fill: COL.waterInk, weight: 600, halo: false, ls: 0.45, wf: 1.0 });
   // districts
   if (!detail) for (const [x, z, t, rot] of [[-120, -61, 'ЦЕНТР', 0], [-118, -145, 'ВОКЗАЛЬНЫЙ', 0], [-257, 20, 'ЗАРЕЧЬЕ', -90], [180, 100, 'ВОСТОЧНЫЙ', -90], [100, -226, 'ПРОМЗОНА', 0], [222, 196, 'ПОРТ', 0], [-140, -300, 'ПОЛЯ', 0], [-135, 174, 'НАБЕРЕЖНАЯ', 0]]) s += L.text(x, z, t, 30, { rot, fill: '#7d7262', op: 0.7, weight: 800, ls: 0.3, haloW: 0.18, wf: 0.75 });
   // key objects: numbered badge + name
@@ -632,7 +706,7 @@ function legend(vb, ppm) {
 function body(vb, ppm, detail) {
   let s = defs(ppm) + landuse() + water();
   for (const b of P.blocks) s += blockContent(b, detail);
-  s += port() + plaza() + railEmbankment() + groundRoads(detail) + junctionFurniture(detail, ppm) + railTracks(detail) + bridgesAndDecks(detail) + pedestrians(detail, ppm) + transit(detail, ppm) + labels(ppm, vb, detail);
+  s += port() + plaza() + railEmbankment() + groundRoads(detail) + streetTrees() + junctionFurniture(detail, ppm) + railTracks(detail) + bridgesAndDecks(detail) + pedestrians(detail, ppm) + transit(detail, ppm) + labels(ppm, vb, detail);
   return s;
 }
 function svgDoc(full, pxW, inner) {
