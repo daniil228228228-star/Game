@@ -399,6 +399,12 @@ function stopLine(c, dir, at, cls) {   // across the incoming half of an arm
   if (dir[0] === 0) emitRect('p', 'q', Math.min(A[0], B[0]), p[1] - 0.2, Math.max(A[0], B[0]), p[1] + 0.2, H.paint, CI.white);
   else emitRect('p', 'q', p[0] - 0.2, Math.min(A[1], B[1]), p[0] + 0.2, Math.max(A[1], B[1]), H.paint, CI.white);
 }
+function arrow(c, dir, at, lat) {   // straight lane arrow on the incoming half of an arm, pointing at the junction: stem + head
+  const r = [dir[1], -dir[0]], p = (t, l) => [c[0] + dir[0] * (at + t) + r[0] * (lat + l), c[1] + dir[1] * (at + t) + r[1] * (lat + l)];
+  const q = [p(0.5, -0.09), p(0.5, 0.09), p(-0.5, 0.09), p(-0.5, -0.09)];
+  emitTri('p', q[0], q[1], q[2], H.paint, CI.white); emitTri('p', q[0], q[2], q[3], H.paint, CI.white);
+  emitTri('p', p(-0.45, -0.38), p(-0.45, 0.38), p(-1.15, 0), H.paint, CI.white);
+}
 const furniture = { lamp: [], sig: [], pole: [], plate: [], stop: [], cat: [] };   // world lists, then split into cells
 const yawOf = (d) => Math.atan2(d[0], d[1]);
 const crossingKey = new Set();
@@ -440,6 +446,7 @@ for (const j of PLAN.junctions) {
       const w = hw(a.cls), along = (a.dir[0] !== 0 ? hx : hz) + 2.2;
       if (!PLAN.crossings.some((cr) => cr.id.startsWith(j.id + '-') && cr.arm && cr.arm[0] === a.dir[0] && cr.arm[1] === a.dir[1])) zebra(c, a.dir, along, a.cls, 1.4);
       if (a.cls === 'arterial' || a.cls === 'collector') stopLine(c, a.dir, along + 1.7, a.cls);
+      if (a.cls === 'arterial') for (let k = 0; k < 2; k++) arrow(c, a.dir, along + 6.5, CLS.arterial.median / 2 + CLS.arterial.lane * (k + 0.5));
       const r = [a.dir[1], -a.dir[0]];
       furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) + r[0] * (w + 0.55), c[1] + a.dir[1] * (along + 1.2) + r[1] * (w + 0.55), yawOf(a.dir)]);
     }
@@ -722,6 +729,7 @@ for (const line of PLAN.transit.lines) for (const s of line.stops) {
   const e = PLAN.edges.find((q) => { const a = N.get(q.a), b = N.get(q.b); return q.dir === 'x' ? Math.abs(a.z - s[1]) < 0.01 && s[0] >= Math.min(a.x, b.x) && s[0] <= Math.max(a.x, b.x) : Math.abs(a.x - s[0]) < 0.01 && s[1] >= Math.min(a.z, b.z) && s[1] <= Math.max(a.z, b.z); });
   const off = e ? hw(e.cls) + CLS[e.cls].sidewalk * 0.55 : 3;
   furniture.stop.push([s[0] + r[0] * off, s[1] + r[1] * off, Math.atan2(-r[0], -r[1]), line.id]);
+  if (e && (e.cls === 'arterial' || e.cls === 'collector')) { const lat = hw(e.cls) - laneW(e.cls) - 0.06, a = [s[0] + r[0] * lat - h[0] * 7, s[1] + r[1] * lat - h[1] * 7], b = [s[0] + r[0] * lat + h[0] * 7, s[1] + r[1] * lat + h[1] * 7]; ribbon('p', [a, b], 0.12, H.paint, CI.white); }   // bus bay: the lane beside the kerb is marked for 14 m
   stopsOut.push({ line: line.id, at: s });
 }
 // landscape trees

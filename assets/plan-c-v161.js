@@ -131,6 +131,10 @@
   };
   const PLATE_COLORS = [0xd33a2e, 0xf1efe6, 0x2a6fb5, 0xe7c23a];   // stop / yield / roundabout / priority road
   const instances = {};
+  let night = 0;
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0x6d6a5e }), poolMat = new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const poolGeo = new THREE.CircleGeometry(3.4, 16);
+  api.setNight = (v) => { night = v; glowMat.color.setRGB(0.43 + 0.57 * v, 0.42 + 0.5 * v, 0.37 + 0.2 * v); poolMat.opacity = 0.2 * v; if (instances.lamppool) instances.lamppool.visible = v > 0.05; };
   const dummy = new THREE.Object3D(), tint = new THREE.Color();
   function makeInstanced(name, count, fill, opts = {}) {
     let inst = instances[name];
@@ -157,6 +161,11 @@
     const each = (k, fn) => { let n = 0; for (const a of lists[k]) for (let i = 0; i < a.length; i += strideOf[k]) fn(a, i, n++); };
     const setM = (inst, n, x, y, z, yaw, s = 1) => { dummy.position.set(x, y, z); dummy.rotation.set(0, yaw, 0); dummy.scale.setScalar(s); dummy.updateMatrix(); inst.setMatrixAt(n, dummy.matrix); };
     for (const k of ['lamp', 'sig', 'pole', 'stop']) makeInstanced(k, count(k), (inst) => each(k, (a, i, n) => setM(inst, n, a[i], 0, a[i + 1], a[i + 2])), { geo: sharedGeo(k), shadow: k === 'lamp' });
+    // lamp glow: the heads light up at night (one instanced box + one additive ground pool, both driven by isNightV40())
+    const lampN = count('lamp');
+    makeInstanced('lampglow', lampN, (inst) => each('lamp', (a, i, n) => setM(inst, n, a[i] + Math.sin(a[i + 2]) * 0.78, 3.36, a[i + 1] + Math.cos(a[i + 2]) * 0.78, a[i + 2])), { geo: new THREE.BoxGeometry(0.3, 0.06, 0.5), material: glowMat });
+    makeInstanced('lamppool', lampN, (inst) => each('lamp', (a, i, n) => { dummy.position.set(a[i] + Math.sin(a[i + 2]) * 0.78, 0.13, a[i + 1] + Math.cos(a[i + 2]) * 0.78); dummy.rotation.set(-Math.PI / 2, 0, 0); dummy.scale.setScalar(1); dummy.updateMatrix(); inst.setMatrixAt(n, dummy.matrix); }), { geo: poolGeo, material: poolMat });
+    if (instances.lamppool) instances.lamppool.visible = night > 0.05;
     makeInstanced('cat', count('cat'), (inst) => each('cat', (a, i, n) => setM(inst, n, a[i], D.struct.railY, a[i + 1], a[i + 2])), { geo: sharedGeo('cat') });
     makeInstanced('plate', count('plate'), (inst) => each('plate', (a, i, n) => { setM(inst, n, a[i], 0, a[i + 1], a[i + 2]); tint.setHex(PLATE_COLORS[a[i + 3]] || 0xffffff).convertSRGBToLinear(); inst.setColorAt(n, tint); }), { geo: sharedGeo('plate'), material: new THREE.MeshStandardMaterial({ roughness: 0.6 }) });
     makeInstanced('tree', count('tree'), (inst) => each('tree', (a, i, n) => { const t = a[i + 3]; setM(inst, n, a[i], 0, a[i + 1], t * 6.28, a[i + 2]); tint.setRGB(0.78 + t * 0.35, 0.85 + t * 0.25, 0.75 + t * 0.3); inst.setColorAt(n, tint); }), { geo: sharedGeo('tree'), shadow: false });
@@ -282,6 +291,7 @@
     last = now;
     try { if (typeof ground !== 'undefined' && ground.visible) ground.visible = false; } catch (_) {}
     syncScenery(now);
+    try { const n = typeof isNightV40 === 'function' && isNightV40() ? 1 : 0; if (Math.abs(n - night) > 0.01) api.setNight(night + (n - night) * 0.35); } catch (_) {}
     const t0 = performance.now();
     ensureNear(player.position.x, player.position.z, MAX_PER_TICK);
     api.lastBuilt = performance.now() - t0;
