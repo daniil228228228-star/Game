@@ -266,8 +266,22 @@
     const r = baseUpdatePlayer.apply(this, arguments);
     const rel = player.position.y, x = player.position.x, z = player.position.z;
     let target = D.surfaceY(x, z, lvl, 0.75); if (target == null) target = lvl;
-    if (target < lvl - 0.05 && playerGrounded) { playerGrounded = false; playerVerticalVelocity = Math.min(playerVerticalVelocity, 0); }   // walked off a deck edge: fall
-    player.position.y = rel + (target < lvl - 0.05 ? lvl - target : 0) + target;
+    // A normal descent along a stair-ramp is still grounded. The old 5 cm
+    // threshold made every step of a 40% slope a fall, reducing air control.
+    // Preserve WORLD height while airborne (including a real drop off a deck),
+    // so moving over a rising surface cannot add its height to a jump twice.
+    let worldY = rel + lvl;
+    if (playerGrounded && lvl - target <= 0.45) worldY = rel + target;
+    else if (playerGrounded) { playerGrounded = false; playerVerticalVelocity = Math.min(playerVerticalVelocity, 0); }
+    player.position.y = worldY;
+    if (playerGrounded) api.airborneBase = null;
+    else if (!Number.isFinite(api.airborneBase)) api.airborneBase = lvl;
+    // The core follow-camera just ran in the previous support frame. Translate
+    // it to the new frame now, preserving the chosen zoom and the jump damping.
+    const cameraLift = (target - lvl) * 0.72 + (worldY - rel - lvl) * 0.28;
+    camera.position.y += cameraLift;
+    controls.target.y += cameraLift;
+    if (typeof camEyeTarget !== 'undefined') camEyeTarget.y += cameraLift;
     api.level = target;
     return r;
   };
@@ -288,7 +302,14 @@
     window.resolveCameraObstructionV85 = function () {
       const r = baseResolve.apply(this, arguments);
       const cap = D.overhead(player.position.x, player.position.z, api.level);
-      if (cap != null && camera.position.y > cap - 0.3) { const d = camera.position.y - (cap - 0.3); camera.position.y -= d; if (typeof cameraResolverShiftV163 !== 'undefined') cameraResolverShiftV163.y -= d; }
+      if (cap != null && camera.position.y > cap - 0.3 && camera.position.y > controls.target.y) {
+        const before = camera.position.clone();
+        // Pull along the already collision-tested sightline. Moving only y
+        // could put the camera inside the abutment beside an underpass.
+        const t = Math.max(0, Math.min(1, (cap - 0.3 - controls.target.y) / (camera.position.y - controls.target.y)));
+        camera.position.lerpVectors(controls.target, before, t);
+        if (typeof cameraResolverShiftV163 !== 'undefined') cameraResolverShiftV163.add(camera.position.clone().sub(before));
+      }
       return r;
     };
   }

@@ -13771,7 +13771,7 @@ document.addEventListener('visibilitychange', () => {
     playerVelocity.set(0, 0, 0);
     desiredPlayerVelocity.set(0, 0, 0);
     playerVerticalVelocity = 0;
-    player.position.y = 0;
+    player.position.y = playerSurfaceLevelV161();
     playerGrounded = true;
     playerJumpRequested = false;
     keys.clear();
@@ -14127,6 +14127,12 @@ function nearestManualTargetV53(){
   return chosen.dist<PAD_TRIGGER_RADIUS?chosen:null;
 }
 
+// The integrity / pause paths run outside Plan C's relative-physics wrapper.
+// They must use the same support level instead of dropping a bridge walker to y=0.
+function playerSurfaceLevelV161() {
+  const c = window.LAYOUT_V161 === 'C' && window.PlanCV161;
+  return c && Number.isFinite(c.level) ? c.level : 0;
+}
 function updatePlayer(dt) {
   const prevX = player.position.x;
   const prevZ = player.position.z;
@@ -14416,7 +14422,7 @@ function updatePlayer(dt) {
   camera.position.z += movedZ;
 
   const levelV161=window.PlanCV161?window.PlanCV161.level||0:0;   // plan C: the surface the player stands on (decks, ramps, footbridges)
-  const cameraJumpLift=(player.position.y-levelV161)*.28+levelV161;
+  const cameraJumpLift=player.position.y*.28+levelV161; // inside the C wrapper y is already relative to its support
   camEyeTarget.set(player.position.x, PLAYER_EYE_HEIGHT+cameraJumpLift, player.position.z);
   camOffsetVec.subVectors(camera.position, camEyeTarget);
   let currentDistance = camOffsetVec.length();
@@ -14596,13 +14602,24 @@ function auditRuntimeIntegrity(dt) {
   if (integrityAuditTimer > 0) return;
   integrityAuditTimer = 1.75;
 
-  if (!Number.isFinite(player.position.x) || !Number.isFinite(player.position.y) || !Number.isFinite(player.position.z) || player.position.y < -0.25 || player.position.y > PLAYER_MAX_AIR_HEIGHT + 1) {
+  const surfaceV161 = playerSurfaceLevelV161();
+  // A jump can leave a bridge before landing on the ground below. Its valid
+  // upper bound stays relative to the take-off level until it has landed.
+  const airBaseV161 = window.LAYOUT_V161 === 'C' && window.PlanCV161 && !playerGrounded && Number.isFinite(window.PlanCV161.airborneBase) ? Math.max(surfaceV161, window.PlanCV161.airborneBase) : surfaceV161;
+  const relativeYV161 = player.position.y - surfaceV161;
+  const jumpHeightV161 = player.position.y - airBaseV161;
+  if (!Number.isFinite(player.position.x) || !Number.isFinite(player.position.y) || !Number.isFinite(player.position.z) || relativeYV161 < -0.25 || jumpHeightV161 > PLAYER_MAX_AIR_HEIGHT + 1) {
     player.position.copy(PLAYER_SPAWN_POS); // v63 hotfix 0.3(a): not the hub -- see PLAYER_SPAWN_POS
+    if (window.LAYOUT_V161 === 'C' && window.PlanCV161) {
+      const y = window.groundHeightV161 ? window.groundHeightV161(player.position.x, player.position.z, 0) : 0;
+      window.PlanCV161.level = Number.isFinite(y) ? y : 0;
+      window.PlanCV161.airborneBase = null;
+    }
     playerVelocity.set(0, 0, 0);
     playerVerticalVelocity = 0;
     playerGrounded = true;
   }
-  if (playerGrounded) player.position.y = 0;
+  if (playerGrounded) player.position.y = playerSurfaceLevelV161();
 
   for (const v of serviceVehicles) {
     if (!Number.isFinite(v.position.x) || !Number.isFinite(v.position.z)) {
@@ -29332,7 +29349,7 @@ body.v52-save-busy #companyChip::after{
   function installResumeComfortV52(){
     document.addEventListener('visibilitychange',()=>{
       if(document.hidden)return;
-      try{keys.clear();joyVec.x=0;joyVec.z=0;playerVelocity.set(0,0,0);desiredPlayerVelocity.set(0,0,0);playerVerticalVelocity=0;player.position.y=0;playerGrounded=true;playerJumpRequested=false;clock.getDelta();}catch(_){ }
+      try{keys.clear();joyVec.x=0;joyVec.z=0;playerVelocity.set(0,0,0);desiredPlayerVelocity.set(0,0,0);playerVerticalVelocity=0;player.position.y=playerSurfaceLevelV161();playerGrounded=true;playerJumpRequested=false;clock.getDelta();}catch(_){ }
       try{if(typeof worldNavRuntimeV362!=='undefined')worldNavRuntimeV362.interact=false;}catch(_){ }
       try{interactRequested=false;}catch(_){ }
       setTimeout(()=>{try{syncInteractionTruthV52();if(typeof requestLayoutV46==='function')requestLayoutV46();}catch(_){ }},60);

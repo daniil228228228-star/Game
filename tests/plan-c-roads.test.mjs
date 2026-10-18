@@ -369,7 +369,7 @@ await run(async () => {
       }, { fb });
       fbRes.push(r);
     }
-    const fbBad = fbRes.flatMap((r) => r.runs.filter((q) => q.maxStill > 15 || q.maxY < q.top - 0.35 || q.far > 1.5 || q.y > 1.0).map((q) => [r.id, q]));
+    const fbBad = fbRes.flatMap((r) => r.runs.filter((q) => q.maxStill > 15 || q.maxY < q.top - 0.35 || q.far > 1.5 || q.y > 0.15).map((q) => [r.id, q]));
     check(fbRes.length >= 5 && fbRes.every((r) => r.runs.length >= 3) && fbBad.length === 0, `footbridges ${fbRes.map((r) => r.id + ':' + r.runs.length).join(' ')}: joystick walk from the approach directions up, across and down without a stall > 0.5 s (${J(fbBad.slice(0, 3))})`);
     // the camera never ends up inside the ground along the shoreline (beach, river mouth, banks)
     const cam = await page.evaluate(async () => {

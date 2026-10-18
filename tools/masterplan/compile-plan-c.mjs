@@ -464,6 +464,11 @@ for (const cr of PLAN.crossings) if (cr.kind === 'ped-signal-midblock') {
 
 // ---- 6. rail: the main line stands on a 5.2 m embankment, streets and the M2 run through openings (4.5 m headroom), the station widens it
 const RAIL_Y = 5.2;
+// The station approach is a parallel street at z=-108 (asphalt starts at -110).
+// A 14 m half-width buried that street inside the embankment. Four tracks fit
+// inside +/-5.8 m; two 2.8 m platforms at +/-6.2..9.0 fit a 9.5 m half-width,
+// leaving the required 0.5 m from the station retaining wall to the asphalt.
+const STATION_HALF = 9.5, PLATFORM_IN = 6.2, PLATFORM_OUT = 9.0;
 const railOut = { bed: [], tracks: 0 };
 const STRUCT = { ribbons: [], blockers: [], rails: [], openings: [] };   // runtime data: walkable decks / ramps, solid ground rectangles, parapet pieces (level-aware colliders)
 const stRail = PLAN.rail.stations[0];
@@ -474,7 +479,7 @@ const stRail = PLAN.rail.stations[0];
   for (const t of PLAN.tunnels) if (t.under === 'пути вокзала') openings.push({ x: t.at[0], half: 1.9, clear: 2.8 });
   openings.sort((a, b) => a.x - b.x);
   STRUCT.openings = openings.map((o) => [o.x, o.half, o.clear]);
-  const X0 = -330, X1 = 330, zoneHalf = (x) => (x > stRail.x0 - 4 && x < stRail.x1 + 4) ? 14 : 5;
+  const X0 = -330, X1 = 330, zoneHalf = (x) => (x > stRail.x0 - 4 && x < stRail.x1 + 4) ? STATION_HALF : 5;
   const brk = [X0, X1, stRail.x0 - 4, stRail.x1 + 4];
   for (const o of openings) brk.push(o.x - o.half, o.x + o.half);
   const xs = [...new Set(brk)].sort((a, b) => a - b);
@@ -495,7 +500,7 @@ const stRail = PLAN.rail.stations[0];
       railOut.bed.push([xa, zA, xb, zB]);
     }
   }
-  for (const xe of [stRail.x0 - 4, stRail.x1 + 4]) for (const sg of [-1, 1]) emitQuadS(xe, RAIL_Z + sg * 5, xe, RAIL_Z + sg * 14, 0, RAIL_Y, 0, RAIL_Y, CI.conc);   // step where the station widens the embankment
+  for (const xe of [stRail.x0 - 4, stRail.x1 + 4]) for (const sg of [-1, 1]) emitQuadS(xe, RAIL_Z + sg * 5, xe, RAIL_Z + sg * STATION_HALF, 0, RAIL_Y, 0, RAIL_Y, CI.conc);   // step where the station widens the embankment
   // tracks: rails + sleepers
   const track = (zz, x0, x1) => {
     for (const o of [-0.6, 0.6]) emitRect('g', 'q', x0, zz + o - 0.07, x1, zz + o + 0.07, RAIL_Y + 0.035, CI.rail);
@@ -503,9 +508,9 @@ const stRail = PLAN.rail.stations[0];
   };
   for (const zz of [RAIL_Z - 1.6, RAIL_Z + 1.6]) { track(zz, X0, stRail.x0 - 4); track(zz, stRail.x1 + 4, X1); }
   for (const zz of [RAIL_Z - 4.8, RAIL_Z - 1.6, RAIL_Z + 1.6, RAIL_Z + 4.8]) track(zz, stRail.x0 - 4, stRail.x1 + 4);
-  emitRect('g', 'q', stRail.x0 + 2, RAIL_Z - 12.2, stRail.x1 - 2, RAIL_Z - 8.8, RAIL_Y + 0.1, CI.platform);
-  emitRect('g', 'q', stRail.x0 + 2, RAIL_Z + 8.8, stRail.x1 - 2, RAIL_Z + 12.2, RAIL_Y + 0.1, CI.platform);
-  for (const z of [RAIL_Z - 12.2, RAIL_Z - 8.8, RAIL_Z + 8.8, RAIL_Z + 12.2]) emitQuadS(stRail.x0 + 2, z, stRail.x1 - 2, z, RAIL_Y, RAIL_Y + 0.1, RAIL_Y, RAIL_Y + 0.1, CI.conc);
+  emitRect('g', 'q', stRail.x0 + 2, RAIL_Z - PLATFORM_OUT, stRail.x1 - 2, RAIL_Z - PLATFORM_IN, RAIL_Y + 0.1, CI.platform);
+  emitRect('g', 'q', stRail.x0 + 2, RAIL_Z + PLATFORM_IN, stRail.x1 - 2, RAIL_Z + PLATFORM_OUT, RAIL_Y + 0.1, CI.platform);
+  for (const z of [RAIL_Z - PLATFORM_OUT, RAIL_Z - PLATFORM_IN, RAIL_Z + PLATFORM_IN, RAIL_Z + PLATFORM_OUT]) emitQuadS(stRail.x0 + 2, z, stRail.x1 - 2, z, RAIL_Y, RAIL_Y + 0.1, RAIL_Y, RAIL_Y + 0.1, CI.conc);
   // catenary poles (instanced furniture, y = RAIL_Y)
   for (let x = X0 + 15; x < X1; x += 30) { if (inOpening(x)) continue; const hz = zoneHalf(x); furnCat.push([x, RAIL_Z - (hz - 0.9), 0], [x, RAIL_Z + (hz - 0.9), Math.PI]); }
   // yard (ground) and spur (ground, starts at the embankment wall)
@@ -587,11 +592,16 @@ for (const ic of PLAN.interchanges) {
     const hMax = Math.max(...p3.map((q) => q[2]));
     for (const sg of [-1, 1]) {
       const q = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));
+      // The retaining body sits UNDER the deck with a 0.3 m slab overhang.
+      // Putting its ground-founded face beyond the parapet left only 0.2 m
+      // to the Southern Avenue at the trumpet's approach.
+      const body = offsetPts3(p3, sg * (CLS.ramp.w / 2 - 0.3));
       for (let i = 0; i + 1 < q.length; i++) {
         const h0 = q[i][2], h1 = q[i + 1][2];
         if (Math.max(h0, h1) < 0.3) continue;
         const cross = sBr != null && Math.abs((S[i] + S[i + 1]) / 2 - sBr) < 9;
-        emitQuadS(q[i][0], q[i][1], q[i + 1][0], q[i + 1][1], cross ? h0 - 0.6 : 0, h0 + 0.05, cross ? h1 - 0.6 : 0, h1 + 0.05, CI.conc);
+        const support = cross ? q : body;
+        emitQuadS(support[i][0], support[i][1], support[i + 1][0], support[i + 1][1], cross ? h0 - 0.6 : 0, h0 + 0.05, cross ? h1 - 0.6 : 0, h1 + 0.05, CI.conc);
         if (Math.max(h0, h1) > 1.2) emitQuadS(q[i][0], q[i][1], q[i + 1][0], q[i + 1][1], h0 + 0.05, h0 + 0.8, h1 + 0.05, h1 + 0.8, CI.conc);
       }
       if (hMax > 1.2) addParapets(p3.filter((v) => v[2] > 1.0), sg * (CLS.ramp.w / 2 + 0.2));
@@ -734,7 +744,18 @@ for (const line of PLAN.transit.lines) for (const s0 of line.stops) { let s = s0
   const p0 = line.pts[best.i], p1 = line.pts[best.i + 1], L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1, h = [(p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L], r = rightOf(h);
   { let sh = 0; while (sh < 4 && PLAN.nodes.some((n) => Math.hypot(n.x - s[0], n.z - s[1]) < 9)) { s = [s[0] + h[0] * 5, s[1] + h[1] * 5]; sh++; } }   // never at a junction: the shelter needs an unbroken sidewalk
   const e = PLAN.edges.find((q) => { const a = N.get(q.a), b = N.get(q.b); return q.dir === (Math.abs(h[0]) > Math.abs(h[1]) ? 'x' : 'z') && (q.dir === 'x' ? Math.abs(a.z - s[1]) < 0.01 && s[0] >= Math.min(a.x, b.x) && s[0] <= Math.max(a.x, b.x) : Math.abs(a.x - s[0]) < 0.01 && s[1] >= Math.min(a.z, b.z) && s[1] <= Math.max(a.z, b.z)); });
-  const off = e ? hw(e.cls) + CLS[e.cls].sidewalk - 0.6 : 3;   // the shelter (1.1 m deep) stands on the sidewalk, its back at the outer edge, its front to the kerb
+  // Keep a 0.9 m through-walk in front of the 1.1 m-deep shelter. Narrow
+  // sidewalks get a paved waiting recess OUTSIDE their edge, not a shelter
+  // blocking the whole pavement or standing half on grass.
+  const off = e ? hw(e.cls) + Math.max(CLS[e.cls].sidewalk - 0.6, 1.5) : 3;
+  if (e) {
+    const inner = hw(e.cls) + CLS[e.cls].sidewalk, outer = off + 0.65;
+    if (outer > inner) {
+      const a = [s[0] - h[0] * 1.8 + r[0] * inner, s[1] - h[1] * 1.8 + r[1] * inner];
+      const b = [s[0] + h[0] * 1.8 + r[0] * outer, s[1] + h[1] * 1.8 + r[1] * outer];
+      emitRect('r', 'q', Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1]), H.walk, CI.walk);
+    }
+  }
   furniture.stop.push([s[0] + r[0] * off, s[1] + r[1] * off, Math.atan2(-r[0], -r[1]), line.id]);
   stopsOut.push({ line: line.id, at: s });
 }
@@ -768,7 +789,11 @@ const nearRampPt = (x, z, m) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0])
 furniture.lamp = furniture.lamp.filter((l) => !nearRampPt(l[0], l[1], 0.8));
 furniture.sig = furniture.sig.filter((l) => !nearRampPt(l[0], l[1], 0.5));
 furniture.lamp = furniture.lamp.filter((l) => !furniture.stop.some((st) => Math.hypot(st[0] - l[0], st[1] - l[1]) < 3.2));   // no lamp inside a bus stop
-for (const cellC of cells.values()) cellC.f.tree = cellC.f.tree.filter(() => true);
+for (const cellC of cells.values()) {
+  const old = cellC.f.tree, kept = [];
+  for (let i = 0; i < old.length; i += 4) if (!furniture.stop.some((st) => Math.hypot(st[0] - old[i], st[1] - old[i + 1]) < 2.2)) kept.push(...old.slice(i, i + 4));
+  cellC.f.tree = kept;
+}
 furniture.cat = furnCat;
 for (const [kind, list] of Object.entries(furniture)) for (const f of list) { const c = cellOf(Math.floor(f[0] / CELL), Math.floor(f[1] / CELL)).f[kind]; for (const v of f) c.push(typeof v === 'number' ? R2(v) : v); }
 

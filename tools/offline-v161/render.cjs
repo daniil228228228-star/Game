@@ -63,7 +63,10 @@ function render(root,{W=585,H=996,az=0.6,el=0.5,dist=null,target=null,fov=34,bg=
         const l2=((S[2].y-S[0].y)*(px-S[2].x)+(S[0].x-S[2].x)*(py-S[2].y))/d;
         const l3=1-l1-l2;
         if(l1<-1e-4||l2<-1e-4||l3<-1e-4)continue;
-        const z=l1*S[0].z+l2*S[1].z+l3*S[2].z;
+        // Screen-space barycentrics interpolate inverse camera depth. Linear z
+        // made large ground triangles occlude roads a few centimetres above
+        // them, inventing green holes that do not exist in the Three.js scene.
+        const z=1/(l1/S[0].z+l2/S[1].z+l3/S[2].z);
         const k=y*W+x;
         if(z>=zb[k])continue;
         if(pass===0){zb[k]=z;img[k*3]=col[0];img[k*3+1]=col[1];img[k*3+2]=col[2];}
