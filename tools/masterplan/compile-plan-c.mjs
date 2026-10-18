@@ -28,7 +28,7 @@ const mulberry = (a) => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imu
 // ---- palette (sRGB hex; the layer converts to linear) and heights (game metres above the old ground plane)
 const COLORS = {
   grass: 0x5f8f48, grassB: 0x6a9a50, lawn: 0x76a85c, park: 0x5d9a4a, forest: 0x3f6d37, field0: 0x9a9a52, field1: 0x6f9b45, field2: 0xb0a45a, field3: 0x7e9a4a, field4: 0x8f7a4c,
-  urban: 0x86ad68, industry: 0x8d8f86, verge: 0x5f8f48, parking: 0x6a6e72, embank: 0x8b9566, beach: 0xdac99b, promenade: 0xcfc6b2, port: 0x9fa09a,
+  urban: 0x86ad68, industry: 0x8d8f86, verge: 0x5f8f48, parking: 0x43484d, embank: 0x8b9566, beach: 0xdac99b, promenade: 0xcfc6b2, port: 0x9fa09a,
   sea: 0x3f7fae, seaLight: 0x7fb7d2, river: 0x4a88b4, bank: 0xb9ae8c, dirt: 0x8d7a58,
   asph: 0x353a3f, ramp: 0x353a3f, walk: 0xc4bfae, kerb: 0xaaa595, median: 0xb8b4a4, medLawn: 0x6f9d57, medM: 0xa9a99f, plaza: 0xd4cab4, islandL: 0x6ea154, islandC: 0xd9d1bb,
   conc: 0xbdb9ad, concD: 0x8d8a82, sleeper: 0x4a3f36, white: 0xf2f2ec, yellow: 0xe7c85a, ballast: 0x8a8782, rail: 0x56585b, platform: 0xb8b5aa, moleC: 0x9b9a92, rock: 0x77756f,
@@ -861,7 +861,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach } of rampPts) {
       const cross = sBr != null && Math.abs((S[i - 1] + S[i]) / 2 - sBr) < 9;
       const support = cross ? q : body;
       for (const run of exposedRuns([support[i - 1], support[i]], 0, id, 0.3, !cross))
-        wallAlong(run, 0, (h) => cross ? h - 0.6 : 0, (h) => h + 0.05, CI.conc);
+        wallAlong(run, 0, (h) => cross ? h - 0.6 : 0, (h) => h + 0.05, cross ? CI.conc : CI.verge);   // an embankment face (grass), not a concrete slab, where the ramp rides on fill
     }
     for (const run of exposedRuns(p3, sg * (CLS.ramp.w / 2 + 0.2), id, 0.3, 'barrier')) {
       // Split the height gate into contiguous runs too: filtering vertices
@@ -945,6 +945,11 @@ const SZ = PLAN.size;
   const KIND = { forest: 'forest', industry: 'industry', verge: 'verge', park: 'park', parking: 'parking', embankment: 'embank', beach: 'beach', promenade: 'promenade', port: 'port', urban: 'urban' };
   const KORDER = ['urban', 'industry', 'verge', 'park', 'parking', 'embankment', 'port', 'beach', 'promenade', 'forest'];
   for (const a of PLAN.areas) emitPoly('g', a.poly, -0.075 + KORDER.indexOf(a.kind) * 0.002, CI[KIND[a.kind]]);
+  // parking lots are paved and have bay lines (two rows of 2.8 m bays + a 6 m aisle), painted on the lot
+  for (const a of PLAN.areas) if (a.kind === 'parking') {
+    const xs = a.poly.map((q) => q[0]), zs = a.poly.map((q) => q[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs), zm = (z0 + z1) / 2;
+    for (const [za, zb] of [[z0 + 1, zm - 3.4], [zm + 3.4, z1 - 1]]) for (let x = x0 + 2; x <= x1 - 2 + 1e-6; x += 2.8) emitRect('p', 'q', x - 0.06, za, x + 0.06, zb, -0.05, CI.white);
+  }
   const ZONE = { residential: 'resid', mixed: 'mixed', cbd: 'cbd', industrial: 'indus', logistics: 'indus', railyard: 'indus', station: 'station', busterm: 'station', villas: 'villas', school: 'school', hospital: 'hospital', park: 'park', market: 'market', east: 'mixed', stadium: 'stadium', campus: 'school', waterfront: 'waterf' };
   for (const b of PLAN.blocks) { const r = b.lot || b.rect; emitRect('g', 'q', r[0], r[1], r[2], r[3], H.zone2, CI[ZONE[b.zone] || 'resid']); }
   // fields in strips

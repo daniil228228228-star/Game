@@ -86,7 +86,9 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
 }
 // 7. dead ends
 {
+  const ringAt = (p) => P.junctions.find((j) => j.type === 'roundabout' && Math.hypot(p[0] - j.at[0], p[1] - j.at[1]) <= (j.R || 11) + 1.0);   // dumbbell ramps end on their ring
   const attach = (p, tol = 0.8) => E.find((e) => { const a = N.get(e.a), b = N.get(e.b), dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz), t = Math.max(0, Math.min(1, ((p[0] - a.x) * dx + (p[1] - a.z) * dz) / (L * L))), q = [a.x + dx * t, a.z + dz * t]; return Math.hypot(q[0] - p[0], q[1] - p[1]) <= CLS[e.cls].w / 2 + tol; });
+  const attach0 = attach, attachR = (p, tol) => attach0(p, tol) || (ringAt(p) ? { a: ringAt(p).id, cls: 'ring' } : undefined);
   const bad = [];
   for (const n of P.nodes.filter((x) => x.legs === 1)) {
     if (P.exits.includes(n.id)) continue;
@@ -96,12 +98,12 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
     bad.push(`${n.x},${n.z}`);
   }
   const onRamp = (p, self) => ramps.some((o) => o !== self && o.pts.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) < 1.2));   // a slip lane branches off / joins a ramp
-  const loose = []; for (const r of ramps) for (const p of [r.pts[0], r.pts[r.pts.length - 1]]) if (!attach(p) && !onRamp(p, r)) loose.push(`${r.id} end ${p}`);
+  const loose = []; for (const r of ramps) for (const p of [r.pts[0], r.pts[r.pts.length - 1]]) if (!attachR(p) && !onRamp(p, r)) loose.push(`${r.id} end ${p}`);
   check('no road ends nowhere (dead ends only at map exits / parking lots; every ramp end lies on a carriageway)', !bad.length && !loose.length, [...bad, ...loose].join('; ') || `${P.exits.length} map exits, ${ramps.length * 2} ramp ends attached`);
   // 8. reachability: graph of streets + ramps
   const parent = new Map(P.nodes.map((x) => [x.id, x.id])), find = (x) => { while (parent.get(x) !== x) x = parent.get(x); return x; }, uni = (a, b) => parent.set(find(a), find(b));
   for (const e of E) uni(e.a, e.b);
-  for (const r of ramps) { const a = attach(r.pts[0]), b = attach(r.pts[r.pts.length - 1]); if (a && b) uni(a.a, b.a); }
+  for (const r of ramps) { const a = attachR(r.pts[0]), b = attachR(r.pts[r.pts.length - 1]); if (a && b) uni(a.a, b.a); }
   const roots = new Set(P.nodes.map((x) => find(x.id)));
   const main = find(E.find((e) => e.name === 'Главный пр.').a);
   const unreached = P.blocks.filter((b) => !E.some((e) => { if (find(e.a) !== main) return false; const a = N.get(e.a), c = N.get(e.b), [x0, z0, x1, z1] = b.rect; const onX = e.dir === 'x' && (a.z === z0 || a.z === z1) && Math.min(a.x, c.x) < x1 && Math.max(a.x, c.x) > x0, onZ = e.dir === 'z' && (a.x === x0 || a.x === x1) && Math.min(a.z, c.z) < z1 && Math.max(a.z, c.z) > z0; return onX || onZ; }));
