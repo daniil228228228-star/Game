@@ -540,6 +540,7 @@ const SPLIT = { hz: 6, band: 4.8, walk: 1.8, R: 7 }, islandsOut = [], splitZones
       for (let k = 0; k + 1 < arc.length; k++) { emitTri('r', arc[k], arc2[k], arc[k + 1], H.walk, CI.walk); emitTri('r', arc2[k], arc2[k + 1], arc[k + 1], H.walk, CI.walk); }
       { const zA = sz * (hz + SPLIT.band + Rr), zB = sz * (hz + SPLIT.band + Rr + 16), xA = edgeM, xB = edgeM + side * SPLIT.walk;
         emitRect('r', 'q', Math.min(xA, xB), Math.min(zA, zB), Math.max(xA, xB), Math.max(zA, zB), H.walk, CI.walk);
+        splitZones.push([[Math.min(xA, xB), Math.min(zA, zB)], [Math.max(xA, xB), Math.min(zA, zB)], [Math.max(xA, xB), Math.max(zA, zB)], [Math.min(xA, xB), Math.max(zA, zB)]]);
         emitWall(edgeM, zA, edgeM, zB, H.asph, H.walk, CI.kerb); }
     }
     // markings: zebra on both branches, stop line + arrows + lane dashes on the inbound one (west: south branch eastbound, east: north branch westbound)

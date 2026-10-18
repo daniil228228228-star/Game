@@ -220,6 +220,33 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
       }
     }
     check(bad.length === 0, `furniture: none of ${stops.length} shelters, ${lamps.length} lamps, signals, signs and trees stands in a lane, on a ring or on a ramp (${J(bad.slice(0, 5))})`);
+    // furniture 2 (2026-10-18): the same scan against the drawn TRIANGLE asphalt (ramps, island bands, kerb returns), against the sidewalk for trees and against white paint for everything
+    {
+      const T = [], WT2 = [], M = [];
+      for (const c of Object.values(D.cells)) {
+        const t = c.r && c.r.t || [];
+        for (let i = 0; i < t.length; i += 8) { if (t[i + 7] === CI.asph || t[i + 7] === CI.ramp) T.push(t.slice(i, i + 6)); else if (t[i + 7] === CI.walk) WT2.push(t.slice(i, i + 6)); }
+        const q = c.p && c.p.q || []; for (let i = 0; i < q.length; i += 6) if (q[i + 5] === CI.white) M.push([q[i], q[i + 1], q[i + 2], q[i + 3]]);
+      }
+      const inT = (L, x, z) => L.some((p) => x >= Math.min(p[0], p[2], p[4]) && x <= Math.max(p[0], p[2], p[4]) && z >= Math.min(p[1], p[3], p[5]) && z <= Math.max(p[1], p[3], p[5]) && inWalkTriangle(x, z, p));
+      const bad2 = [];
+      for (const [key, c] of Object.entries(D.cells)) {
+        const f = c.f || {};
+        for (const [kind, stride] of [['lamp', 3], ['sig', 3], ['pole', 4], ['tree', 4]]) {
+          const a = f[kind] || [];
+          for (let i = 0; i < a.length; i += stride) {
+            const x = a[i], z = a[i + 1];
+            if (kind === 'pole' && rings.some((r) => Math.hypot(x - r[1], z - r[2]) < 0.1)) continue;
+            const why = inT(T, x, z) ? 'asphalt' : kind === 'tree' && (inT(WT2, x, z) || inR(W, x, z, 0.0)) ? 'sidewalk' : M.some((m) => x > m[0] - 0.15 && x < m[2] + 0.15 && z > m[1] - 0.15 && z < m[3] + 0.15) ? 'paint' : null;
+            if (why && !(kind === 'tree' && rings.some((r) => Math.hypot(x - r[1], z - r[2]) < r[4]))) bad2.push([kind, why, +x.toFixed(1), +z.toFixed(1)]);
+          }
+        }
+      }
+      // zebra bars (0.4-0.55 thick, < 2 long) never lie on a ramp lane
+      const dseg2 = (px, pz, a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], l = dx * dx + dz * dz, t = l ? Math.max(0, Math.min(1, ((px - a[0]) * dx + (pz - a[1]) * dz) / l)) : 0; return Math.hypot(px - a[0] - dx * t, pz - a[1] - dz * t); };
+      for (const m of M) { const lx = m[2] - m[0], lz = m[3] - m[1]; if (Math.min(lx, lz) < 0.4 || Math.max(lx, lz) >= 2.0) continue; const cx = (m[0] + m[2]) / 2, cz = (m[1] + m[3]) / 2; for (const [ic, kind, pts, h] of D.graph.ramps) for (let i = 1; i < pts.length; i++) if (dseg2(cx, cz, pts[i - 1], pts[i]) < 1.5) { bad2.push(['zebra bar', 'on ramp ' + ic + '/' + kind, +cx.toFixed(1), +cz.toFixed(1)]); break; } }
+      check(bad2.length === 0, `furniture 2: no lamp, signal, sign or tree stands on triangle asphalt, no tree on a sidewalk, nothing on zebra / stop-line paint (${bad2.length}: ${J(bad2.slice(0, 6))})`);
+    }
     const off = stops.filter(([x, z]) => !W.some((r) => x > r[0] - 0.05 && x < r[2] + 0.05 && z > r[1] - 0.05 && z < r[3] + 0.05) && !WT.some((p) => inWalkTriangle(x, z, p)));
     const lampInStop = lamps.filter(([x, z]) => stops.some(([sx, sz]) => Math.hypot(sx - x, sz - z) < 2.0));
     check(off.length === 0 && lampInStop.length === 0, `bus stops: all ${stops.length} shelters stand on a sidewalk, no lamp within 2 m (off ${J(off.slice(0, 3))}, lamp ${lampInStop.length})`);
