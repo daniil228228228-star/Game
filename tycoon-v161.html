@@ -33411,7 +33411,8 @@ window.__TYCOON_V74_BUILD__={
   function connectorSignature(){
     const r=registryValues().filter(e=>['building','cityBuilding','cityPlot','base','special','industrial'].includes(e.category));
     // v161 perf: no entry id in the signature (ids are re-numbered by every registry rebuild, which then looked like a change and re-planned every connector); what a plan depends on is where / how big
-    return r.map(e=>`${e.category}:${e.shape==='obb'?'o'+(e.hx||0).toFixed(1)+','+(e.hz||0).toFixed(1)+','+(e.yaw||0).toFixed(2):'c'}:${e.pos.x.toFixed(1)},${e.pos.z.toFixed(1)},${(e.radius||0).toFixed(1)}`).sort().join('|')+`|stage:${stageIndex}`;
+    // Sizes are NOT part of it either: a building grows with its level (collision radius, whole-mesh box) and a right-angle router may flip its dog-leg when a size changes, which re-laid the district arterials on every upgrade.
+    return r.map(e=>`${e.category}:${e.pos.x.toFixed(1)},${e.pos.z.toFixed(1)}`).sort().join('|')+`|stage:${stageIndex}`;
   }
   let lastConnectorSig='',lastConnectorRevKey='';
   const oldDistrictConnector=districtInfrastructureConnectorPathV37;
