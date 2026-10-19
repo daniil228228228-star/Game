@@ -228,6 +228,7 @@ export function buildPlan() {
     else if (hi === 'collector' && lo === 'collector') j = { type: 'mini' };
     else if (hi === 'collector') j = { type: 'priority', major: 'collector' };
     else j = { type: 'priority', major: null };
+    if (j.type === 'roundabout' || j.type === 'mini') j.circulation = 'ccw';   // right-hand traffic: round the island COUNTER-clockwise seen from above (= decreasing atan2(z, x) in the x-east / z-south frame), entry on the right, yield to the circulating traffic on the left
     n.kind = j.type;
     junctions.push({ id: n.id, at: [n.x, n.z], ...j, ...(atI2 ? { boxZ: 18.1, splitArms: L.filter((e) => e.split).map((e) => e.id) } : {}), legs: L.length, classes: cl, arms: L.filter((e) => !e.split).map((e) => { const o = byId.get(e.a === n.id ? e.b : e.a); return { edge: e.id, cls: atI2 && e.cls === 'motorway' ? 'motorway3' : e.cls, dir: [Math.sign(R(o.x - n.x)), Math.sign(R(o.z - n.z))] }; }).concat(interchanges.flatMap((ic) => (ic.termArms || []).filter((t) => Math.hypot(t.at[0] - n.x, t.at[1] - n.z) < 0.5).map((t) => ({ edge: null, cls: t.cls, dir: t.dir, ramp: t.ramp })))), ...(isTerm ? { boxZ: 10 } : {}) });
   }

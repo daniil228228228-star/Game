@@ -219,6 +219,20 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
     for (const [ic, kind, pts] of D.graph.ramps) { for (const end of [pts[0], pts[pts.length - 1]]) { const hs = D.surfaces(end[0], end[1]).filter((h) => Math.abs(h - end[2]) < 0.6); if (!hs.length && end[2] > 0.3) mism.push([ic, kind, end]); } }
     check(mism.length === 0, `heights: every ramp end above 0.3 m lies on a deck / ramp surface of its road (${J(mism.slice(0, 3))})`);
   }
+  // 8b. right-hand traffic (2026-10-19): every bus shelter stands on the RIGHT of the traffic it serves (x east, z south: right of heading h = (-hz, hx)); on the one-way branches of I2 the direction is the branch's own
+  //     (north branch westbound, south branch eastbound), elsewhere the line's heading; the circulation of every ring is counter-clockwise (graph ring sign -1)
+  {
+    const bad = []; let n = 0;
+    for (const c of Object.values(D.cells)) { const st = c.f && c.f.stop || []; for (let i = 0; i < st.length; i += 4) {
+      const x = st[i], z = st[i + 1]; n++; let best = null;
+      for (const l of PLAN.transit.lines) for (let q = 0; q + 1 < l.pts.length; q++) { const a = l.pts[q], b = l.pts[q + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]), h = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], t = Math.max(0, Math.min(L, (x - a[0]) * h[0] + (z - a[1]) * h[1])), d = Math.hypot(x - a[0] - h[0] * t, z - a[1] - h[1] * t); if (!best || d < best.d) best = { d, h, p: [a[0] + h[0] * t, a[1] + h[1] * t] }; }
+      let h = best.h; if (Math.abs(x - 250) < 70 && Math.abs(best.p[1]) < 0.1 && Math.abs(z) > 6) h = z > 0 ? [1, 0] : [-1, 0];   // I2 one-way branches
+      const side = (x - best.p[0]) * -h[1] + (z - best.p[1]) * h[0];
+      if (side <= 0) bad.push([x, z]);
+    } }
+    check(n >= 25 && bad.length === 0, `right-hand traffic: all ${n} bus shelters stand on the right of their traffic (${J(bad.slice(0, 4))})`);
+    check(D.graph.rings.length >= 6 && D.graph.rings.every((q) => q[5] === -1) && D.graph.minis.every((q) => q[5] === -1), `right-hand traffic: ${D.graph.rings.length} rings + ${D.graph.minis.length} mini rings circulate counter-clockwise (sign -1)`);
+  }
   // 9. furniture: no lamp / signal / sign pole / shelter / tree stands in a lane, on a roundabout ring or on a ramp; stops stand on the sidewalk with no lamp inside
   {
     const A = []; for (const c of Object.values(D.cells)) { const q = c.r && c.r.q || []; for (let i = 0; i < q.length; i += 6) if (q[i + 5] === CI.asph) A.push([q[i], q[i + 1], q[i + 2], q[i + 3]]); }
@@ -539,6 +553,7 @@ await run(async () => {
     check(old.vis.legacy === 0 && old.vis.backdrop === 0, `late C save: no legacy roadside / backdrop (${J(old.vis)})`);
     const calls = await ev(() => { player.position.set(11, 0, -11); PlanCV161.ensureNear(11, -11); camera.position.set(23, 16, 3); camera.lookAt(11, 0, -11); camera.updateMatrixWorld(true); return __calls(); });
     check(calls.delta <= 60, `late C save: layer draw calls ${calls.delta} <= 60`);
+    check(await ev(() => typeof window.__TYCOON_LANE_SIDE_V161__ === 'function' && window.__TYCOON_LANE_SIDE_V161__() === -1), 'right-hand traffic: the v82 kernel drives on the RIGHT in layout C (lane side -1: vehicles use +lane of samplePathV82 = right of the heading)');
     check(g.errors.length === 0, `no console errors (${J(g.errors.slice(0, 3))})`);
   } finally { await g.close(); }
 });
@@ -556,6 +571,7 @@ await run(async () => {
     check(vis.ground === true && vis.backdrop > 0 && vis.planC === false, `layout B keeps its ground, hills and skyline and has no plan C object (${J(vis)})`);
     const save = await ev(() => { save(); return JSON.parse(localStorage.getItem(SAVE_KEY)).layoutV161; });
     check(save === 'B', `a B game saves layoutV161 = 'B' (${save})`);
+    check(await ev(() => window.__TYCOON_LANE_SIDE_V161__() === 1), 'layout B keeps the old kernel lane side (+1: the old saves and plan B are unchanged)');
     check(g.errors.length === 0, `no console errors (${J(g.errors.slice(0, 3))})`);
   } finally { await g.close(); }
   const g2 = await openGame({ save: 'clear', waitMs: 4000 });   // harness default layout B on a fresh game

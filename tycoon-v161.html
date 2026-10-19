@@ -32505,6 +32505,10 @@ window.__TYCOON_V74_BUILD__={
     districtLoopCache.set(key,data);return data;
   }
 
+  // Traffic side (2026-10-19): samplePathV82 offsets to the RIGHT of the heading for lane>0 (normal = (-dz,dx) in x-east / z-south), the old kernel drives at -lane = LEFT. Layout B keeps it (old saves, sign 1);
+  // layout C is right-hand traffic (Russia): the sign flips. Only the lane offset changes, the path / route code is shared.
+  function laneSideV161(){return window.LAYOUT_V161==='C'?-1:1;}
+  window.__TYCOON_LANE_SIDE_V161__=laneSideV161;
   function samplePathV82(data,d,lane=0){
     if(!data?.p?.length)return {x:0,z:0,yaw:0};
     d=THREE.MathUtils.clamp(d,0,data.total);let i=0;
@@ -32542,13 +32546,13 @@ window.__TYCOON_V74_BUILD__={
     if(!actor?.group?.visible||!data?.p?.length)return;
     const cfg=cfgOf(actor),dir=actor.direction<0?-1:1;
     if(!Number.isFinite(actor[distanceKey]))actor[distanceKey]=(stableIdV82(actor)%997)/997*data.total;
-    const roadW=districtWidthV82(actor.districtId),lane=laneOffset(roadW,cfg.width),current=samplePathV82(data,((actor[distanceKey]%data.total)+data.total)%data.total,-lane*dir);
-    const look=samplePathV82(data,((actor[distanceKey]+dir*.45)%data.total+data.total)%data.total,-lane*dir),targetYaw=look.yaw+(dir<0?Math.PI:0);
+    const roadW=districtWidthV82(actor.districtId),lane=laneOffset(roadW,cfg.width),current=samplePathV82(data,((actor[distanceKey]%data.total)+data.total)%data.total,-lane*dir*laneSideV161());
+    const look=samplePathV82(data,((actor[distanceKey]+dir*.45)%data.total+data.total)%data.total,-lane*dir*laneSideV161()),targetYaw=look.yaw+(dir<0?Math.PI:0);
     const currentHeading=stateOf(actor).lastHeading,err=Math.abs(angleDelta(targetYaw,currentHeading));
     const avoid=cityVehicleAvoidanceV82(actor),turnFactor=THREE.MathUtils.clamp(1-err/1.65,.34,1);
     const wanted=targetSpeedV82(actor,speedMult)*avoid*turnFactor,speed=evolveSpeedV82(actor,wanted,dt),distance=speed*dt;
     actor[distanceKey]=(actor[distanceKey]+dir*distance+data.total)%data.total;
-    const sm=samplePathV82(data,actor[distanceKey],-lane*dir);
+    const sm=samplePathV82(data,actor[distanceKey],-lane*dir*laneSideV161());
     actor.group.position.set(sm.x,.04,sm.z);turnYawV82(actor,sm.yaw+(dir<0?Math.PI:0),dt,speed);spinWheelsV82(actor,distance);
     stateOf(actor).travel+=distance;
   }
@@ -32640,7 +32644,7 @@ window.__TYCOON_V74_BUILD__={
     }
     if(!c.route||c.route.length<2){onComplete?.(c,true);if(!c.route||c.route.length<2)return;}
     const rd=routeDataV82(c),data=rd.data,cfg=cfgOf(c),baseLane=laneOffset(arterialWidthV82(c.targetDistrict||c.homeDistrict||CITY_DISTRICTS[0]?.id),cfg.width);
-    const taper=Math.min(1,rd.d/2.1,(data.total-rd.d)/2.1),lane=-baseLane*Math.max(0,taper);
+    const taper=Math.min(1,rd.d/2.1,(data.total-rd.d)/2.1),lane=-baseLane*laneSideV161()*Math.max(0,taper);
     const look=samplePathV82(data,Math.min(data.total,rd.d+.42),lane),err=Math.abs(angleDelta(look.yaw,stateOf(c).lastHeading));
     const avoid=cityVehicleAvoidanceV82(c),turnFactor=THREE.MathUtils.clamp(1-err/1.75,.34,1),speed=evolveSpeedV82(c,targetSpeedV82(c,cityTrafficSpeedFactor())*avoid*turnFactor,dt),distance=speed*dt;
     rd.d=Math.min(data.total,rd.d+distance);

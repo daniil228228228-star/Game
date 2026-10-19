@@ -264,6 +264,39 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
   check('kerb-return radius meets the class norm at every street corner (arterial 4-5, collector / local 3, service / port 5-8) and fits both legs', !bad.length, bad.length ? bad.join('; ') : `${seen.length} corners; radii ${JSON.stringify(cnt)}`);
 }
 
+// 16. right-hand traffic (Russia; 2026-10-19).  Frame: x east, z south, so the RIGHT of a heading (hx, hz) is (-hz, hx); a right turn is a clockwise turn on the screen (increasing angle).
+//     (a) every ramp's point order is the direction of travel: it leaves its host (exit) on the RIGHT of the host's travel direction and joins its host (entry) on the RIGHT;
+//     (b) loops (left turns of a cloverleaf / trumpet) turn clockwise (net > +180 degrees: exit right, 270 degrees to the right), slips / outer ramps turn right (net > 0), the trumpet's semi-direct ramp enters on the right;
+//     (c) roundabouts and mini roundabouts circulate counter-clockwise (`circulation: 'ccw'`);
+//     (d) bus stops stand on the right of the line's heading: tests/plan-c-roads.test.mjs (drawn positions).
+{
+  const bad = [], info = [];
+  const hostAt = (p, type) => {
+    let best = null;
+    for (const e of E) { if ((type === 'motorway') !== (e.cls === 'motorway')) continue; const a = N.get(e.a), b = N.get(e.b); let d, axis, c;
+      if (e.dir === 'x') { if (p[0] < Math.min(a.x, b.x) - 1 || p[0] > Math.max(a.x, b.x) + 1) continue; d = Math.abs(p[1] - a.z); axis = 0; c = a.z; }
+      else { if (p[1] < Math.min(a.z, b.z) - 1 || p[1] > Math.max(a.z, b.z) + 1) continue; d = Math.abs(p[0] - a.x); axis = 1; c = a.x; }
+      if (!best || d < best.d) best = { d, axis, c }; }
+    return best;
+  };
+  for (const r of ramps) {
+    const n = r.pts.length; let turn = 0;
+    for (let i = 1; i + 1 < n; i++) { const a = r.pts[i - 1], b = r.pts[i], c = r.pts[i + 1]; let d = Math.atan2(c[1] - b[1], c[0] - b[0]) - Math.atan2(b[1] - a[1], b[0] - a[0]); while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; turn += d; }
+    turn = turn * 180 / Math.PI;
+    for (const end of [0, 1]) {
+      const p = r.pts[end ? n - 1 : 0], q = r.pts[end ? n - 2 : 1], h = end ? [p[0] - q[0], p[1] - q[1]] : [q[0] - p[0], q[1] - p[1]], H = hostAt(p, r.attach[end]);
+      if (!H) { bad.push(`${r.id}: no host at the ${end ? 'end' : 'start'}`); continue; }
+      const hh = H.axis === 0 ? [Math.sign(h[0]) || 1, 0] : [0, Math.sign(h[1]) || 1], right = [-hh[1], hh[0]], lat = (H.axis === 0 ? p[1] - H.c : p[0] - H.c) * (H.axis === 0 ? right[1] : right[0]);
+      if (lat <= 0.5) bad.push(`${r.id}: ${end ? 'joins' : 'leaves'} its host on the LEFT (${R1(p[0])},${R1(p[1])}, lateral ${R1(lat)})`);
+    }
+    if (r.kind === 'loop' && turn < 180) bad.push(`${r.id}: loop turns ${Math.round(turn)} degrees (must be clockwise, > +180)`);
+    if ((r.kind === 'outer' || r.kind === 'direct') && turn < 0) bad.push(`${r.id}: ${r.kind} ramp turns left (${Math.round(turn)})`);
+    info.push(`${r.id} ${r.kind} ${Math.round(turn)}`);
+  }
+  for (const j of P.junctions) if ((j.type === 'roundabout' || j.type === 'mini') && j.circulation !== 'ccw') bad.push(`${j.id} ${j.at}: ${j.type} does not circulate counter-clockwise`);
+  check('right-hand traffic: ramps leave / join on the right and loops turn clockwise, slips turn right, roundabouts circulate counter-clockwise', !bad.length, bad.length ? bad.join('; ') : `${ramps.length} ramps (${info.join(', ')}); ${P.junctions.filter((j) => j.circulation === 'ccw').length} roundabouts ccw`);
+}
+
 if (process.argv.includes('--json')) console.log(JSON.stringify(results, null, 1));
 else {
   console.log(`Masterplan C audit: ${P.counts.junctions} junctions (${P.counts.signals} signals, ${P.counts.roundabouts} roundabouts), ${P.counts.interchanges} interchanges, ${P.counts.blocks} blocks`);

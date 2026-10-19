@@ -1421,8 +1421,8 @@ const graph = {
   nodes: PLAN.nodes.map((n) => [n.id, n.x, n.z, n.kind || '']),
   edges: PLAN.edges.map((e) => { const a = N.get(e.a), b = N.get(e.b); return [e.id, e.a, e.b, e.cls, a.x, a.z, b.x, b.z, e.name || '']; }),
   bends: bendsOut.map((b) => [b.node, b.at[0], b.at[1], b.R]),
-  rings: ringsOut.map((r) => [r.id, r.at[0], r.at[1], r.R, r.Ri]),
-  minis: minisOut.map((r) => [r.id, r.at[0], r.at[1], r.R, r.Ri]),
+  rings: ringsOut.map((r) => [r.id, r.at[0], r.at[1], r.R, r.Ri, -1]),   // 6th: circulation sign in atan2(z, x): -1 = counter-clockwise seen from above (right-hand traffic)
+  minis: minisOut.map((r) => [r.id, r.at[0], r.at[1], r.R, r.Ri, -1]),
   ramps: rampsOut.map((r) => [r.ic, r.kind, r.pts.map((p) => [R2(p[0]), R2(p[1]), R3(p[2] || 0)])]),
   crossings: PLAN.crossings.map((c) => [c.id, c.kind, c.at[0], c.at[1], c.arm ? c.arm[0] : 0, c.arm ? c.arm[1] : 0, c.cls, c.setback == null ? 0 : c.setback]),
   islands: islandsOut, signals: PLAN.junctions.filter((j) => j.type === 'signal').map((j) => [j.id, j.at[0], j.at[1]]),
