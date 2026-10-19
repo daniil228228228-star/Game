@@ -385,8 +385,8 @@ await run(async () => {
           if (cls === 'motorway' && Math.abs(x - 250) < 0.01 && Math.abs(Math.abs(z) - 18.5) < 1.2) continue;   // the tip of M2's median nose: zero width   // on a causeway: the deck is the surface (checked by the height tests)
           rc.set(new THREE.Vector3(x, 1, z), down);
           const hit = rc.intersectObjects(roots, false)[0];
-          // a drawn street: the highest surface under the centre line is asphalt height (or the median / ramp / paint just above it), never the grass 5 cm below
-          if (!hit || hit.point.y < 0.045 || hit.point.y > 0.13) holes.push([id, +x.toFixed(1), +z.toFixed(1), hit ? +hit.point.y.toFixed(3) : null]);
+          // a drawn street: the highest surface under the centre line is asphalt height (or the median / island lawn / ramp / paint just above it; paint is 0.077 since 2026-10-19 (15): 25 mm clear of the asphalt, island lawn 0.15), never the grass 5 cm below
+          if (!hit || hit.point.y < 0.045 || hit.point.y > 0.16) holes.push([id, +x.toFixed(1), +z.toFixed(1), hit ? +hit.point.y.toFixed(3) : null]);
         }
       }
       return { n, holes: holes.slice(0, 8), count: holes.length };
@@ -396,7 +396,7 @@ await run(async () => {
       const D = PlanCDataV161, rc = new THREE.Raycaster(), roots = PlanCV161.root.children.filter((o) => o.isMesh && !o.isInstancedMesh), out = [];
       for (const [id, x, z, R, Ri] of D.graph.rings.concat(D.graph.minis)) {
         let ok = 0;
-        for (let k = 0; k < 12; k++) { const a = k / 12 * 6.283 + 0.2, m = (R + Ri) / 2; rc.set(new THREE.Vector3(x + Math.cos(a) * m, 5, z + Math.sin(a) * m), new THREE.Vector3(0, -1, 0)); const h = rc.intersectObjects(roots, false)[0]; if (h && h.point.y > 0.045 && h.point.y < 0.07) ok++; }
+        for (let k = 0; k < 12; k++) { const a = k / 12 * 6.283 + 0.2, m = (R + Ri) / 2; rc.set(new THREE.Vector3(x + Math.cos(a) * m, 5, z + Math.sin(a) * m), new THREE.Vector3(0, -1, 0)); const h = rc.intersectObjects(roots, false)[0]; if (h && h.point.y > 0.045 && h.point.y < 0.085) ok++; }
         out.push(ok);
       }
       return out;
