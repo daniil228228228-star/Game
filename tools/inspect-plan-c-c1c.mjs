@@ -13,7 +13,12 @@ const stops = Object.values(D.cells).flatMap((c) => {
   const a = c.f?.stop || [], r = []; for (let i = 0; i < a.length; i += 4) r.push(a.slice(i, i + 4)); return r;
 });
 const stop = stops.find((s) => Math.abs(s[0]) < 150 && Math.abs(s[1]) < 100);
-const specs = process.argv.includes('--navigation') ? [
+const specs = process.argv.includes('--kerbs') ? [
+  { name: 'industrial-bend', at: [-88,0.2,-151], dist: 35, az: 0.7, el: 0.55 },
+  { name: 'pnr-island', at: [296,0.2,58], dist: 22, az: 0.7, el: 0.4 },
+  { name: 'central-island', at: [0,0.2,0], dist: 31, az: 0.7, el: 0.42 },
+  { name: 'port-join', at: [225,0.2,160], dist: 31, az: 0.4, el: 0.5 },
+] : process.argv.includes('--navigation') ? [
   { name: 'mini-ring', at: [D.graph.minis[0][1],0.4,D.graph.minis[0][2]], dist: 31, az: 0.3, el: 1.3 },
   { name: 'i2-east-receiving', at: [285,0.4,3], dist: 42, az: 0.2, el: 1.3 },
   { name: 'central-square', at: [0,0.5,0], dist: 54, az: 0.1, el: 1.3 },

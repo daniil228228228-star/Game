@@ -26,3 +26,17 @@ for(const z of [-18,-12,-6,0,6,12,18]) {
 }
 assert.ok(n>=5);
 console.log(`PASS software depth agrees with raycasts at ${n} perspective road samples`);
+
+// Both large road triangles have a vertex behind the camera. They must be
+// clipped like WebGL, not dropped wholesale (the former false bridge holes).
+road.geometry.dispose();road.geometry=new THREE.PlaneGeometry(4,240);
+const close=render(group,{W,H,az:0,el:.35,dist:9,target:[0,0,0],fov,ground:false});
+cam.position.set(0,Math.sin(.35)*9,Math.cos(.35)*9);cam.lookAt(0,0,0);cam.updateMatrixWorld(true);
+let clipped=0;
+for(let y=30;y<H-10;y+=10)for(let x=80;x<=160;x+=10){
+  const ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((x+.5)/W*2-1,1-(y+.5)/H*2),cam);
+  const hit=ray.intersectObjects(group.children)[0];if(hit?.object!==road)continue;
+  const k=(y*W+x)*3,[r,g,b]=close.buf.subarray(k,k+3);
+  assert.ok(Math.abs(r-g)<=1&&Math.abs(g-b)<=1,`near-clipped road missing at ${x},${y}`);clipped++;
+}
+assert.ok(clipped>=50);console.log(`PASS ${clipped} near-clipped road pixels agree with independent Three.js rays`);

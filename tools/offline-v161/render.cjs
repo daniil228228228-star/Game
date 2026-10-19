@@ -48,8 +48,17 @@ function render(root,{W=585,H=996,az=0.6,el=0.5,dist=null,target=null,fov=34,bg=
       let facing=t.n.dot(toCam);
       if(facing<0&&!t.two&&cull)continue;
       const nrm=facing<0?t.n.clone().negate():t.n;
-      const P=[t.a,t.b,t.c].map(v=>{const q=new THREE.Vector4(v.x,v.y,v.z,1).applyMatrix4(VP);return q;});
-      if(P.some(q=>q.w<=0.05))continue;
+      // Clip, do not discard, triangles crossing the camera near plane. A road
+      // rectangle can span 60 m: dropping it because ONE vertex is behind the
+      // camera invented green holes under bridges in close-up road inspections.
+      const raw=[t.a,t.b,t.c].map(v=>new THREE.Vector4(v.x,v.y,v.z,1).applyMatrix4(VP)),poly=[];
+      for(let i=0;i<raw.length;i++){
+        const a=raw[i],b=raw[(i+1)%raw.length],da=a.z+a.w,db=b.z+b.w;
+        if(da>=0)poly.push(a);
+        if((da>=0)!==(db>=0))poly.push(a.clone().lerp(b,da/(da-db)));
+      }
+      for(let fan=1;fan+1<poly.length;fan++){
+      const P=[poly[0],poly[fan],poly[fan+1]];
       const S=P.map(q=>({x:(q.x/q.w*0.5+0.5)*W,y:(1-(q.y/q.w*0.5+0.5))*H,z:q.w}));
       const sh=0.42+0.58*Math.max(0,nrm.dot(L));
       const col=[0,1,2].map(i=>Math.min(1,Math.pow(Math.min(1,t.col[i]*sh*1.12+t.emis[i]),1/2.2)));
@@ -71,6 +80,7 @@ function render(root,{W=585,H=996,az=0.6,el=0.5,dist=null,target=null,fov=34,bg=
         if(z>=zb[k])continue;
         if(pass===0){zb[k]=z;img[k*3]=col[0];img[k*3+1]=col[1];img[k*3+2]=col[2];}
         else{const a=t.alpha;img[k*3]=img[k*3]*(1-a)+col[0]*a;img[k*3+1]=img[k*3+1]*(1-a)+col[1]*a;img[k*3+2]=img[k*3+2]*(1-a)+col[2]*a;}
+      }
       }
     }
   }

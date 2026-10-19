@@ -93,8 +93,22 @@ function emitPoly(layer, poly, y, ci, holes = []) {   // arbitrary simple polygo
   const all = poly.concat(...holes);
   for (const t of THREE.ShapeUtils.triangulateShape(v, hv)) emitTri(layer, all[t[0]], all[t[1]], all[t[2]], y, ci);
 }
-function emitWall(x0, z0, x1, z1, y0, y1, ci) {   // wall between two points; lives in the cells its midpoint crosses (kerbs never span cells: they come from the cell raster)
-  push(cellOf(Math.floor((x0 + x1) / 2 / CELL), Math.floor((z0 + z1) / 2 / CELL)).r.w, x0, z0, x1, z1, y0, y1, ci);
+function emitWall(x0, z0, x1, z1, y0, y1, ci) {
+  // Curved kerbs DO cross cell borders. Assigning the whole face to its
+  // midpoint's cell made the neighbouring cell own a top without its edge.
+  // Split on the same grid as horizontal faces, keeping shared endpoints.
+  const ts=[0,1];
+  for(const [a,b]of [[x0,x1],[z0,z1]])if(Math.abs(b-a)>1e-9){
+    for(let k=Math.floor(Math.min(a,b)/CELL)+1;k*CELL<Math.max(a,b)-1e-8;k++){
+      const t=(k*CELL-a)/(b-a);if(t>1e-8&&t<1-1e-8)ts.push(t);
+    }
+  }
+  ts.sort((a,b)=>a-b);
+  for(let i=1;i<ts.length;i++){
+    const a=ts[i-1],b=ts[i],ax=R3(x0+(x1-x0)*a),az=R3(z0+(z1-z0)*a),bx=R3(x0+(x1-x0)*b),bz=R3(z0+(z1-z0)*b);
+    if(Math.hypot(bx-ax,bz-az)<1e-4)continue;
+    push(cellOf(Math.floor((ax+bx)/2/CELL),Math.floor((az+bz)/2/CELL)).r.w,ax,az,bx,bz,y0,y1,ci);
+  }
 }
 function ribbon(layer, pts, w, y, ci, join = true) {   // constant-width strip along a polyline (mitred), as triangles
   const n = pts.length, L = [], Rr = [];
@@ -171,10 +185,11 @@ function paintAlong(pts, o, w, dash, gap, dy, ci) {   // dashed (or solid when g
 }
 const arcLen = (pts) => { const out = [0]; for (let i = 1; i < pts.length; i++) out.push(out[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])); return out; };
 function disc(layer, c, r, y, ci, seg = 28) { for (let i = 0; i < seg; i++) { const a0 = i / seg * Math.PI * 2, a1 = (i + 1) / seg * Math.PI * 2; emitTri(layer, c, [c[0] + Math.cos(a0) * r, c[1] + Math.sin(a0) * r], [c[0] + Math.cos(a1) * r, c[1] + Math.sin(a1) * r], y, ci); } }
-function annulus(layer, c, r0, r1, a0, a1, y, ci, step = 6) {   // angles in degrees, screen frame
+function annulus(layer, c, r0, r1, a0, a1, y, ci, step = 6, knots = null) {   // angles in degrees, screen frame
   const n = Math.max(1, Math.ceil(Math.abs(a1 - a0) / step));
-  for (let i = 0; i < n; i++) {
-    const s = (a0 + (a1 - a0) * i / n) * Math.PI / 180, e = (a0 + (a1 - a0) * (i + 1) / n) * Math.PI / 180;
+  const angles = knots || Array.from({length:n+1}, (_,i)=>a0+(a1-a0)*i/n);
+  for (let i = 0; i + 1 < angles.length; i++) {
+    const s = angles[i] * Math.PI / 180, e = angles[i+1] * Math.PI / 180;
     const p = (r, a) => [c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r];
     emitTri(layer, p(r0, s), p(r1, s), p(r1, e), y, ci); emitTri(layer, p(r0, s), p(r1, e), p(r0, e), y, ci);
   }
@@ -434,21 +449,48 @@ for (const j of PLAN.junctions) {
   const c = j.at;
   if (j.type === 'roundabout' || j.type === 'mini') {
     const R = j.type === 'mini' ? 5.6 : j.R, W = ringW(j), Ri = R - W, big = j.lanes === 2;
-    annulus('r', c, Ri, R, 0, 360, H.asph, CI.asph, 5);
+    // One angular contour owns the road, island top AND vertical kerbs. The
+    // former 5 / 8 / 10 degree polygons disagreed by several centimetres and
+    // left unsupported kerb lips. Include sidewalk endpoints as real road
+    // vertices too, so their partial arcs cannot leave chord-shaped slits.
+    const angs = j.arms.map((a) => ({ a: (Math.atan2(a.dir[1], a.dir[0]) * 180 / Math.PI + 360) % 360, cls: a.cls })).sort((p, q) => p.a - q.a);
+    const sw = Math.max(...j.arms.map((a) => CLS[a.cls].sidewalk)), wr = sw + 1.0, walks=[];
+    for(let i=0;i<angs.length;i++){
+      const A=angs[i], B=angs[(i+1)%angs.length], end=B.a+(i+1===angs.length?360:0);
+      // Each side meets its OWN straight edge. Using the middle radius for
+      // both sides left a lawn notch outside and a pavement tooth in the lane.
+      const start=A.a+Math.asin(Math.min(.99,hw(A.cls)/R))*180/Math.PI;
+      const finish=end-Math.asin(Math.min(.99,hw(B.cls)/R))*180/Math.PI;
+      const outerStart=A.a+Math.asin(Math.min(.99,(hw(A.cls)+CLS[A.cls].sidewalk)/(R+wr)))*180/Math.PI;
+      const outerEnd=end-Math.asin(Math.min(.99,(hw(B.cls)+CLS[B.cls].sidewalk)/(R+wr)))*180/Math.PI;
+      if(finish-start>1)walks.push({start,finish,outerStart,outerEnd});
+    }
+    const angles=[...new Set([...Array.from({length:73},(_,i)=>i*5),...walks.flatMap(w=>[w.start,w.finish]).map(a=>(a%360+360)%360)])].sort((a,b)=>a-b);
+    const ringWall=(radius,knots,y0,y1)=>{
+      for(let k=1;k<knots.length;k++){
+        const a=knots[k-1]*Math.PI/180,b=knots[k]*Math.PI/180;
+        emitWall(c[0]+Math.cos(a)*radius,c[1]+Math.sin(a)*radius,c[0]+Math.cos(b)*radius,c[1]+Math.sin(b)*radius,y0,y1,CI.kerb);
+      }
+    };
+    annulus('r', c, Ri, R, 0, 360, H.asph, CI.asph, 5, angles);
     (j.type === 'mini' ? minisOut : ringsOut).push({ id: j.id, at: c, R, Ri });
     // paved circus around the big ring, island with kerb
     if (big) annulus('r', c, R, 25, 0, 360, H.plaza, CI.plaza, 6);
     // walk arcs between the arms
-    const angs = j.arms.map((a) => ({ a: (Math.atan2(a.dir[1], a.dir[0]) * 180 / Math.PI + 360) % 360, cls: a.cls })).sort((p, q) => p.a - q.a);
-    const sw = Math.max(...j.arms.map((a) => CLS[a.cls].sidewalk)), wr = sw + 1.0;
-    for (let i = 0; i < angs.length; i++) {
-      const A = angs[i], B = angs[(i + 1) % angs.length], bb = B.a + (i + 1 === angs.length ? 360 : 0);
-      const dA = Math.asin(Math.min(0.99, (hw(A.cls) + 0.1) / (R + wr / 2))) * 180 / Math.PI, dB = Math.asin(Math.min(0.99, (hw(B.cls) + 0.1) / (R + wr / 2))) * 180 / Math.PI;
-      if (bb - dB - (A.a + dA) > 1) annulus('r', c, R, R + wr, A.a + dA, bb - dB, H.walk, CI.walk, 5);
+    for (const {start,finish:end,outerStart,outerEnd} of walks) {
+      const knots=[start,...angles.flatMap(a=>[a,a+360]).filter(a=>a>start+1e-8&&a<end-1e-8),end].sort((a,b)=>a-b).filter((a,i,list)=>!i||a-list[i-1]>1e-8);
+      const outerKnots=knots.map(a=>outerStart+(outerEnd-outerStart)*(a-start)/(end-start));
+      const point=(r,a)=>[c[0]+r*Math.cos(a*Math.PI/180),c[1]+r*Math.sin(a*Math.PI/180)];
+      for(let k=1;k<knots.length;k++){
+        const a=point(R,knots[k-1]),b=point(R,knots[k]),u=point(R+wr,outerKnots[k-1]),v=point(R+wr,outerKnots[k]);
+        emitTri('r',a,u,b,H.walk,CI.walk);emitTri('r',u,v,b,H.walk,CI.walk);
+      }
+      ringWall(R,knots,H.asph,H.walk);
+      ringWall(R+wr,outerKnots,big?H.plaza:0,H.walk);
     }
     // kerb ring of the island + lawn + centre
-    for (let k = 0; k < 36; k++) { const s = k / 36 * Math.PI * 2, e = (k + 1) / 36 * Math.PI * 2; emitWall(c[0] + Math.cos(s) * Ri, c[1] + Math.sin(s) * Ri, c[0] + Math.cos(e) * Ri, c[1] + Math.sin(e) * Ri, H.asph, H.island + 0.03, CI.kerb); }
-    annulus('r', c, 0.01, Ri, 0, 360, H.island + 0.03, CI.islandC, 8);
+    ringWall(Ri,angles,H.asph,H.island+.03);
+    annulus('r', c, 0.01, Ri, 0, 360, H.island + 0.03, CI.islandC, 5, angles);
     annulus('r', c, 0.01, Ri - 0.8, 0, 360, H.island + 0.035, CI.islandL, 8);
     if (big) annulus('r', c, 0.01, 2.4, 0, 360, H.island + 0.04, CI.plaza, 10);
     if (big) { // second dashed lane line of the two-lane ring
@@ -522,9 +564,13 @@ for (const b of BENDS.values()) {
   const half = T.map((t) => lerp(cA.w / 2, cB.w / 2, t)), sw = T.map((t) => lerp(cA.sidewalk, cB.sidewalk, t)), mh = T.map((t) => lerp(cA.median / 2, cB.median / 2, t));
   const neg = (v) => v.map((x) => -x), add = (u, v) => u.map((x, i) => x + v[i]);
   const strip = (o0, o1, y, ci) => { const P0 = offsetVar(pts, o0), P1 = offsetVar(pts, o1); for (let i = 0; i + 1 < pts.length; i++) { emitTri('r', P0[i], P1[i], P0[i + 1], y, ci); emitTri('r', P1[i], P1[i + 1], P0[i + 1], y, ci); } };
-  const wall = (o, y0, y1) => { const P = offsetVar(pts, o); for (let i = 0; i + 1 < P.length; i++) emitWall(P[i][0], P[i][1], P[i + 1][0], P[i + 1][1], y0, y1, CI.kerb); };
+  const wall = (o, y0, y1, median = false) => { const P = offsetVar(pts, o); for (let i = 0; i + 1 < P.length; i++) {
+    // A zero-width median is asphalt, not two coincident vertical fins.
+    if(median&&Math.max(Math.abs(o[i]),Math.abs(o[i+1]))<.001)continue;
+    emitWall(P[i][0], P[i][1], P[i + 1][0], P[i + 1][1], y0, y1, CI.kerb);
+  } };
   strip(neg(half), half, H.asph, CI.asph);
-  if (Math.max(...mh) > 0.02) { strip(neg(mh), mh, H.med, CI.median); wall(neg(mh), H.asph, H.med); wall(mh, H.asph, H.med); }
+  if (Math.max(...mh) > 0.02) { strip(neg(mh), mh, H.med, CI.median); wall(neg(mh), H.asph, H.med,true); wall(mh, H.asph, H.med,true); }
   if (Math.max(...sw) > 0.02) for (const sg of [-1, 1]) { const o0 = half.map((h) => sg * h), o1 = half.map((h, i) => sg * (h + sw[i])); strip(o0, o1, H.walk, CI.walk); wall(o0, H.asph, H.walk); }
   // paint (only on the arc proper, the extensions are skipped): arterial lane dashes while they stay clear of the kerb, collector centre dashes once the median has closed
   const arcIdx = pts.map((_, i) => i).filter((i) => i > 0 && i < pts.length - 1);
