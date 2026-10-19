@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { buildPlan } from './plan-c.mjs';
 import { buildTurnGraph, movementAllowed, matrix, ARMS } from './turns-plan-c.mjs';
+import { pavementOracle } from './lane-paths-plan-c.mjs';
 
 const P = buildPlan(), N = new Map(P.nodes.map((n) => [n.id, n]));
 assert.equal(fs.readFileSync(new URL('./plan-C.json', import.meta.url), 'utf8'), JSON.stringify(P), 'generated plan is current (JSON normalises -0)');
@@ -58,8 +59,21 @@ for (const ring of D.graph.rings) {
     check(D.access(x + r * Math.cos(a), z + r * Math.sin(a), 0.45), `${ring[0]} support at ${k}, r=${r}`);
   }
 }
-for (let x = 298; x <= 370; x += 0.5) for (const z of [-245.3, -243.2, -236.8, -234.7]) {
-  check(D.access(x, z, 0.8), `M1 east lane envelope ${x},${z}`);
+// The owner replaced I3 with a motorway bend. The old x298..370 straight
+// receiving-road check required the deliberately removed cloverleaf exit.
+// Check the NEW lanes, independently reconstructed from the plan's radius,
+// against actual drawn pavement and the walkable floor, including both joins.
+const motorBends=P.bends.filter(b=>b.arms.every(a=>a.cls==='motorway'));
+check(motorBends.length===1,'one M1/M2 bend replaces I3');
+const pavement=pavementOracle(D);
+for(const b of motorBends){
+  check(b.R>=80,'motorway bend retains the approved >=80 m radius');
+  const [a,d]=b.arms.map(a=>a.dir),O=[b.at[0]+(a[0]+d[0])*b.R,b.at[1]+(a[1]+d[1])*b.R];
+  for(let k=0;k<=180;k++)for(const off of [-5.3,-3.2,3.2,5.3]){
+    const t=k*Math.PI/360,r=b.R+off,x=O[0]-r*(d[0]*Math.cos(t)+a[0]*Math.sin(t)),z=O[1]-r*(d[1]*Math.cos(t)+a[1]*Math.sin(t));
+    check(pavement.clear([x,z,0],.72),`M1/M2 drawn lane envelope ${k},${off}`);
+    check(D.access(x,z,.8,0),`M1/M2 floor envelope ${k},${off}`);
+  }
 }
 for (let x = 298; x <= 334; x += 0.5) for (const z of [157.4, 158.4, 161.6, 162.6]) {
   check(D.access(x, z, 0.8), `port approach envelope ${x},${z}`);
@@ -74,4 +88,4 @@ for (const [key, cell] of Object.entries(D.cells)) for (const layer of ['g', 'r'
     check(Math.abs((bx - ax) * (cz - az) - (bz - az) * (cx - ax)) > 1e-9, `${key}/${layer} no degenerate clipped triangle at ${i}`);
   }
 }
-console.log(`PASS ${checks} network regressions; RIRO ${legal} allowed / ${forbidden} forbidden; 8 rings, east M1, port and P+R return`);
+console.log(`PASS ${checks} network regressions; RIRO ${legal} allowed / ${forbidden} forbidden; ${D.graph.rings.length} rings, M1/M2 bend, port and P+R return`);

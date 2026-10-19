@@ -986,7 +986,10 @@ for (const ic of PLAN.interchanges) {
       return [p[0], p[1], h];
     });
     constrainRampProfile(p3, S, pts.map((_, i) => i === 0 || i === pts.length - 1 ||
-      ends.some((e, k) => (e.host || e.parent) && (k ? L - S[i] : S[i]) <= attached[k] + 1e-6) ||
+      // Street merge wedges are held just like motorway attachments. Without
+      // these fixed anchors the smoothing pass lifts their flat samples again,
+      // putting a 3-5 cm ramp lip over the avenue's outer traffic lane.
+      ends.some((e, k) => (e.host || e.parent || e.type === 'cross' && attached[k] > 0) && (k ? L - S[i] : S[i]) <= attached[k] + 1e-6) ||
       (sBr != null && Math.abs(S[i] - sBr) < 4)), ic.id + '.' + ri);
     const path = { id: ic.id + '.' + ri, ic: ic.id, kind: r.kind, p3, bridge: sBr, S, attach: r.attach, mouth: r.mouth, holdLow: r.holdLow, flare: r.flare, noWedge: r.noWedge };
     done.push(path); rampPts.push(path);

@@ -38,6 +38,23 @@ const check = (ok, msg) => { console.log((ok ? 'ok: ' : 'FAIL: ') + msg); if (!o
   let jumps = 0, worst = 0;
   for (const rb of D.struct.ribbons) for (let i = 0; i + 1 < rb.p.length; i++) { const a = rb.p[i], b = rb.p[i + 1], run = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, g = Math.abs(b[2] - a[2]) / run; if (g > worst) worst = g; if (g > 0.0685 + 0.003 && !/^FB/.test(rb.id)) jumps++; }
   check(jumps === 0, `ribbon grade <= 6.85 % on every segment (worst ${(worst * 100).toFixed(2)} %, over ${jumps})`);
+
+  // A ramp can match its OWN axis perfectly while its merge wedge protrudes
+  // above a neighbouring STREET lane. Check every actual directed route, not
+  // only the ramp axes. Ignore genuinely separated overpasses above 0.8 m.
+  const routeBad=[],joinBad=[],vertices=new Map(D.graph.navigation.vertices.map(([id,...p])=>[id,p]));let routeSamples=0;
+  for(const arc of D.graph.navigation.arcs){
+    for(const [id,p]of [[arc.u,arc.p[0]],[arc.v,arc.p.at(-1)]]){
+      const q=vertices.get(id);
+      if(!q||Math.hypot(p[0]-q[0],p[1]-q[1],p[2]-q[2])>.003)joinBad.push([arc.id,id,p,q]);
+    }
+    for(const p of arc.p){
+      const y=top(p[0],p[1],p[2]+.8);routeSamples++;
+      if(y===null||Math.abs(y-p[2]-.05)>.03)routeBad.push([arc.id,arc.road,p,y]);
+    }
+  }
+  check(joinBad.length===0,`directed route joins preserve position and height (${D.graph.navigation.arcs.length} arcs, bad ${joinBad.length}: ${JSON.stringify(joinBad.slice(0,3))})`);
+  check(routeBad.length===0,`drawn pavement matches ALL route samples within 3 cm (${routeSamples} samples, bad ${routeBad.length}: ${JSON.stringify(routeBad.slice(0,3))})`);
 }
 
 // ---- 3. solid fill: under a deck / ramp higher than 0.6 m the ground is NOT walkable unless another road passes underneath (a bridge); the grass banks are solid down to 0.35 m

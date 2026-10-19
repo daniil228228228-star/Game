@@ -93,6 +93,18 @@ for (const r of ramps) {
 }
 console.log(`PASS ${pavementSamples} join-pavement raycasts across the full vehicle width`);
 
+// Independent STREET lane rays: the ramp-axis checks above cannot detect a
+// raised merge lip covering the adjacent avenue. These failed by 3-5 cm on
+// the previous compiled profiles although every ramp-axis check was green.
+let streetMergeSamples=0;
+for(const [x,z]of [-3.7,3.7].flatMap(x=>[-257.091,-256.092,-255.093,-224.907,-223.908,-222.909].map(z=>[x,z])).concat([[264.024,163.6]])){
+  const hit=hitAt(x,z,0);
+  assert.ok(hit,'drawn street exists beside the ramp');
+  assert.ok([D.palette.asph,D.palette.white].some(ci=>color(hit)===D.colors[ci]),'street lane has no invading support face');
+  assert.ok(Math.abs(hit.point.y-.05)<=.03,`ramp lip above street lane at ${x},${z}: ${hit.point.y}`);streetMergeSamples++;
+}
+console.log(`PASS ${streetMergeSamples} independent street-lane rays: no raised merge lip`);
+
 // Full vertical faces, not just the collider registry: a visible wall must not
 // slice through the car + 0.25 m clearance swept along ANY ramp centre line.
 const walls = Object.values(D.cells).flatMap((c) => {
