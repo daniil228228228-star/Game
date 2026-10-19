@@ -43,11 +43,11 @@ def ramp(d, pl, level, label=None, lab_at=0.5, arrows=(0.35, 0.7)):
         i = int(len(pts) * lab_at); d.text((pts[i][0] + 6, pts[i][1] - 20), label, font=FS, fill=(10, 10, 10))
     return length(pl)
 def legend(d, items, lines):
-    y = H - 175
-    d.rectangle([8, y - 6, 560, H - 8], fill=(245, 245, 240), outline=(90, 90, 90))
+    y = H - 150
+    d.rectangle([8, y - 6, 640, H - 8], fill=(245, 245, 240), outline=(90, 90, 90))
     for k, (lv, t) in enumerate(items): d.line([(20, y + 14 + 24 * k), (60, y + 14 + 24 * k)], fill=COL[lv], width=7); d.text((70, y + 5 + 24 * k), t, font=F, fill=(0, 0, 0))
     for k, t in enumerate(lines): d.text((20, y + 5 + 24 * len(items) + 20 * k), t, font=FS, fill=(0, 0, 0))
-    d.line([P(-170, 168), P(-170 + 40, 168)], fill=(0, 0, 0), width=4); d.text(P(-166, 150), '40 м игровых = 100 м реальных', font=FS, fill=(0, 0, 0))
+    d.line([(20, 62), (20 + 40 * S * 0.78, 62)], fill=(0, 0, 0), width=5); d.text((20, 38), '40 м игровых = 100 м реальных', font=FS, fill=(0, 0, 0))
     d.text((W - 130, 20), 'N ↑', font=FB, fill=(0, 0, 0))
 results = {}
 # ---------- right turns: four slip ramps, the same in every variant (exit on the right, enter on the right)
@@ -81,22 +81,17 @@ for lab, pl in turb: tot += ramp(d, pl, 1, lab, 0.5)
 results['B'] = tot
 legend(d, [(0, 'уровень 1: правоповоротные съезды у земли'), (1, 'уровень 2: 4 спиральных левоповоротных съезда (R 28-45 м)')], ['M1 поверх (уровень 3), M2 на земле; каждый спиральный съезд пересекает два потока', 'все 12 манёвров прямые, переплетения нет', 'площадь узла ~ 220 x 220 игровых м (550 x 550 м)'])
 im.save(OUT + '/interchange-B-turbine.png')
-# ---------- Variant C: HYBRID (two loops in NE / SW, two semi-direct flyovers in NW / SE), three levels
-im, d = base('Вариант C: гибрид (2 петли + 2 полупрямые эстакады)')
-tot = slips(d, 0)
-# loops (left turns, exit right, 270 deg clockwise): NB->W in the NE... we keep the right-hand cloverleaf rule: exit right AFTER the crossing, loop clockwise.
-# SB (west half) -> E: exit right (west) after the crossing, loop clockwise through W, N... in the SW quadrant: centre (-42, 42) r 20
-loop1 = bez((-4.9, 30), (-4.9, 50), (-12, 64), (-24, 64)) + arc((-24, 44), 20, 90, 180 + 90 - 270 + 360 - 0, 1)[0:1]
-l1 = arc((-24, 44), 20, 90, 360, 90); loop_sw = [(-4.9, 20)] + [(-4.9, 44)] + [(p[0], p[1]) for p in l1][:] 
-# simple explicit loops: SB->E leaves SB at z 20, goes south then clockwise 270: south -> west -> north -> east, joining EB from the south (right) at x 30
-sw = bez((-4.9, 20), (-4.9, 36), (-8, 44), (-24, 64)) + arc((-24, 44), 20, 90, 360, 60)[1:] + bez((-4, 44), (6, 44), (16, 18), (30, 4.9))[1:]
-ne = [(-x, -z) for x, z in sw]   # NB->W: the same turned by 180 degrees (exit right after the crossing, clockwise loop in the NE quadrant)
-tot += ramp(d, sw, 0, 'SB→E (петля R 20)', 0.45); tot += ramp(d, ne, 0, 'NB→W (петля R 20)', 0.45)
-# semi-direct flyovers: EB->N (exit right at x -125, runs round the SE outside, crosses M2 on the second level, joins NB from the right) and WB->S
-nw = bez((-125, 4.9), (-70, 4.9), (-30, 30), (70, 40)) + bez((70, 40), (100, 44), (112, 10), (112, -40))[1:] + bez((112, -40), (112, -60), (60, -50), (4.9, -118))[1:]
-se = [(-x, -z) for x, z in nw]
-tot += ramp(d, nw, 1, 'EB→N (полупрямая)', 0.4); tot += ramp(d, se, 1, 'WB→S (полупрямая)', 0.4)
+# ---------- Variant C: HYBRID (two loops in SW / NE, two left-exit flyovers in NW / SE), three levels
+im, d = base('Вариант C: гибрид (2 петли + 2 эстакады-диагонали)')
+tot = slips(d, 0, 12)   # right turns on the outside
+# loop SB->E (SW quadrant): exit right (west side of M2) after the crossing, 270 degrees clockwise, joins EB from the south (right); loop NB->W = the same rotated by 180 degrees
+r = 20; C = (-4.9 - r, 56)
+loop = [(-4.9, 30), (-4.9, 56)] + arc(C, r, 0, 270, 60)[1:] + bez((C[0], C[1] - r), (C[0] + 20, C[1] - r), (8, 9), (34, 7.4))[1:]
+loop2 = [(-x, -z) for x, z in loop]
+tot += ramp(d, loop, 0, 'SB→E петля R 20', 0.55); tot += ramp(d, loop2, 0, 'NB→W петля R 20', 0.55)
+tot += ramp(d, bez((-135, 2.5), (-45, 2.5), (2.5, -45), (2.5, -135)), 1, 'EB→N эстакада (левый выход)', 0.62)
+tot += ramp(d, bez((135, -2.5), (45, -2.5), (-2.5, 45), (-2.5, 135)), 1, 'WB→S эстакада (левый выход)', 0.62)
 results['C'] = tot
-legend(d, [(0, 'уровень 1: 4 съезда вправо + 2 петли R 20 (у земли)'), (1, 'уровень 2: 2 полупрямые эстакады длиной ~ 260-300 м')], ['M1 на уровне 3 над M2; петли и эстакады по 2 диагональным квадрантам', 'переплетение только на двух петлях (SW, NE), 2 из 4 левых манёвров прямые', 'площадь узла ~ 260 x 260 игровых м (650 x 650 м)'])
+legend(d, [(0, 'уровень 1: 4 съезда вправо (снаружи) + 2 петли R 20'), (1, 'уровень 2: 2 левоповоротные эстакады-диагонали')], ['M1 на уровне 3 над M2; петли и эстакады в диагональных квадрантах', 'переплетение только на двух петлях (SW, NE); 2 из 4 левых манёвров прямые', 'площадь узла ~ 270 x 270 игровых м (675 x 675 м)'])
 im.save(OUT + '/interchange-C-hybrid.png')
 print({k: round(v) for k, v in results.items()})
