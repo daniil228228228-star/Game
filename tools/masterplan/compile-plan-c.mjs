@@ -33,12 +33,12 @@ const COLORS = {
   urban: 0x5f8f48, industry: 0x8d8f86, verge: 0x5f8f48, parking: 0x43484d, embank: 0x8b9566, beach: 0xdac99b, promenade: 0xcfc6b2, port: 0x9fa09a,
   sea: 0x3f7fae, seaLight: 0x7fb7d2, river: 0x4a88b4, bank: 0xb9ae8c, dirt: 0x8d7a58,
   asph: 0x353a3f, ramp: 0x353a3f, walk: 0xc4bfae, kerb: 0xaaa595, median: 0xb8b4a4, medLawn: 0x6f9d57, medM: 0xa9a99f, plaza: 0xd4cab4, islandL: 0x558140, islandC: 0xd9d1bb,
-  conc: 0xbdb9ad, concD: 0x8d8a82, sleeper: 0x4a3f36, white: 0xf2f2ec, yellow: 0xe7c85a, ballast: 0x8a8782, rail: 0x56585b, platform: 0xb8b5aa, moleC: 0x9b9a92, rock: 0x77756f,
+  conc: 0xa9a598, concD: 0x6e6b64, sleeper: 0x4a3f36, white: 0xf2f2ec, yellow: 0xe7c85a, ballast: 0x8a8782, rail: 0x56585b, platform: 0xb8b5aa, moleC: 0x9b9a92, rock: 0x77756f,
   resid: 0x82b064, mixed: 0x95b57a, cbd: 0xaaa898, indus: 0x70757a, school: 0x90bd72, hospital: 0xa4b88e, station: 0xa9a79b, villas: 0x78b45f, waterf: 0xa6b88f, market: 0xb4ae98, stadium: 0x6fae55,
-  slope: 0x558140,
+  slope: 0x558140, wall: 0x7d7a71,
 };
 const PAL = Object.keys(COLORS), CI = Object.fromEntries(PAL.map((k, i) => [k, i]));
-const H = { ground: 0, asph: 0.05, walk: 0.12, med: 0.12, paint: 0.062, ramp: 0.052, ringWalk: 0.12, island: 0.09, plaza: 0.03, fillet: 0.123, zone: -0.06, zone2: -0.05, water: -0.02, bank: -0.03, base: -0.08, rail: 0.035, railPaint: 0.066 };   // every ground layer has its own height (no coplanar overlaps = no z-fighting seams)
+const H = { ground: 0, asph: 0.05, walk: 0.12, med: 0.12, paint: 0.077, ramp: 0.052, ringWalk: 0.12, island: 0.09, plaza: 0.03, fillet: 0.123, zone: -0.06, zone2: -0.05, water: -0.02, bank: -0.045, base: -0.08, rail: 0.035, railPaint: 0.066 };   // every ground layer has its own height (no coplanar overlaps = no z-fighting seams)
 
 // ---- the cell store
 const cells = new Map();
@@ -492,8 +492,8 @@ for (const j of PLAN.junctions) {
     // kerb ring of the island + lawn + centre
     ringWall(Ri,angles,H.asph,H.island+.03);
     annulus('r', c, 0.01, Ri, 0, 360, H.island + 0.03, CI.islandC, 5, angles);
-    annulus('r', c, 0.01, Ri - 0.8, 0, 360, H.island + 0.035, CI.islandL, 8);
-    if (big) annulus('r', c, 0.01, 2.4, 0, 360, H.island + 0.04, CI.plaza, 10);
+    annulus('r', c, 0.01, Ri - 0.8, 0, 360, H.island + 0.06, CI.islandL, 8);
+    if (big) annulus('r', c, 0.01, 2.4, 0, 360, H.island + 0.09, CI.plaza, 10);
     if (big) { // second dashed lane line of the two-lane ring
       for (let a = 0; a < 360; a += 12) annulus('p', c, R - W / 2 - 0.07, R - W / 2 + 0.07, a, a + 6.5, H.paint, CI.white, 3);
     }
@@ -743,7 +743,7 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
     const c0 = [(xa + xb) / 2, 0];
     for (let i = 0; i < inner.length; i++) { const j = (i + 1) % inner.length; emitTri('r', c0, inner[i], inner[j], H.island + 0.03, CI.islandC); }
     const lawn = rr(xa, xb, hz, rcs, -0.7);
-    for (let i = 0; i < lawn.length; i++) { const j = (i + 1) % lawn.length; emitTri('r', c0, lawn[i], lawn[j], H.island + 0.035, CI.islandL); }
+    for (let i = 0; i < lawn.length; i++) { const j = (i + 1) % lawn.length; emitTri('r', c0, lawn[i], lawn[j], H.island + 0.06, CI.islandL); }
     splitZones.push(outer2.map((q) => [q[0], q[1]]));
     islandsOut.push({ side, poly: inner.map((q) => [R2(q[0]), R2(q[1])]), outer: outer.map((q) => [R2(q[0]), R2(q[1])]) });
     // kerb returns at the crossing: asphalt fillets between the band edge and the M2 edge
@@ -799,7 +799,7 @@ const RAIL_Y = 5.2;
 // leaving the required 0.5 m from the station retaining wall to the asphalt.
 const STATION_HALF = 9.5, PLATFORM_IN = 6.2, PLATFORM_OUT = 9.0;
 const railOut = { bed: [], tracks: 0 };
-const STRUCT = { ribbons: [], blockers: [], rails: [], openings: [] };   // runtime data: walkable decks / ramps, solid ground rectangles, parapet pieces (level-aware colliders)
+const STRUCT = { ribbons: [], blockers: [], fills: [], rails: [], openings: [] };   // runtime data: walkable decks / ramps, solid ground rectangles, parapet pieces (level-aware colliders)
 const stRail = PLAN.rail.stations[0];
 {
   const openings = [];
@@ -881,6 +881,7 @@ function projectPath(p, path) {
   }
   return { h: best || 0, distance };
 }
+const FLARE_HOLD = Number(process.env.FLARE_HOLD || 12);
 function constrainRampProfile(p3, S, fixed, label) {
   // Keep attachment levels exact without increasing the established 7% grade
   // limit. The envelopes are cones from ALL fixed samples, not a forward-only
@@ -939,7 +940,11 @@ for (const ic of PLAN.interchanges) {
         last = i;
       }
       if (last !== indices[0]) knots.push([S[last], h ? h.h(pts[last][h.axis]) : projectPath(pts[last], end.parent.p3).h]);
-      return k ? L - S[last] : S[last];
+      let hold = k ? L - S[last] : S[last];
+      // An exit / entrance lane that starts as the carriageway's own third lane (flare) stays at the carriageway's level for FLARE_HOLD m: before, it began to climb at once (6 %) beside the lane it
+      // had just left, so one road had two levels within 10 m of the gore (0.6 m at 10 m).
+      if (r.flare && r.flare.includes(k) && h) { const sv = k ? L - FLARE_HOLD : FLARE_HOLD; if (sv > hold) { knots.push([sv, h.h(pts[k ? 0 : 0][h.axis]) ]); hold = sv; } }
+      return hold;
     });
     const bridge = (r.bridges || [])[0]; let sBr = null;
     if (bridge) {
@@ -1134,13 +1139,22 @@ function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median h
     wallAlong(pts, sg * o.med, (h) => h + 0.05, (h) => h + 0.05 + Math.min(0.8, h * 3), CI.conc);
     capAlong(pts.map((p) => [p[0], p[1], p[2] + Math.min(0.8, p[2] * 3)]), sg * o.med, 0.2, 0.05, CI.conc);
   }
-  // sides: retaining wall to the ground, a fascia beam in front of every crossing
+  // sides: a grass bank where the free ground allows (2026-10-19 (15): the whole causeway used to be a 5 m white retaining wall), else a retaining wall with plinth / mid-tone face / coping,
+  // a fascia beam in front of every crossing
   for (const sg of [-1, 1]) {
-    const q = offsetPts3(pts, sg * (o.w / 2 + 0.3));
-    for (let i = 0; i + 1 < q.length; i++) {
-      const cross = inCross((S[i] + S[i + 1]) / 2);
-      for (const run of exposedRuns([q[i], q[i + 1]], 0, o.id, 0.3, !cross))
-        wallAlong(run, 0, (h) => cross ? h - 0.8 : 0, (h) => h + 0.05, cross ? CI.concD : CI.conc);
+    const off = o.w / 2 + 0.3, q = offsetPts3(pts, sg * off), emb = embankModes(pts, sg, o.id, off), vnQ = sideNormals(q, sg), n = q.length;
+    const segCross = (i) => i >= 0 && i + 1 < n && inCross((S[i] + S[i + 1]) / 2), segSlope = (i) => i >= 0 && i + 1 < n && emb[i + 1] && !segCross(i) && Math.max(pts[i][2], pts[i + 1][2]) >= 0.3;
+    for (let i = 0; i + 1 < n; i++) {
+      const cross = segCross(i), slope = segSlope(i);
+      for (const run of exposedRuns([q[i], q[i + 1]], 0, o.id, 0.3, !cross)) {
+        if (cross) { wallAlong(run, 0, (h) => h - 0.8, (h) => h + 0.05, CI.concD); continue; }
+        embankFace(run, sg, slope, emb.ratio[i + 1], null, (P) => normalAt(P, q, vnQ, i, i + 1));
+        if (slope) {
+          if (!segSlope(i - 1) || Math.hypot(run[0][0] - q[i][0], run[0][1] - q[i][1]) > 0.05) embankCap(run[0], sg, [run[1][0] - run[0][0], run[1][1] - run[0][1]], emb.ratio[i + 1], normalAt(run[0], q, vnQ, i, i + 1));
+          const e = run[run.length - 1];
+          if (!segSlope(i + 1) || Math.hypot(e[0] - q[i + 1][0], e[1] - q[i + 1][1]) > 0.05) embankCap(e, sg, [e[0] - run[run.length - 2][0], e[1] - run[run.length - 2][1]], emb.ratio[i + 1], normalAt(e, q, vnQ, i, i + 1));
+        }
+      }
     }
   }
   // cornice: a pale band along the deck edge so the slab reads as a bridge from below
@@ -1153,28 +1167,17 @@ function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median h
   }
   // paint
   if (o.paint) {
-    for (const sg of [-1, 1]) { for (const run of exposedRuns(pts, sg * o.paint.edge, o.id, 0.05)) paintAlong(run, 0, 0.18, 1, 0, 0.062, CI.white); if (o.paint.divider) paintAlong(pts, sg * o.paint.divider, 0.18, 1.6, 1.8, 0.062, CI.white); if (o.paint.inner) paintAlong(pts, sg * o.paint.inner, 0.18, 1, 0, 0.062, CI.white); }
-    if (o.paint.center) paintAlong(pts, 0, 0.16, 1.0, 3.0, 0.062, CI.white);
+    for (const sg of [-1, 1]) { for (const run of exposedRuns(pts, sg * o.paint.edge, o.id, 0.05)) paintAlong(run, 0, 0.18, 1, 0, 0.077, CI.white); if (o.paint.divider) paintAlong(pts, sg * o.paint.divider, 0.18, 1.6, 1.8, 0.077, CI.white); if (o.paint.inner) paintAlong(pts, sg * o.paint.inner, 0.18, 1, 0, 0.077, CI.white); }
+    if (o.paint.center) paintAlong(pts, 0, 0.16, 1.0, 3.0, 0.077, CI.white);
   }
 }
 function sampleAxis(axis, c, lo, hi, hfn, step = 3, extra = []) {
   const vs = new Set(); for (let v = lo; v < hi; v += step) vs.add(R3(v)); vs.add(R3(hi)); for (const e of extra) if (e > lo + 0.3 && e < hi - 0.3) vs.add(R3(e));
   return [...vs].sort((a, b) => a - b).map((v) => axis === 'x' ? [v, c, hfn(v)] : [c, v, hfn(v)]);
 }
-// motorway causeways
-const MOTOR_CROSS = { M1: [0], M2: [] };   // axis coordinates where another road passes underneath
-for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z', M2_X, M2_UP, hM2]]) for (const [a, b] of up) {
-  const pts = sampleAxis(axis, c, a, b, hfn, 3, MOTOR_CROSS[ref].flatMap((v) => [v - 7.4, v + 7.4])), S = arcLen(pts), s0 = axis === 'x' ? pts[0][0] : pts[0][1];
-  const crossings = MOTOR_CROSS[ref].map((v) => [v - 7.4 - s0, v + 7.4 - s0]).filter(([x0, x1]) => x1 > 0 && x0 < S[S.length - 1]).map(([x0, x1]) => [Math.max(0, x0), Math.min(S[S.length - 1], x1)]);
-  structureDeck(pts, { id: ref, w: CLS.motorway.w, med: CLS.motorway.median / 2, crossings, paint: { edge: MW - 1.1, divider: CLS.motorway.median / 2 + CLS.motorway.lane, inner: CLS.motorway.median / 2 + 0.3 } });
-  STRUCT.ribbons.push({ id: ref, w: CLS.motorway.w, p: pts.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
-  // solid body: ground floor is closed under the walls where the deck is higher than 0.3 m, except under the crossing roads
-  for (const [x0, x1] of intervalsAbove(hfn, a, b, 0.3)) for (const [y0, y1] of subtractIntervals(x0, x1, MOTOR_CROSS[ref].map((v) => [v - 8, v + 8]))) STRUCT.blockers.push(axis === 'x' ? [y0, c - MW - 0.6, y1, c + MW + 0.6] : [c - MW - 0.6, y0, c + MW + 0.6, y1]);
-}
 // Embankment faces (2026-10-19): a ramp that rides on fill has a SLOPED grass bank 1:2.5 (foot on the ground, tone of the ground layer), not a vertical green wall.  The bank is as wide as the
 // free ground beside the ramp allows (distance to every other road - half width - 0.8 m); where less than 1:1 would fit (the loops of a cloverleaf next to each other, the two tubes of the
 // trumpet, the host deck) the face is a vertical CONCRETE retaining wall instead.  Nothing is ever a vertical green wall.
-const SLOPE_R = 2.5;
 const OBST = (() => { const seen = new Set(), o = []; for (const l of roadIndex.values()) for (const sg of l) if (!seen.has(sg)) { seen.add(sg); o.push(sg); }
   for (const e of PLAN.edges) { if (e.cls === 'motorway') continue; const a = N.get(e.a), b = N.get(e.b), half = hw(e.cls) + CLS[e.cls].sidewalk; o.push({ id: 'street:' + e.id, a: [a.x, a.z, 0], b: [b.x, b.z, 0], half, dx: b.x - a.x, dz: b.z - a.z, ll: (b.x - a.x) ** 2 + (b.z - a.z) ** 2, street: true }); }
   return o; })();
@@ -1190,26 +1193,91 @@ const freeGround = (x, z, own) => {
   }
   return best;
 };
-function embankModes(p3, sg, own) {   // per segment of the ramp side: true = grass slope 1:SLOPE_R fits (free ground in a +-4 vertex window), false = concrete retaining wall
-  const body = offsetPts3(p3, sg * (CLS.ramp.w / 2 - 0.3)), fit = body.map((q) => q[2] < 0.3 || freeGround(q[0], q[1], own) - 0.8 >= SLOPE_R * (q[2] + 0.05)), n = body.length, mode = [];
-  const all = fit.every(Boolean);   // all or nothing per ramp side: a bank that changes into a wall and back leaves shards
-  for (let i = 1; i < n; i++) mode[i] = all;
-  if (process.env.EMB_DEBUG) console.log('embank', own, sg, all ? 'SLOPE' : 'wall', 'worst free', Math.min(...body.map((q) => q[2] < 0.3 ? 99 : freeGround(q[0], q[1], own) - 0.8 - SLOPE_R * (q[2] + 0.05))).toFixed(1));
+// Slope ratio (horizontal : vertical) at a deck-edge point: as flat as the free ground allows, between SLOPE_MIN (steep grass bank) and SLOPE_MAX; below SLOPE_MIN the face is a retaining wall.
+const SLOPE_MAX = 2.5, SLOPE_MIN = 1.25, SLOPE_RUN_MIN = 12, FILL_MIN_H = 0.35;
+const ratioAt = (x, z, h, own) => h < 0.3 ? SLOPE_MAX : Math.max(0, Math.min(SLOPE_MAX, (freeGround(x, z, own) - 0.8) / (h + 0.05)));
+function embankModes(p3, sg, own, off = CLS.ramp.w / 2 - 0.3) {   // per segment of one side (mode[i] = segment i-1..i): true = grass bank (>= SLOPE_MIN fits), false = concrete retaining wall; slope runs shorter than SLOPE_RUN_MIN m become walls
+  const body = offsetPts3(p3, sg * off), n = body.length, mode = [false];
+  // the bank may not fold over itself on the INSIDE of a bend: its foot (ratio * height) stays within 70 % of the radius of curvature when the centre of the bend is on the bank's side
+  const curveCap = (i) => {
+    const a = body[Math.max(0, i - 1)], b = body[i], c = body[Math.min(n - 1, i + 1)], cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+    if (Math.abs(cr) < 1e-6 || Math.sign(cr) !== sg) return Infinity;
+    const R = Math.hypot(b[0] - a[0], b[1] - a[1]) * Math.hypot(c[0] - b[0], c[1] - b[1]) * Math.hypot(c[0] - a[0], c[1] - a[1]) / (2 * Math.abs(cr));
+    return 0.7 * R / (b[2] + 0.05);
+  };
+  const r = body.map((q, i) => Math.min(ratioAt(q[0], q[1], q[2], own), q[2] < 0.3 ? SLOPE_MAX : curveCap(i)));
+  const rw = r.map((_, i) => Math.min(...r.slice(Math.max(0, i - 2), Math.min(n, i + 3))));
+  for (let i = 1; i < n; i++) mode[i] = Math.min(rw[i - 1], rw[i]) >= SLOPE_MIN;
+  for (let i = 1; i < n;) {   // a slope run needs SLOPE_RUN_MIN metres, else the shards of bank between walls look like debris
+    if (!mode[i]) { i++; continue; }
+    let j = i, len = 0; while (j < n && mode[j]) { len += Math.hypot(body[j][0] - body[j - 1][0], body[j][1] - body[j - 1][1]); j++; }
+    if (len < SLOPE_RUN_MIN) for (let k = i; k < j; k++) mode[k] = false;
+    i = j;
+  }
+  mode.ratio = mode.map(() => SLOPE_MAX);   // one ratio per slope run (the flattest the tightest point allows): a constant cone, no faceted strips
+  for (let i = 1; i < n;) {
+    if (!mode[i]) { i++; continue; }
+    let j = i, m = SLOPE_MAX; while (j < n && mode[j]) { m = Math.min(m, r[j - 1], r[j]); j++; }
+    for (let k = i - 1; k <= j; k++) if (k < n) mode.ratio[k] = Math.max(SLOPE_MIN, Math.min(SLOPE_MAX, m));
+    i = j;
+  }
+  if (process.env.EMB_DEBUG) console.log('embank', own, sg, mode.slice(1).map((m) => m ? 'S' : 'W').join(''));
   return mode;
 }
-function embankFace(run, sg, slope) {   // run: points [x, z, h] on the deck edge; slope = grass bank (true) or retaining wall
+// Solid fill (2026-10-19 (15)): the body under a ramp / causeway and its grass bank is NOT walkable ground (before, a player at ground level walked into the wall / bank and stood inside the fill
+// with the deck above his head, the camera behind the geometry).  STRUCT.fills = quads [x0 z0 x1 z1 x2 z2 x3 z3] (any simple quad) that the runtime floor treats like the rectangular blockers.
+function fillQuad(a, b, c, d) { STRUCT.fills.push([a, b, c, d].flatMap((q) => [R2(q[0]), R2(q[1])])); }
+function fillSupport(run, sg, off, slope, rat, vnAt) {   // off === null: the strip under the deck is already a rectangular blocker (causeways)   // half strip from the support line to the axis (+0.1 m margin outside the wall plane) and, for a bank, its footprint down to FILL_MIN_H
+  for (let i = 0; i + 1 < run.length; i++) {
+    const a = run[i], b = run[i + 1], ha = a[2] + 0.05, hb = b[2] + 0.05; if (Math.max(ha, hb) < FILL_MIN_H) continue;
+    const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = sg * -dz / l, nz = sg * dx / l, na = (vnAt && vnAt(a)) || [nx, nz], nb = (vnAt && vnAt(b)) || [nx, nz];
+    if (off !== null) fillQuad([a[0] + nx * 0.1, a[1] + nz * 0.1], [a[0] - nx * off, a[1] - nz * off], [b[0] - nx * off, b[1] - nz * off], [b[0] + nx * 0.1, b[1] + nz * 0.1]);
+    if (slope) { const wa = rat * Math.max(0, ha - FILL_MIN_H), wb = rat * Math.max(0, hb - FILL_MIN_H); fillQuad([a[0] + nx * 0.1, a[1] + nz * 0.1], [a[0] + na[0] * wa, a[1] + na[1] * wa], [b[0] + nb[0] * wb, b[1] + nb[1] * wb], [b[0] + nx * 0.1, b[1] + nz * 0.1]); }
+  }
+}
+function sideNormals(pts, sg) { const n = pts.length; return pts.map((_, i) => { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)], dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1; return [sg * -dz / l, sg * dx / l]; }); }
+function normalAt(P, sup, vn, i0, i1) { return Math.hypot(P[0] - sup[i0][0], P[1] - sup[i0][1]) < 0.05 ? vn[i0] : Math.hypot(P[0] - sup[i1][0], P[1] - sup[i1][1]) < 0.05 ? vn[i1] : null; }   // shared vertex normal at a support vertex, null inside a segment
+function embankFace(run, sg, slope, rat, off, vnAt) {   // vnAt(P) -> [nx, nz] of the support polyline at a run point (shared by both segments at a vertex: no wedge gaps / overlaps on a bend)   // run: points [x, z, h] on the deck edge; slope = grass bank (true) or retaining wall; rat = slope ratio of the run
+  fillSupport(run, sg, off, slope, rat, vnAt);
+  let acc = 0;
   for (let i = 0; i + 1 < run.length; i++) {
     const a = run[i], b = run[i + 1], ha = a[2] + 0.05, hb = b[2] + 0.05, dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = sg * -dz / l, nz = sg * dx / l;
     if (ha < 0.1 && hb < 0.1) continue;
-    if (!slope) { const pa = Math.min(0.6, ha), pb = Math.min(0.6, hb); emitQuadS(a[0], a[1], b[0], b[1], 0, pa, 0, pb, CI.concD); if (ha > 0.6 || hb > 0.6) emitQuadS(a[0], a[1], b[0], b[1], pa, ha, pb, hb, CI.conc); continue; }   // retaining wall: dark plinth + concrete face
-    const wa = SLOPE_R * ha, wb = SLOPE_R * hb, A0 = [a[0], ha, a[1]], B0 = [b[0], hb, b[1]], A1 = [a[0] + nx * wa, 0, a[1] + nz * wa], B1 = [b[0] + nx * wb, 0, b[1] + nz * wb];
+    if (!slope) { wallFace(a, b, ha, hb, nx, nz, acc); acc += l; continue; }
+    const na = (vnAt && vnAt(a)) || [nx, nz], nb = (vnAt && vnAt(b)) || [nx, nz];
+    const wa = rat * ha, wb = rat * hb, A0 = [a[0], ha, a[1]], B0 = [b[0], hb, b[1]], A1 = [a[0] + na[0] * wa, 0, a[1] + na[1] * wa], B1 = [b[0] + nb[0] * wb, 0, b[1] + nb[1] * wb];
     emitTri3(A0, A1, B0, CI.slope); emitTri3(A1, B1, B0, CI.slope);
   }
 }
-function embankCap(q, sg, nextDir, slopeFacesForward) {   // vertical end face of a grass bank where it meets a retaining wall / a bridge span: a triangle deck edge - foot - ground, drawn from both sides
-  const h = q[2] + 0.05, l = Math.hypot(nextDir[0], nextDir[1]) || 1, nx = sg * -nextDir[1] / l, nz = sg * nextDir[0] / l, w = SLOPE_R * h;
+// A retaining wall is built like a real one: dark plinth (0.6 m), a concrete face in mid tone (not the glaring white of the cap), a pale coping band under the edge.
+function wallFace(a, b, ha, hb, nx, nz, acc) {
+  const pa = Math.min(0.6, ha), pb = Math.min(0.6, hb), ca = Math.max(pa, ha - 0.3), cb = Math.max(pb, hb - 0.3);
+  emitQuadS(a[0], a[1], b[0], b[1], 0, pa, 0, pb, CI.concD);
+  if (ha > 0.6 || hb > 0.6) emitQuadS(a[0], a[1], b[0], b[1], pa, ca, pb, cb, CI.wall);
+  if (ca < ha || cb < hb) emitQuadS(a[0], a[1], b[0], b[1], ca, ha, cb, hb, CI.conc);
+  // panel joints every 6 m (0.14 m wide dark strips 3 cm proud of the face): reads as precast panels, not as one 100 m slab
+  const l = Math.hypot(b[0] - a[0], b[1] - a[1]); if (!(ha > 1.4 || hb > 1.4) || l < 0.5) return;
+  for (let d = Math.ceil(acc / 6) * 6 - acc; d < l - 0.2; d += 6) {
+    const t0 = d / l, t1 = Math.min(1, (d + 0.14) / l), f = (t) => [a[0] + (b[0] - a[0]) * t + nx * 0.03, a[1] + (b[1] - a[1]) * t + nz * 0.03], h = (t) => (pa + (pb - pa) * t), ht = (t) => ha + (hb - ha) * t - 0.3;
+    const P = f(t0), Q = f(t1); emitQuadS(P[0], P[1], Q[0], Q[1], h(t0), Math.max(h(t0), ht(t0)), h(t1), Math.max(h(t1), ht(t1)), CI.concD);
+  }
+}
+function embankCap(q, sg, nextDir, rat) {   // vertical end face of a grass bank where it meets a retaining wall / a bridge span: a triangle deck edge - foot - ground, drawn from both sides
+  const h = q[2] + 0.05, l = Math.hypot(nextDir[0], nextDir[1]) || 1, nx = sg * -nextDir[1] / l, nz = sg * nextDir[0] / l, w = rat * h;
   const T = [q[0], h, q[1]], F = [q[0] + nx * w, 0, q[1] + nz * w], G = [q[0], 0, q[1]];
   emitTri3(T, F, G, CI.slope); emitTri3(T, G, F, CI.slope);
+}
+// Where a wall of one support line meets a wall / fascia on another (a bridge fascia stands 0.5 m proud of the body wall) a vertical connector closes the slit.
+function wallConnector(p, q, h) { if (Math.hypot(p[0] - q[0], p[1] - q[1]) > 0.02 && h > 0.05) emitQuadS(p[0], p[1], q[0], q[1], 0, h, 0, h, CI.conc); }
+// motorway causeways
+const MOTOR_CROSS = { M1: [0], M2: [] };   // axis coordinates where another road passes underneath
+for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z', M2_X, M2_UP, hM2]]) for (const [a, b] of up) {
+  const pts = sampleAxis(axis, c, a, b, hfn, 3, MOTOR_CROSS[ref].flatMap((v) => [v - 7.4, v + 7.4])), S = arcLen(pts), s0 = axis === 'x' ? pts[0][0] : pts[0][1];
+  const crossings = MOTOR_CROSS[ref].map((v) => [v - 7.4 - s0, v + 7.4 - s0]).filter(([x0, x1]) => x1 > 0 && x0 < S[S.length - 1]).map(([x0, x1]) => [Math.max(0, x0), Math.min(S[S.length - 1], x1)]);
+  structureDeck(pts, { id: ref, w: CLS.motorway.w, med: CLS.motorway.median / 2, crossings, paint: { edge: MW - 1.1, divider: CLS.motorway.median / 2 + CLS.motorway.lane, inner: CLS.motorway.median / 2 + 0.3 } });
+  STRUCT.ribbons.push({ id: ref, w: CLS.motorway.w, p: pts.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
+  // solid body: ground floor is closed under the walls where the deck is higher than 0.3 m, except under the crossing roads
+  for (const [x0, x1] of intervalsAbove(hfn, a, b, 0.3)) for (const [y0, y1] of subtractIntervals(x0, x1, MOTOR_CROSS[ref].map((v) => [v - 8, v + 8]))) STRUCT.blockers.push(axis === 'x' ? [y0, c - MW - 0.6, y1, c + MW + 0.6] : [c - MW - 0.6, y0, c + MW + 0.6, y1]);
 }
 // Render the pre-resolved ramp profiles. Single-lane ramps have edge lines,
 // NOT a dashed centre line suggesting a second lane.
@@ -1219,18 +1287,19 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
   const { offL, offR, dashed, adjL, adjR, skipL, skipR } = rampOffs.get(id);
   asymRibbon(p3, offL, offR, 0.052, CI.asph);
   for (const sg of [-1, 1]) {
-    const embMode = embankModes(p3, sg, id), cross2 = (k) => sBr != null && Math.abs((S[k - 1] + S[k]) / 2 - sBr) < 9;
+    const embMode = embankModes(p3, sg, id), vnB = sideNormals(offsetPts3(p3, sg * (CLS.ramp.w / 2 - 0.3)), sg), cross2 = (k) => sBr != null && Math.abs((S[k - 1] + S[k]) / 2 - sBr) < 9;
     const q = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));
     const body = offsetPts3(p3, sg * (CLS.ramp.w / 2 - 0.3));
     for (let i = 1; i < p3.length; i++) {
       if (Math.max(p3[i - 1][2], p3[i][2]) < 0.3) continue;
       const cross = sBr != null && Math.abs((S[i - 1] + S[i]) / 2 - sBr) < 9;
       const support = cross ? q : body;
+      if (i > 1 && cross !== (sBr != null && Math.abs((S[i - 2] + S[i - 1]) / 2 - sBr) < 9)) wallConnector(body[i - 1], q[i - 1], p3[i - 1][2] + 0.05);   // body wall <-> fascia 0.5 m proud: close the slit
       for (const run of exposedRuns([support[i - 1], support[i]], 0, id, 0.3, !cross))
         { if (cross) wallAlong(run, 0, (h) => h - 0.6, (h) => h + 0.05, CI.conc); else {   // an embankment face: a grass slope 1:2.5 (or a concrete retaining wall where it does not fit), never a vertical green wall
-          embankFace(run, sg, embMode[i]);
-          if (embMode[i] && (!embMode[i - 1] || cross2(i - 1) || Math.hypot(run[0][0] - support[i - 1][0], run[0][1] - support[i - 1][1]) > 0.05)) embankCap(run[0], sg, [run[1][0] - run[0][0], run[1][1] - run[0][1]]);
-          if (embMode[i] && (i + 1 >= embMode.length || !embMode[i + 1] || cross2(i + 1) || Math.hypot(run[run.length - 1][0] - support[i][0], run[run.length - 1][1] - support[i][1]) > 0.05)) embankCap(run[run.length - 1], sg, [run[run.length - 1][0] - run[run.length - 2][0], run[run.length - 1][1] - run[run.length - 2][1]]);
+          embankFace(run, sg, embMode[i], embMode.ratio[i], CLS.ramp.w / 2 - 0.3 + 0.1, (P) => normalAt(P, support, vnB, i - 1, i));
+          if (embMode[i] && (!embMode[i - 1] || cross2(i - 1) || Math.hypot(run[0][0] - support[i - 1][0], run[0][1] - support[i - 1][1]) > 0.05)) embankCap(run[0], sg, [run[1][0] - run[0][0], run[1][1] - run[0][1]], embMode.ratio[i], normalAt(run[0], support, vnB, i - 1, i));
+          if (embMode[i] && (i + 1 >= embMode.length || !embMode[i + 1] || cross2(i + 1) || Math.hypot(run[run.length - 1][0] - support[i][0], run[run.length - 1][1] - support[i][1]) > 0.05)) embankCap(run[run.length - 1], sg, [run[run.length - 1][0] - run[run.length - 2][0], run[run.length - 1][1] - run[run.length - 2][1]], embMode.ratio[i], normalAt(run[run.length - 1], support, vnB, i - 1, i));
         } }
     }
     for (const run of exposedRuns(p3, sg * (CLS.ramp.w / 2 + 0.2), id, 0.3, 'barrier')) {
@@ -1254,7 +1323,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
       for (let i = 0; i < n - 1;) {
         const dz = dashed[si][i] && dashed[si][i + 1]; let j = i;
         while (j < n - 1 && (dashed[si][j] && dashed[si][j + 1]) === dz) j++;
-        if (!skip[i] && !skip[j]) for (const run of exposedRuns(line.slice(i, j + 1), 0, id, 0.05)) paintAlong(run, 0, 0.16, dz ? 1.6 : 1, dz ? 1.8 : 0, 0.064, CI.white);
+        if (!skip[i] && !skip[j]) for (const run of exposedRuns(line.slice(i, j + 1), 0, id, 0.05)) paintAlong(run, 0, 0.16, dz ? 1.6 : 1, dz ? 1.8 : 0, 0.079, CI.white);
         i = j;
       }
     }
@@ -1263,7 +1332,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
   {
     const L = S[S.length - 1], at = (sv) => { let i = 1; while (i < S.length - 1 && S[i] < sv) i++; const a = p3[i - 1], b = p3[i], t = Math.max(0, Math.min(1, (sv - S[i - 1]) / Math.max(1e-6, S[i] - S[i - 1]))), dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1; return { x: a[0] + dx * t, z: a[1] + (b[1] - a[1]) * t, h: a[2] + (b[2] - a[2]) * t, tx: dx / l, tz: dz / l }; };
     const tri = (o, s0, l0, s1, l1, s2, l2) => {   // vertices in (along, right) metres from o; wound like deckRibbon's (left, right, next-left)
-      const V = (s, l) => [o.x + o.tx * s - o.tz * l, o.h + 0.064, o.z + o.tz * s + o.tx * l];
+      const V = (s, l) => [o.x + o.tx * s - o.tz * l, o.h + 0.079, o.z + o.tz * s + o.tx * l];
       const cross = (s1 - s0) * (l2 - l0) - (l1 - l0) * (s2 - s0);
       if (cross < 0) emitTri3(V(s0, l0), V(s1, l1), V(s2, l2), CI.white); else emitTri3(V(s0, l0), V(s2, l2), V(s1, l1), CI.white);
     };
@@ -1354,7 +1423,7 @@ const SZ = PLAN.size;
   for (const b of PLAN.blocks) { const r = b.lot || b.rect; emitRect('g', 'q', r[0], r[1], r[2], r[3], H.zone2, CI[ZONE[b.zone] || 'resid']); }
   // industrial / logistics lots are paved yards with bay lines (two rows of 3.2 m bays along the long edges, a loading apron between, a painted yard boundary), not a bare grey plate
   for (const b of PLAN.blocks) if (b.zone === 'industrial' || b.zone === 'logistics') {
-    const [x0, z0, x1, z1] = b.lot || b.rect, inset = 1.4, w = x1 - x0, h = z1 - z0, y = H.zone2 + 0.004;
+    const [x0, z0, x1, z1] = b.lot || b.rect, inset = 1.4, w = x1 - x0, h = z1 - z0, y = H.zone2 + 0.02;
     for (const [ax0, az0, ax1, az1] of [[x0 + inset, z0 + inset, x1 - inset, z0 + inset + 0.15], [x0 + inset, z1 - inset - 0.15, x1 - inset, z1 - inset], [x0 + inset, z0 + inset, x0 + inset + 0.15, z1 - inset], [x1 - inset - 0.15, z0 + inset, x1 - inset, z1 - inset]]) emitRect('p', 'q', ax0, az0, ax1, az1, y, CI.white);
     const long = w >= h, depth = Math.min(8, (long ? h : w) * 0.22);
     for (const side of [0, 1]) for (let t = inset + 3.2; t < (long ? w : h) - inset - 1; t += 3.2) {
@@ -1379,7 +1448,7 @@ const SZ = PLAN.size;
   const sea = coast.concat([[SZ.x1 + 40, 300], [SZ.x0 - 40, 300]]);
   const seaTris = THREE.ShapeUtils.triangulateShape(sea.map((p) => new THREE.Vector2(p[0], p[1])), []);
   for (const t of seaTris) emitTri('g', sea[t[0]], sea[t[1]], sea[t[2]], H.water, CI.sea);
-  for (let i = 0; i + 1 < coast.length; i++) { const a = coast[i], b = coast[i + 1]; if (Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) > 5) continue; ribbon('g', [[a[0], a[1] + 1.2], [b[0], b[1] + 1.2]], 2.4, H.water + 0.004, CI.seaLight); }
+  for (let i = 0; i + 1 < coast.length; i++) { const a = coast[i], b = coast[i + 1]; if (Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) > 5) continue; ribbon('g', [[a[0], a[1] + 1.2], [b[0], b[1] + 1.2]], 2.4, H.water + 0.02, CI.seaLight); }
   const rv = PLAN.water.river;
   ribbon('g', rv.pts, rv.w + 4, H.bank, CI.bank); ribbon('g', rv.pts, rv.w, H.water, CI.river);
   for (const [x, z, r] of PLAN.water.rocks) disc('r', [x, z], r, 0.1, CI.rock, 10);
@@ -1589,7 +1658,13 @@ const FLOOR_FN = `
   // ---- levels: the ground (land minus sea / river / solid bodies of embankments and causeways) and the walkable ribbons of decks, ramps and footbridges
   var S=D.struct, blk=S.blockers, rib=S.ribbons;
   for(var ri=0;ri<rib.length;ri++){var r=rib[ri],x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;for(var k=0;k<r.p.length;k++){var q=r.p[k];if(q[0]<x0)x0=q[0];if(q[0]>x1)x1=q[0];if(q[1]<z0)z0=q[1];if(q[1]>z1)z1=q[1];}r.bb=[x0-r.w,z0-r.w,x1+r.w,z1+r.w];}
-  D.ground=function(x,z){if(!D.floor(x,z))return false;for(var i=0;i<blk.length;i++){var b=blk[i];if(x>=b[0]&&x<=b[2]&&z>=b[1]&&z<=b[3])return false;}return true;};
+  // solid fill under ramps / causeways and their grass banks (quads, 8 m hash grid)
+  var fl=S.fills||[],FG=Object.create(null);
+  for(var fi=0;fi<fl.length;fi++){var f=fl[fi],fx0=1e9,fx1=-1e9,fz0=1e9,fz1=-1e9;for(var fk=0;fk<8;fk+=2){if(f[fk]<fx0)fx0=f[fk];if(f[fk]>fx1)fx1=f[fk];if(f[fk+1]<fz0)fz0=f[fk+1];if(f[fk+1]>fz1)fz1=f[fk+1];}
+    for(var gx=Math.floor(fx0/8);gx<=Math.floor(fx1/8);gx++)for(var gz=Math.floor(fz0/8);gz<=Math.floor(fz1/8);gz++){var gk=gx+','+gz;(FG[gk]||(FG[gk]=[])).push(fi);}}
+  function inTri(x,z,ax,az,bx,bz,cx,cz){var d1=(x-bx)*(az-bz)-(ax-bx)*(z-bz),d2=(x-cx)*(bz-cz)-(bx-cx)*(z-cz),d3=(x-ax)*(cz-az)-(cx-ax)*(z-az);return !(((d1<0)||(d2<0)||(d3<0))&&((d1>0)||(d2>0)||(d3>0)));}
+  D.inFill=function(x,z){var L=FG[Math.floor(x/8)+','+Math.floor(z/8)];if(!L)return false;for(var k=0;k<L.length;k++){var f=fl[L[k]];if(inTri(x,z,f[0],f[1],f[2],f[3],f[4],f[5])||inTri(x,z,f[0],f[1],f[4],f[5],f[6],f[7]))return true;}return false;};
+  D.ground=function(x,z){if(!D.floor(x,z))return false;for(var i=0;i<blk.length;i++){var b=blk[i];if(x>=b[0]&&x<=b[2]&&z>=b[1]&&z<=b[3])return false;}return !D.inFill(x,z);};
   // heights of every walkable surface above (x, z): [0 if ground] + ribbon heights (a ribbon counts inside its half width)
   D.surfaces=function(x,z){
     var out=[];if(D.ground(x,z))out.push(0);
@@ -1609,7 +1684,10 @@ const FLOOR_FN = `
   D.surfaceY=function(x,z,hint,step){step=step==null?.75:step;var s=D.surfaces(x,z),best=null;for(var i=0;i<s.length;i++)if(s[i]<=hint+step&&(best==null||s[i]>best))best=s[i];if(best==null&&s.length){best=s[0];for(i=1;i<s.length;i++)if(s[i]<best)best=s[i];}return best;};
   // underside of the lowest deck above a point that stands at y (camera clearance); null when open sky
   D.overhead=function(x,z,y){var s=D.surfaces(x,z),low=null;for(var i=0;i<s.length;i++)if(s[i]>y+1.6&&(low==null||s[i]<low))low=s[i];return low==null?null:low-.8;};
-  D.access=function(x,z,m){m=m==null?.45:m;if(!D.surfaces(x,z).length)return false;for(var i=0;i<8;i++){var a=i*Math.PI/4;if(!D.surfaces(x+Math.cos(a)*m,z+Math.sin(a)*m).length)return false;}return true;};
+  // access(x, z, margin, hint): a point is walkable when a surface exists there and (with a hint = the height the walker stands at) one of them is within a step above the hint, so the strip under a deck
+  // that is solid fill at ground level can not be entered from the side and lift the player onto the deck above
+  var anyS=function(x,z,hint){var s=D.surfaces(x,z);if(hint==null)return s.length>0;for(var i=0;i<s.length;i++)if(s[i]<=hint+.8)return true;return false;};
+  D.access=function(x,z,m,hint){m=m==null?.45:m;if(!anyS(x,z,hint))return false;for(var i=0;i<8;i++){var a=i*Math.PI/4;if(!anyS(x+Math.cos(a)*m,z+Math.sin(a)*m,hint))return false;}return true;};
   D.cellKey=function(x,z){return Math.floor(x/D.cell)+','+Math.floor(z/D.cell);};
 })(window.PlanCDataV161);
 `;

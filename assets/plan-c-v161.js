@@ -12,10 +12,12 @@
   if (window.LAYOUT_V161 !== 'C') return;
   const D = window.PlanCDataV161;
   if (!D) { console.error('plan C data missing'); return; }
-  const CELL = D.cell, MAX_PER_TICK = 2;
+  const CELL = D.cell, MAX_PER_TICK = 2, SLOPE_CI = D.palette.slope;
   const cells = new Map();            // key -> {mesh, cx, cz}
   const root = new THREE.Group(); root.name = 'planCV161'; root.userData.planCV161 = true;
   scene.add(root);
+  // depth precision: the follow camera is 6-8 m from what matters, so the near plane 0.35 only costs bits (a 16-bit buffer resolves ~1 mm at 5 m but 9 mm at 15 m with near 0.35; 0.6 gives 1.7x (far stays 500: the sky dome is 400 m))
+  try { if (typeof camera !== 'undefined' && camera.isPerspectiveCamera) { camera.near = 0.6; camera.updateProjectionMatrix(); } } catch (_) {}
   const api = { version: 1, enabled: true, root, cells, R_BUILD: 128, R_KEEP: 190, furniture: {}, lastBuilt: 0 };   // radii in metres around the player (tests / screenshots may widen them)
   window.PlanCV161 = api;
 
@@ -24,6 +26,15 @@
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0.0, side: THREE.DoubleSide });
   mat.userData.planCV161 = true;
   api.material = mat;
+  // Shadow acne on decks (owner's iPhone, 2026-10-19: horizontal stripes / arcs on every ramp lane): the deck meshes both CAST and RECEIVE the sun's shadow, so each deck
+  // compares its own surface with its own entry in the 1024 map (texel 0.14 m, a sloped lane differs by up to 0.1-0.3 m across one texel, more when the quality ladder halves the map).
+  // The shadow pass of a deck therefore draws it SHADOW_PUSH metres deeper along the light (a real bridge shadow on the ground below is unchanged to within that thickness),
+  // so a deck never shadows itself whatever the GPU's depth precision or the map size; walls / kerbs of the same mesh are pushed equally.
+  const SHADOW_PUSH = 0.45;
+  const deckDepthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  deckDepthMat.onBeforeCompile = (sh) => { sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  mvPosition.z -= ' + SHADOW_PUSH.toFixed(3) + ';\n  gl_Position = projectionMatrix * mvPosition;'); };
+  deckDepthMat.customProgramCacheKey = () => 'planCDeckDepth' + SHADOW_PUSH;
+  api.deckDepthMaterial = deckDepthMat;
 
   // ---- old core that does not exist in layout C (the base ground is replaced by the cells; the dark disc and the spherical hills / skyline boxes are gated at their owners)
   function retireOldCore() {
@@ -38,6 +49,7 @@
     let pos = [], nor = [], col = [];
     const dpos = [], dnor = [], dcol = [];
     let cur = 0;
+    const slopeTris = [];   // grass banks get smooth (vertex-averaged) normals: flat shading of a cone around a loop read as alternating radial strips
     let tone = 1;   // the sun + ACES wash light colours out: grass and landscape are drawn 20 % darker than their palette entry
     const v = (x, y, z, nx, ny, nz, c) => { const P = cur ? dpos : pos, Nn = cur ? dnor : nor, C = cur ? dcol : col; P.push(x, y, z); Nn.push(nx, ny, nz); C.push(c.r * tone, c.g * tone, c.b * tone); };
     for (const layer of ['g', 'r', 'p', 'd']) {
@@ -51,6 +63,7 @@
         const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
         if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; [bx, cx2] = [cx2, bx]; [by, cy2] = [cy2, by]; [bz, cz2] = [cz2, bz]; }
         v(ax, ay, az, nx, ny, nz, c); v(bx, by, bz, nx, ny, nz, c); v(cx2, cy2, cz2, nx, ny, nz, c);
+        if (cur && dv[i + 9] === SLOPE_CI) slopeTris.push(dpos.length / 3 - 3);
       }
       const ds = L.s;
       if (ds) for (let i = 0; i < ds.length; i += 9) {
@@ -80,6 +93,11 @@
         v(x0, y0, z0, nx, 0, nz, c); v(x1, y1, z1, nx, 0, nz, c); v(x0, y1, z0, nx, 0, nz, c);
       }
     }
+    if (slopeTris.length) {
+      const key = (k) => Math.round(dpos[k * 3] * 50) + ',' + Math.round(dpos[k * 3 + 1] * 50) + ',' + Math.round(dpos[k * 3 + 2] * 50), acc = new Map();
+      for (const t of slopeTris) for (let j = 0; j < 3; j++) { const k = key(t + j); let a = acc.get(k); if (!a) acc.set(k, a = [0, 0, 0]); a[0] += dnor[(t + j) * 3]; a[1] += dnor[(t + j) * 3 + 1]; a[2] += dnor[(t + j) * 3 + 2]; }
+      for (const t of slopeTris) for (let j = 0; j < 3; j++) { const a = acc.get(key(t + j)), l = Math.hypot(a[0], a[1], a[2]) || 1; dnor[(t + j) * 3] = a[0] / l; dnor[(t + j) * 3 + 1] = a[1] / l; dnor[(t + j) * 3 + 2] = a[2] / l; }
+    }
     const mk = (P, Nn, C, name, solid) => {
       if (!P.length) return null;
       const g = new THREE.BufferGeometry();
@@ -89,7 +107,7 @@
       g.boundingBox = new THREE.Box3(new THREE.Vector3(cx * CELL, -3, cz * CELL), new THREE.Vector3((cx + 1) * CELL, 8, (cz + 1) * CELL));
       g.boundingSphere = new THREE.Sphere(new THREE.Vector3((cx + 0.5) * CELL, 2, (cz + 0.5) * CELL), CELL * 0.8);
       const mesh = new THREE.Mesh(g, mat);
-      mesh.name = name; mesh.receiveShadow = true; mesh.castShadow = !!solid; mesh.matrixAutoUpdate = false;
+      mesh.name = name; mesh.receiveShadow = true; mesh.castShadow = !!solid; if (solid) mesh.customDepthMaterial = deckDepthMat; mesh.matrixAutoUpdate = false;
       mesh.userData.v83CollisionIgnore = true; mesh.userData.planCCell = key; mesh.userData.v152Skip = true; mesh.userData.planCSolid = !!solid;
       return mesh;
     };
@@ -225,14 +243,16 @@
   const SLIDE_STEP = 2;
   api.floor = D.floor; api.access = D.access;
   api.clamp = (x, z, margin = 1) => {
-    if (D.access(x, z)) return { x, z };
+    const hint = api.level + Math.max(0, player.position.y);   // the walker's world height (inside updatePlayer the physics height is relative to the surface)
+    const acc = (a, b) => D.access(a, b, 0.45, hint);
+    if (acc(x, z)) return { x, z };
     const px = player.position.x, pz = player.position.z;
-    if (D.access(px, pz)) {
+    if (acc(px, pz) || D.access(px, pz)) {
       const sx = x - px, sz = z - pz;
       if (Math.hypot(sx, sz) <= SLIDE_STEP) {
         const first = Math.abs(sx) >= Math.abs(sz) ? [[x, pz], [px, z]] : [[px, z], [x, pz]];
-        for (const [cx, cz] of first) if (D.access(cx, cz)) return { x: cx, z: cz };
-        for (const f of [0.5, 0.25]) { const cx = px + sx * f, cz = pz + sz * f; if (D.access(cx, cz)) return { x: cx, z: cz }; }
+        for (const [cx, cz] of first) if (acc(cx, cz)) return { x: cx, z: cz };
+        for (const f of [0.5, 0.25]) { const cx = px + sx * f, cz = pz + sz * f; if (acc(cx, cz)) return { x: cx, z: cz }; }
       }
       return { x: px, z: pz };
     }
