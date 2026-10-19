@@ -374,6 +374,59 @@
     for (const m of G.landmarks) { const q = w2s(m[3], m[4]); c.fillStyle = '#e8c36a'; c.strokeStyle = '#12161c'; c.lineWidth = 1.2; c.beginPath(); c.arc(q[0], q[1], 3.6, 0, 6.2832); c.fill(); c.stroke(); put(m[2], m[3], m[4], { size: 11, bold: true, dy: -11, color: '#f4d98e' }); }
     if (k >= 0.9) for (const s of streetNames) { let a = s.ang; if (a > Math.PI / 2) a -= Math.PI; if (a < -Math.PI / 2) a += Math.PI; put(s.name, s.x, s.z, { size: 10, ang: a, color: '#dfe6ee' }); }
   }
+  // ---- LOD detail: from K_DETAIL px/m the visible cells are redrawn as vectors straight from the plan data (markings, arrows, ramps, loops, islands, decks with a shadow edge)
+  api.detail = true;
+  const K_MID = 1.2, K_DETAIL = 2.4, primCache = new Map();
+  function cellPrims(cx, cz) {   // per cell, per layer: [y, kind, index] sorted by height (cached)
+    const key = cx + ',' + cz; let v = primCache.get(key); if (v) return v;
+    const data = D.cells[key]; v = [];
+    if (data) for (const layer of ['g', 'r', 'p', 'd']) {
+      const l = data[layer]; if (!l) continue; const prims = [];
+      if (l.q) for (let i = 0; i < l.q.length; i += 6) prims.push([l.q[i + 4], 0, i]);
+      if (l.t) for (let i = 0; i < l.t.length; i += 8) prims.push([l.t[i + 6], 1, i]);
+      if (l.v) for (let i = 0; i < l.v.length; i += 10) prims.push([(l.v[i + 1] + l.v[i + 4] + l.v[i + 7]) / 3, 2, i]);
+      prims.sort((x, y) => x[0] - y[0]); v.push([layer, l, prims]);
+    }
+    if (primCache.size > 40) primCache.delete(primCache.keys().next().value);
+    primCache.set(key, v); return v;
+  }
+  function drawDetail(c, k) {   // c is already in world units (translate + scale); returns the number of draw commands
+    const t0 = performance.now(), hw = bw / 2 / k, hh = bh / 2 / k, x0 = view.cx - hw, x1 = view.cx + hw, z0 = view.cz - hh, z1 = view.cz + hh, cell = D.cell;
+    const col = D.colors.map(hex); let n = 0; c.lineJoin = 'round'; c.lineWidth = 0.6 / k;
+    for (let cx = Math.floor(x0 / cell); cx <= Math.floor(x1 / cell); cx++) for (let cz = Math.floor(z0 / cell); cz <= Math.floor(z1 / cell); cz++) {
+      for (const [layer, l, prims] of cellPrims(cx, cz)) {
+        let cur = '';
+        for (const [y, kind, i] of prims) {
+          let f, ax, az, bx, bz, qx, qz, rect = false, deck = layer === 'd';
+          if (kind === 0) { rect = true; ax = l.q[i]; az = l.q[i + 1]; bx = l.q[i + 2]; bz = l.q[i + 3]; f = col[l.q[i + 5]]; if (bx < x0 || ax > x1 || bz < z0 || az > z1) continue; }
+          else if (kind === 1) { ax = l.t[i]; az = l.t[i + 1]; bx = l.t[i + 2]; bz = l.t[i + 3]; qx = l.t[i + 4]; qz = l.t[i + 5]; f = col[l.t[i + 7]]; if (Math.max(ax, bx, qx) < x0 || Math.min(ax, bx, qx) > x1 || Math.max(az, bz, qz) < z0 || Math.min(az, bz, qz) > z1) continue; }
+          else { const v = l.v; ax = v[i]; az = v[i + 2]; bx = v[i + 3]; bz = v[i + 5]; qx = v[i + 6]; qz = v[i + 8]; f = col[v[i + 9]]; if (Math.abs((bx - ax) * (qz - az) - (bz - az) * (qx - ax)) < 1e-3) continue; if (Math.max(ax, bx, qx) < x0 || Math.min(ax, bx, qx) > x1 || Math.max(az, bz, qz) < z0 || Math.min(az, bz, qz) > z1) continue; deck = true; }
+          if (f !== cur) { c.fillStyle = f; c.strokeStyle = f; cur = f; }
+          if (rect) { c.fillRect(ax, az, bx - ax, bz - az); n++; continue; }
+          c.beginPath(); c.moveTo(ax, az); c.lineTo(bx, bz); c.lineTo(qx, qz); c.closePath();
+          if (kind === 2 && y > 0.25) { c.save(); c.translate(0.5, 0.7); c.globalAlpha = 0.3; c.fillStyle = '#000'; c.fill(); c.restore(); c.fillStyle = f; c.beginPath(); c.moveTo(ax, az); c.lineTo(bx, bz); c.lineTo(qx, qz); c.closePath(); n++; }   // elevated deck: drop shadow, upper layer on top
+          c.fill(); c.stroke(); n++;
+        }
+      }
+    }
+    api.stats.detailCmds = n; api.stats.detailMs = performance.now() - t0; return n;
+  }
+  function drawNodes(c) {
+    if (!G) return;
+    const k = view.k, put = (text, x, z, col) => { const q = w2s(x, z); if (q[0] < -60 || q[1] < -20 || q[0] > bw + 60 || q[1] > bh + 20) return; c.font = '700 12px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineWidth = 3.5; c.lineJoin = 'round'; c.strokeStyle = 'rgba(14,18,24,.9)'; c.strokeText(text, q[0], q[1]); c.fillStyle = col || '#f4d98e'; c.fillText(text, q[0], q[1]); };
+    const ic = {};
+    for (const r of G.ramps) { const id = r[0], pts = r[2]; const o = ic[id] || (ic[id] = { sx: 0, sz: 0, n: 0 }); for (const p of pts) { o.sx += p[0]; o.sz += p[1]; o.n++; } }
+    for (const id in ic) put(id, ic[id].sx / ic[id].n, ic[id].sz / ic[id].n);
+    put('I2', 250, 0);
+    if (k >= K_DETAIL) {
+      for (const f of G.footbridges) put(f[0], f[1], f[2], '#8db4e8');
+      for (const t of G.tunnels) put(t[0], t[1], t[2], '#8db4e8');
+      const r = Math.max(2, Math.min(4, 0.5 * k)); c.fillStyle = '#ff5a4a'; c.strokeStyle = '#12161c'; c.lineWidth = 1;
+      for (const s of G.signals) { const q = w2s(s[1], s[2]); if (q[0] < -8 || q[1] < -8 || q[0] > bw + 8 || q[1] > bh + 8) continue; c.beginPath(); c.arc(q[0], q[1], r, 0, 6.2832); c.fill(); c.stroke(); }
+    } else if (k >= K_MID) {
+      c.fillStyle = '#ff5a4a'; for (const s of G.signals) { const q = w2s(s[1], s[2]); if (q[0] < 0 || q[1] < 0 || q[0] > bw || q[1] > bh) continue; c.beginPath(); c.arc(q[0], q[1], 2, 0, 6.2832); c.fill(); }
+    }
+  }
   function drawBig(now) {
     if (!isOpen()) return;
     const t0 = performance.now(), st = state(now), c = bctx;
@@ -383,10 +436,13 @@
     if (api.base) {
       c.save(); c.translate(bw / 2, bh / 2); c.scale(view.k, view.k); c.translate(-view.cx, -view.cz);
       c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
-      c.drawImage(api.base, X0, Z0, BW, BH); c.restore();
+      c.drawImage(api.base, X0, Z0, BW, BH);
+      if (api.detail && isC() && view.k >= K_DETAIL) { try { drawDetail(c, view.k); } catch (e) { api.detailError = String(e); } }
+      c.restore();
       if (nightNow()) { c.fillStyle = 'rgba(8,16,40,.30)'; c.fillRect(0, 0, bw, bh); }
     } else { c.fillStyle = '#b9c2cd'; c.font = '14px sans-serif'; c.textAlign = 'center'; c.fillText(L('Карта строится…', 'Drawing the map…'), bw / 2, bh / 2); }
     drawLabels(c, st);
+    try { drawNodes(c); } catch (e) { api.nodeError = String(e); }
     paintMarkers(c, st, w2s, view.k, { w: bw, h: bh, clampR: 0, transit: api.transit, lines: api.transit, stopR: 3.4, houseS: 6, padR: 8, tgtR: 8, arrow: 8, rotate: 0, sel: api.sel });
     const dt = performance.now() - t0; api.stats.bigMs = dt; api.stats.bigN++;
     $('bigMapPos').textContent = `${Math.round(st.px)}, ${Math.round(st.pz)} · ${nameAt(st.px, st.pz)}`;
@@ -429,7 +485,7 @@
   api.zoomBy = zoomBy;
 
   // ---- pointers: one finger drags / taps, two fingers pinch, wheel zooms
-  const ptrs = new Map(); let pinch = null, moved = 0, downAt = 0;
+  let lastTap = null; const ptrs = new Map(); let pinch = null, moved = 0, downAt = 0;
   bcanvas.addEventListener('pointerdown', (e) => {
     try { bcanvas.setPointerCapture(e.pointerId); } catch (_) {}
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -450,7 +506,11 @@
     const p = ptrs.get(e.pointerId); if (!p) return;
     const wasTap = ptrs.size === 1 && moved <= 8 && performance.now() - downAt < 600 && e.type === 'pointerup';
     ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null;
-    if (wasTap) { const r = bcanvas.getBoundingClientRect(), w = s2w(e.clientX - r.left, e.clientY - r.top); selectPoint(w[0], w[1]); }
+    if (wasTap) {
+      const r = bcanvas.getBoundingClientRect(), w = s2w(e.clientX - r.left, e.clientY - r.top), now = performance.now();
+      selectPoint(w[0], w[1]);
+      if (lastTap && now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 28) { zoomBy(2, e.clientX - r.left, e.clientY - r.top); lastTap = null; } else lastTap = { t: now, x: e.clientX, y: e.clientY };
+    }
   };
   bcanvas.addEventListener('pointerup', endPtr); bcanvas.addEventListener('pointercancel', endPtr);
   bcanvas.addEventListener('wheel', (e) => { e.preventDefault(); const r = bcanvas.getBoundingClientRect(); zoomBy(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top); }, { passive: false });

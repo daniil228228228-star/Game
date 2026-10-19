@@ -154,6 +154,38 @@ await run(async () => {
     check(kp1 > kp0 * 1.8 && kp1 < kp0 * 2.3, `a two-finger pinch (90 -> 190 px) zooms by ~2.1 (${kp0.toFixed(2)} -> ${kp1.toFixed(2)})`);
     await ev(() => MiniMapV161.close());
 
+    // ---- 3b. deep zoom + LOD: at >= 2.4 px/m the visible cells are drawn as vectors (markings, ramps, loops, decks), node labels from the data
+    {
+      await ev(() => { MiniMapV161.open(); });
+      const white = () => ev(() => { const c = document.querySelector('#bigMapV161 canvas'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 225 && d[i + 1] > 225 && d[i + 2] > 215) n++; return n; });
+      const spots = [['I1', 0, -240, 3.0], ['I2', 250, 0, 4.0], ['I3', 250, -240, 3.0], ['I4', 250, 160, 3.0]];
+      for (const [id, x, z, k] of spots) {
+        await ev(([x, z, k]) => { MiniMapV161.detail = true; MiniMapV161.setView(x, z, k); MiniMapV161.redraw(); }, [x, z, k]);
+        const on = await ev(() => ({ cmds: MiniMapV161.stats.detailCmds, ms: MiniMapV161.stats.detailMs, err: MiniMapV161.detailError || MiniMapV161.nodeError || null, k: MiniMapV161.view.k }));
+        const wOn = await white();
+        await ev(() => { MiniMapV161.detail = false; MiniMapV161.redraw(); }); const wOff = await white();
+        await ev(() => { MiniMapV161.detail = true; });
+        check(!on.err && on.cmds > 400 && on.ms < 600 && wOn > wOff * 1.15, `LOD ${id} at ${on.k.toFixed(1)} px/m: ${on.cmds} vector draw commands in ${on.ms.toFixed(0)} ms (< 600), more marking pixels than the baked map (${wOn} vs ${wOff}), no error`);
+      }
+      await ev(() => { for (let i = 0; i < 6; i++) MiniMapV161.zoomBy(1.7); MiniMapV161.redraw(); });
+      const mx = await ev(() => ({ k: MiniMapV161.view.k, err: MiniMapV161.detailError || MiniMapV161.nodeError || null, ms: MiniMapV161.stats.detailMs }));
+      check(mx.k >= 6.99 && !mx.err && mx.ms < 600, `maximum zoom ${mx.k.toFixed(2)} px/m draws without error (${mx.ms.toFixed(0)} ms)`);
+      await ev(() => { MiniMapV161.setView(0, -240, 3.0); MiniMapV161.redraw(); });
+      const tapI1 = await ev(() => { const [sx, sy] = MiniMapV161.worldToScreen(10, -230); return [sx, sy]; });
+      await page.mouse.click(tapI1[0], tapI1[1]);
+      const selI1 = await ev(() => MiniMapV161.sel);
+      check(selI1 && Math.hypot(selI1.x - 10, selI1.z + 230) < 1, `a tap at the deepest LOD still selects the point (${J(selI1)})`);
+      const k0 = await ev(() => MiniMapV161.view.k);
+      await page.mouse.click(tapI1[0], tapI1[1]); await page.mouse.click(tapI1[0], tapI1[1]);
+      check(await ev((k0) => MiniMapV161.view.k > k0 * 1.5, k0), 'a double tap zooms in');
+      const lodShots = SHOTS ? true : false;
+      if (lodShots) for (const night of [false, true]) {
+        await ev((n) => { try { __TYCOON_V40__.setTime(n ? 22 : 12); } catch (_) {} }, night);
+        for (const [id, x, z, k] of spots.filter((q) => q[0] !== 'I3')) { await ev(([x, z, k]) => { MiniMapV161.sel = null; document.getElementById('bigMapSel').hidden = true; MiniMapV161.setView(x, z, k); }, [x, z, k]); await page.waitForTimeout(500); await page.screenshot({ path: path.join(SHOTS, `minimap-lod-${id}-${night ? 'night' : 'day'}.png`) }); }
+      }
+      await ev(() => { MiniMapV161.close(); try { __TYCOON_V40__.setTime(12); } catch (_) {} });
+    }
+
     // ---- 4. the dock never overlaps another HUD piece (390x664 and 360x640, quiet and with every transient card forced on)
     const hudCheck = async (label) => {
       await ev(() => window.dispatchEvent(new Event('resize'))); await ev(() => __frames(6));
