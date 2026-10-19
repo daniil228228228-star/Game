@@ -6,6 +6,7 @@ const out = path.resolve(process.argv[2] || 'shots'); fs.mkdirSync(out, { recurs
 const specs = process.argv.slice(3).map((s) => { const [n, r] = s.split(':'); const [x, z, d, el, az] = r.split(',').map(Number); return { n, x, z, d, el: el ?? 60, az: az ?? 0 }; });
 const g = await openGame({ save: 'clear', layout: 'C', waitMs: 5000 });
 const errs = g.errors;
+if (process.env.NIGHT) { await g.page.evaluate(() => { try { __TYCOON_V40__.setTime(22); } catch (_) {} }); await g.page.waitForTimeout(2500); }
 for (const s of specs) {
   const url = await g.page.evaluate(({ x, z, d, el, az }) => {
     if (d > 200) { PlanCV161.R_BUILD = 900; PlanCV161.R_KEEP = 1200; }

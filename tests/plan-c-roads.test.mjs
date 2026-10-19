@@ -27,11 +27,11 @@ const CI = D.palette, NCELLS = Object.keys(D.cells).length;
 check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D.cells).length} cells of ${D.cell} m`);
 {
   // collect asphalt: rectangles of the union (palette asph, y 0.05) and triangles (ring, ramps) per cell
-  const rects = [], tris = [];
+  const rects = [], tris = [], medTris = [];
   for (const [key, c] of Object.entries(D.cells)) {
     const q = c.r && c.r.q || [], t = c.r && c.r.t || [];
     for (let i = 0; i < q.length; i += 6) if (q[i + 5] === CI.asph || q[i + 5] === CI.median || q[i + 5] === CI.medLawn || q[i + 5] === CI.lawnG || q[i + 5] === CI.walk) rects.push({ x0: q[i], z0: q[i + 1], x1: q[i + 2], z1: q[i + 3], ci: q[i + 5], key });
-    for (let i = 0; i < t.length; i += 8) if (t[i + 7] === CI.asph || t[i + 7] === CI.ramp) tris.push({ p: t.slice(i, i + 6), key });
+    for (let i = 0; i < t.length; i += 8) if (t[i + 7] === CI.asph || t[i + 7] === CI.ramp) tris.push({ p: t.slice(i, i + 6), key }); else if (t[i + 7] === CI.lawnG) medTris.push({ p: t.slice(i, i + 6), key });   // M2 zone median (drawn between kerb walls): the centre line of a motorway
     // Check the ACTUAL drawn decks too, including their near-zero toes. A
     // height > 0.2 exemption hid gaps between the flat and elevated meshes.
     const v = c.d?.v || [];
@@ -42,6 +42,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
   const cellOf = (x, z) => Math.floor(x / 60) + ',' + Math.floor(z / 60);
   const byCell = new Map(); for (const r of rects.filter((q) => q.ci !== CI.walk)) { (byCell.get(r.key) || byCell.set(r.key, []).get(r.key)).push(r); }
   const triByCell = new Map(); for (const t of tris) { (triByCell.get(t.key) || triByCell.set(t.key, []).get(t.key)).push(t); }
+  const medAt = (x, z) => medTris.some((t) => Math.abs((t.p[0] + t.p[2] + t.p[4]) / 3 - x) < 8 && inTri(x, z, t.p));
   const asphaltAt = (x, z) => (byCell.get(cellOf(x, z)) || []).some((r) => x >= r.x0 - 1e-3 && x <= r.x1 + 1e-3 && z >= r.z0 - 1e-3 && z <= r.z1 + 1e-3) || (triByCell.get(cellOf(x, z)) || []).some((t) => inTri(x, z, t.p));
   // 1. every graph edge: asphalt under the centre line all along (the ring replaces the part inside a roundabout)
   const N = new Map(PLAN.nodes.map((n) => [n.id, n]));
@@ -50,7 +51,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
     if (e.split) continue;   // I2: the straight axis of the split street is a lawn island; its carriageways are checked below
     const a = N.get(e.a), b = N.get(e.b), L = Math.hypot(b.x - a.x, b.z - a.z);
     const rA = (D.graph.rings.find((q) => q[0] === e.a) || [0, 0, 0, 0])[3], rB = (D.graph.rings.find((q) => q[0] === e.b) || [0, 0, 0, 0])[3];   // inside a roundabout the island is not road
-    for (let s = 0.3; s < L; s += 1.1) { if (s < rA || s > L - rB) continue; const x = a.x + (b.x - a.x) * s / L, z = a.z + (b.z - a.z) * s / L; if (e.cls === 'motorway' && Math.abs(x - 250) < 0.01 && z > 66.9) continue;   /* M2's trumpet end: the centre line is the widening median island (21 m taper, drawn as lawn) */ samples++; if (!asphaltAt(x, z)) holes.push([e.id, R(x), R(z)]); }
+    for (let s = 0.3; s < L; s += 1.1) { if (s < rA || s > L - rB) continue; const x = a.x + (b.x - a.x) * s / L, z = a.z + (b.z - a.z) * s / L; if (e.cls === 'motorway' && Math.abs(x - 250) < 0.01 && z > 66.9) continue;   /* M2's trumpet end: the centre line is the widening median island (21 m taper, drawn as lawn) */ samples++; if (!asphaltAt(x, z) && !(e.cls === 'motorway' && (medAt(x, z) || (Math.abs(x - 250) < 0.01 && Math.abs(Math.abs(z) - 18.5) < 1.2))))   /* the tip of M2's median nose has zero width */ holes.push([e.id, R(x), R(z)]); }
   }
   check(holes.length === 0 && PLAN.edges.length === D.graph.edges.length, `data: asphalt under the centre line of all ${PLAN.edges.length} graph edges (${samples} samples, holes ${J(holes.slice(0, 6))})`);
   // 1b. I2 split street: the band of every island carries asphalt all round (sampled between the island kerb and the outer outline), the island itself has none
@@ -349,7 +350,8 @@ await run(async () => {
         for (let s = 0.5; s < L; s += 6) {
           if (D.graph.rings.some((q) => (q[0] === e[1] && s < q[3] + 1) || (q[0] === e[2] && L - s < q[3] + 1))) continue;   // inside a roundabout: island
           const x = x0 + (x1 - x0) * s / L, z = z0 + (z1 - z0) * s / L; n++;
-          if (cls === 'motorway' && D.surfaces(x, z).some((h) => h > 0.08)) continue;   // on a causeway: the deck is the surface (checked by the height tests)
+          if (cls === 'motorway' && D.surfaces(x, z).some((h) => h > 0.08)) continue;
+          if (cls === 'motorway' && Math.abs(x - 250) < 0.01 && Math.abs(Math.abs(z) - 18.5) < 1.2) continue;   // the tip of M2's median nose: zero width   // on a causeway: the deck is the surface (checked by the height tests)
           rc.set(new THREE.Vector3(x, 1, z), down);
           const hit = rc.intersectObjects(roots, false)[0];
           // a drawn street: the highest surface under the centre line is asphalt height (or the median / ramp / paint just above it), never the grass 5 cm below

@@ -30,7 +30,7 @@ const COLORS = {
   grass: 0x5f8f48, grassB: 0x6a9a50, lawn: 0x76a85c, park: 0x5f8f48, lawnG: 0x568041, forest: 0x3f6d37, field0: 0x9a9a52, field1: 0x6f9b45, field2: 0xb0a45a, field3: 0x7e9a4a, field4: 0x8f7a4c,
   urban: 0x86ad68, industry: 0x8d8f86, verge: 0x5f8f48, parking: 0x43484d, embank: 0x8b9566, beach: 0xdac99b, promenade: 0xcfc6b2, port: 0x9fa09a,
   sea: 0x3f7fae, seaLight: 0x7fb7d2, river: 0x4a88b4, bank: 0xb9ae8c, dirt: 0x8d7a58,
-  asph: 0x353a3f, ramp: 0x353a3f, walk: 0xc4bfae, kerb: 0xaaa595, median: 0xb8b4a4, medLawn: 0x6f9d57, medM: 0xa9a99f, plaza: 0xd4cab4, islandL: 0x6ea154, islandC: 0xd9d1bb,
+  asph: 0x353a3f, ramp: 0x353a3f, walk: 0xc4bfae, kerb: 0xaaa595, median: 0xb8b4a4, medLawn: 0x6f9d57, medM: 0xa9a99f, plaza: 0xd4cab4, islandL: 0x558140, islandC: 0xd9d1bb,
   conc: 0xbdb9ad, concD: 0x8d8a82, sleeper: 0x4a3f36, white: 0xf2f2ec, yellow: 0xe7c85a, ballast: 0x8a8782, rail: 0x56585b, platform: 0xb8b5aa, moleC: 0x9b9a92, rock: 0x77756f,
   resid: 0x82b064, mixed: 0x95b57a, cbd: 0xaaa898, indus: 0x70757a, school: 0x90bd72, hospital: 0xa4b88e, station: 0xa9a79b, villas: 0x78b45f, waterf: 0xa6b88f, market: 0xb4ae98, stadium: 0x6fae55,
 };
@@ -147,20 +147,18 @@ function asymRibbon(pts, offL, offR, dy, ci) {   // road surface with its own le
   }
 }
 function capAlong(pts, o, w, dy, ci, from = 0, to = pts.length - 1) { const sub = pts.slice(from, to + 1); deckRibbon(offsetPts3(sub, o), w, dy, ci); }
-function paintAlong(pts, o, w, dash, gap, dy, ci) {   // dashed (or solid when gap = 0) line on a deck
-  const q = offsetPts3(pts, o); let acc = 0, on = true, cur = [];
-  const flush = () => { if (cur.length > 1) deckRibbon(cur, w, dy, ci); cur = []; };
-  for (let i = 0; i + 1 < q.length; i++) {
-    const a = q[i], b = q[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 1e-6) continue;
-    if (!gap) { if (!cur.length) cur.push(a); cur.push(b); continue; }
-    let s = 0;
-    while (s < L) {
-      const lim = on ? dash : gap, take = Math.min(L - s, lim - acc), t0 = s / L, t1 = (s + take) / L, p0 = [a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0, a[2] + (b[2] - a[2]) * t0], p1 = [a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1, a[2] + (b[2] - a[2]) * t1];
-      if (on) { if (!cur.length) cur.push(p0); cur.push(p1); }
-      s += take; acc += take; if (acc >= lim - 1e-9) { if (on) flush(); on = !on; acc = 0; }
-    }
+function paintAlong(pts, o, w, dash, gap, dy, ci) {   // dashed (or solid when gap = 0) line on a deck.  Dashed: whole dashes only, the row centred in the run (2026-10-19: no clipped stubs at the ends)
+  const q = offsetPts3(pts, o);
+  if (!gap) { if (q.length > 1) deckRibbon(q, w, dy, ci); return; }
+  const S = [0]; for (let i = 1; i < q.length; i++) S.push(S[i - 1] + Math.hypot(q[i][0] - q[i - 1][0], q[i][1] - q[i - 1][1]));
+  const total = S[S.length - 1], n = Math.floor((total + gap) / (dash + gap)); if (n < 1) return;
+  const at = (sv) => { let i = 1; while (i < S.length - 1 && S[i] < sv) i++; const a = q[i - 1], b = q[i], t = (sv - S[i - 1]) / Math.max(1e-9, S[i] - S[i - 1]); return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; };
+  const start = (total - (n * dash + (n - 1) * gap)) / 2;
+  for (let k = 0; k < n; k++) {
+    const s0 = start + k * (dash + gap), s1 = s0 + dash, cur = [at(s0)];
+    for (let i = 0; i < S.length; i++) if (S[i] > s0 + 1e-6 && S[i] < s1 - 1e-6) cur.push(q[i]);
+    cur.push(at(s1)); deckRibbon(cur, w, dy, ci);
   }
-  flush();
 }
 const arcLen = (pts) => { const out = [0]; for (let i = 1; i < pts.length; i++) out.push(out[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])); return out; };
 function disc(layer, c, r, y, ci, seg = 28) { for (let i = 0; i < seg; i++) { const a0 = i / seg * Math.PI * 2, a1 = (i + 1) / seg * Math.PI * 2; emitTri(layer, c, [c[0] + Math.cos(a0) * r, c[1] + Math.sin(a0) * r], [c[0] + Math.cos(a1) * r, c[1] + Math.sin(a1) * r], y, ci); } }
@@ -314,19 +312,19 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
   const dashZ = (sg, pts, dash = 1.6, gap = 1.8) => { let acc = 0, on = true, cur = []; const flush = () => { if (cur.length > 1 && Math.abs(cur[cur.length - 1][0] - cur[0][0]) > 0.8) ribbonZ(sg, cur); cur = []; };
     for (let i = 0; i + 1 < pts.length; i++) { const a = pts[i], b = pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]); let s0 = 0; while (s0 < L) { const lim = on ? dash : gap, take = Math.min(L - s0, lim - acc); if (on) { if (!cur.length) cur.push([a[0] + (b[0] - a[0]) * s0 / L, a[1] + (b[1] - a[1]) * s0 / L]); cur.push([a[0] + (b[0] - a[0]) * (s0 + take) / L, a[1] + (b[1] - a[1]) * (s0 + take) / L]); } s0 += take; acc += take; if (acc >= lim - 1e-9) { if (on) flush(); on = !on; acc = 0; } } }
     flush(); };
-  const zN = -BOX - 2, zS = BOX + 2;   // markings stop 2 m short of the box (the zebra / stop line zone starts there)
+  const zN = -BOX - 2, zS = BOX + 2, zdN = -BOX - 6, zdS = BOX + 6;   // solid lines stop 2 m short of the box; lane DASHES stop 6 m short (a dash never touches the stop line or the zebra)   // markings stop 2 m short of the box (the zebra / stop line zone starts there)
   for (const sg of [-1, 1]) {
     // median edge line (solid): from the nose tip on, following the inner edge
-    runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 0.25, zS - 1, M2Z.z1 + 1.5);
+    runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 0.2, zS - 1, M2Z.z1 + 1.5);
     ribbonZ(sg, line((z) => 1.35, zN - 70, zN));   // north: median edge line at 1.35 (the plain M2 profile)
     // third-lane edge line (solid) 1.0 inside the asphalt edge: north taper and flat part, ends at the exit gore (z 64)
     ribbonZ(sg, line((z) => outerA(z) - 1.0, M2Z.z0, zN)); ribbonZ(sg, line((z) => outerA(z >= M2Z.end3 ? M2Z.end3 : z) - 1.0, zS, M2Z.end3 + 1.2));
     // lane divider 3|2 at 5.3: dashed in the three-lane stretch, SOLID from the exit gore on, easing to the trunk ramp's edge line (6.1)
-    { let zd = M2Z.z0; while (zd < zN && 2.1 * lane3(zd) < 0.7) zd += 1; dashZ(sg, line(() => 5.3, zd, zN)); } dashZ(sg, line(() => 5.3, zS, M2Z.end3 - 2));
+    { let zd = M2Z.z0; while (zd < zN && 2.1 * lane3(zd) < 0.7) zd += 1; dashZ(sg, line(() => 5.3, zd, zdN)); } dashZ(sg, line(() => 5.3, zdS, M2Z.end3 - 2));
     runOn(sg, (z) => 5.3 + 0.8 * f((z - M2Z.end3) / (M2Z.z1 - M2Z.end3)), M2Z.end3 - 2, M2Z.z1 + 1.5);
     // lane divider 2|1 at 3.2: dashed from the box until lane 1 has become too narrow (inner edge line within 0.45 m of it)
     let zEnd = zS; while (zEnd < M2Z.z1 && inner(zEnd) + 0.25 < 3.2 - 0.45) zEnd += 1;
-    dashZ(sg, line(() => 3.2, zS, zEnd)); dashZ(sg, line(() => 3.2, M2Z.z0 + 0, zN));
+    dashZ(sg, line(() => 3.2, zdS, zEnd)); dashZ(sg, line(() => 3.2, M2Z.z0 + 0, zdN));
   }
   // lane-drop arrows for the inner lane of the southbound (west) carriageway, bent towards the exit side
   for (const zA of [zS + 8, zS + 26]) { const lat = (inner(zA) + 3.2) / 2 + 0.1, ang = 12 * Math.PI / 180; arrowH(X(-1, lat), zA, -Math.sin(ang), Math.cos(ang)); }
@@ -482,8 +480,10 @@ for (const j of PLAN.junctions) {
 }
 
 // ---- 4. markings of the straight streets
-function dashed(axis, c, lo, hi, width, dash, gap, y, ci, phase = 0) {   // axis 'x': line along x at z = c
-  for (let s = lo + phase; s < hi; s += dash + gap) { const e = Math.min(s + dash, hi); if (e - s < Math.min(0.6, dash * 0.6)) continue; if (axis === 'x') emitRect('p', 'q', s, c - width / 2, e, c + width / 2, y, ci); else emitRect('p', 'q', c - width / 2, s, c + width / 2, e, y, ci); }
+function dashed(axis, c, lo, hi, width, dash, gap, y, ci, phase = 0) {   // axis 'x': line along x at z = c.  Whole dashes only, the row centred in the span (2026-10-19: clipped 0.6 m stubs at the ends read as litter)
+  const len = hi - lo, n = Math.floor((len + gap) / (dash + gap)); if (n < 1) return;
+  const start = lo + (len - (n * dash + (n - 1) * gap)) / 2 + phase;
+  for (let k = 0; k < n; k++) { const s = start + k * (dash + gap), e = s + dash; if (axis === 'x') emitRect('p', 'q', s, c - width / 2, e, c + width / 2, y, ci); else emitRect('p', 'q', c - width / 2, s, c + width / 2, e, y, ci); }
 }
 function solid(axis, c, lo, hi, width, y, ci) { if (hi - lo < 0.1) return; if (axis === 'x') emitRect('p', 'q', lo, c - width / 2, hi, c + width / 2, y, ci); else emitRect('p', 'q', c - width / 2, lo, c + width / 2, hi, y, ci); }
 for (const e of PLAN.edges) {
@@ -1093,7 +1093,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
       for (let i = 0; i < n - 1;) {
         const dz = dashed[si][i] && dashed[si][i + 1]; let j = i;
         while (j < n - 1 && (dashed[si][j] && dashed[si][j + 1]) === dz) j++;
-        if (!skip[i] && !skip[j]) for (const run of exposedRuns(line.slice(i, j + 1), 0, id, 0.05)) paintAlong(run, 0, 0.16, dz ? 1.2 : 1, dz ? 3.6 : 0, 0.064, CI.white);
+        if (!skip[i] && !skip[j]) for (const run of exposedRuns(line.slice(i, j + 1), 0, id, 0.05)) paintAlong(run, 0, 0.16, dz ? 1.6 : 1, dz ? 1.8 : 0, 0.064, CI.white);
         i = j;
       }
     }
@@ -1176,6 +1176,12 @@ const SZ = PLAN.size;
   }
   for (let x = SZ.x1; x < SZ.x1 + 80; x += 10) for (let z = -330; z < -150; z += 10) emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass);   // the east cloverleaf ramps of I3 run on to M1 beyond the map edge: lawn under them (no road over the void)
   for (let x = SZ.x1; x < SZ.x1 + 40; x += 10) for (let z = 120; z < 164; z += 10) emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass);
+  // fields and forests never run into a junction: a farm strip or a wood cut by the straight edge of the interchange lawn read as a second shade of ground with a rectangular border
+  const ICENV = PLAN.interchanges.map((ic) => { let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (const rp of ic.ramps) for (const q of rp.pts) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); } return [x0 - 40, z0 - 40, x1 + 40, z1 + 40]; });
+  const nearIC = (poly) => { const xs = poly.map((p) => p[0]), zs = poly.map((p) => p[1]), a = Math.min(...xs), b = Math.max(...xs), c = Math.min(...zs), d = Math.max(...zs); return ICENV.some((r) => a < r[2] && b > r[0] && c < r[3] && d > r[1]); };
+  PLAN.rural.fields = PLAN.rural.fields.filter((f) => !nearIC(f.poly)); PLAN.rural.forests = PLAN.rural.forests.filter((f) => !nearIC(f));
+  PLAN.areas = PLAN.areas.filter((a) => a.kind !== 'forest' || !nearIC(a.poly));
+  PLAN.rural.lanes = PLAN.rural.lanes.filter((l) => !ICENV.some((r) => l.some((q) => q[0] > r[0] && q[0] < r[2] && q[1] > r[1] && q[1] < r[3])));   // no farm track ends at a ramp
   const KIND = { forest: 'forest', industry: 'industry', verge: 'verge', park: 'park', parking: 'parking', embankment: 'embank', beach: 'beach', promenade: 'promenade', port: 'port', urban: 'urban' };
   const KORDER = ['urban', 'industry', 'verge', 'park', 'parking', 'embankment', 'port', 'beach', 'promenade', 'forest'];
   for (const a of PLAN.areas) emitPoly('g', a.poly, a.kind === 'parking' ? -0.0615 : -0.075 + KORDER.indexOf(a.kind) * 0.002, CI[KIND[a.kind]]);   // a lot lies well above the park / verge polygons under it (2 mm apart z-fought into stripes)
@@ -1239,7 +1245,9 @@ for (const e of PLAN.edges) if (e.bridge === 'river') { const a = N.get(e.a), b 
 }
 const isWater = (x, z) => inPoly(x, z, seaPoly) || (riverDist(x, z) < PLAN.water.river.w / 2 && !bridgeRects.some((r) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3]));
 const inSplitZone = (x, z, pad) => splitZones.some((poly) => inPoly(x, z, poly) || poly.some((p, i) => segDist(x, z, p, poly[(i + 1) % poly.length]) < pad));
-const blocked = (x, z, pad = 0.6) => !!(inSplitZone(x, z, pad) || rasterAt(x, z) || rasterAt(x + pad, z) || rasterAt(x - pad, z) || rasterAt(x, z + pad) || rasterAt(x, z - pad) || motorHosts.some((h) => { const p = [x, z]; return p[h.axis] >= h.lo && p[h.axis] <= h.hi && Math.abs(p[1 - h.axis] - h.c) < MW + pad; }) || ringAt(x, z) || rangeRamp(x, z) || railBlocked(x, z) || STRUCT.blockers.some((b) => x > b[0] - 1 && x < b[2] + 1 && z > b[1] - 1 && z < b[3] + 1)) || isWater(x, z);
+const YARDS = PLAN.areas.filter((a) => a.kind === 'parking').map((a) => { const xs = a.poly.map((q) => q[0]), zs = a.poly.map((q) => q[1]); return [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)]; }).concat(PLAN.blocks.filter((b) => b.zone === 'industrial' || b.zone === 'logistics').map((b) => b.lot || b.rect));   // paved lots with painted bays: no tree stands on them
+const yardAt = (x, z) => YARDS.some((r) => x > r[0] - 0.8 && x < r[2] + 0.8 && z > r[1] - 0.8 && z < r[3] + 0.8);
+const blocked = (x, z, pad = 0.6) => !!(inSplitZone(x, z, pad) || yardAt(x, z) || rasterAt(x, z) || rasterAt(x + pad, z) || rasterAt(x - pad, z) || rasterAt(x, z + pad) || rasterAt(x, z - pad) || motorHosts.some((h) => { const p = [x, z]; return p[h.axis] >= h.lo && p[h.axis] <= h.hi && Math.abs(p[1 - h.axis] - h.c) < MW + pad; }) || ringAt(x, z) || rangeRamp(x, z) || railBlocked(x, z) || STRUCT.blockers.some((b) => x > b[0] - 1 && x < b[2] + 1 && z > b[1] - 1 && z < b[3] + 1)) || isWater(x, z);
 const rampSegs = rampsOut.flatMap((r) => r.pts.slice(1).map((p, i) => [r.pts[i], p]));
 const rangeRamp = (x, z) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < 2.2);
 const railBlocked = (x, z) => railOut.bed.some((b) => x >= b[0] - 1 && x <= b[2] + 1 && z >= b[1] - 1 && z <= b[3] + 1) || segDist(x, z, PLAN.rail.spur.pts[0], PLAN.rail.spur.pts[PLAN.rail.spur.pts.length - 1]) < 4;
@@ -1337,7 +1345,7 @@ for (const ic of PLAN.interchanges) for (const rp of ic.ramps) {
   const d = 2 * (A[0] * (B[1] - Cc[1]) + B[0] * (Cc[1] - A[1]) + Cc[0] * (A[1] - B[1])); if (Math.abs(d) < 1e-6) continue;
   const ux = ((A[0] ** 2 + A[1] ** 2) * (B[1] - Cc[1]) + (B[0] ** 2 + B[1] ** 2) * (Cc[1] - A[1]) + (Cc[0] ** 2 + Cc[1] ** 2) * (A[1] - B[1])) / d, uz = ((A[0] ** 2 + A[1] ** 2) * (Cc[0] - B[0]) + (B[0] ** 2 + B[1] ** 2) * (A[0] - Cc[0]) + (Cc[0] ** 2 + Cc[1] ** 2) * (B[0] - A[0])) / d;
   const put = (x, z, sc, rn) => cellOf(Math.floor(x / CELL), Math.floor(z / CELL)).f.tree.push(R2(x), R2(z), R2(sc), R2(rn));
-  disc('g', [ux, uz], rp.r - 1.9, -0.04, CI.lawn, 40);
+  disc('g', [ux, uz], rp.r - 1.9, -0.04, CI.grass, 40);   // the same grass as everywhere (2026-10-19: a lighter lawn disc read as a second shade of ground)
   for (const c of cells.values()) { const old = c.f.tree, kept = []; for (let i = 0; i < old.length; i += 4) if (Math.hypot(old[i] - ux, old[i + 1] - uz) > rp.r - 1.0) kept.push(...old.slice(i, i + 4)); c.f.tree = kept; }   // scatter trees inside the loop make way for the lawn   // a mown lawn over the fields / forest tint under the loop
   put(ux, uz, 1.25, 0.3);
   for (let k = 0; k < 7; k++) { const a = (k + 0.3) / 7 * Math.PI * 2; put(ux + Math.cos(a) * rp.r * 0.5, uz + Math.sin(a) * rp.r * 0.5, 0.9 + 0.25 * Math.abs(Math.sin(k * 2.1)), Math.abs(Math.cos(k * 1.7))); }
