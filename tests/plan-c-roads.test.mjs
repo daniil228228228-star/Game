@@ -458,6 +458,29 @@ await run(async () => {
     check(hw.parapet.z >= -246.6 && hw.parapet.z <= -233.4 && hw.parapet.y > 3 && hw.parapetS.z <= -233.4 && hw.parapetS.y > 3, `the player on the M1 deck is held by the parapets (z ${hw.parapet.z} / ${hw.parapetS.z}, y ${hw.parapet.y})`);
     const under = await ev(() => { player.position.set(0, 0, -215); PlanCV161.level = 0; PlanCV161.ensureNear(0, -240); const r = __drive(0, -215, 0, -1, 200); for (let i = 0; i < 40; i++) updatePlayer(1 / 30); return { z: r.z, y: player.position.y, lvl: PlanCV161.level, under: PlanCDataV161.overhead(0, -240, 0) }; });
     check(under.z < -250 && Math.abs(under.y) < 0.1 && under.under != null && under.under >= 4.5 - 0.01, `walk north on the avenue UNDER the M1 deck: stays on the street (z ${under.z}, y ${under.y}), headroom ${under.under}`);
+    // 2026-10-19 (15): the body under a ramp and its grass bank is SOLID. From the nearest walkable ground the player walks (real joystick vector through updatePlayer) straight at the axis of
+    // every ramp where the deck is higher than 1.5 m, from both sides: he must stop short of the wall / bank (before: he walked in, stood inside the fill and the camera sat behind the geometry)
+    const fillWalk = await ev(() => {
+      const D = PlanCDataV161, out = [];
+      for (const [ri, frac] of [[1, 0.5], [8, 0.5], [9, 0.5], [8, 0.3], [9, 0.7], [0, 0.5], [4, 0.5], [2, 0.5]]) {
+        const pts = D.graph.ramps[ri][2], i = Math.round(frac * (pts.length - 1)), a = pts[i - 1], b = pts[i + 1]; let dx = b[0] - a[0], dz = b[1] - a[1]; const l = Math.hypot(dx, dz); dx /= l; dz /= l;
+        if (pts[i][2] < 1.5) continue;
+        for (const sg of [-1, 1]) {
+          const nx = -dz * sg, nz = dx * sg; let dd = 3; for (; dd < 60; dd++) { const x = pts[i][0] + nx * dd, z = pts[i][1] + nz * dd; PlanCV161.ensureNear(x, z); if (D.access(x, z, 0.6) && D.ground(x, z)) break; }
+          player.position.set(pts[i][0] + nx * dd, 0, pts[i][1] + nz * dd); PlanCV161.level = 0; playerVelocity.set(0, 0, 0); for (let k = 0; k < 3; k++) updatePlayer(1 / 30);
+          let closest = 99, maxY = 0;
+          for (let k = 0; k < 400; k++) {
+            const tx = pts[i][0] - player.position.x, tz = pts[i][1] - player.position.z, d = Math.hypot(tx, tz); if (d < 0.3) break;
+            camera.getWorldDirection(camForward); camForward.y = 0; camForward.normalize(); camRight.crossVectors(camForward, worldUp).normalize();
+            const ux = tx / d, uz = tz / d; joyVec.z = ux * camForward.x + uz * camForward.z; joyVec.x = ux * camRight.x + uz * camRight.z;
+            updatePlayer(1 / 30); closest = Math.min(closest, Math.hypot(pts[i][0] - player.position.x, pts[i][1] - player.position.z)); maxY = Math.max(maxY, player.position.y);
+          }
+          joyVec.x = joyVec.z = 0; out.push({ ramp: ri, sg, h: +pts[i][2].toFixed(1), start: dd, closest: +closest.toFixed(2), maxY: +maxY.toFixed(2) });
+        }
+      }
+      return out;
+    });
+    check(fillWalk.length >= 8 && fillWalk.every((w) => w.closest >= 0.9 && w.maxY < 0.8), `solid fill: walking at a ramp axis from the ground stops at the wall / bank and never lifts onto the deck (${J(fillWalk.map((w) => [w.ramp, w.sg, w.h, w.closest, w.maxY]))})`);
     // every footbridge with the real controls (joystick vector through updatePlayer) from 8 approach directions: up, across, down, no stall > 0.5 s
     const fbs = await ev(() => PlanCDataV161.struct.ribbons.filter((r) => /^FB/.test(r.id)).map((r) => ({ id: r.id, p: r.p })));
     const fbRes = [];
