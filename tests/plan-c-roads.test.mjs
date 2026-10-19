@@ -30,7 +30,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
   const rects = [], tris = [];
   for (const [key, c] of Object.entries(D.cells)) {
     const q = c.r && c.r.q || [], t = c.r && c.r.t || [];
-    for (let i = 0; i < q.length; i += 6) if (q[i + 5] === CI.asph || q[i + 5] === CI.median || q[i + 5] === CI.medLawn || q[i + 5] === CI.walk) rects.push({ x0: q[i], z0: q[i + 1], x1: q[i + 2], z1: q[i + 3], ci: q[i + 5], key });
+    for (let i = 0; i < q.length; i += 6) if (q[i + 5] === CI.asph || q[i + 5] === CI.median || q[i + 5] === CI.medLawn || q[i + 5] === CI.lawnG || q[i + 5] === CI.walk) rects.push({ x0: q[i], z0: q[i + 1], x1: q[i + 2], z1: q[i + 3], ci: q[i + 5], key });
     for (let i = 0; i < t.length; i += 8) if (t[i + 7] === CI.asph || t[i + 7] === CI.ramp) tris.push({ p: t.slice(i, i + 6), key });
     // Check the ACTUAL drawn decks too, including their near-zero toes. A
     // height > 0.2 exemption hid gaps between the flat and elevated meshes.

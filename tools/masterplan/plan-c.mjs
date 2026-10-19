@@ -23,7 +23,7 @@ export const CLS = {
   service: { w: 4.0, lanes: 1, median: 0, speed: 20, sidewalk: 0, lane: 2.0 },
   ramp: { w: 2.8, lanes: 1, median: 0, speed: 50, sidewalk: 0, lane: 2.8 },
 };
-const MW = CLS.motorway.w / 2, ATT = MW - 1.0, TRK = MW * 0.61;   // ramps leave / join a motorway with their centre line inside the outer lane
+const MW = CLS.motorway.w / 2, ATT = MW - 1.0, TRK = MW - CLS.ramp.w / 2, LA3 = (MW - 1.0 + MW + 1.1) / 2;   // TRK: the trunk ramps of the trumpet are the carriageway's outer lane (centre 4.9, outer edge = the carriageway edge 6.3); LA3: centre of M2's third lane near I2 (6.35)   // ramps leave / join a motorway with their centre line inside the outer lane
 
 // ---- small geometry kit (screen frame: x right, z down; a right turn = increasing angle)
 const add = (a, b) => [a[0] + b[0], a[1] + b[1]], sub = (a, b) => [a[0] - b[0], a[1] - b[1]], mul = (a, k) => [a[0] * k, a[1] * k];
@@ -173,20 +173,20 @@ export function buildPlan() {
     }
     interchanges.push({ id, kind: 'cloverleaf', name, at, ramps, deck: [frame(at, 0)([0, -(MW + 4)]), frame(at, 0)([0, MW + 4])], deckRoad: 'motorway', note: 'М2 проходит над М1; четыре петли (левые повороты) и четыре внешних съезда (правые)' });
   }
-  const TR_K = 5, TR_R2 = 16, TR_L = 14, TR_Y = 1.0;   // I4 semi-direct ramp: entry arc 16 (was 17), lead-in 14 -> the taper starts at x = 174.5, 14.5 m (36 m real) behind the signal at x = 160 (was 9.5); tightest radius stays 14.2
+  const TR_K = 5, TR_R2 = 16, TR_L = 13, TR_Y = 1.0;   // I4 semi-direct ramp: entry arc 16 (was 17), lead-in 14 -> the taper starts at x = 174.5, 14.5 m (36 m real) behind the signal at x = 160 (was 9.5); tightest radius stays 14.2
   function trumpet(id, at, name) {
     // M2 ends from the north; the through road H (z = at.z) runs east-west. Bell (loop + rim) on the far (south) side, two trunk ramps cross H on a bridge.
-    const F = frame(at, 0), hw = CLS.arterial.w / 2, r = 17, C = [-TRK - r, hw + CLS.ramp.w / 2 + 0.4 + r], Rr = r + 2 * TRK, top = -72, ramps = [];
+    const F = frame(at, 0), hw = CLS.arterial.w / 2, r = 16, C = [-TRK - r, hw + CLS.ramp.w / 2 + 0.4 + r], Rr = r + 2 * TRK, top = -72, ramps = [];   // r 16 (was 17): keeps the semi-direct ramp's taper near x 175 although the trunk ramps moved out to 4.9
     const b = join(seg([-TRK, top], [-TRK, C[1]], 10), arc(C, r, 0, 270), seg([C[0], hw + CLS.ramp.w / 2 + 0.4], [6, hw + CLS.ramp.w / 2 + 0.4], 6), cubic([6, hw + CLS.ramp.w / 2 + 0.4], [1, 0], 7, [22, hw - 1.0], [1, 0], 7, 10));
     const R2 = TR_R2, yb = hw + CLS.ramp.w / 2 + 0.4, X2 = C[0] - Rr - R2;   // entry arc radius R2 (was 17): the ramp leaves the road later, the lead-in starts TR_L m before the arc
     const d = join(cubic([X2 - TR_L, hw - TR_Y], [1, 0], TR_K, [X2, yb], [1, 0], TR_K, 12), arc([X2, yb + R2], R2, -90, 0), ...(R2 < 17 ? [seg([C[0] - Rr, yb + R2], [C[0] - Rr, C[1]], 3)] : []), arc(C, Rr, 180, 0), seg([TRK, C[1]], [TRK, top], 10));
     const LM = MW + CLS.ramp.w / 2, LH = hw + CLS.ramp.w / 2;   // added lanes beside M2 and beside the through road
-    const a = join(cubic([-ATT, -96], [0, 1], 6, [-LM, -80], [0, 1], 6, 10), seg([-LM, -80], [-LM, -66], 3), cubic([-LM, -66], [0, 1], 30, [-34, -LH], [-1, 0], 24), seg([-34, -LH], [-50, -LH], 3), cubic([-50, -LH], [-1, 0], 6, [-64, -(hw - 1.0)], [-1, 0], 6, 10));
-    const c = join(cubic([64, -(hw - 1.0)], [-1, 0], 6, [50, -LH], [-1, 0], 6, 10), seg([50, -LH], [34, -LH], 3), cubic([34, -LH], [-1, 0], 24, [LM, -66], [0, -1], 30), seg([LM, -66], [LM, -80], 3), cubic([LM, -80], [0, -1], 6, [ATT, -96], [0, -1], 6, 10));
-    ramps.push({ kind: 'loop', pts: b.map(F), r, attach: ['motorway', 'cross'], bridges: [[F([-TRK, -hw - 4]), F([-TRK, hw + 4])]], note: 'М2 на юг -> Портовое ш. на восток (петля 270°)' });
-    ramps.push({ kind: 'semi-direct', pts: d.map(F), attach: ['cross', 'motorway'], bridges: [[F([TRK, hw + 4]), F([TRK, -hw - 4])]], note: 'Южный пр. на восток -> М2 на север (раструб вокруг петли)' });
-    ramps.push({ kind: 'direct', pts: a.map(F), attach: ['motorway', 'cross'], note: 'М2 на юг -> Южный пр. на запад' });
-    ramps.push({ kind: 'direct', pts: c.map(F), attach: ['cross', 'motorway'], note: 'Портовое ш. на запад -> М2 на север' });
+    const a = join(cubic([-LA3, -96], [0, 1], 8, [-LM, -80], [0, 1], 8, 10), seg([-LM, -80], [-LM, -66], 3), cubic([-LM, -66], [0, 1], 30, [-34, -LH], [-1, 0], 24), seg([-34, -LH], [-50, -LH], 3), cubic([-50, -LH], [-1, 0], 6, [-64, -(hw - 1.0)], [-1, 0], 6, 10));
+    const c = join(cubic([64, -(hw - 1.0)], [-1, 0], 6, [50, -LH], [-1, 0], 6, 10), seg([50, -LH], [34, -LH], 3), cubic([34, -LH], [-1, 0], 24, [LM, -66], [0, -1], 30), seg([LM, -66], [LM, -80], 3), cubic([LM, -80], [0, -1], 8, [LA3, -96], [0, -1], 8, 10));
+    ramps.push({ kind: 'loop', pts: b.map(F), r, attach: ['motorway', 'cross'], noWedge: [0], bridges: [[F([-TRK, -hw - 4]), F([-TRK, hw + 4])]], note: 'М2 на юг -> Портовое ш. на восток (петля 270°)' });
+    ramps.push({ kind: 'semi-direct', pts: d.map(F), attach: ['cross', 'motorway'], noWedge: [1], bridges: [[F([TRK, hw + 4]), F([TRK, -hw - 4])]], note: 'Южный пр. на восток -> М2 на север (раструб вокруг петли)' });
+    ramps.push({ kind: 'direct', pts: a.map(F), attach: ['motorway', 'cross'], flare: [0], note: 'М2 на юг -> Южный пр. на запад' });
+    ramps.push({ kind: 'direct', pts: c.map(F), attach: ['cross', 'motorway'], flare: [1], note: 'Портовое ш. на запад -> М2 на север' });
     interchanges.push({ id, kind: 'trumpet', name, at, ramps, trunkEnd: F([0, top]), note: 'три ветви: М2 заканчивается; раструб на стороне порта' });
   }
   cloverAve('I1', [0, M1_Z], 'Клеверный лист: Главный пр. × М1');
@@ -324,7 +324,7 @@ export function buildPlan() {
     { kind: 'embankment', poly: [[-236, -168], [-188, -168], [-188, 206], [-236, 206]] },
     { kind: 'beach', poly: [[-300, 164], [-236, 164], [-226, 192], [-226, 212], [-300, 212]] },
     { kind: 'promenade', poly: [[-188, 191], [44, 191], [44, 212], [-188, 212]] },
-    { kind: 'port', poly: [[40, 164], [300, 164], [300, 256], [40, 256]] },
+    { kind: 'port', poly: [[40, 164], [300, 164], [300, 256], [40, 256]] }, { kind: 'port', poly: [[300, 164], [340, 164], [340, 222], [300, 222]] },   // the Port road runs on 30 m past the map edge (lane taper): ground under it
     { kind: 'urban', poly: [[-284, -164], [204, -164], [204, 191], [-284, 191]] },
   ];
 

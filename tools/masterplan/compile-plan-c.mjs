@@ -27,7 +27,7 @@ const mulberry = (a) => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imu
 
 // ---- palette (sRGB hex; the layer converts to linear) and heights (game metres above the old ground plane)
 const COLORS = {
-  grass: 0x5f8f48, grassB: 0x6a9a50, lawn: 0x76a85c, park: 0x5d9a4a, forest: 0x3f6d37, field0: 0x9a9a52, field1: 0x6f9b45, field2: 0xb0a45a, field3: 0x7e9a4a, field4: 0x8f7a4c,
+  grass: 0x5f8f48, grassB: 0x6a9a50, lawn: 0x76a85c, park: 0x5f8f48, lawnG: 0x568041, forest: 0x3f6d37, field0: 0x9a9a52, field1: 0x6f9b45, field2: 0xb0a45a, field3: 0x7e9a4a, field4: 0x8f7a4c,
   urban: 0x86ad68, industry: 0x8d8f86, verge: 0x5f8f48, parking: 0x43484d, embank: 0x8b9566, beach: 0xdac99b, promenade: 0xcfc6b2, port: 0x9fa09a,
   sea: 0x3f7fae, seaLight: 0x7fb7d2, river: 0x4a88b4, bank: 0xb9ae8c, dirt: 0x8d7a58,
   asph: 0x353a3f, ramp: 0x353a3f, walk: 0xc4bfae, kerb: 0xaaa595, median: 0xb8b4a4, medLawn: 0x6f9d57, medM: 0xa9a99f, plaza: 0xd4cab4, islandL: 0x6ea154, islandC: 0xd9d1bb,
@@ -220,7 +220,7 @@ const M1_UP = deckIntervals(hM1, -300, 370), M2_UP = deckIntervals(hM2, -370, 88
 function cutsOf(e) {
   if (e.split) return [[-1e4, 1e4]];   // I2: the straight street is replaced by the split carriageways round the islands
   if (e.cls !== 'motorway') return [];
-  return e.ref === 'M1' ? M1_UP : e.ref === 'M2' ? M2_UP : [];
+  return e.ref === 'M1' ? M1_UP : e.ref === 'M2' ? M2_UP.concat([[M2Z.z0, M2Z.z1 + 1]]) : [];   // M2: the zone round I2 .. I4 is drawn by drawM2Zone()
 }
 // old flat-crossing intervals, still used to keep lamps / trees away from the crossings
 function furnCuts(e) {
@@ -242,16 +242,15 @@ const shapes = [];   // {x0,z0,x1,z1,type}
 const PRIO = { walk: 1, asph: 2, med: 3 };
 const addShape = (x0, z0, x1, z1, type) => { if (x1 - x0 > 1e-4 && z1 - z0 > 1e-4) shapes.push({ x0: R3(x0), z0: R3(z0), x1: R3(x1), z1: R3(z1), type }); };
 const roundAt = (nodeId) => { const j = J.get(nodeId); return j && j.type === 'roundabout' ? j : null; };
-const pendingTapers = [];   // asphalt triangles of the M2 lane tapers near I2, emitted after the raster
-const I2W = { half: CLS.motorway3.w / 2, flat: 36, taper: 31 };   // M2 near I2: half width 8.4, flat for |z| <= 36, tapers back to 6.3 at |z| = 67
-const MEND = { z0: 67, z1: 88 };   // the end of M2 at the trumpet I4: two 2-lane carriageways (+ median) taper into the two one-lane trunk ramps over 21 m (1:20 / 1:16)
-const mTrim = (id) => { const n = N.get(id); return n.x === M2_X && n.z === 0 ? 18.5 : n.x === M2_X && n.z === MEND.z1 ? MEND.z1 - MEND.z0 : 0; };   // (legs is a count in the plan data: the former `legs.length` trim was always 0)   // the motorway median ends 18.5 m before the I2 crossing (just past the corner fillets; the zebra at 20.3 m stands on it) (zebra, stop line)
+const splitZones = [];   // outlines in which nothing random may stand (split-street branches, M2 zone)
+const M2Z = { z0: -98, z1: 88, box: 18.5, flat3: -28, end3: 64, in0: 18.5 };   // M2 zone drawn by drawM2Zone(): third lane flat from z -28 to 64 (taper to z -98), inner edge closes from z 18.5 to 96
+const mTrim = () => 0;
 const edgeSpan = (e) => {   // along-axis span of the carriageway/sidewalk, trimmed to the chord of a roundabout
   const a = N.get(e.a), b = N.get(e.b), ax = e.dir === 'x' ? 0 : 1, lo = Math.min(a.x * (1 - ax) + a.z * ax, b.x * (1 - ax) + b.z * ax), hi = Math.max(a.x * (1 - ax) + a.z * ax, b.x * (1 - ax) + b.z * ax);
   const lowNode = (a.x * (1 - ax) + a.z * ax) <= (b.x * (1 - ax) + b.z * ax) ? e.a : e.b, highNode = lowNode === e.a ? e.b : e.a;
   const ch = (id) => { const j = roundAt(id); return j ? Math.sqrt(Math.max(0, j.R * j.R - hw(e.cls) ** 2)) - 0.12 : 0; };
   const mo = e.cls === 'motorway';
-  const mt = (id) => { const n = N.get(id); return mo && n.x === M2_X && n.z === MEND.z1 ? MEND.z1 - MEND.z0 : 0; };   // M2's trumpet end is drawn as a taper (the I2 median trim only concerns markings)
+  const mt = () => 0;
   const tl = TRANS.get(lowNode + ':' + e.id), th = TRANS.get(highNode + ':' + e.id);   // the tapered end is drawn separately
   return { lo: lo + ch(lowNode) + mt(lowNode) + (tl ? tl.L : 0), hi: hi - ch(highNode) - mt(highNode) - (th ? th.L : 0), lowNode, highNode, ax };
 };
@@ -264,11 +263,9 @@ for (const e of PLAN.edges) {
   if (cl.median > 0) {
     const t0 = trimAt(s.lowNode, e), t1 = trimAt(s.highNode, e), mh = cl.median / 2;
     const lo0 = Math.min(e.dir === 'x' ? a.x : a.z, e.dir === 'x' ? N.get(e.b).x : N.get(e.b).z), hi0 = Math.max(e.dir === 'x' ? a.x : a.z, e.dir === 'x' ? N.get(e.b).x : N.get(e.b).z);
-    const mlo = e.cls === 'motorway' ? lo0 + mTrim(s.lowNode) : lo0 + t0, mhi = e.cls === 'motorway' ? hi0 - mTrim(s.highNode) : hi0 - t1;
+    const mlo = e.cls === 'motorway' ? lo0 : lo0 + t0, mhi = e.cls === 'motorway' ? hi0 : hi0 - t1;
     if (mhi - mlo > 1) for (const [lo, hi] of subtractIntervals(mlo, mhi, cuts)) put(lo, hi, -mh, mh, e.cls === 'motorway' ? 'medM' : 'med');
   }
-  if (e.ref === 'M2' && !I2W.tapers) { I2W.tapers = true; for (const sg of [-1, 1]) for (const zs of [-1, 1]) { const x0 = c + sg * half, x1 = c + sg * I2W.half, za = zs * I2W.flat, zb = zs * (I2W.flat + I2W.taper); pendingTapers.push([[x0, za], [x1, za], [x0, zb]]); } }
-  if (e.ref === 'M2') for (const sg of [-1, 1]) addShape(sg < 0 ? c - I2W.half : c + half, -I2W.flat, sg < 0 ? c - half : c + I2W.half, I2W.flat, 'asph');   // third lane of M2 round I2 (flat part)
 }
 
 // the tapers themselves: asphalt trapezoid, sidewalk trapezoids, kerb walls, a median nose and lane-drop arrows
@@ -277,14 +274,62 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
   emitTri('p', P(-0.9, -0.09), P(-0.9, 0.09), P(0.4, -0.09), H.paint, CI.white); emitTri('p', P(-0.9, 0.09), P(0.4, 0.09), P(0.4, -0.09), H.paint, CI.white);
   emitTri('p', P(0.2, -0.5), P(0.2, 0.5), P(1.1, 0), H.paint, CI.white);
 }
-{ // M2 end at the trumpet: carriageway trapezoids (outer edge 6.3 -> 5.24, inner edge 1.1 -> 2.44), the median widens 2.2 -> 4.88
-  const c = M2_X, z0 = MEND.z0, z1 = MEND.z1, oA = MW, oB = MW * 0.61 + CLS.ramp.w / 2, iA = CLS.motorway.median / 2, iB = MW * 0.61 - CLS.ramp.w / 2;   // TRK = 0.61 MW as in plan-c.mjs
-  for (const sg of [-1, 1]) {
-    const P = (lat, z) => [c + sg * lat, z];
-    emitTri('r', P(oA, z0), P(iA, z0), P(iB, z1), H.asph, CI.asph); emitTri('r', P(oA, z0), P(iB, z1), P(oB, z1), H.asph, CI.asph);
-    const a = P(iA, z0), b = P(iB, z1); emitWall(a[0], a[1], b[0], b[1], H.asph, H.med, CI.kerb);
+
+// ---- M2 between the I2 crossing and the trumpet I4, drawn as ONE smooth road (2026-10-19): every edge is a function of z (sampled each metre, a constant-slope taper with eased ends),
+//      so the asphalt is one contour, the median closes in pointed noses, and every line starts / ends where its lane starts / ends.
+//      third lane (aux): flat from z -28 to 64 on both carriageways (the exit lane of the trumpet ramp a / the entrance lane of ramp c), tapers away northwards over 70 m;
+//      the inner lane closes southwards from z 18.5 to 96 (inner edge 1.1 -> 3.5, 1:34 mid slope), where the carriageways become the two trunk ramps (centre +-4.9).
+{
+  const c = M2_X, TRK2 = 4.9, K = 0.25;
+  const f = (t) => t <= 0 ? 0 : t >= 1 ? 1 : t < K ? t * t / (2 * K * (1 - K)) : t > 1 - K ? 1 - (1 - t) * (1 - t) / (2 * K * (1 - K)) : (t - K / 2) / (1 - K);   // constant slope with parabolic ends
+  const L3N = 70, IN = 3.5 - 1.1, BOX = M2Z.box;
+  const lane3 = (z) => z >= M2Z.flat3 ? (z <= M2Z.end3 ? 1 : 0) : 1 - f((M2Z.flat3 - z) / L3N);
+  const outerA = (z) => 6.3 + 2.1 * lane3(z);                      // asphalt edge (shoulder included)
+  const inner = (z) => {                                           // median half width
+    const a = Math.abs(z);
+    if (a <= BOX) return 0;
+    const nose = a < BOX + 8 ? 1.1 * (3 * ((a - BOX) / 8) ** 2 - 2 * ((a - BOX) / 8) ** 3) : 1.1;
+    return z > BOX + 8 ? 1.1 + IN * f((z - M2Z.in0 - 8) / (M2Z.z1 - M2Z.in0 - 8)) : nose;
+  };
+  const zs = []; for (let z = M2Z.z0; z < M2Z.z1 + 0.01; z += 1) zs.push(z);
+  const X = (sg, lat) => c + sg * lat;
+  for (let i = 0; i + 1 < zs.length; i++) {
+    const za = zs[i], zb = zs[i + 1];
+    if (za >= -BOX && zb <= BOX) {   // the junction box: full width, no median (0.05 m overlap with the lanes at both ends: no hairline crack on the shared edge)
+      const ya = za <= -BOX + 1e-6 ? za - 0.05 : za, yb = zb >= BOX - 1e-6 ? zb + 0.05 : zb;
+      emitTri('r', [X(-1, outerA(za)), ya], [X(1, outerA(za)), ya], [X(-1, outerA(zb)), yb], H.asph, CI.asph); emitTri('r', [X(1, outerA(za)), ya], [X(1, outerA(zb)), yb], [X(-1, outerA(zb)), yb], H.asph, CI.asph); continue;
+    }
+    for (const sg of [-1, 1]) {
+      const a0 = [X(sg, outerA(za)), za], a1 = [X(sg, outerA(zb)), zb], b0 = [X(sg, inner(za)), za], b1 = [X(sg, inner(zb)), zb];
+      emitTri('r', a0, b0, a1, H.asph, CI.asph); emitTri('r', b0, b1, a1, H.asph, CI.asph);
+      if (inner(za) > 0.02 || inner(zb) > 0.02) emitWall(b0[0], b0[1], b1[0], b1[1], H.asph, H.med, CI.kerb);
+    }
+    if (inner(za) > 0.02 || inner(zb) > 0.02) { const m0 = inner(za), m1 = inner(zb); emitTri('r', [X(-1, m0), za], [X(1, m0), za], [X(-1, m1), zb], H.med, CI.lawnG); emitTri('r', [X(1, m0), za], [X(1, m1), zb], [X(-1, m1), zb], H.med, CI.lawnG); }
   }
-  emitTri('r', [c - iA, z0], [c + iA, z0], [c + iB, z1], H.med, CI.medLawn); emitTri('r', [c - iA, z0], [c + iB, z1], [c - iB, z1], H.med, CI.medLawn);
+  splitZones.push([[c - 9, M2Z.z0], [c + 9, M2Z.z0], [c + 9, M2Z.z1], [c - 9, M2Z.z1]]);   // nothing random may stand on it
+  // paint: polylines along the profile, continuous or dashed, per carriageway
+  const line = (fn, z0, z1, step = 1) => { const o = []; for (let z = z0; z <= z1 + 1e-6; z += step) o.push([z, fn(z)]); return o; };
+  const ribbonZ = (sg, pts, dh = 0) => { if (pts.length > 1) ribbon('p', pts.map(([z, lat]) => [X(sg, lat), z]), 0.18, H.paint + dh, CI.white); };
+  const runOn = (sg, fn, z0, z1) => { ribbonZ(sg, line(fn, z0, M2Z.z1 - 0.5)); ribbonZ(sg, line(fn, M2Z.z1 - 1.5, z1), 0.07); };   // the last metres lie above the start of the trunk ramp's deck
+  const dashZ = (sg, pts, dash = 1.6, gap = 1.8) => { let acc = 0, on = true, cur = []; const flush = () => { if (cur.length > 1 && Math.abs(cur[cur.length - 1][0] - cur[0][0]) > 0.8) ribbonZ(sg, cur); cur = []; };
+    for (let i = 0; i + 1 < pts.length; i++) { const a = pts[i], b = pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]); let s0 = 0; while (s0 < L) { const lim = on ? dash : gap, take = Math.min(L - s0, lim - acc); if (on) { if (!cur.length) cur.push([a[0] + (b[0] - a[0]) * s0 / L, a[1] + (b[1] - a[1]) * s0 / L]); cur.push([a[0] + (b[0] - a[0]) * (s0 + take) / L, a[1] + (b[1] - a[1]) * (s0 + take) / L]); } s0 += take; acc += take; if (acc >= lim - 1e-9) { if (on) flush(); on = !on; acc = 0; } } }
+    flush(); };
+  const zN = -BOX - 2, zS = BOX + 2;   // markings stop 2 m short of the box (the zebra / stop line zone starts there)
+  for (const sg of [-1, 1]) {
+    // median edge line (solid): from the nose tip on, following the inner edge
+    runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 0.25, zS - 1, M2Z.z1 + 1.5);
+    ribbonZ(sg, line((z) => 1.35, zN - 70, zN));   // north: median edge line at 1.35 (the plain M2 profile)
+    // third-lane edge line (solid) 1.0 inside the asphalt edge: north taper and flat part, ends at the exit gore (z 64)
+    ribbonZ(sg, line((z) => outerA(z) - 1.0, M2Z.z0, zN)); ribbonZ(sg, line((z) => outerA(z >= M2Z.end3 ? M2Z.end3 : z) - 1.0, zS, M2Z.end3 + 1.2));
+    // lane divider 3|2 at 5.3: dashed in the three-lane stretch, SOLID from the exit gore on, easing to the trunk ramp's edge line (6.1)
+    { let zd = M2Z.z0; while (zd < zN && 2.1 * lane3(zd) < 0.7) zd += 1; dashZ(sg, line(() => 5.3, zd, zN)); } dashZ(sg, line(() => 5.3, zS, M2Z.end3 - 2));
+    runOn(sg, (z) => 5.3 + 0.8 * f((z - M2Z.end3) / (M2Z.z1 - M2Z.end3)), M2Z.end3 - 2, M2Z.z1 + 1.5);
+    // lane divider 2|1 at 3.2: dashed from the box until lane 1 has become too narrow (inner edge line within 0.45 m of it)
+    let zEnd = zS; while (zEnd < M2Z.z1 && inner(zEnd) + 0.25 < 3.2 - 0.45) zEnd += 1;
+    dashZ(sg, line(() => 3.2, zS, zEnd)); dashZ(sg, line(() => 3.2, M2Z.z0 + 0, zN));
+  }
+  // lane-drop arrows for the inner lane of the southbound (west) carriageway, bent towards the exit side
+  for (const zA of [zS + 8, zS + 26]) { const lat = (inner(zA) + 3.2) / 2 + 0.1, ang = 12 * Math.PI / 180; arrowH(X(-1, lat), zA, -Math.sin(ang), Math.cos(ang)); }
 }
 for (const { L, wide, narrow, node, sgn } of TRANS.values()) {
   const hn = hw(narrow.cls), hd = hw(wide.cls), sn = CLS[narrow.cls].sidewalk, sd = CLS[wide.cls].sidewalk, ax = wide.dir, c = ax === 'z' ? node.x : node.z, mh = CLS[wide.cls].median / 2;
@@ -308,7 +353,7 @@ for (const { L, wide, narrow, node, sgn } of TRANS.values()) {
 }
 
 // ---- 2. raster decomposition per cell -> disjoint rectangles + kerb walls
-const TYPES = { carve: { h: 0.05, ci: -1, prio: 1.5 }, asph: { h: H.asph, ci: CI.asph, prio: 2 }, walk: { h: H.walk, ci: CI.walk, prio: 1 }, med: { h: H.med, ci: CI.median, prio: 3 }, medM: { h: H.med, ci: CI.medLawn, prio: 3 } };
+const TYPES = { carve: { h: 0.05, ci: -1, prio: 1.5 }, asph: { h: H.asph, ci: CI.asph, prio: 2 }, walk: { h: H.walk, ci: CI.walk, prio: 1 }, med: { h: H.med, ci: CI.median, prio: 3 }, medM: { h: H.med, ci: CI.lawnG, prio: 3 } };
 const rasterOut = new Map();   // cell key -> list of {x0,z0,x1,z1,type} (the disjoint result, used by furniture/tree placement and the tests)
 function rasterCell(cx, cz) {
   const X0 = cx * CELL, Z0 = cz * CELL, X1 = X0 + CELL, Z1 = Z0 + CELL;
@@ -447,7 +492,7 @@ for (const e of PLAN.edges) {
   const lowNode = (ax === 'x' ? a.x <= b.x : a.z <= b.z) ? e.a : e.b, highNode = lowNode === e.a ? e.b : e.a;
   const c = ax === 'x' ? a.z : a.x;
   const mo = e.cls === 'motorway';
-  const t0 = mo ? Math.max(1, mTrim(lowNode)) : trimAt(lowNode, e), t1 = mo ? Math.max(1, mTrim(highNode)) : trimAt(highNode, e);
+  const t0 = mo ? 1 : trimAt(lowNode, e), t1 = mo ? 1 : trimAt(highNode, e);
   const lo = lo0 + t0, hi = hi0 - t1;
   if (hi - lo < 1) continue;
   const parts = subtractIntervals(lo, hi, cuts);
@@ -456,19 +501,7 @@ for (const e of PLAN.edges) {
       const mh = CLS.motorway.median / 2, mdv = mh + CLS.motorway.lane, edge = MW - CLS.motorway.shoulder;
       for (const o of [-(mh + 0.3), mh + 0.3]) solid(ax, c + o, pl, ph, 0.18, H.paint, CI.white);
       for (const o of [-mdv, mdv]) dashed(ax, c + o, pl, ph, 0.18, 1.6, 1.8, H.paint, CI.white);
-      if (e.ref === 'M2') {
-        // I2: outside |z| 67 the usual solid edge line at +-5.3; between 36 and 67 the third lane fades in (dashed divider at 5.3, a slanting edge line); |z| <= 36: three lanes, edge line at 7.4
-        const zA = I2W.flat, zB = I2W.flat + I2W.taper, cut = (a, b, lo2, hi2) => [Math.max(a, lo2), Math.min(b, hi2)];
-        for (const [a0, b0, kind] of [[-1e4, -zB, 'out'], [-zB, -zA, 'taper'], [-zA, zA, 'flat'], [zA, zB, 'taper'], [zB, 1e4, 'out']]) {
-          const [a, b] = cut(pl, ph, a0, b0); if (b - a < 0.2) continue;
-          for (const o of [-edge, edge]) {
-            if (kind === 'out') solid(ax, c + o, a, b, 0.18, H.paint, CI.white);
-            else dashed(ax, c + o, a, b, 0.18, 1.6, 1.8, H.paint, CI.white);
-          }
-          if (kind === 'flat') for (const o of [-(I2W.half - 1.0), I2W.half - 1.0]) solid(ax, c + o, a, b, 0.18, H.paint, CI.white);
-        }
-        for (const sg of [-1, 1]) for (const zs of [-1, 1]) { const pa = [c + sg * (I2W.half - 1.0), zs * zA], pb = [c + sg * edge, zs * zB]; if (Math.min(zs * zA, zs * zB) >= pl - 1e-6 && Math.max(zs * zA, zs * zB) <= ph + 1e-6) ribbon('p', [pa, pb], 0.18, H.paint, CI.white); }
-      } else for (const o of [-edge, edge]) solid(ax, c + o, pl, ph, 0.18, H.paint, CI.white);
+      for (const o of [-edge, edge]) solid(ax, c + o, pl, ph, 0.18, H.paint, CI.white);
     } else if (e.cls === 'arterial') {
       for (const o of [-(CLS.arterial.median / 2 + CLS.arterial.lane), CLS.arterial.median / 2 + CLS.arterial.lane]) dashed(ax, c + o, pl, ph, 0.18, 1.0, 1.4, H.paint, CI.white);
     } else if (e.cls === 'collector') dashed(ax, c, pl, ph, 0.18, 1.0, 1.2, H.paint, CI.white);
@@ -550,7 +583,7 @@ for (const j of PLAN.junctions) {
       if (a.cls === 'arterial' || a.cls.startsWith('motorway')) for (let k = 0; k < (a.cls === 'motorway3' ? 3 : 2); k++) arrow(c, a.dir, along + 6.5, CLS[a.cls].median / 2 + CLS[a.cls].lane * (k + 0.5));
       const r = [a.dir[1], -a.dir[0]];
       furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) + r[0] * (w + 0.55), c[1] + a.dir[1] * (along + 1.2) + r[1] * (w + 0.55), yawOf(a.dir)]);
-      if (a.cls.startsWith('motorway')) furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) - r[0] * (CLS[a.cls].median / 2 - 0.3), c[1] + a.dir[1] * (along + 1.2) - r[1] * (CLS[a.cls].median / 2 - 0.3), yawOf(a.dir)]);   // second head on the median: two per approach
+      if (a.cls.startsWith('motorway')) { const al = along + 1.2 + (a.cls === 'motorway3' ? 3.2 : 0); furniture.sig.push([c[0] + a.dir[0] * al - r[0] * (CLS[a.cls].median / 2 - 0.3), c[1] + a.dir[1] * al - r[1] * (CLS[a.cls].median / 2 - 0.3), yawOf(a.dir)]); }   // M2: the median is still a narrow nose 3 m behind the stop line - the head stands where it is wide enough   // second head on the median: two per approach
     }
   } else if (j.type === 'roundabout') {
     for (const a of j.arms) {
@@ -563,8 +596,7 @@ for (const j of PLAN.junctions) {
 // ---- 5b. I2: the street splits into two one-way carriageways round a green island on each side of the main road (the Svetlanovskaya Square scheme, simplified).
 // West island: oval (round tip away from the crossing), east island: rounded rectangle; carriageway band 4.8 m = 2 lanes of 2.4, island half width 6, sidewalks outside,
 // the band ends square at the M2 edge with 7 m kerb returns (right-turn corners), zebra + signal heads on every branch, stop line + arrows + lane dashes on the inbound one.
-const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [], splitZones = [];   // splitZones: outline of band + sidewalk of each island (nothing random may stand there)
-for (const t of pendingTapers) { emitTri('r', t[0], t[1], t[2], H.asph, CI.asph); splitZones.push(t); }   // M2 lane tapers: asphalt triangles, nothing may stand on them
+const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // splitZones: outline of band + sidewalk of each island (nothing random may stand there)
 {
   const xm = M2_X, mw = CLS.motorway3.w / 2;   // the junction is 3+3 lanes wide
   const rr = (xa, xb, hz, rcs, d, n = 8) => {   // rounded-rectangle outline, CCW from the right-bottom side; corner order TR, TL, BL, BR; offset d
@@ -831,7 +863,7 @@ for (const ic of PLAN.interchanges) {
     constrainRampProfile(p3, S, pts.map((_, i) => i === 0 || i === pts.length - 1 ||
       ends.some((e, k) => (e.host || e.parent) && (k ? L - S[i] : S[i]) <= attached[k] + 1e-6) ||
       (sBr != null && Math.abs(S[i] - sBr) < 4)), ic.id + '.' + ri);
-    const path = { id: ic.id + '.' + ri, ic: ic.id, kind: r.kind, p3, bridge: sBr, S, attach: r.attach, mouth: r.mouth, holdLow: r.holdLow };
+    const path = { id: ic.id + '.' + ri, ic: ic.id, kind: r.kind, p3, bridge: sBr, S, attach: r.attach, mouth: r.mouth, holdLow: r.holdLow, flare: r.flare, noWedge: r.noWedge };
     done.push(path); rampPts.push(path);
     rampsOut.push({ ic: ic.id, kind: r.kind, pts: p3.map((p) => [R2(p[0]), R2(p[1]), R3(p[2])]) });
   }
@@ -844,9 +876,22 @@ for (const ic of PLAN.interchanges) {
 const roadIndex = new Map(), INDEX_CELL = 16;
 // Per-vertex edge offsets of every ramp: the merge wedge onto a parallel host (outer edge converges on the host kerb), and the widened mouth of a diamond terminal (2.8 -> 6 m over 22 m)
 const rampOffs = new Map();
-for (const { id, p3, attach, mouth, S } of rampPts) {
+for (const { id, p3, attach, mouth, S, flare, noWedge } of rampPts) {
   const offL = p3.map(() => -CLS.ramp.w / 2), offR = p3.map(() => CLS.ramp.w / 2), dashed = [p3.map(() => false), p3.map(() => false)];
+  const adjL = p3.map(() => 0), adjR = p3.map(() => 0), skipL = p3.map(() => false), skipR = p3.map(() => false);
   for (const k of [0, 1]) {
+    if (flare && flare.includes(k)) {   // an exit / entrance lane that IS M2's third lane at its start: the ramp starts as wide as lane + shoulder (outer edge at 8.4) and narrows to its own width over 32 m
+      const i0 = k ? p3.length - 1 : 0, step = k ? -1 : 1, outerLat = 2.1 + 6.3, dEnd = Math.abs(p3[i0][0] - M2_X);
+      const sideOut = (() => { const a = p3[Math.min(p3.length - 1, i0 + 1)], b = p3[Math.max(0, i0 - 1)], nx = -(a[1] - b[1]); return Math.sign(nx * (Math.sign(p3[i0][0] - M2_X) || 1)) || 1; })();
+      for (let i = i0, acc = 0; i >= 0 && i < p3.length && acc < 70; i += step) {
+        const t = Math.max(0, 1 - acc / 32), e1 = t * t * (3 - 2 * t), w = 1.4 + (outerLat - dEnd - 1.4) * e1;   // eased flare back to the ramp's own width
+        if (acc < 32) { if (sideOut > 0) { offR[i] = Math.max(offR[i], w); adjR[i] = -0.8 * e1; } else { offL[i] = Math.min(offL[i], -w); adjL[i] = 0.8 * e1; } }   // the outer line eases from M2's edge line (shoulder 1.0) to its own
+        if (sideOut > 0) skipL[i] = true; else skipR[i] = true;   // the host-side edge line is M2's own (lane divider / edge line) for the first 70 m
+        if (i + step >= 0 && i + step < p3.length) acc += Math.hypot(p3[i + step][0] - p3[i][0], p3[i + step][1] - p3[i][1]);
+      }
+      continue;
+    }
+    if (noWedge && noWedge.includes(k)) continue;   // a trunk ramp IS the carriageway: no merge wedge, its edge lines continue M2's
     const type = attach[k]; if (type !== 'motorway' && type !== 'cross') continue;
     const i0 = k ? p3.length - 1 : 0, step = k ? -1 : 1, p = p3[i0], q = p3[i0 + step];
     let host = null;
@@ -872,7 +917,7 @@ for (const { id, p3, attach, mouth, S } of rampPts) {
     const L = S[S.length - 1];
     for (let i = 0; i < p3.length; i++) { const ds = mouth ? L - S[i] : S[i]; if (ds >= 22) continue; const t = 1 - ds / 22, w = CLS.ramp.w / 2 + (CLS.ramp2.w / 2 - CLS.ramp.w / 2) * t * t * (3 - 2 * t); offL[i] = Math.min(offL[i], -w); offR[i] = Math.max(offR[i], w); }
   }
-  rampOffs.set(id, { offL, offR, dashed });
+  rampOffs.set(id, { offL, offR, dashed, adjL, adjR, skipL, skipR });
 }
 const rampMasks = [];
 for (const r of rampPts) {
@@ -909,10 +954,10 @@ function walkAroundRamps(rect) {
   }
   return pieces;
 }
-function indexRoad(id, pts, w) {
+function indexRoad(id, pts, w, cutEnd = false) {
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1], b = pts[i], half = w / 2;
-    const segment = { id, a, b, half, first: i === 1, last: i === pts.length - 1, dx: b[0] - a[0], dz: b[1] - a[1] };
+    const segment = { id, a, b, half, first: i === 1, last: i === pts.length - 1 || cutEnd && i >= pts.length - 8, dx: b[0] - a[0], dz: b[1] - a[1] };
     segment.ll = segment.dx ** 2 + segment.dz ** 2;
     for (let x = Math.floor((Math.min(a[0], b[0]) - half - 1) / INDEX_CELL); x <= Math.floor((Math.max(a[0], b[0]) + half + 1) / INDEX_CELL); x++)
       for (let z = Math.floor((Math.min(a[1], b[1]) - half - 1) / INDEX_CELL); z <= Math.floor((Math.max(a[1], b[1]) + half + 1) / INDEX_CELL); z++) {
@@ -920,7 +965,7 @@ function indexRoad(id, pts, w) {
       }
   }
 }
-for (const h of motorHosts) indexRoad(h.id, sampleAxis(h.axis === 0 ? 'x' : 'z', h.c, h.lo, h.hi, h.h, 1), CLS.motorway.w);
+for (const h of motorHosts) indexRoad(h.id, sampleAxis(h.axis === 0 ? 'x' : 'z', h.c, h.lo, h.axis !== 0 && Math.abs(h.c - M2_X) < 1 ? Math.min(h.hi, M2Z.z1) : h.hi, h.h, 1), CLS.motorway.w, h.axis !== 0 && Math.abs(h.c - M2_X) < 1);   // M2 ends where the trunk ramps start: they paint their own edge lines from there on
 for (const r of rampPts) indexRoad(r.id, r.p3, CLS.ramp.w);
 for (const e of PLAN.edges) if (e.cls !== 'motorway') {
   const a = N.get(e.a), b = N.get(e.b); indexRoad(e.id, [[a.x, a.z, 0], [b.x, b.z, 0]], CLS[e.cls].w);
@@ -1018,10 +1063,10 @@ for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z'
 }
 // Render the pre-resolved ramp profiles. Single-lane ramps have edge lines,
 // NOT a dashed centre line suggesting a second lane.
-for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth } of rampPts) {
+for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts) {
   // Merge geometry (2026-10-18 (8)): where a ramp joins a carriageway / avenue PARALLEL to it, its outer edge converges linearly onto the host's kerb line
   // (a true wedge, one asphalt contour), the edge line on the host side turns into a dashed line, the outer edge line runs on without a break.
-  const { offL, offR, dashed } = rampOffs.get(id);
+  const { offL, offR, dashed, adjL, adjR, skipL, skipR } = rampOffs.get(id);
   asymRibbon(p3, offL, offR, 0.052, CI.asph);
   for (const sg of [-1, 1]) {
     const q = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));
@@ -1044,11 +1089,11 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth } of rampPts) {
       for (const p of run) { if (p[2] > 1.2) high.push(p); else flush(); } flush();
     }
     {
-      const si = sg < 0 ? 0 : 1, line = offsetVar(p3, p3.map((_, i) => sg < 0 ? offL[i] + 0.2 : offR[i] - 0.2)), n = p3.length;
+      const si = sg < 0 ? 0 : 1, line = offsetVar(p3, p3.map((_, i) => sg < 0 ? offL[i] + 0.2 + adjL[i] : offR[i] - 0.2 + adjR[i])), n = p3.length, skip = sg < 0 ? skipL : skipR;
       for (let i = 0; i < n - 1;) {
         const dz = dashed[si][i] && dashed[si][i + 1]; let j = i;
         while (j < n - 1 && (dashed[si][j] && dashed[si][j + 1]) === dz) j++;
-        for (const run of exposedRuns(line.slice(i, j + 1), 0, id, 0.05)) paintAlong(run, 0, 0.16, dz ? 1.2 : 1, dz ? 3.6 : 0, 0.064, CI.white);
+        if (!skip[i] && !skip[j]) for (const run of exposedRuns(line.slice(i, j + 1), 0, id, 0.05)) paintAlong(run, 0, 0.16, dz ? 1.2 : 1, dz ? 3.6 : 0, 0.064, CI.white);
         i = j;
       }
     }
@@ -1129,6 +1174,8 @@ const SZ = PLAN.size;
   for (let x = Math.floor(SZ.x0 / 10) * 10; x < SZ.x1; x += 10) for (let z = Math.floor(SZ.z0 / 10) * 10; z < SZ.z1; z += 10) {
     emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass); void rnd;
   }
+  for (let x = SZ.x1; x < SZ.x1 + 80; x += 10) for (let z = -330; z < -150; z += 10) emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass);   // the east cloverleaf ramps of I3 run on to M1 beyond the map edge: lawn under them (no road over the void)
+  for (let x = SZ.x1; x < SZ.x1 + 40; x += 10) for (let z = 120; z < 164; z += 10) emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass);
   const KIND = { forest: 'forest', industry: 'industry', verge: 'verge', park: 'park', parking: 'parking', embankment: 'embank', beach: 'beach', promenade: 'promenade', port: 'port', urban: 'urban' };
   const KORDER = ['urban', 'industry', 'verge', 'park', 'parking', 'embankment', 'port', 'beach', 'promenade', 'forest'];
   for (const a of PLAN.areas) emitPoly('g', a.poly, a.kind === 'parking' ? -0.0615 : -0.075 + KORDER.indexOf(a.kind) * 0.002, CI[KIND[a.kind]]);   // a lot lies well above the park / verge polygons under it (2 mm apart z-fought into stripes)
