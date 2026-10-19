@@ -176,12 +176,22 @@ function annulus(layer, c, r0, r1, a0, a1, y, ci, step = 6) {   // angles in deg
 // ---- graph helpers
 const N = new Map(PLAN.nodes.map((n) => [n.id, n])), J = new Map(PLAN.junctions.map((j) => [j.id, j]));
 const hw = (cls) => CLS[cls].w / 2;
+// ---- lane-drop transitions: where a street changes class at a node with only two legs (no junction), the wider carriageway narrows over L = 20 x offset (1:20 on each side)
+const TRANS = new Map(), TRANS_LIST = [];
+for (const n of PLAN.nodes) {
+  if (n.legs !== 2) continue;
+  const es = PLAN.edges.filter((e) => (e.a === n.id || e.b === n.id) && !e.split); if (es.length !== 2 || es[0].dir !== es[1].dir || es[0].cls === es[1].cls) continue;
+  const [wide, narrow] = CLS[es[0].cls].w >= CLS[es[1].cls].w ? es : [es[1], es[0]]; if (CLS[wide.cls].w - CLS[narrow.cls].w < 0.05) continue;
+  const L = Math.round(20 * (CLS[wide.cls].w - CLS[narrow.cls].w) / 2), other = wide.a === n.id ? wide.b : wide.a, on = N.get(other), sgn = Math.sign(wide.dir === 'z' ? on.z - n.z : on.x - n.x);
+  TRANS.set(n.id + ':' + wide.id, { L, wide, narrow, node: n, sgn }); TRANS_LIST.push({ at: [n.x, n.z], axis: wide.dir, wide: wide.cls, narrow: narrow.cls, L, offset: (CLS[wide.cls].w - CLS[narrow.cls].w) / 2 });
+}
 const rightOf = (h) => [-h[1], h[0]];
 const MW = CLS.motorway.w / 2;
 const ringW = (j) => j.lanes === 2 ? 5.4 : 3.0;   // circulatory lane: 2 lanes 5.4 (>= 5.0), 1 lane 3.0 (car + truck swept path >= 2.6)
 const laneW = (cls) => CLS[cls].lane || (CLS[cls].w - CLS[cls].median) / 2 / CLS[cls].lanes;
 const RAIL_Z = PLAN.rail.pts[0][1], M1_Z = -240, M2_X = 250;
 function trimAt(nodeId, e) {   // how far markings / medians stay away from a node
+  { const t = TRANS.get(nodeId + ':' + e.id); if (t) return t.L; }   // lane-drop: markings and the median start where the carriageway is full width again
   const n = N.get(nodeId), j = J.get(nodeId);
   if (!j) return n.legs && n.legs.length > 1 ? 1.5 : 0;
   if (j.type === 'roundabout') return j.R + 6.5;
@@ -241,7 +251,8 @@ const edgeSpan = (e) => {   // along-axis span of the carriageway/sidewalk, trim
   const ch = (id) => { const j = roundAt(id); return j ? Math.sqrt(Math.max(0, j.R * j.R - hw(e.cls) ** 2)) - 0.12 : 0; };
   const mo = e.cls === 'motorway';
   const mt = (id) => mo && (N.get(id).legs.length === 1) ? 0 : 0;
-  return { lo: lo + ch(lowNode) + mt(lowNode), hi: hi - ch(highNode) - mt(highNode), lowNode, highNode, ax };
+  const tl = TRANS.get(lowNode + ':' + e.id), th = TRANS.get(highNode + ':' + e.id);   // the tapered end is drawn separately
+  return { lo: lo + ch(lowNode) + mt(lowNode) + (tl ? tl.L : 0), hi: hi - ch(highNode) - mt(highNode) - (th ? th.L : 0), lowNode, highNode, ax };
 };
 for (const e of PLAN.edges) {
   const a = N.get(e.a), s = edgeSpan(e), cl = CLS[e.cls], half = cl.w / 2, sw = cl.sidewalk, c = e.dir === 'x' ? a.z : a.x;
@@ -257,6 +268,33 @@ for (const e of PLAN.edges) {
   }
   if (e.ref === 'M2' && !I2W.tapers) { I2W.tapers = true; for (const sg of [-1, 1]) for (const zs of [-1, 1]) { const x0 = c + sg * half, x1 = c + sg * I2W.half, za = zs * I2W.flat, zb = zs * (I2W.flat + I2W.taper); pendingTapers.push([[x0, za], [x1, za], [x0, zb]]); } }
   if (e.ref === 'M2') for (const sg of [-1, 1]) addShape(sg < 0 ? c - I2W.half : c + half, -I2W.flat, sg < 0 ? c - half : c + I2W.half, I2W.flat, 'asph');   // third lane of M2 round I2 (flat part)
+}
+
+// the tapers themselves: asphalt trapezoid, sidewalk trapezoids, kerb walls, a median nose and lane-drop arrows
+function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the unit vector (hx, hz): stem + head
+  const rx = -hz, rz = hx, P = (t, l) => [x + hx * t + rx * l, z + hz * t + rz * l];
+  emitTri('p', P(-0.9, -0.09), P(-0.9, 0.09), P(0.4, -0.09), H.paint, CI.white); emitTri('p', P(-0.9, 0.09), P(0.4, 0.09), P(0.4, -0.09), H.paint, CI.white);
+  emitTri('p', P(0.2, -0.5), P(0.2, 0.5), P(1.1, 0), H.paint, CI.white);
+}
+for (const { L, wide, narrow, node, sgn } of TRANS.values()) {
+  const hn = hw(narrow.cls), hd = hw(wide.cls), sn = CLS[narrow.cls].sidewalk, sd = CLS[wide.cls].sidewalk, ax = wide.dir, c = ax === 'z' ? node.x : node.z, mh = CLS[wide.cls].median / 2;
+  const W = (t, lat) => ax === 'z' ? [c + lat, node.z + sgn * t] : [node.x + sgn * t, c + lat];
+  const half = (t) => hn + (hd - hn) * t / L, outer = (t) => half(t) + sn + (sd - sn) * t / L;
+  emitTri('r', W(0, -hn), W(0, hn), W(L, hd), H.asph, CI.asph); emitTri('r', W(0, -hn), W(L, hd), W(L, -hd), H.asph, CI.asph);
+  for (const sg of [-1, 1]) {
+    emitTri('r', W(0, sg * hn), W(0, sg * (hn + sn)), W(L, sg * (hd + sd)), H.walk, CI.walk); emitTri('r', W(0, sg * hn), W(L, sg * (hd + sd)), W(L, sg * hd), H.walk, CI.walk);
+    const a = W(0, sg * hn), b = W(L, sg * hd); emitWall(a[0], a[1], b[0], b[1], H.asph, H.walk, CI.kerb); void outer;
+  }
+  if (mh > 0) {   // the median ends in a pointed nose 8 m into the taper
+    emitTri('r', W(L, -mh), W(L, mh), W(L - 8, 0), H.med, CI.median);
+    for (const sg of [-1, 1]) { const a = W(L, sg * mh), b = W(L - 8, 0); emitWall(a[0], a[1], b[0], b[1], H.asph, H.med, CI.kerb); }
+  }
+  // lane-drop arrows on the outer lane of the traffic that loses a lane (the approach from the wide side towards the node), bent 12 degrees towards the centre
+  for (const sg of [-1, 1]) {
+    const t = L + 9, lat = sg * (mh + CLS[wide.cls].lane * 1.5), dirT = -sgn, ang = 12 * Math.PI / 180, p = W(t, lat);
+    const hv = ax === 'z' ? [-sg * Math.sin(ang), dirT * Math.cos(ang)] : [dirT * Math.cos(ang), -sg * Math.sin(ang)];
+    arrowH(p[0], p[1], hv[0], hv[1]);
+  }
 }
 
 // ---- 2. raster decomposition per cell -> disjoint rectangles + kerb walls

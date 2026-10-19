@@ -194,6 +194,23 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
   check('no duplicate roads: no overlapping street edges, no ramp on top of another or on a street, no coincident ramp ends', !dup.length, dup.length ? dup.join('; ') : `${E.length} edges and ${ramps.length} ramps pairwise checked`);
 }
 
+// 13. lane drops: a street that changes width at a node with only two legs (not a junction) must taper: the compiler tapers the wider side over 20 x the one-sided offset
+//     (1:20, the urban minimum is 1:15); this check lists every such place, its offset, the taper length and whether the edge is long enough to hold it.
+{
+  const bad = [], info = [];
+  for (const n of P.nodes) {
+    if (n.legs !== 2) continue;
+    const es = E.filter((e) => (e.a === n.id || e.b === n.id) && !e.split);
+    if (es.length !== 2 || es[0].dir !== es[1].dir || CLS[es[0].cls].w === CLS[es[1].cls].w) continue;
+    const [wide, narrow] = CLS[es[0].cls].w >= CLS[es[1].cls].w ? es : [es[1], es[0]], off = (CLS[wide.cls].w - CLS[narrow.cls].w) / 2, L = Math.round(20 * off);
+    const a = N.get(wide.a), b = N.get(wide.b), len = Math.hypot(a.x - b.x, a.z - b.z);
+    info.push(`${n.x},${n.z} ${wide.cls}->${narrow.cls} offset ${off.toFixed(1)} m, taper ${L} m (1:20)`);
+    if (L / off < 15 || len < L + 12) bad.push(`${n.x},${n.z}: taper ${L} m does not fit the ${len} m edge or is steeper than 1:15`);
+    if (CLS[wide.cls].median > 0 && L < 24) bad.push(`${n.x},${n.z}: median nose needs >= 24 m`);
+  }
+  check('lane drops taper at 1:20 (>= 1:15) and fit their edge; the median ends in a nose', !bad.length, bad.length ? bad.join('; ') : (info.join('; ') || 'no width change outside junctions'));
+}
+
 if (process.argv.includes('--json')) console.log(JSON.stringify(results, null, 1));
 else {
   console.log(`Masterplan C audit: ${P.counts.junctions} junctions (${P.counts.signals} signals, ${P.counts.roundabouts} roundabouts), ${P.counts.interchanges} interchanges, ${P.counts.blocks} blocks`);

@@ -71,8 +71,7 @@ export function buildPlan() {
     { x: -160, cls: 'local', spans: [[160, 188]] },
     { x: -80, cls: 'collector', name: 'Школьная ул.', spans: [[-160, 188]] },
     { x: -40, cls: 'local', spans: [[-108, 188]] },
-    { x: 0, cls: 'arterial', name: 'Главный пр.', spans: [[-340, 188]] },   // I1 is a full cloverleaf: the arterial is the crossing road up to z -340, no junction on it between z -340 and -126
-    { x: 0, cls: 'collector', name: 'Северное ш.', spans: [[-370, -340]] },
+    { x: 0, cls: 'arterial', name: 'Главный пр.', spans: [[-370, 188]] },   // I1 is a full cloverleaf: the arterial is the crossing road up to z -340, no junction on it between z -340 and -126
     { x: 40, cls: 'local', spans: [[-108, 188]] },
     { x: 80, cls: 'collector', name: 'Университетская ул.', spans: [[-190, 160]] },
     { x: 80, cls: 'service', name: 'Портовая ул.', spans: [[160, 196]] },

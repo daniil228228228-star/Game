@@ -84,6 +84,20 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
     void north; void south;
     check(eb && wb, `data: I2 has a continuous asphalt way across the crossing eastbound (${eb}) and westbound (${wb}), each avoiding the opposite one-way branches`);
   }
+  // 1d. width profile (2026-10-18 (13)): where a street changes class away from a junction the DRAWN carriageway width changes by <= 0.14 m per metre along the axis (1:15 on both sides together)
+  {
+    const prof = [], widthAt = (x, z, ax) => { let w = 0; for (const sg of [-1, 1]) { let k = 0; while (k < 12 && (ax === 'z' ? asphaltAt(x + sg * (k + 0.1), z) : asphaltAt(x, z + sg * (k + 0.1)))) k += 0.2; w += k; } return w; };
+    for (const n of PLAN.nodes) {
+      if (n.legs !== 2) continue;
+      const es = PLAN.edges.filter((e) => (e.a === n.id || e.b === n.id) && !e.split); if (es.length !== 2 || es[0].dir !== es[1].dir || es[0].cls === es[1].cls) continue;
+      const ax = es[0].dir, ws = []; let worst = 0;
+      for (let t = -25; t <= 70; t += 1) { const x = ax === "z" ? n.x : n.x + t, z = ax === "z" ? n.z + t : n.z; ws.push(widthAt(x, z, ax)); }
+      const med = ws.map((w, i) => [ws[Math.max(0, i - 1)], w, ws[Math.min(ws.length - 1, i + 1)]].sort((p, q) => p - q)[1]);   // median of 3: one sample can land on a triangle seam
+      for (let i = 1; i < med.length; i++) worst = Math.max(worst, Math.abs(med[i] - med[i - 1]));
+      prof.push([n.x, n.z, +worst.toFixed(2)]);
+    }
+    check(prof.every(([, , w]) => w <= 0.4), `data: lane-drop transitions: the drawn width never jumps more than 0.4 m per metre (${J(prof)}; 1:15 on both sides = 0.13 m per metre, cell rounding 0.2)`);
+  }
   // 2. no overlapping asphalt rectangles (the union is decomposed)
   let overlaps = 0;
   for (const list of byCell.values()) { list.sort((p, q) => p.x0 - q.x0); for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length && list[j].x0 < list[i].x1 - 1e-3; j++) { const ox = Math.min(list[i].x1, list[j].x1) - Math.max(list[i].x0, list[j].x0), oz = Math.min(list[i].z1, list[j].z1) - Math.max(list[i].z0, list[j].z0); if (ox > 0.01 && oz > 0.01) overlaps++; } }
