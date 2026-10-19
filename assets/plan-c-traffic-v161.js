@@ -126,7 +126,7 @@
       const v=[[a[0]+nx,a[2]+.052,a[1]+nz],[b[0]+nx,b[2]+.052,b[1]+nz],[a[0]-nx,a[2]+.052,a[1]-nz],[b[0]-nx,b[2]+.052,b[1]-nz]];
       for(const j of [0,1,2,1,3,2]){pos.push(...v[j]);normal.push(0,1,0);}
     }
-    if(!drivewayMesh){drivewayMesh=new THREE.Mesh(new THREE.BufferGeometry(),new THREE.MeshStandardMaterial({color:D.colors[D.palette.asph],roughness:.92,side:THREE.DoubleSide}));drivewayMesh.name='planCAccessV161';drivewayMesh.userData.planCAccess=true;scene.add(drivewayMesh);}
+    if(!drivewayMesh){drivewayMesh=new THREE.Mesh(new THREE.BufferGeometry(),new THREE.MeshStandardMaterial({color:new THREE.Color(D.colors[D.palette.asph]).convertSRGBToLinear(),roughness:.92,side:THREE.DoubleSide}));drivewayMesh.name='planCAccessV161';drivewayMesh.userData.planCAccess=true;scene.add(drivewayMesh);}
     const old=drivewayMesh.geometry,geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));geo.setAttribute('normal',new THREE.Float32BufferAttribute(normal,3));geo.computeBoundingSphere();drivewayMesh.geometry=geo;old.dispose();
   }
   function access(p,q){
