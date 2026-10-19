@@ -14,6 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { kerbReturnR } from './plan-c.mjs';
+import { compileLanePaths } from './lane-paths-plan-c.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PLAN = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools/masterplan/plan-C.json'), 'utf8'));
@@ -77,7 +78,13 @@ function emitTri(layer, a, b, c, y, ci) {   // clips to every touched cell, fan-
     const poly = clipPoly([a, b, c], cx * CELL, cz * CELL, (cx + 1) * CELL, (cz + 1) * CELL);
     if (poly.length < 3 || Math.abs(area2(poly)) < 1e-5) continue;
     const t = cellOf(cx, cz)[layer].t;
-    for (let i = 1; i + 1 < poly.length; i++) push(t, poly[0][0], poly[0][1], poly[i][0], poly[i][1], poly[i + 1][0], poly[i + 1][1], y, ci);
+    for (let i = 1; i + 1 < poly.length; i++) {
+      // Clipping can duplicate a vertex on a cell border. The polygon may have area while
+      // one fan triangle has none; quantisation can also collapse a tiny triangle afterwards.
+      const tri = [poly[0], poly[i], poly[i + 1]].map((p) => [R3(p[0]), R3(p[1])]);
+      if (Math.abs(area2(tri)) < 1e-9) continue;
+      push(t, ...tri.flat(), y, ci);
+    }
   }
 }
 function emitPoly(layer, poly, y, ci, holes = []) {   // arbitrary simple polygon (+ holes) -> triangles; an axis-aligned rectangle is a rect (a triangulation diagonal left a hairline crack across big lots / port apron, 2026-10-19)
@@ -243,7 +250,7 @@ function subtractIntervals(lo, hi, cuts) {
 const shapes = [];   // {x0,z0,x1,z1,type}
 const PRIO = { walk: 1, asph: 2, med: 3 };
 const addShape = (x0, z0, x1, z1, type) => { if (x1 - x0 > 1e-4 && z1 - z0 > 1e-4) shapes.push({ x0: R3(x0), z0: R3(z0), x1: R3(x1), z1: R3(z1), type }); };
-const roundAt = (nodeId) => { const j = J.get(nodeId); return j && j.type === 'roundabout' ? j : null; };
+const roundAt = (nodeId) => { const j = J.get(nodeId); return j?.type === 'mini' ? {...j,R:5.6} : j && j.type === 'roundabout' ? j : null; };
 const splitZones = [];   // outlines in which nothing random may stand (split-street branches, M2 zone)
 const M2Z = { z0: -98, z1: 88, box: 18.5, flat3: -28, end3: 64, in0: 18.5 };   // M2 zone drawn by drawM2Zone(): third lane flat from z -28 to 64 (taper to z -98), inner edge closes from z 18.5 to 96
 const mTrim = () => 0;
@@ -425,10 +432,10 @@ function rasterCell(cx, cz) {
 const ringsOut = [], minisOut = [], rampsOut = [], cornerOut = [];
 for (const j of PLAN.junctions) {
   const c = j.at;
-  if (j.type === 'roundabout') {
-    const R = j.R, W = ringW(j), Ri = R - W, big = j.lanes === 2;
+  if (j.type === 'roundabout' || j.type === 'mini') {
+    const R = j.type === 'mini' ? 5.6 : j.R, W = ringW(j), Ri = R - W, big = j.lanes === 2;
     annulus('r', c, Ri, R, 0, 360, H.asph, CI.asph, 5);
-    ringsOut.push({ id: j.id, at: c, R, Ri });
+    (j.type === 'mini' ? minisOut : ringsOut).push({ id: j.id, at: c, R, Ri });
     // paved circus around the big ring, island with kerb
     if (big) annulus('r', c, R, 25, 0, 360, H.plaza, CI.plaza, 6);
     // walk arcs between the arms
@@ -449,19 +456,21 @@ for (const j of PLAN.junctions) {
     }
     // arms: splitter island, yield teeth
     for (const a of j.arms) {
-      const d = a.dir, r = rightOf(d), w = hw(a.cls), base = R + 0.5, tip = R + 7.5, iw = Math.min(1.0, w * 0.4);
+      const d = a.dir, r = rightOf(d), w = hw(a.cls), base = R + 0.5, tip = R + 7.5, iw = j.type==='mini'?0:Math.min(1.0, w * 0.4);
       const P = (t, l) => [c[0] + d[0] * t + r[0] * l, c[1] + d[1] * t + r[1] * l];
-      for (const sg of [-1, 1]) ribbon('p', [P(base, sg * iw), P(tip, 0)], 0.14, H.paint, CI.white);   // painted splitter island: outline on the asphalt, no fill
+      if(j.type!=='mini'){
+        const crossing=PLAN.crossings.find(q=>q.id.startsWith(j.id+'-')&&q.arm&&q.arm[0]===d[0]&&q.arm[1]===d[1]);
+        const crossAt=crossing?.setback;
+        const parts=Number.isFinite(crossAt)?[[base,Math.min(tip,crossAt-.95)],[Math.max(base,crossAt+.95),tip]]:[[base,tip]];
+        for(const sg of [-1,1])for(const [lo,hi]of parts)if(hi>lo){
+          const point=t=>P(t,sg*iw*(tip-t)/(tip-base));
+          ribbon('p',[point(lo),point(hi)],.14,H.paint,CI.white);
+        }
+      }   // splitter outlines stop before the zebra; mini rings have none
       // teeth on the incoming half (right of the incoming heading = rightOf(-d) = -r)
       const sgn = -1;
       for (let l = iw + 0.2; l < w - 0.1; l += 0.7) { const q0 = P(R + 0.35, sgn * l), q1 = P(R + 0.7, sgn * (l + 0.35)), q2 = P(R + 0.7, sgn * l); emitTri('p', q0, q1, q2, H.paint, CI.white); }
     }
-  } else if (j.type === 'mini') {
-    const Ri = 2.6, Ro = Ri + 3.0;   // island r 2.6, circulatory lane 3.0 (>= 2.6), painted outer edge
-    disc('r', c, Ri, H.island + 0.03, CI.islandC, 24); disc('r', c, Ri - 0.25, H.island + 0.035, CI.islandL, 24);
-    for (let k = 0; k < 24; k++) { const s = k / 24 * Math.PI * 2, e = (k + 1) / 24 * Math.PI * 2; emitWall(c[0] + Math.cos(s) * Ri, c[1] + Math.sin(s) * Ri, c[0] + Math.cos(e) * Ri, c[1] + Math.sin(e) * Ri, H.asph, H.island + 0.03, CI.kerb); }
-    for (let a = 0; a < 360; a += 15) annulus('p', c, Ro - 0.07, Ro + 0.07, a, a + 9, H.paint, CI.white, 3);
-    minisOut.push({ id: j.id, at: c, R: Ro, Ri });
   }
 }
 // kerb returns (2026-10-19: radius by the classes of the two streets, not always 3): at every corner where two streets meet the kerb is an arc tangent to both asphalt edges; the asphalt fills the corner
@@ -470,7 +479,7 @@ for (const j of PLAN.junctions) {
 // SERVICE streets (port and yard roads, semi-trailers WB-67: inside radius 12-15 m + the entry taper) 8 with an arterial (20 m), 6 with every other class and between service streets (15 m).
 const retNorm = kerbReturnR;
 for (const j of PLAN.junctions) {
-  if (j.type === 'roundabout' || j.bend) continue;
+  if (j.type === 'roundabout' || j.type === 'mini' || j.bend) continue;
   const c = j.at;
   for (const A of j.arms.filter((a) => a.dir[1] === 0)) for (const B of j.arms.filter((b) => b.dir[0] === 0)) {
     if (A.cls === 'motorway' || B.cls === 'motorway') continue;
@@ -806,7 +815,7 @@ function addParapets(pts, o, level0 = null) {   // level-aware collider pieces a
 // slip lane share an asphalt envelope; neither may put a wall across the join.
 const rampPts = [];
 const motorHosts = [
-  { id: 'M1', axis: 0, c: M1_Z, lo: -300, hi: 370, h: hM1 },
+  { id: 'M1', axis: 0, c: M1_Z, lo: -300, hi: 394, h: hM1 },
   { id: 'M2', axis: 1, c: M2_X, lo: -370, hi: 88, h: hM2 },
 ];
 const motorHost = (p) => motorHosts.reduce((a, b) => Math.abs(p[1 - a.axis] - a.c) <= Math.abs(p[1 - b.axis] - b.c) ? a : b);
@@ -914,7 +923,7 @@ for (const ic of PLAN.interchanges) {
       (sBr != null && Math.abs(S[i] - sBr) < 4)), ic.id + '.' + ri);
     const path = { id: ic.id + '.' + ri, ic: ic.id, kind: r.kind, p3, bridge: sBr, S, attach: r.attach, mouth: r.mouth, holdLow: r.holdLow, flare: r.flare, noWedge: r.noWedge };
     done.push(path); rampPts.push(path);
-    rampsOut.push({ ic: ic.id, kind: r.kind, pts: p3.map((p) => [R2(p[0]), R2(p[1]), R3(p[2])]) });
+    rampsOut.push({ id: `${ic.id}.${ri}`, ic: ic.id, kind: r.kind, pts: p3.map((p) => [R2(p[0]), R2(p[1]), R3(p[2])]) });
   }
 }
 
@@ -1229,7 +1238,7 @@ const SZ = PLAN.size;
   for (let x = Math.floor(SZ.x0 / 10) * 10; x < SZ.x1; x += 10) for (let z = Math.floor(SZ.z0 / 10) * 10; z < SZ.z1; z += 10) {
     emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass); void rnd;
   }
-  for (let x = SZ.x1; x < SZ.x1 + 80; x += 10) for (let z = -330; z < -150; z += 10) emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass);   // the east cloverleaf ramps of I3 run on to M1 beyond the map edge: lawn under them (no road over the void)
+  for (let x = SZ.x1; x < SZ.x1 + 100; x += 10) for (let z = -330; z < -150; z += 10) emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass);   // receiving road continues beyond the east cloverleaf merge
   for (let x = SZ.x1; x < SZ.x1 + 50; x += 10) for (let z = 120; z < 170; z += 10) emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass);
   // fields and forests never run into a junction: a farm strip or a wood cut by the straight edge of the interchange lawn read as a second shade of ground with a rectangular border
   const ICENV = PLAN.interchanges.map((ic) => { let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (const rp of ic.ramps) for (const q of rp.pts) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); } return [x0 - 40, z0 - 40, x1 + 40, z1 + 40]; });
@@ -1418,6 +1427,12 @@ for (const [kind, list] of Object.entries(furniture)) for (const f of list) { co
 
 // ---- 10. graph (for tests and later steps), walkable floor
 const graph = {
+  // A route keeps its road identity across stacked surfaces. Do not resolve vehicle height by max(surfaces).
+  levels: PLAN.edges.map((e) => {
+    const a = N.get(e.a), b = N.get(e.b), cl = CLS[e.cls], h = e.ref === 'M1' ? hM1 : e.ref === 'M2' ? hM2 : () => 0;
+    const pts = sampleAxis(e.dir, e.dir === 'x' ? a.z : a.x, e.dir === 'x' ? Math.min(a.x, b.x) : Math.min(a.z, b.z), e.dir === 'x' ? Math.max(a.x, b.x) : Math.max(a.z, b.z), h, 1);
+    return { id: e.id, ref: e.ref || null, w: cl.w, p: pts.map((p) => [R2(p[0]), R2(p[1]), R3(p[2])]) };
+  }).concat(rampsOut.map((r) => ({ id: r.id, ref: null, w: CLS.ramp.w, p: r.pts }))),
   nodes: PLAN.nodes.map((n) => [n.id, n.x, n.z, n.kind || '']),
   edges: PLAN.edges.map((e) => { const a = N.get(e.a), b = N.get(e.b); return [e.id, e.a, e.b, e.cls, a.x, a.z, b.x, b.z, e.name || '']; }),
   bends: bendsOut.map((b) => [b.node, b.at[0], b.at[1], b.R]),
@@ -1427,10 +1442,27 @@ const graph = {
   crossings: PLAN.crossings.map((c) => [c.id, c.kind, c.at[0], c.at[1], c.arm ? c.arm[0] : 0, c.arm ? c.arm[1] : 0, c.cls, c.setback == null ? 0 : c.setback]),
   islands: islandsOut, signals: PLAN.junctions.filter((j) => j.type === 'signal').map((j) => [j.id, j.at[0], j.at[1]]),
   stops: stopsOut,
+  transit: PLAN.transit.lines,
+  signalCrossings: PLAN.junctions.filter(j=>j.type==='signal').flatMap(j=>j.arms.filter(a=>a.ramp!=='on').map(a=>{
+    const cross=j.arms.filter(b=>(b.dir[0]===0)!==(a.dir[0]===0)).map(b=>hw(b.cls));
+    const along=Math.max(...cross,j.terminal?1:0,a.dir[0]===0?(j.boxZ||0):0)+2.2;
+    return {id:j.id,at:[j.at[0]+a.dir[0]*along,j.at[1]+a.dir[1]*along],axis:a.dir[0]?'x':'z',half:hw(a.cls)};
+  })),
+  signalCoordination: PLAN.junctions.filter(j=>j.coordination).map(j=>[j.id,j.coordination==='I2'?PLAN.junctions.find(q=>q.big)?.id:null]),
+  signalHeads: furniture.sig.map(([x,z,yaw])=>{const j=PLAN.junctions.filter(j=>j.type==='signal').reduce((a,b)=>!a||Math.hypot(x-b.at[0],z-b.at[1])<Math.hypot(x-a.at[0],z-a.at[1])?b:a,null);return [x,z,yaw,j.id,-Math.round(Math.sin(yaw)),-Math.round(Math.cos(yaw))];}),
   landmarks: PLAN.landmarks.map((l) => [l.id, l.kind, l.name, l.at[0], l.at[1]]),
   footbridges: PLAN.footbridges.map((f) => [f.id, f.at[0], f.at[1], f.axis, f.len]), tunnels: PLAN.tunnels.map((f) => [f.id, f.at[0], f.at[1], f.axis, f.len]),
 };
-const floorData = { x0: SZ.x0, x1: SZ.x1, z0: SZ.z0, z1: SZ.z1, sea: PLAN.water.sea.coast.map((p) => [R2(p[0]), R2(p[1])]), river: riverPts.map((p) => [R2(p[0]), R2(p[1])]), riverW: PLAN.water.river.w, bridges: bridgeRects.map((r) => r.map(R2)) };
+// Map limits bound the city, not the usable footprint of roads drawn beyond its edge.
+// Extend only actual road/turnaround/yard footprints; never open the whole surrounding sea/land rectangle.
+const floorExtensions = PLAN.edges.map((e) => {
+  const a = N.get(e.a), b = N.get(e.b), c = CLS[e.cls], hw = c.w / 2 + (c.sidewalk || 0) + 0.6;
+  return [Math.min(a.x, b.x) - hw, Math.min(a.z, b.z) - hw, Math.max(a.x, b.x) + hw, Math.max(a.z, b.z) + hw];
+}).concat(PLAN.junctions.filter((j) => ['roundabout', 'mini'].includes(j.type)).map((j) => {
+  const r = (j.R || 5) + 2; return [j.at[0] - r, j.at[1] - r, j.at[0] + r, j.at[1] + r];
+}), PLAN.areas.filter((a) => ['port', 'parking'].includes(a.kind)).map((a) => [Math.min(...a.poly.map((p) => p[0])), Math.min(...a.poly.map((p) => p[1])), Math.max(...a.poly.map((p) => p[0])), Math.max(...a.poly.map((p) => p[1]))]))
+  .filter((r) => r[0] < SZ.x0 || r[1] < SZ.z0 || r[2] > SZ.x1 || r[3] > SZ.z1).map((r) => r.map(R2));
+const floorData = { x0: SZ.x0, x1: SZ.x1, z0: SZ.z0, z1: SZ.z1, extensions: floorExtensions, sea: PLAN.water.sea.coast.map((p) => [R2(p[0]), R2(p[1])]), river: riverPts.map((p) => [R2(p[0]), R2(p[1])]), riverW: PLAN.water.river.w, bridges: bridgeRects.map((r) => r.map(R2)) };
 
 // ---- 11. serialise
 const cellsOut = {};
@@ -1442,6 +1474,8 @@ for (const k of keys) {
   cellsOut[k] = o;
 }
 const data = { struct: { ...STRUCT, deckH: DECKH, clear: CLEAR, slope: SLOPE, railY: RAIL_Y }, version: 1, cell: CELL, size: SZ, classes: Object.fromEntries(Object.entries(CLS).map(([k, c]) => [k, [c.w, c.sidewalk, c.median, c.lanes]])), colors: PAL.map((k) => COLORS[k]), palette: CI, heights: H, cells: cellsOut, graph, floor: floorData, counts: PLAN.counts };
+data.graph.navigation=compileLanePaths(PLAN,data);
+if(data.graph.navigation.failures.length)throw new Error('Navigation clearance failures: '+JSON.stringify(data.graph.navigation.failures));
 const FLOOR_FN = `
 (function(D){
   var F=D.floor;
@@ -1451,7 +1485,7 @@ const FLOOR_FN = `
   D.onBridge=function(x,z){for(var i=0;i<F.bridges.length;i++){var r=F.bridges[i];if(x>=r[0]&&x<=r[2]&&z>=r[1]&&z<=r[3])return true;}return false;};
   // the land of the plan: inside the map, not in the sea, not in the river (except under a bridge)
   D.floor=function(x,z){
-    if(x<F.x0||x>F.x1||z<F.z0||z>F.z1)return false;
+    if(x<F.x0||x>F.x1||z<F.z0||z>F.z1){var ext=false;for(var ei=0;ei<F.extensions.length;ei++){var er=F.extensions[ei];if(x>=er[0]&&x<=er[2]&&z>=er[1]&&z<=er[3]){ext=true;break;}}if(!ext)return false;}
     if(ring(seaPoly,x,z))return false;
     if(!D.onBridge(x,z)){var best=1e9;for(var i=0;i+1<F.river.length;i++){var d=segd(x,z,F.river[i],F.river[i+1]);if(d<best)best=d;}if(best<F.riverW/2)return false;}
     return true;
@@ -1466,7 +1500,14 @@ const FLOOR_FN = `
     for(var i=0;i<rib.length;i++){var r=rib[i],bb=r.bb;if(x<bb[0]||x>bb[2]||z<bb[1]||z>bb[3])continue;var p=r.p,hw=r.w/2,best=1e9,bh=0;
       for(var k=0;k+1<p.length;k++){var a=p[k],b=p[k+1],dx=b[0]-a[0],dz=b[1]-a[1],l=dx*dx+dz*dz,t=l?Math.max(0,Math.min(1,((x-a[0])*dx+(z-a[1])*dz)/l)):0,d=Math.hypot(x-(a[0]+dx*t),z-(a[1]+dz*t));if(d<best){best=d;bh=a[2]+(b[2]-a[2])*t;}}
       if(best<=hw)out.push(bh);}
+    var access=window.PlanCTrafficV161?.overlay(x,z,0);if(access>0)out.push(access);
     return out;
+  };
+  // Profile lookup is constrained to the selected edge/ramp and its width; an unknown road is NOT ground.
+  var levelById=Object.create(null);for(var li=0;li<D.graph.levels.length;li++)levelById[D.graph.levels[li].id]=D.graph.levels[li];
+  D.roadY=function(id,x,z){var r=levelById[id];if(!r)return null;var p=r.p,best=1e9,h=null;
+    for(var k=0;k+1<p.length;k++){var a=p[k],b=p[k+1],dx=b[0]-a[0],dz=b[1]-a[1],l=dx*dx+dz*dz,t=l?Math.max(0,Math.min(1,((x-a[0])*dx+(z-a[1])*dz)/l)):0,d=Math.hypot(x-a[0]-dx*t,z-a[1]-dz*t);if(d<best){best=d;h=a[2]+(b[2]-a[2])*t;}}
+    return best<=r.w/2+.05?h:null;
   };
   // the surface the player stands on: the highest one not more than step above hint (the current level), else the lowest above
   D.surfaceY=function(x,z,hint,step){step=step==null?.75:step;var s=D.surfaces(x,z),best=null;for(var i=0;i<s.length;i++)if(s[i]<=hint+step&&(best==null||s[i]>best))best=s[i];if(best==null&&s.length){best=s[0];for(i=1;i<s.length;i++)if(s[i]<best)best=s[i];}return best;};

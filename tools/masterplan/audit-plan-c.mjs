@@ -1,7 +1,7 @@
 // Norm check of the masterplan C (docs/MASTERPLAN_C_PLAN.md, docs/ROAD_STANDARDS_V161.md).  node tools/masterplan/audit-plan-c.mjs [--json]
 // Game metres; 1 game m = 2.5 real m. Exit code 1 if any HARD check fails.
 import { buildPlan, CLS, kerbReturnR } from './plan-c.mjs';
-import { matrix, ARMS } from './turns-plan-c.mjs';
+import { matrix, ARMS, buildTurnGraph } from './turns-plan-c.mjs';
 
 const P = buildPlan();
 const N = new Map(P.nodes.map((n) => [n.id, n])), E = P.edges;
@@ -333,11 +333,47 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
   check('turning movements: every arm pair of I1 / I2 / I3 / I4 connected directly (<= 1 ramp) and by U-turn (<= 800 m), a turnaround after the trumpet', !bad.length, bad.length ? bad.join('; ') : summary.join(' | '));
 }
 
+// Parking is a round trip, not just an undirected connection to a lot.
+{
+  const G = buildTurnGraph(P), bad = [];
+  const centre = P.nodes.find((n) => n.x === 0 && n.z === 0);
+  const centreStates = E.filter((e) => e.a === centre.id || e.b === centre.id).flatMap((e) =>
+    e.a === centre.id ? [`${e.id}|1@0`, `${e.id}|-1@end`] : [`${e.id}|1@end`, `${e.id}|-1@0`]);
+  for (const e of E.filter((e) => e.lot)) {
+    const end = [N.get(e.a), N.get(e.b)].find((n) => n.legs === 1);
+    if (!end) continue;
+    const arrive = `${e.id}|${e.b === end.id ? 1 : -1}@end`, depart = `${e.id}|${e.b === end.id ? -1 : 1}@0`;
+    if (!G.dijkstra(G.full, arrive, depart)) bad.push(`${e.lot}: no turnaround`);
+    if (!centreStates.some((v) => G.dijkstra(G.full, arrive, v))) bad.push(`${e.lot}: no return to centre`);
+    if (!centreStates.some((v) => G.dijkstra(G.full, v, arrive))) bad.push(`${e.lot}: no arrival from centre`);
+  }
+  check('parking arrivals have a legal turnaround and return to the city', !bad.length, bad.join('; ') || 'all lot endpoints have directed arrival / return paths');
+}
+
+// Independent check on emitted graph transitions: do not certify a RIRO route using its own permissive graph.
+{
+  const G = buildTurnGraph(P), bad = []; let pairs = 0;
+  for (const j of P.junctions.filter((j) => j.type === 'riro')) {
+    const n = N.get(j.id), es = E.filter((e) => e.a === n.id || e.b === n.id), major = es.find((e) => e.cls === 'arterial');
+    if (!major) { bad.push(`${j.id}: no major arterial`); continue; }
+    for (const a of es) for (const b of es) {
+      const na = N.get(a.a === n.id ? a.b : a.a), nb = N.get(b.a === n.id ? b.b : b.a);
+      const ix = Math.sign(n.x - na.x), iz = Math.sign(n.z - na.z), ox = Math.sign(nb.x - n.x), oz = Math.sign(nb.z - n.z);
+      const allowed = ix * oz - iz * ox === 1 || (ix * ox + iz * oz === 1 && a.dir === major.dir);
+      const u = `${a.id}|${a.b === n.id ? 1 : -1}@end`, v = `${b.id}|${b.a === n.id ? 1 : -1}@0`;
+      if (G.nodeEdges.some((e) => e.u === u && e.v === v) !== allowed) bad.push(`${j.id}: ${a.id}->${b.id}`);
+      pairs++;
+    }
+  }
+  check('RIRO graph forbids left turns, minor through crossings and U-turns; preserves legal movements', !bad.length, bad.join('; ') || `${pairs} ordered approach pairs checked independently`);
+}
+
 if (process.argv.includes('--json')) console.log(JSON.stringify(results, null, 1));
 else {
   console.log(`Masterplan C audit: ${P.counts.junctions} junctions (${P.counts.signals} signals, ${P.counts.roundabouts} roundabouts), ${P.counts.interchanges} interchanges, ${P.counts.blocks} blocks`);
   for (const r of results) console.log(`${r.ok ? 'PASS' : r.hard ? 'FAIL' : 'WARN'}  ${r.name}\n      ${r.detail}`);
   const fails = results.filter((r) => !r.ok && r.hard).length;
   console.log(fails ? `${fails} check(s) failed` : 'all checks passed');
-  process.exitCode = fails ? 1 : 0;
 }
+// Machine-readable mode must fail CI too, not just print a red item with exit code zero.
+process.exitCode = results.some((r) => !r.ok && r.hard) ? 1 : 0;
