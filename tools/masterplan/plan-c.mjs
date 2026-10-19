@@ -164,7 +164,7 @@ export function buildPlan() {
     interchanges.push({ id, kind: 'cloverleaf', name, at, ramps, deck: [frame(at, 0)([-8, 0]), frame(at, 0)([8, 0])], deckRoad: 'motorway', note: 'полный клеверный лист: М1 над Главным пр., четыре петли R 14, внешние съезды' });
   }
   function cloverleaf(id, at, name) {
-    const r = 18, a = MW + 4, L = 110, kk = 30, ramps = [];
+    const r = 20, a = MW + 3, L = 120, kk = 30, ramps = [];   // rounder like I1: r 20, circle 3 m off the roads (was r 18 / 4 m: a drop), outer ramps from 120 m
     for (let q = 0; q < 4; q++) {
       const F = frame(at, q), C = [a + r, a + r];
       const loop = join(cubic([MW + 2.8, ATT], [1, 0], 8, [a + r, a], [1, 0], 9), arc(C, r, -90, 180), cubic([a, a + r], [0, -1], 9, [ATT, MW + 2.8], [0, -1], 8));

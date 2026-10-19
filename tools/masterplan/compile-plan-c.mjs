@@ -32,7 +32,7 @@ const COLORS = {
   sea: 0x3f7fae, seaLight: 0x7fb7d2, river: 0x4a88b4, bank: 0xb9ae8c, dirt: 0x8d7a58,
   asph: 0x353a3f, ramp: 0x353a3f, walk: 0xc4bfae, kerb: 0xaaa595, median: 0xb8b4a4, medLawn: 0x6f9d57, medM: 0xa9a99f, plaza: 0xd4cab4, islandL: 0x6ea154, islandC: 0xd9d1bb,
   conc: 0xbdb9ad, concD: 0x8d8a82, sleeper: 0x4a3f36, white: 0xf2f2ec, yellow: 0xe7c85a, ballast: 0x8a8782, rail: 0x56585b, platform: 0xb8b5aa, moleC: 0x9b9a92, rock: 0x77756f,
-  resid: 0x82b064, mixed: 0x95b57a, cbd: 0xaaa898, indus: 0x959890, school: 0x90bd72, hospital: 0xa4b88e, station: 0xa9a79b, villas: 0x78b45f, waterf: 0xa6b88f, market: 0xb4ae98, stadium: 0x6fae55,
+  resid: 0x82b064, mixed: 0x95b57a, cbd: 0xaaa898, indus: 0x70757a, school: 0x90bd72, hospital: 0xa4b88e, station: 0xa9a79b, villas: 0x78b45f, waterf: 0xa6b88f, market: 0xb4ae98, stadium: 0x6fae55,
 };
 const PAL = Object.keys(COLORS), CI = Object.fromEntries(PAL.map((k, i) => [k, i]));
 const H = { ground: 0, asph: 0.05, walk: 0.12, med: 0.12, paint: 0.062, ramp: 0.052, ringWalk: 0.12, island: 0.09, plaza: 0.03, fillet: 0.123, zone: -0.06, zone2: -0.05, water: -0.02, bank: -0.03, base: -0.08, rail: 0.035, railPaint: 0.066 };   // every ground layer has its own height (no coplanar overlaps = no z-fighting seams)
@@ -244,13 +244,14 @@ const addShape = (x0, z0, x1, z1, type) => { if (x1 - x0 > 1e-4 && z1 - z0 > 1e-
 const roundAt = (nodeId) => { const j = J.get(nodeId); return j && j.type === 'roundabout' ? j : null; };
 const pendingTapers = [];   // asphalt triangles of the M2 lane tapers near I2, emitted after the raster
 const I2W = { half: CLS.motorway3.w / 2, flat: 36, taper: 31 };   // M2 near I2: half width 8.4, flat for |z| <= 36, tapers back to 6.3 at |z| = 67
-const mTrim = (id) => { const n = N.get(id); return n.x === M2_X && n.z === 0 ? 18.5 : 0; };   // (legs is a count in the plan data: the former `legs.length` trim was always 0)   // the motorway median ends 18.5 m before the I2 crossing (just past the corner fillets; the zebra at 20.3 m stands on it) (zebra, stop line)
+const MEND = { z0: 67, z1: 88 };   // the end of M2 at the trumpet I4: two 2-lane carriageways (+ median) taper into the two one-lane trunk ramps over 21 m (1:20 / 1:16)
+const mTrim = (id) => { const n = N.get(id); return n.x === M2_X && n.z === 0 ? 18.5 : n.x === M2_X && n.z === MEND.z1 ? MEND.z1 - MEND.z0 : 0; };   // (legs is a count in the plan data: the former `legs.length` trim was always 0)   // the motorway median ends 18.5 m before the I2 crossing (just past the corner fillets; the zebra at 20.3 m stands on it) (zebra, stop line)
 const edgeSpan = (e) => {   // along-axis span of the carriageway/sidewalk, trimmed to the chord of a roundabout
   const a = N.get(e.a), b = N.get(e.b), ax = e.dir === 'x' ? 0 : 1, lo = Math.min(a.x * (1 - ax) + a.z * ax, b.x * (1 - ax) + b.z * ax), hi = Math.max(a.x * (1 - ax) + a.z * ax, b.x * (1 - ax) + b.z * ax);
   const lowNode = (a.x * (1 - ax) + a.z * ax) <= (b.x * (1 - ax) + b.z * ax) ? e.a : e.b, highNode = lowNode === e.a ? e.b : e.a;
   const ch = (id) => { const j = roundAt(id); return j ? Math.sqrt(Math.max(0, j.R * j.R - hw(e.cls) ** 2)) - 0.12 : 0; };
   const mo = e.cls === 'motorway';
-  const mt = (id) => mo && (N.get(id).legs.length === 1) ? 0 : 0;
+  const mt = (id) => { const n = N.get(id); return mo && n.x === M2_X && n.z === MEND.z1 ? MEND.z1 - MEND.z0 : 0; };   // M2's trumpet end is drawn as a taper (the I2 median trim only concerns markings)
   const tl = TRANS.get(lowNode + ':' + e.id), th = TRANS.get(highNode + ':' + e.id);   // the tapered end is drawn separately
   return { lo: lo + ch(lowNode) + mt(lowNode) + (tl ? tl.L : 0), hi: hi - ch(highNode) - mt(highNode) - (th ? th.L : 0), lowNode, highNode, ax };
 };
@@ -275,6 +276,15 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
   const rx = -hz, rz = hx, P = (t, l) => [x + hx * t + rx * l, z + hz * t + rz * l];
   emitTri('p', P(-0.9, -0.09), P(-0.9, 0.09), P(0.4, -0.09), H.paint, CI.white); emitTri('p', P(-0.9, 0.09), P(0.4, 0.09), P(0.4, -0.09), H.paint, CI.white);
   emitTri('p', P(0.2, -0.5), P(0.2, 0.5), P(1.1, 0), H.paint, CI.white);
+}
+{ // M2 end at the trumpet: carriageway trapezoids (outer edge 6.3 -> 5.24, inner edge 1.1 -> 2.44), the median widens 2.2 -> 4.88
+  const c = M2_X, z0 = MEND.z0, z1 = MEND.z1, oA = MW, oB = MW * 0.61 + CLS.ramp.w / 2, iA = CLS.motorway.median / 2, iB = MW * 0.61 - CLS.ramp.w / 2;   // TRK = 0.61 MW as in plan-c.mjs
+  for (const sg of [-1, 1]) {
+    const P = (lat, z) => [c + sg * lat, z];
+    emitTri('r', P(oA, z0), P(iA, z0), P(iB, z1), H.asph, CI.asph); emitTri('r', P(oA, z0), P(iB, z1), P(oB, z1), H.asph, CI.asph);
+    const a = P(iA, z0), b = P(iB, z1); emitWall(a[0], a[1], b[0], b[1], H.asph, H.med, CI.kerb);
+  }
+  emitTri('r', [c - iA, z0], [c + iA, z0], [c + iB, z1], H.med, CI.medLawn); emitTri('r', [c - iA, z0], [c + iB, z1], [c - iB, z1], H.med, CI.medLawn);
 }
 for (const { L, wide, narrow, node, sgn } of TRANS.values()) {
   const hn = hw(narrow.cls), hd = hw(wide.cls), sn = CLS[narrow.cls].sidewalk, sd = CLS[wide.cls].sidewalk, ax = wide.dir, c = ax === 'z' ? node.x : node.z, mh = CLS[wide.cls].median / 2;
@@ -1129,6 +1139,16 @@ const SZ = PLAN.size;
   }
   const ZONE = { residential: 'resid', mixed: 'mixed', cbd: 'cbd', industrial: 'indus', logistics: 'indus', railyard: 'indus', station: 'station', busterm: 'station', villas: 'villas', school: 'school', hospital: 'hospital', park: 'park', market: 'market', east: 'mixed', stadium: 'stadium', campus: 'school', waterfront: 'waterf' };
   for (const b of PLAN.blocks) { const r = b.lot || b.rect; emitRect('g', 'q', r[0], r[1], r[2], r[3], H.zone2, CI[ZONE[b.zone] || 'resid']); }
+  // industrial / logistics lots are paved yards with bay lines (two rows of 3.2 m bays along the long edges, a loading apron between, a painted yard boundary), not a bare grey plate
+  for (const b of PLAN.blocks) if (b.zone === 'industrial' || b.zone === 'logistics') {
+    const [x0, z0, x1, z1] = b.lot || b.rect, inset = 1.4, w = x1 - x0, h = z1 - z0, y = H.zone2 + 0.004;
+    for (const [ax0, az0, ax1, az1] of [[x0 + inset, z0 + inset, x1 - inset, z0 + inset + 0.15], [x0 + inset, z1 - inset - 0.15, x1 - inset, z1 - inset], [x0 + inset, z0 + inset, x0 + inset + 0.15, z1 - inset], [x1 - inset - 0.15, z0 + inset, x1 - inset, z1 - inset]]) emitRect('p', 'q', ax0, az0, ax1, az1, y, CI.white);
+    const long = w >= h, depth = Math.min(8, (long ? h : w) * 0.22);
+    for (const side of [0, 1]) for (let t = inset + 3.2; t < (long ? w : h) - inset - 1; t += 3.2) {
+      if (long) { const zz0 = side ? z1 - inset - depth : z0 + inset, zz1 = side ? z1 - inset : z0 + inset + depth; emitRect('p', 'q', x0 + t - 0.07, zz0, x0 + t + 0.07, zz1, y, CI.white); }
+      else { const xx0 = side ? x1 - inset - depth : x0 + inset, xx1 = side ? x1 - inset : x0 + inset + depth; emitRect('p', 'q', xx0, z0 + t - 0.07, xx1, z0 + t + 0.07, y, CI.white); }
+    }
+  }
   // fields in strips
   const triOf = (poly) => { const v = poly.map((p) => new THREE.Vector2(p[0], p[1])); return THREE.ShapeUtils.triangulateShape(v, []).map((t) => t.map((i) => poly[i])); };
   for (const f of PLAN.rural.fields) {
