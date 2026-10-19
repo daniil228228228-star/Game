@@ -1,0 +1,40 @@
+// Actual current core goals + actual city/service owners, with static obstacles appearing after planning.
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import {auditTargets} from '../tools/masterplan/audit-plan-c-targets.mjs';
+import {makeContext} from './plan-c-traffic-levels.test.mjs';
+let checks=0;const check=(p,m)=>{assert.ok(p,m);checks++;};
+const report=auditTargets();
+for(const l of report.levels){check(l.trips.length===48,'all 16 stages and three real cargo sources tested');check(l.blocked===0,'all current source/goal pairs reachable');check(l.throughStageColliders===0,'full-body circle envelope avoids all stage colliders');}
+check(report.placements.some(p=>p.centreInRoadCorridor),'audit still reports the unresolved C3 placement problem');
+const T=makeContext(),THREE=T.THREE;vm.runInContext(fs.readFileSync(new URL('../assets/plan-c-traffic-v161.js',import.meta.url),'utf8'),T);
+const A=T.PlanCTrafficV161,arc=[...A.arcs.values()].find(a=>a.kind==='street'&&a.road==='e72');
+const p=t=>{const a=arc.p[0],b=arc.p.at(-1),v=new THREE.Vector3(a[0]+(b[0]-a[0])*t,0,a[1]+(b[1]-a[1])*t);v.navArc=arc.id;return v;};
+const from=p(.1),to=p(.9),direct=A.route(from,to,{access:false});check(direct.length>1,'unblocked direct route exists');
+const owner=new THREE.Object3D(),obstacle={id:'new-wall',category:'building',shape:'circle',flags:{agent:true},pos:p(.7),radius:.8,owner};
+T.__TYCOON_V83_COLLISIONS__={query:()=>[obstacle]};A.tick(1/30);
+check(!A.stepClear(from,to),'new obstacle blocks a swept step');
+check(A.route(from,to,{access:false}).length===0,'no path crosses an unavoidable obstacle');
+check(A.route(from,p(.2),{access:false}).length>1,'partial trip before a distant obstacle remains possible');
+check(A.route(p(.85),p(.95),{access:false}).length>1,'partial trip after an obstacle remains possible');
+const version=A.obstacleVersion;obstacle.pos.x+=30;A.tick(1/30);
+check(A.obstacleVersion>version&&A.route(from,to,{access:false}).length>1,'moving a collider invalidates blocked-arc cache');
+obstacle.pos.copy(p(.7));owner.visible=false;A.tick(1/30);check(A.route(from,to,{access:false}).length>1,'hidden solids do not block roads');
+owner.visible=true;obstacle.category='vehicle';A.tick(1/30);check(A.stepClear(from,to),'dynamic vehicles remain with traffic avoidance');
+obstacle.category='building';obstacle.pos.y=8;A.tick(1/30);check(A.stepClear(from,to),'upper-level collider does not block ground route');
+obstacle.pos.y=0;obstacle.active=()=>false;A.tick(1/30);check(A.stepClear(from,to),'inactive collider is ignored');
+delete obstacle.active;
+// Both actual owners must stop and discard their now-invalid route before moving into the obstacle.
+obstacle.pos.copy(from);A.tick(1/30);
+const city={group:new THREE.Object3D(),kind:'civilian',route:direct,pause:0};city.group.position.copy(from);city.group.position.y=.04;T.livingCityRuntime.cars=[city];T.fixture.clear();
+const before=city.group.position.clone();T.transportMotionKernel.moveWaypointCityVehicle(city,1/30,()=>{});
+check(city.group.position.distanceTo(before)===0&&city.route===null,'city owner stops and requests replanning');
+T.livingCityRuntime.cars=[];T.fixture.clear();const truck=new THREE.Object3D();truck.position.copy(from);truck.userData={role:'delivery',state:'returning',path:direct,pathIndex:0,home:to,speed:2.8,currentSpeed:0};T.serviceVehicles=[truck];
+T.moveWorkVehicle(truck,1/30);check(truck.position.distanceTo(from)===0&&truck.userData.path.length===0,'service owner stops and requests replanning');
+let revision=0,live=[];T.__TYCOON_V83_COLLISIONS__={query:()=>live,rev:()=>revision};A.tick(1/30);
+live=[obstacle];revision++;
+check(!A.stepClear(from,to),'registry revision is checked even before the next traffic tick');
+obstacle.shape='obb';obstacle.hx=.4;obstacle.hz=1.6;obstacle.yaw=Math.PI/4;obstacle.pos.copy(p(.7));revision++;
+check(!A.stepClear(from,to),'rotated rectangular collider blocks a swept step');
+console.log(`PASS ${checks} static-routing assertions; all 96 current cargo/worksite pairs clear the 2.24 x 1.02 body envelope under stage-circle physics (not full-scene acceptance)`);
