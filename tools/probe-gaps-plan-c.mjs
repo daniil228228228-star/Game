@@ -24,13 +24,14 @@ for (const s of spots) {
       const cam = new THREE.PerspectiveCamera(50, 390 / 664, 0.35, 900); const base = mode === 'on' ? y : 0;
       if (mode === 'on') cam.position.set(px - dx * 9, base + 7, pz - dz * 9); else cam.position.set(px + -dz * 7, base + 4, pz + dx * 7);
       cam.lookAt(px, base + 1, pz); cam.updateMatrixWorld(true);
+      const sph = scene.children.filter((o) => o.isMesh && o.geometry && o.geometry.type === 'SphereGeometry'); const vis = sph.map((o) => o.visible); sph.forEach((o) => { o.visible = false; }); const oldBg = scene.background; scene.background = null; const oc = new THREE.Color(); renderer.getClearColor(oc); const oa = renderer.getClearAlpha(); renderer.setClearColor(0xff00ff, 1); scene.fog = null;
       const cv = renderer.domElement; const oldSize = renderer.getSize(new THREE.Vector2()); renderer.setSize(390, 664, false); const fog = scene.fog; renderer.render(scene, cam);
-      const url = cv.toDataURL('image/png'); renderer.setSize(oldSize.x, oldSize.y, false); scene.fog = fog;
+      const url = cv.toDataURL('image/png'); renderer.setSize(oldSize.x, oldSize.y, false); scene.fog = fog; sph.forEach((o, i) => { o.visible = vis[i]; }); scene.background = oldBg; renderer.setClearColor(oc, oa);
       const im = new Image(); im.src = url; await im.decode(); const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const x2 = c.getContext('2d'); x2.drawImage(im, 0, 0);
       const W = im.width, H = im.height, d = x2.getImageData(0, 0, W, H).data, px0 = (xx, yy) => { const i = (yy * W + xx) * 4; return [d[i], d[i + 1], d[i + 2]]; };
-      const sky = px0(Math.floor(W / 2), 3); let n = 0, y0 = Infinity;
+      let n = 0, y0 = Infinity;
       const fwd = new THREE.Vector3(); cam.getWorldDirection(fwd); const far = new THREE.Vector3(cam.position.x + fwd.x * 3000, cam.position.y, cam.position.z + fwd.z * 3000).project(cam), hor = (1 - far.y) / 2 * H;   // screen row of the true horizon at the camera height
-      for (let yy = Math.floor(Math.min(H * 0.95, Math.max(H * 0.2, hor + H * 0.05))); yy < H * 0.95; yy += 2) for (let xx = 0; xx < W; xx += 2) { const p = px0(xx, yy); if (Math.abs(p[0] - sky[0]) < 14 && Math.abs(p[1] - sky[1]) < 14 && Math.abs(p[2] - sky[2]) < 14) { n++; if (yy < y0) y0 = yy; } }
+      for (let yy = Math.floor(Math.min(H * 0.95, Math.max(H * 0.2, hor + H * 0.06))); yy < H * 0.95; yy += 2) for (let xx = 0; xx < W; xx += 2) { const p = px0(xx, yy); if (p[0] > 200 && p[1] < 70 && p[2] > 200) { n++; if (yy < y0) y0 = yy; } }
       return { n, url: n > 40 ? url : null };
     }, { s, mode });
     if (r.n > 40) { bad.push([s.tag, mode, r.n]); fs.writeFileSync(path.join(out, `${s.tag.replace(/[^\w.@,-]/g, '_')}-${mode}.png`), Buffer.from(r.url.split(',')[1], 'base64')); }
