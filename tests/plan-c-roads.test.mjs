@@ -51,9 +51,24 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
     if (e.split) continue;   // I2: the straight axis of the split street is a lawn island; its carriageways are checked below
     const a = N.get(e.a), b = N.get(e.b), L = Math.hypot(b.x - a.x, b.z - a.z);
     const rA = (D.graph.rings.find((q) => q[0] === e.a) || [0, 0, 0, 0])[3], rB = (D.graph.rings.find((q) => q[0] === e.b) || [0, 0, 0, 0])[3];   // inside a roundabout the island is not road
-    for (let s = 0.3; s < L; s += 1.1) { if (s < rA || s > L - rB) continue; const x = a.x + (b.x - a.x) * s / L, z = a.z + (b.z - a.z) * s / L; if (e.cls === 'motorway' && Math.abs(x - 250) < 0.01 && z > 66.9) continue;   /* M2's trumpet end: the centre line is the widening median island (21 m taper, drawn as lawn) */ samples++; if (!asphaltAt(x, z) && !(e.cls === 'motorway' && (medAt(x, z) || (Math.abs(x - 250) < 0.01 && Math.abs(Math.abs(z) - 18.5) < 1.2))))   /* the tip of M2's median nose has zero width */ holes.push([e.id, R(x), R(z)]); }
+    const bR = (id) => { const b = (D.graph.bends || []).find((q) => q[0] === id); return b ? b[3] : 0; }, bA = bR(e.a), bB = bR(e.b);   // a bend: the axis leaves the straight edge at the tangent point (the arc is checked in 1e)
+    for (let s = 0.3; s < L; s += 1.1) { if (s < rA || s > L - rB || s < bA || s > L - bB) continue; const x = a.x + (b.x - a.x) * s / L, z = a.z + (b.z - a.z) * s / L; if (e.cls === 'motorway' && Math.abs(x - 250) < 0.01 && z > 66.9) continue;   /* M2's trumpet end: the centre line is the widening median island (21 m taper, drawn as lawn) */ samples++; if (!asphaltAt(x, z) && !(e.cls === 'motorway' && (medAt(x, z) || (Math.abs(x - 250) < 0.01 && Math.abs(Math.abs(z) - 18.5) < 1.2))))   /* the tip of M2's median nose has zero width */ holes.push([e.id, R(x), R(z)]); }
   }
   check(holes.length === 0 && PLAN.edges.length === D.graph.edges.length, `data: asphalt under the centre line of all ${PLAN.edges.length} graph edges (${samples} samples, holes ${J(holes.slice(0, 6))})`);
+  // 1e. bends: every two-leg corner is a circular arc; asphalt under the arc centre line all along and none at the old square corner's outer tip
+  {
+    const bad = [], BN = D.graph.bends || [];
+    for (const [id, bx, bz, Rd] of BN) {
+      const pb = PLAN.bends.find((q) => q.node === id), [A, B] = pb.arms, O = [bx + (A.dir[0] + B.dir[0]) * Rd, bz + (A.dir[1] + B.dir[1]) * Rd];
+      for (let k = 0; k <= 20; k++) {
+        const t = k / 20 * Math.PI / 2, x = O[0] + Rd * (-B.dir[0] * Math.cos(t) - A.dir[0] * Math.sin(t)), z = O[1] + Rd * (-B.dir[1] * Math.cos(t) - A.dir[1] * Math.sin(t));
+        if (!asphaltAt(x, z) && !asphaltAt(x + 0.05, z) && !asphaltAt(x - 0.05, z) && !asphaltAt(x, z + 0.05)) bad.push([id, R(x), R(z)]);
+      }
+      const cx = bx + (A.dir[0] + B.dir[0]) * 1.2, cz = bz + (A.dir[1] + B.dir[1]) * 1.2;   // the square corner's centre area is no longer paved
+      if (asphaltAt(bx + A.dir[0] * 0.5 + B.dir[0] * 0.5, bz + A.dir[1] * 0.5 + B.dir[1] * 0.5) && Rd > 3) bad.push([id, 'square corner still paved', R(cx), R(cz)]);
+    }
+    check(BN.length === PLAN.bends.length && BN.length >= 10 && bad.length === 0, `data: ${BN.length} bends (two-leg corners) are arcs of R ${BN.map((q) => q[3]).join('/')}: asphalt under the whole arc, the square corner is gone (${J(bad.slice(0, 4))})`);
+  }
   // 1b. I2 split street: the band of every island carries asphalt all round (sampled between the island kerb and the outer outline), the island itself has none
   {
     const bad = [];
@@ -348,7 +363,8 @@ await run(async () => {
       for (const e of D.graph.edges) {
         const [id, , , cls, x0, z0, x1, z1] = e, L = Math.hypot(x1 - x0, z1 - z0);
         for (let s = 0.5; s < L; s += 6) {
-          if (D.graph.rings.some((q) => (q[0] === e[1] && s < q[3] + 1) || (q[0] === e[2] && L - s < q[3] + 1))) continue;   // inside a roundabout: island
+          if (D.graph.rings.some((q) => (q[0] === e[1] && s < q[3] + 1) || (q[0] === e[2] && L - s < q[3] + 1))) continue;
+          if ((D.graph.bends || []).some((q) => (q[0] === e[1] && s < q[3] + 1) || (q[0] === e[2] && L - s < q[3] + 1))) continue;   // bend: the arc replaces the corner   // inside a roundabout: island
           const x = x0 + (x1 - x0) * s / L, z = z0 + (z1 - z0) * s / L; n++;
           if (cls === 'motorway' && D.surfaces(x, z).some((h) => h > 0.08)) continue;
           if (cls === 'motorway' && Math.abs(x - 250) < 0.01 && Math.abs(Math.abs(z) - 18.5) < 1.2) continue;   // the tip of M2's median nose: zero width   // on a causeway: the deck is the surface (checked by the height tests)

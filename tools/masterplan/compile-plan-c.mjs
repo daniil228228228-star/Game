@@ -79,7 +79,8 @@ function emitTri(layer, a, b, c, y, ci) {   // clips to every touched cell, fan-
     for (let i = 1; i + 1 < poly.length; i++) push(t, poly[0][0], poly[0][1], poly[i][0], poly[i][1], poly[i + 1][0], poly[i + 1][1], y, ci);
   }
 }
-function emitPoly(layer, poly, y, ci, holes = []) {   // arbitrary simple polygon (+ holes) -> triangles
+function emitPoly(layer, poly, y, ci, holes = []) {   // arbitrary simple polygon (+ holes) -> triangles; an axis-aligned rectangle is a rect (a triangulation diagonal left a hairline crack across big lots / port apron, 2026-10-19)
+  if (!holes.length && poly.length === 4) { const xs = poly.map((q) => q[0]), zs = poly.map((q) => q[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs); if (poly.every((q) => (q[0] === x0 || q[0] === x1) && (q[1] === z0 || q[1] === z1))) { emitRect(layer, 'q', x0, z0, x1, z1, y, ci); return; } }
   const v = poly.map((p) => new THREE.Vector2(p[0], p[1])), hv = holes.map((h) => h.map((p) => new THREE.Vector2(p[0], p[1])));
   const all = poly.concat(...holes);
   for (const t of THREE.ShapeUtils.triangulateShape(v, hv)) emitTri(layer, all[t[0]], all[t[1]], all[t[2]], y, ci);
@@ -1228,11 +1229,11 @@ const SZ = PLAN.size;
   PLAN.rural.lanes = PLAN.rural.lanes.filter((l) => !ICENV.some((r) => l.some((q) => q[0] > r[0] && q[0] < r[2] && q[1] > r[1] && q[1] < r[3])));   // no farm track ends at a ramp
   const KIND = { forest: 'forest', industry: 'industry', verge: 'verge', park: 'park', parking: 'parking', embankment: 'embank', beach: 'beach', promenade: 'promenade', port: 'port', urban: 'urban' };
   const KORDER = ['urban', 'industry', 'verge', 'park', 'parking', 'embankment', 'port', 'beach', 'promenade', 'forest'];
-  for (const a of PLAN.areas) emitPoly('g', a.poly, a.kind === 'parking' ? -0.0615 : -0.075 + KORDER.indexOf(a.kind) * 0.002, CI[KIND[a.kind]]);   // a lot lies well above the park / verge polygons under it (2 mm apart z-fought into stripes)
+  for (const a of PLAN.areas) emitPoly('g', a.poly, a.kind === 'parking' ? -0.054 : -0.075 + KORDER.indexOf(a.kind) * 0.002, CI[KIND[a.kind]]);   // a lot lies well above the park / verge polygons under it (2 mm apart z-fought into stripes)
   // parking lots are paved and have bay lines (two rows of 2.8 m bays + a 6 m aisle), painted on the lot
   for (const a of PLAN.areas) if (a.kind === 'parking') {
     const xs = a.poly.map((q) => q[0]), zs = a.poly.map((q) => q[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs), zm = (z0 + z1) / 2;
-    for (const [za, zb] of [[z0 + 1, zm - 3.4], [zm + 3.4, z1 - 1]]) for (let x = x0 + 2; x <= x1 - 2 + 1e-6; x += 2.8) emitRect('p', 'q', x - 0.06, za, x + 0.06, zb, -0.05, CI.white);
+    for (const [za, zb] of [[z0 + 1, zm - 3.4], [zm + 3.4, z1 - 1]]) for (let x = x0 + 2; x <= x1 - 2 + 1e-6; x += 2.8) emitRect('p', 'q', x - 0.06, za, x + 0.06, zb, -0.046, CI.white);
   }
   const ZONE = { residential: 'resid', mixed: 'mixed', cbd: 'cbd', industrial: 'indus', logistics: 'indus', railyard: 'indus', station: 'station', busterm: 'station', villas: 'villas', school: 'school', hospital: 'hospital', park: 'park', market: 'market', east: 'mixed', stadium: 'stadium', campus: 'school', waterfront: 'waterf' };
   for (const b of PLAN.blocks) { const r = b.lot || b.rect; emitRect('g', 'q', r[0], r[1], r[2], r[3], H.zone2, CI[ZONE[b.zone] || 'resid']); }

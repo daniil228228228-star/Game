@@ -74,7 +74,7 @@ export function buildPlan() {
     { x: 0, cls: 'arterial', name: 'Главный пр.', spans: [[-370, 188]] },   // I1 is a full cloverleaf: the arterial is the crossing road up to z -340, no junction on it between z -340 and -126
     { x: 40, cls: 'local', spans: [[-108, 188]] },
     { x: 80, cls: 'collector', name: 'Университетская ул.', spans: [[-190, 160]] },
-    { x: 80, cls: 'service', name: 'Портовая ул.', spans: [[160, 196]] },
+    { x: 80, cls: 'service', name: 'Портовая ул.', spans: [[160, 190]] },
     { x: 120, cls: 'local', spans: [[-108, 80]] },
     { x: 160, cls: 'arterial', name: 'Восточный пр.', spans: [[-190, 160]] },
     { x: 160, cls: 'service', name: 'Портовый пр.', spans: [[160, 214]] },
@@ -94,7 +94,7 @@ export function buildPlan() {
     { z: 120, cls: 'local', spans: [[-280, -232], [-194, -160], [-80, 80], [160, 200]] },
     { z: 160, cls: 'arterial', name: 'Южный пр. / Портовое ш.', spans: [[-300, 330]] },
     { z: 188, cls: 'collector', name: 'Набережная', spans: [[-194, 40]] },
-    { z: 196, cls: 'service', name: 'Причальная ул.', spans: [[80, 160]] },
+    { z: 190, cls: 'service', name: 'Причальная ул.', spans: [[80, 160]] },
     { z: 214, cls: 'service', name: 'Контейнерный пр.', spans: [[160, 280]] },
   ];
   // extra split points: diamond terminals, the P+R entrance
@@ -332,6 +332,7 @@ export function buildPlan() {
     { kind: 'verge', poly: [[298, 44], [300, 44], [300, 72], [298, 72]] }, { kind: 'verge', poly: [[204, 72], [300, 72], [300, 156], [204, 156]] },
     { kind: 'park', poly: [[256, 40], [300, 40], [300, 156], [256, 156]], name: 'Восточный лесопарк' },
     { kind: 'parking', poly: [[268, 44], [298, 44], [298, 72], [268, 72]], name: 'P+R' },
+    { kind: 'parking', poly: [[284, 170], [330, 170], [330, 210], [284, 210]], name: 'Контейнерный двор' }, { kind: 'parking', poly: [[84, 170], [156, 170], [156, 185], [84, 185]], name: 'Портовый склад' },   // paved yards with bay lines beside the port service loop (it serves them; no bare grey plates)
     { kind: 'embankment', poly: [[-236, -168], [-188, -168], [-188, 206], [-236, 206]] },
     { kind: 'beach', poly: [[-300, 164], [-236, 164], [-226, 192], [-226, 212], [-300, 212]] },
     { kind: 'promenade', poly: [[-188, 191], [44, 191], [44, 212], [-188, 212]] },

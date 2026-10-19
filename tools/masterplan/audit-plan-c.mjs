@@ -211,6 +211,36 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
   check('lane drops taper at 1:20 (>= 1:15) and fit their edge; the median ends in a nose', !bad.length, bad.length ? bad.join('; ') : (info.join('; ') || 'no width change outside junctions'));
 }
 
+// 14. axis kinks (2026-10-19): a place where the axis of a road turns by more than 15 degrees in ONE vertex without a radius is a defect (right angles, sharp knees).
+//     (a) street graph: every node with exactly two legs that are not collinear must be a BEND (plan.bends: circular arc, R >= 9 game m for urban local / collector, 14 for service / port, 16 for arterial);
+//         the legs must be long enough for the tangent length R plus the clearance to the far node's junction (6 m); roundabouts with two legs are circles, not kinks.
+//     (b) ramps / slip lanes / semi-direct curves: every vertex of the centre line deflects by <= 15 degrees (arcs and cubics are sampled finely).
+//     Real junctions (3+ legs) are excluded: their corners are kerb returns.
+{
+  const bad = [], info = [], MINR = { service: 14, arterial: 16, collector: 10, local: 9 }, bendOf = new Map((P.bends || []).map((b) => [b.node, b]));
+  for (const n of P.nodes) {
+    if (n.legs !== 2) continue;
+    const es = E.filter((e) => (e.a === n.id || e.b === n.id) && !e.split);
+    if (es.length !== 2 || es[0].dir === es[1].dir) continue;
+    const j = P.junctions.find((q) => q.id === n.id);
+    if (j && j.type === 'roundabout') { info.push(`${n.x},${n.z} roundabout (circle)`); continue; }
+    const b = bendOf.get(n.id), need = Math.max(...es.map((e) => MINR[e.cls] || 0));
+    if (!b) { bad.push(`${n.x},${n.z}: 90 degree corner of ${es.map((e) => e.cls).join('/')} without a radius`); continue; }
+    const lens = es.map((e) => { const o = N.get(e.a === n.id ? e.b : e.a); return Math.hypot(o.x - n.x, o.z - n.z); });
+    if (b.R < need) bad.push(`${n.x},${n.z}: bend R ${b.R} < ${need} for ${es.map((e) => e.cls).join('/')}`);
+    if (lens.some((l) => l < b.R + 6)) bad.push(`${n.x},${n.z}: leg ${Math.min(...lens)} m shorter than R ${b.R} + 6`);
+    info.push(`${n.x},${n.z} ${es.map((e) => e.cls).join('/')} R ${b.R}`);
+  }
+  const knees = [];
+  for (const r of ramps) for (let i = 1; i + 1 < r.pts.length; i++) {
+    const a = r.pts[i - 1], b = r.pts[i], c = r.pts[i + 1], t1 = Math.atan2(b[1] - a[1], b[0] - a[0]), t2 = Math.atan2(c[1] - b[1], c[0] - b[0]);
+    let d = Math.abs(t2 - t1) * 180 / Math.PI; if (d > 180) d = 360 - d;
+    if (d > 15) knees.push(`${r.id} at ${R1(b[0])},${R1(b[1])} ${Math.round(d)} deg`);
+  }
+  if (knees.length) bad.push(...knees);
+  check('no axis kink > 15 degrees without a radius: every two-leg corner is a bend (R >= 9 / 10 / 14 / 16 by class, legs hold R + 6), ramp vertices turn <= 15 degrees', !bad.length, bad.length ? bad.join('; ') : `${info.length} bends / circles: ${info.join('; ')}; ${ramps.length} ramps without a kink`);
+}
+
 if (process.argv.includes('--json')) console.log(JSON.stringify(results, null, 1));
 else {
   console.log(`Masterplan C audit: ${P.counts.junctions} junctions (${P.counts.signals} signals, ${P.counts.roundabouts} roundabouts), ${P.counts.interchanges} interchanges, ${P.counts.blocks} blocks`);
