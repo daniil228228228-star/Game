@@ -35,6 +35,7 @@ const COLORS = {
   asph: 0x353a3f, ramp: 0x353a3f, walk: 0xc4bfae, kerb: 0xaaa595, median: 0xb8b4a4, medLawn: 0x6f9d57, medM: 0xa9a99f, plaza: 0xd4cab4, islandL: 0x558140, islandC: 0xd9d1bb,
   conc: 0xbdb9ad, concD: 0x8d8a82, sleeper: 0x4a3f36, white: 0xf2f2ec, yellow: 0xe7c85a, ballast: 0x8a8782, rail: 0x56585b, platform: 0xb8b5aa, moleC: 0x9b9a92, rock: 0x77756f,
   resid: 0x82b064, mixed: 0x95b57a, cbd: 0xaaa898, indus: 0x70757a, school: 0x90bd72, hospital: 0xa4b88e, station: 0xa9a79b, villas: 0x78b45f, waterf: 0xa6b88f, market: 0xb4ae98, stadium: 0x6fae55,
+  slope: 0x558140,
 };
 const PAL = Object.keys(COLORS), CI = Object.fromEntries(PAL.map((k, i) => [k, i]));
 const H = { ground: 0, asph: 0.05, walk: 0.12, med: 0.12, paint: 0.062, ramp: 0.052, ringWalk: 0.12, island: 0.09, plaza: 0.03, fillet: 0.123, zone: -0.06, zone2: -0.05, water: -0.02, bank: -0.03, base: -0.08, rail: 0.035, railPaint: 0.066 };   // every ground layer has its own height (no coplanar overlaps = no z-fighting seams)
@@ -307,7 +308,7 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
   const c = M2_X, TRK2 = 4.9, K = 0.25;
   const f = (t) => t <= 0 ? 0 : t >= 1 ? 1 : t < K ? t * t / (2 * K * (1 - K)) : t > 1 - K ? 1 - (1 - t) * (1 - t) / (2 * K * (1 - K)) : (t - K / 2) / (1 - K);   // constant slope with parabolic ends
   const L3N = 70, IN = 3.5 - 1.1, BOX = M2Z.box;
-  const lane3 = (z) => z >= M2Z.flat3 ? (z <= M2Z.end3 ? 1 : 0) : 1 - f((M2Z.flat3 - z) / L3N);
+  const lane3 = () => 0;   // no third lane any more: two lanes per direction all along the zone
   const outerA = (z) => 6.3 + 2.1 * lane3(z);                      // asphalt edge (shoulder included)
   const inner = (z) => {                                           // median half width
     const a = Math.abs(z);
@@ -344,9 +345,9 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
     runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 0.2, zS - 1, M2Z.z1 + 1.5);
     ribbonZ(sg, line((z) => 1.35, zN - 70, zN));   // north: median edge line at 1.35 (the plain M2 profile)
     // third-lane edge line (solid) 1.0 inside the asphalt edge: north taper and flat part, ends at the exit gore (z 64)
-    ribbonZ(sg, line((z) => outerA(z) - 1.0, M2Z.z0, zN)); ribbonZ(sg, line((z) => outerA(z >= M2Z.end3 ? M2Z.end3 : z) - 1.0, zS, M2Z.end3 + 0.3));
+    ribbonZ(sg, line((z) => outerA(z) - 1.0, M2Z.z0, zN)); ribbonZ(sg, line((z) => outerA(z) - 1.0, zS, M2Z.end3 - 2));
     // lane divider 3|2 at 5.3: dashed in the three-lane stretch, SOLID from the exit gore on, easing to the trunk ramp's edge line (6.1)
-    { let zd = M2Z.z0; while (zd < zN && 2.1 * lane3(zd) < 0.7) zd += 1; dashZ(sg, line(() => 5.3, zd, zdN)); } dashZ(sg, line(() => 5.3, zdS, M2Z.end3 - 2));
+    // outer edge line: solid at 5.3 up to the exit gore, then easing to the trunk ramp's edge line (6.1)
     runOn(sg, (z) => 5.3 + 0.8 * f((z - M2Z.end3) / (M2Z.z1 - M2Z.end3)), M2Z.end3 - 2, M2Z.z1 + 1.5);
     // lane divider 2|1 at 3.2: dashed from the box until lane 1 has become too narrow (inner edge line within 0.45 m of it)
     let zEnd = zS; while (zEnd < M2Z.z1 && inner(zEnd) + 0.25 < 3.2 - 0.45) zEnd += 1;
@@ -702,7 +703,7 @@ for (const j of PLAN.junctions) {
 // the band ends square at the M2 edge with 7 m kerb returns (right-turn corners), zebra + signal heads on every branch, stop line + arrows + lane dashes on the inbound one.
 const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // splitZones: outline of band + sidewalk of each island (nothing random may stand there)
 {
-  const xm = M2_X, mw = CLS.motorway3.w / 2;   // the junction is 3+3 lanes wide
+  const xm = M2_X, mw = CLS.motorway.w / 2;   // the junction is 2+2 lanes wide (the third lane was removed on the owner's request, 2026-10-19)
   const rr = (xa, xb, hz, rcs, d, n = 8) => {   // rounded-rectangle outline, CCW from the right-bottom side; corner order TR, TL, BL, BR; offset d
     const cs = [[xb, hz, 0], [xa, hz, 90], [xa, -hz, 180], [xb, -hz, 270]], out = [];
     cs.forEach(([cx, cz, a0], k) => { const r = rcs[k], ccx = cx + (cx === xb ? -r : r), ccz = cz + (cz === hz ? -r : r); for (let i = 0; i <= n; i++) { const t = (a0 + 90 * i / n) * Math.PI / 180; out.push([ccx + Math.cos(t) * (r + d), ccz + Math.sin(t) * (r + d)]); } });
@@ -1165,6 +1166,46 @@ for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z'
   // solid body: ground floor is closed under the walls where the deck is higher than 0.3 m, except under the crossing roads
   for (const [x0, x1] of intervalsAbove(hfn, a, b, 0.3)) for (const [y0, y1] of subtractIntervals(x0, x1, MOTOR_CROSS[ref].map((v) => [v - 8, v + 8]))) STRUCT.blockers.push(axis === 'x' ? [y0, c - MW - 0.6, y1, c + MW + 0.6] : [c - MW - 0.6, y0, c + MW + 0.6, y1]);
 }
+// Embankment faces (2026-10-19): a ramp that rides on fill has a SLOPED grass bank 1:2.5 (foot on the ground, tone of the ground layer), not a vertical green wall.  The bank is as wide as the
+// free ground beside the ramp allows (distance to every other road - half width - 0.8 m); where less than 1:1 would fit (the loops of a cloverleaf next to each other, the two tubes of the
+// trumpet, the host deck) the face is a vertical CONCRETE retaining wall instead.  Nothing is ever a vertical green wall.
+const SLOPE_R = 2.5;
+const OBST = (() => { const seen = new Set(), o = []; for (const l of roadIndex.values()) for (const sg of l) if (!seen.has(sg)) { seen.add(sg); o.push(sg); }
+  for (const e of PLAN.edges) { if (e.cls === 'motorway') continue; const a = N.get(e.a), b = N.get(e.b), half = hw(e.cls) + CLS[e.cls].sidewalk; o.push({ id: 'street:' + e.id, a: [a.x, a.z, 0], b: [b.x, b.z, 0], half, dx: b.x - a.x, dz: b.z - a.z, ll: (b.x - a.x) ** 2 + (b.z - a.z) ** 2, street: true }); }
+  return o; })();
+const freeGround = (x, z, own) => {
+  let best = 99;
+  for (const s of OBST) {
+    if (s.id === own) continue;
+    const minx = Math.min(s.a[0], s.b[0]) - s.half - 16, maxx = Math.max(s.a[0], s.b[0]) + s.half + 16, minz = Math.min(s.a[1], s.b[1]) - s.half - 16, maxz = Math.max(s.a[1], s.b[1]) + s.half + 16;
+    if (x < minx || x > maxx || z < minz || z > maxz) continue;
+    const t = s.ll ? Math.max(0, Math.min(1, ((x - s.a[0]) * s.dx + (z - s.a[1]) * s.dz) / s.ll)) : 0;
+    const d = Math.hypot(x - s.a[0] - s.dx * t, z - s.a[1] - s.dz * t) - s.half;
+    if (d < best) best = d;
+  }
+  return best;
+};
+function embankModes(p3, sg, own) {   // per segment of the ramp side: true = grass slope 1:SLOPE_R fits (free ground in a +-4 vertex window), false = concrete retaining wall
+  const body = offsetPts3(p3, sg * (CLS.ramp.w / 2 - 0.3)), fit = body.map((q) => q[2] < 0.3 || freeGround(q[0], q[1], own) - 0.8 >= SLOPE_R * (q[2] + 0.05)), n = body.length, mode = [];
+  const all = fit.every(Boolean);   // all or nothing per ramp side: a bank that changes into a wall and back leaves shards
+  for (let i = 1; i < n; i++) mode[i] = all;
+  if (process.env.EMB_DEBUG) console.log('embank', own, sg, all ? 'SLOPE' : 'wall', 'worst free', Math.min(...body.map((q) => q[2] < 0.3 ? 99 : freeGround(q[0], q[1], own) - 0.8 - SLOPE_R * (q[2] + 0.05))).toFixed(1));
+  return mode;
+}
+function embankFace(run, sg, slope) {   // run: points [x, z, h] on the deck edge; slope = grass bank (true) or retaining wall
+  for (let i = 0; i + 1 < run.length; i++) {
+    const a = run[i], b = run[i + 1], ha = a[2] + 0.05, hb = b[2] + 0.05, dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = sg * -dz / l, nz = sg * dx / l;
+    if (ha < 0.1 && hb < 0.1) continue;
+    if (!slope) { const pa = Math.min(0.6, ha), pb = Math.min(0.6, hb); emitQuadS(a[0], a[1], b[0], b[1], 0, pa, 0, pb, CI.concD); if (ha > 0.6 || hb > 0.6) emitQuadS(a[0], a[1], b[0], b[1], pa, ha, pb, hb, CI.conc); continue; }   // retaining wall: dark plinth + concrete face
+    const wa = SLOPE_R * ha, wb = SLOPE_R * hb, A0 = [a[0], ha, a[1]], B0 = [b[0], hb, b[1]], A1 = [a[0] + nx * wa, 0, a[1] + nz * wa], B1 = [b[0] + nx * wb, 0, b[1] + nz * wb];
+    emitTri3(A0, A1, B0, CI.slope); emitTri3(A1, B1, B0, CI.slope);
+  }
+}
+function embankCap(q, sg, nextDir, slopeFacesForward) {   // vertical end face of a grass bank where it meets a retaining wall / a bridge span: a triangle deck edge - foot - ground, drawn from both sides
+  const h = q[2] + 0.05, l = Math.hypot(nextDir[0], nextDir[1]) || 1, nx = sg * -nextDir[1] / l, nz = sg * nextDir[0] / l, w = SLOPE_R * h;
+  const T = [q[0], h, q[1]], F = [q[0] + nx * w, 0, q[1] + nz * w], G = [q[0], 0, q[1]];
+  emitTri3(T, F, G, CI.slope); emitTri3(T, G, F, CI.slope);
+}
 // Render the pre-resolved ramp profiles. Single-lane ramps have edge lines,
 // NOT a dashed centre line suggesting a second lane.
 for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts) {
@@ -1173,6 +1214,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
   const { offL, offR, dashed, adjL, adjR, skipL, skipR } = rampOffs.get(id);
   asymRibbon(p3, offL, offR, 0.052, CI.asph);
   for (const sg of [-1, 1]) {
+    const embMode = embankModes(p3, sg, id), cross2 = (k) => sBr != null && Math.abs((S[k - 1] + S[k]) / 2 - sBr) < 9;
     const q = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));
     const body = offsetPts3(p3, sg * (CLS.ramp.w / 2 - 0.3));
     for (let i = 1; i < p3.length; i++) {
@@ -1180,7 +1222,11 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
       const cross = sBr != null && Math.abs((S[i - 1] + S[i]) / 2 - sBr) < 9;
       const support = cross ? q : body;
       for (const run of exposedRuns([support[i - 1], support[i]], 0, id, 0.3, !cross))
-        wallAlong(run, 0, (h) => cross ? h - 0.6 : 0, (h) => h + 0.05, cross ? CI.conc : CI.verge);   // an embankment face (grass), not a concrete slab, where the ramp rides on fill
+        { if (cross) wallAlong(run, 0, (h) => h - 0.6, (h) => h + 0.05, CI.conc); else {   // an embankment face: a grass slope 1:2.5 (or a concrete retaining wall where it does not fit), never a vertical green wall
+          embankFace(run, sg, embMode[i]);
+          if (embMode[i] && (!embMode[i - 1] || cross2(i - 1) || Math.hypot(run[0][0] - support[i - 1][0], run[0][1] - support[i - 1][1]) > 0.05)) embankCap(run[0], sg, [run[1][0] - run[0][0], run[1][1] - run[0][1]]);
+          if (embMode[i] && (i + 1 >= embMode.length || !embMode[i + 1] || cross2(i + 1) || Math.hypot(run[run.length - 1][0] - support[i][0], run[run.length - 1][1] - support[i][1]) > 0.05)) embankCap(run[run.length - 1], sg, [run[run.length - 1][0] - run[run.length - 2][0], run[run.length - 1][1] - run[run.length - 2][1]]);
+        } }
     }
     for (const run of exposedRuns(p3, sg * (CLS.ramp.w / 2 + 0.2), id, 0.3, 'barrier')) {
       // Split the height gate into contiguous runs too: filtering vertices

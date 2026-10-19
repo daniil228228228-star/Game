@@ -187,12 +187,12 @@ export function buildPlan() {
     const R2 = TR_R2, yb = hw + CLS.ramp.w / 2 + 0.4, X2 = C[0] - Rr - R2;   // entry arc radius R2 (was 17): the ramp leaves the road later, the lead-in starts TR_L m before the arc
     const d = join(cubic([X2 - TR_L, hw - TR_Y], [1, 0], TR_K, [X2, yb], [1, 0], TR_K, 12), arc([X2, yb + R2], R2, -90, 0), ...(R2 < 17 ? [seg([C[0] - Rr, yb + R2], [C[0] - Rr, C[1]], 3)] : []), arc(C, Rr, 180, 0), seg([TRK, C[1]], [TRK, top], 10));
     const LM = MW + CLS.ramp.w / 2, LH = hw + CLS.ramp.w / 2;   // added lanes beside M2 and beside the through road
-    const a = join(cubic([-LA3, -96], [0, 1], 8, [-LM, -80], [0, 1], 8, 10), seg([-LM, -80], [-LM, -66], 3), cubic([-LM, -66], [0, 1], 30, [-34, -LH], [-1, 0], 24), seg([-34, -LH], [-50, -LH], 3), cubic([-50, -LH], [-1, 0], 6, [-64, -(hw - 1.0)], [-1, 0], 6, 10));
-    const c = join(cubic([64, -(hw - 1.0)], [-1, 0], 6, [50, -LH], [-1, 0], 6, 10), seg([50, -LH], [34, -LH], 3), cubic([34, -LH], [-1, 0], 24, [LM, -66], [0, -1], 30), seg([LM, -66], [LM, -80], 3), cubic([LM, -80], [0, -1], 8, [LA3, -96], [0, -1], 8, 10));
+    const a = join(cubic([-ATT, -96], [0, 1], 8, [-LM, -80], [0, 1], 8, 10), seg([-LM, -80], [-LM, -66], 3), cubic([-LM, -66], [0, 1], 30, [-34, -LH], [-1, 0], 24), seg([-34, -LH], [-50, -LH], 3), cubic([-50, -LH], [-1, 0], 6, [-64, -(hw - 1.0)], [-1, 0], 6, 10));
+    const c = join(cubic([64, -(hw - 1.0)], [-1, 0], 6, [50, -LH], [-1, 0], 6, 10), seg([50, -LH], [34, -LH], 3), cubic([34, -LH], [-1, 0], 24, [LM, -66], [0, -1], 30), seg([LM, -66], [LM, -80], 3), cubic([LM, -80], [0, -1], 8, [ATT, -96], [0, -1], 8, 10));
     ramps.push({ kind: 'loop', pts: b.map(F), r, attach: ['motorway', 'cross'], noWedge: [0], bridges: [[F([-TRK, -hw - 4]), F([-TRK, hw + 4])]], note: 'М2 на юг -> Портовое ш. на восток (петля 270°)' });
     ramps.push({ kind: 'semi-direct', pts: d.map(F), attach: ['cross', 'motorway'], noWedge: [1], bridges: [[F([TRK, hw + 4]), F([TRK, -hw - 4])]], note: 'Южный пр. на восток -> М2 на север (раструб вокруг петли)' });
-    ramps.push({ kind: 'direct', pts: a.map(F), attach: ['motorway', 'cross'], flare: [0], note: 'М2 на юг -> Южный пр. на запад' });
-    ramps.push({ kind: 'direct', pts: c.map(F), attach: ['cross', 'motorway'], flare: [1], note: 'Портовое ш. на запад -> М2 на север' });
+    ramps.push({ kind: 'direct', pts: a.map(F), attach: ['motorway', 'cross'], note: 'М2 на юг -> Южный пр. на запад' });
+    ramps.push({ kind: 'direct', pts: c.map(F), attach: ['cross', 'motorway'], note: 'Портовое ш. на запад -> М2 на север' });
     interchanges.push({ id, kind: 'trumpet', name, at, ramps, trunkEnd: F([0, top]), note: 'три ветви: М2 заканчивается; раструб на стороне порта' });
   }
   cloverAve('I1', [0, M1_Z], 'Клеверный лист: Главный пр. × М1');
