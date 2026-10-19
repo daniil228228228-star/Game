@@ -881,7 +881,6 @@ function projectPath(p, path) {
   }
   return { h: best || 0, distance };
 }
-const FLARE_HOLD = Number(process.env.FLARE_HOLD || 12);
 function constrainRampProfile(p3, S, fixed, label) {
   // Keep attachment levels exact without increasing the established 7% grade
   // limit. The envelopes are cones from ALL fixed samples, not a forward-only
@@ -941,9 +940,6 @@ for (const ic of PLAN.interchanges) {
       }
       if (last !== indices[0]) knots.push([S[last], h ? h.h(pts[last][h.axis]) : projectPath(pts[last], end.parent.p3).h]);
       let hold = k ? L - S[last] : S[last];
-      // An exit / entrance lane that starts as the carriageway's own third lane (flare) stays at the carriageway's level for FLARE_HOLD m: before, it began to climb at once (6 %) beside the lane it
-      // had just left, so one road had two levels within 10 m of the gore (0.6 m at 10 m).
-      if (r.flare && r.flare.includes(k) && h) { const sv = k ? L - FLARE_HOLD : FLARE_HOLD; if (sv > hold) { knots.push([sv, h.h(pts[k ? 0 : 0][h.axis]) ]); hold = sv; } }
       return hold;
     });
     const bridge = (r.bridges || [])[0]; let sBr = null;
