@@ -1190,7 +1190,7 @@ const freeGround = (x, z, own) => {
   return best;
 };
 // Slope ratio (horizontal : vertical) at a deck-edge point: as flat as the free ground allows, between SLOPE_MIN (steep grass bank) and SLOPE_MAX; below SLOPE_MIN the face is a retaining wall.
-const SLOPE_MAX = 2.5, SLOPE_MIN = 1.25, SLOPE_RUN_MIN = 12, FILL_MIN_H = 0.35;
+const SLOPE_MAX = 2.5, SLOPE_MIN = Number(process.env.SMIN || 1.25), SLOPE_RUN_MIN = 12, FILL_MIN_H = 0.35;
 const ratioAt = (x, z, h, own) => h < 0.3 ? SLOPE_MAX : Math.max(0, Math.min(SLOPE_MAX, (freeGround(x, z, own) - 0.8) / (h + 0.05)));
 function embankModes(p3, sg, own, off = CLS.ramp.w / 2 - 0.3) {   // per segment of one side (mode[i] = segment i-1..i): true = grass bank (>= SLOPE_MIN fits), false = concrete retaining wall; slope runs shorter than SLOPE_RUN_MIN m become walls
   const body = offsetPts3(p3, sg * off), n = body.length, mode = [false];
@@ -1447,7 +1447,7 @@ const SZ = PLAN.size;
   for (let i = 0; i + 1 < coast.length; i++) { const a = coast[i], b = coast[i + 1]; if (Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) > 5) continue; ribbon('g', [[a[0], a[1] + 1.2], [b[0], b[1] + 1.2]], 2.4, H.water + 0.02, CI.seaLight); }
   const rv = PLAN.water.river;
   ribbon('g', rv.pts, rv.w + 4, H.bank, CI.bank); ribbon('g', rv.pts, rv.w, H.water, CI.river);
-  for (const [x, z, r] of PLAN.water.rocks) disc('r', [x, z], r, 0.1, CI.rock, 10);
+  for (const [x, z, r] of PLAN.water.rocks) disc('r', [x, z], r, 0.125, CI.rock, 10);
   for (const m of PLAN.water.marina.moles) ribbon('r', m, 2.4, 0.1, CI.moleC);
   PLAN.water.piers.forEach((p) => emitRect('r', 'q', p.x0, p.z0, p.x1, p.z1, 0.1, CI.port));
 }
