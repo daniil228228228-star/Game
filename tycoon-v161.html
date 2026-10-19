@@ -27766,6 +27766,9 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
   function layoutTopV46(){
     const vw=innerWidth,vh=innerHeight;
     const hud=rect($('hud'));let base=(hud?.bottom||8)+7;
+    // v161 (2026-10-19): the minimap dock (assets/minimap-v161.js) is a top card on the right, under the menu button; every other top card keeps clear of it
+    const mmDock=$('miniMapDockV161');let mmRect=null;
+    if(mmDock){const trb=rect($('topRightBtns'));setVar('--v46-minimap-top',(trb?trb.bottom:56)+6);mmRect=rect(mmDock);}
     const next=$('nextCard');setVar('--v46-next-top',base);
     let nr=rect(next);let centerBottom=nr?.bottom||base;
     const sec=$('secondaryObjectiveV36');
@@ -27776,7 +27779,7 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
     const contracts=$('contractsCard');setVar('--v46-contracts-top',base);
     let cr=rect(contracts),cor=rect(company);nr=rect(next);
     // v163 (16): the side chips go under the next card AND under the secondary objective (it sits under the next card, full width, and used to overlap them)
-    const sr2=rect(sec),blockers=[nr,sr2].filter(Boolean);
+    const sr2=rect(sec),blockers=[nr,sr2,mmRect].filter(Boolean);
     for(const b of blockers){
       if(intersects(cr,b,7)){setVar('--v46-contracts-top',b.bottom+7);cr=rect(contracts);}
       if(intersects(cor,b,7)){setVar('--v46-company-top',b.bottom+7);cor=rect(company);}
@@ -27788,6 +27791,7 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
     // the toast/event banner end up under everything. Nothing is hidden or removed; a new top card = one line in STACK below.
     const root=document.documentElement;
     const placed=[];for(const el of [next,sec,prestige,contracts,company]){const q=rect(el);if(q)placed.push(q);}
+    if(mmRect)placed.push(mmRect);
     const STACK=[['carryRouteV139','--v46-carry-dy'],['manualCoachV143','--v46-coach-dy'],['shiftGoalV127','--v46-shift-dy'],['eventBanner','--v46-event-dy'],['toast','--v46-toast-dy']];   // margin-top offsets: independent of each card's own top / transform
     for(const [id,dyVar] of STACK){
       const el=$(id);if(!el)continue;watchLazyV162(el);
@@ -39915,6 +39919,7 @@ body.v165-polish :is(.projectProgress,.cityProgress,.fleetCondition)>i{backgroun
 <script src="assets/roundabout-v161.js"></script>
 <script src="assets/plan-c-v161.js"></script>
 <script src="assets/plan-c-traffic-v161.js"></script>
+<script src="assets/minimap-v161.js"></script>
 <link rel="stylesheet" href="assets/premium-ui-v161.css">
 </body>
 
