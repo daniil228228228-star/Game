@@ -228,6 +228,17 @@ export function buildPlan() {
     junctions.push({ id: n.id, at: [n.x, n.z], ...j, ...(atI2 ? { boxZ: 18.1, splitArms: L.filter((e) => e.split).map((e) => e.id) } : {}), legs: L.length, classes: cl, arms: L.filter((e) => !e.split).map((e) => { const o = byId.get(e.a === n.id ? e.b : e.a); return { edge: e.id, cls: atI2 && e.cls === 'motorway' ? 'motorway3' : e.cls, dir: [Math.sign(R(o.x - n.x)), Math.sign(R(o.z - n.z))] }; }).concat(interchanges.flatMap((ic) => (ic.termArms || []).filter((t) => Math.hypot(t.at[0] - n.x, t.at[1] - n.z) < 0.5).map((t) => ({ edge: null, cls: t.cls, dir: t.dir, ramp: t.ramp })))), ...(isTerm ? { boxZ: 10 } : {}) });
   }
 
+  // ------------------------------------------------------------------ bends (2026-10-19): a street that turns a corner with only two legs is a BEND, not a junction: the axis turns on a circular arc
+  // (tangent length = R) instead of a right angle. R by class (game m, real x2.5): service 14 (35 m real, port / yard roads), arterial 16, collector 10, local 9 (urban 30-40 km/h).
+  const BEND_R = { service: 14, arterial: 16, collector: 10, local: 9 };
+  const bends = [];
+  for (const j of junctions) {
+    if (j.legs !== 2 || j.type === 'roundabout' || j.terminal || j.arms.length !== 2) continue;
+    const [A, B] = j.arms; if (A.dir[0] * B.dir[0] + A.dir[1] * B.dir[1] !== 0) continue;
+    const R = Math.max(BEND_R[A.cls] || 0, BEND_R[B.cls] || 0); if (!R) continue;
+    j.bend = R; bends.push({ node: j.id, at: j.at, R, arms: [A, B].map((a) => ({ edge: a.edge, cls: a.cls, dir: a.dir })) });
+  }
+
   // ------------------------------------------------------------------ crossings (pedestrian), footbridges, tunnels
   const crossings = [];
   for (const j of junctions) {
@@ -424,7 +435,7 @@ export function buildPlan() {
   return {
     version: 'C0', generated: 'tools/masterplan/plan-c.mjs', scale: 0.4, unit: 'game metre (x east, z south); real = x2.5', traffic: 'right-hand',
     size, water, areas, rural, classes: CLS, lines: { V, H },
-    nodes: nodeArr.map(({ legs, ...n }) => ({ ...n, legs: legs.length })), edges, exits, junctions, interchanges, crossings, footbridges, tunnels, rail, grade, transit, blocks, landmarks,
+    nodes: nodeArr.map(({ legs, ...n }) => ({ ...n, legs: legs.length })), bends, edges, exits, junctions, interchanges, crossings, footbridges, tunnels, rail, grade, transit, blocks, landmarks,
     counts: { nodes: nodes.size, edges: edges.length, junctions: junctions.length, signals: sig.length, roundabouts: junctions.filter((j) => j.type === 'roundabout').length, interchanges: interchanges.length, ramps: interchanges.reduce((s, i) => s + i.ramps.length, 0), crossings: crossings.length, footbridges: footbridges.length, tunnels: tunnels.length, blocks: blocks.length, busStops: lines.reduce((s, l) => s + l.stops.length, 0) },
   };
 }

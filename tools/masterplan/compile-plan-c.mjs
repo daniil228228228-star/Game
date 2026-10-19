@@ -173,6 +173,7 @@ function annulus(layer, c, r0, r1, a0, a1, y, ci, step = 6) {   // angles in deg
 
 // ---- graph helpers
 const N = new Map(PLAN.nodes.map((n) => [n.id, n])), J = new Map(PLAN.junctions.map((j) => [j.id, j]));
+const BENDS = new Map((PLAN.bends || []).map((b) => [b.node, b])), bendR = (id) => (BENDS.get(id) ? BENDS.get(id).R : 0);   // two-leg corners are drawn as circular bends, the straight edges stop at the tangent points
 const hw = (cls) => CLS[cls].w / 2;
 // ---- lane-drop transitions: where a street changes class at a node with only two legs (no junction), the wider carriageway narrows over L = 20 x offset (1:20 on each side)
 const TRANS = new Map(), TRANS_LIST = [];
@@ -189,6 +190,7 @@ const ringW = (j) => j.lanes === 2 ? 5.4 : 3.0;   // circulatory lane: 2 lanes 5
 const laneW = (cls) => CLS[cls].lane || (CLS[cls].w - CLS[cls].median) / 2 / CLS[cls].lanes;
 const RAIL_Z = PLAN.rail.pts[0][1], M1_Z = -240, M2_X = 250;
 function trimAt(nodeId, e) {   // how far markings / medians stay away from a node
+  if (BENDS.has(nodeId)) return BENDS.get(nodeId).R;   // the bend arc carries the markings from the tangent point on
   { const t = TRANS.get(nodeId + ':' + e.id); if (t) return t.L; }   // lane-drop: markings and the median start where the carriageway is full width again
   const n = N.get(nodeId), j = J.get(nodeId);
   if (!j) return n.legs && n.legs.length > 1 ? 1.5 : 0;
@@ -250,7 +252,7 @@ const edgeSpan = (e) => {   // along-axis span of the carriageway/sidewalk, trim
   const mo = e.cls === 'motorway';
   const mt = () => 0;
   const tl = TRANS.get(lowNode + ':' + e.id), th = TRANS.get(highNode + ':' + e.id);   // the tapered end is drawn separately
-  return { lo: lo + ch(lowNode) + mt(lowNode) + (tl ? tl.L : 0), hi: hi - ch(highNode) - mt(highNode) - (th ? th.L : 0), lowNode, highNode, ax };
+  return { lo: lo + ch(lowNode) + mt(lowNode) + bendR(lowNode) + (tl ? tl.L : 0), hi: hi - ch(highNode) - mt(highNode) - bendR(highNode) - (th ? th.L : 0), lowNode, highNode, ax };
 };
 for (const e of PLAN.edges) {
   const a = N.get(e.a), s = edgeSpan(e), cl = CLS[e.cls], half = cl.w / 2, sw = cl.sidewalk, c = e.dir === 'x' ? a.z : a.x;
@@ -463,7 +465,7 @@ for (const j of PLAN.junctions) {
 // kerb returns (radius 3): at every corner where two streets meet the sidewalk corner is a quarter disc (centre = the far corner of a 3 x 3 square, tangent to both kerb lines), the rest of the square is asphalt
 // at asphalt height - the square is carved out of the sidewalk raster first, so nothing is drawn twice and no kerb outline crosses the carriageway
 for (const j of PLAN.junctions) {
-  if (j.type === 'roundabout') continue;
+  if (j.type === 'roundabout' || j.bend) continue;
   const c = j.at, RET = 3.0;
   for (const A of j.arms.filter((a) => a.dir[1] === 0)) for (const B of j.arms.filter((b) => b.dir[0] === 0)) {
     if (A.cls === 'motorway' || B.cls === 'motorway' || CLS[A.cls].sidewalk <= 0 || CLS[B.cls].sidewalk <= 0) continue;
@@ -477,6 +479,42 @@ for (const j of PLAN.junctions) {
       emitWall(arc[k][0], arc[k][1], arc[k + 1][0], arc[k + 1][1], H.asph, H.walk, CI.kerb);
     }
   }
+}
+
+// ---- 3b. bends (2026-10-19): the two-leg corners are circular arcs, R = tangent length.  Asphalt, median, sidewalks, kerb walls and lane / centre dashes follow the arc;
+//      the straight edges (edgeSpan) stop at the tangent points, so there is one continuous contour and no square corner.
+const bendsOut = [];
+function dashPoly(pts, dash, gap, w, y) {   // whole dashes only, centred (same rule as paintAlong)
+  const S = [0]; for (let i = 1; i < pts.length; i++) S.push(S[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const total = S[S.length - 1], n = Math.floor((total + gap) / (dash + gap)); if (n < 1) return;
+  const at = (sv) => { let i = 1; while (i < S.length - 1 && S[i] < sv) i++; const a = pts[i - 1], b = pts[i], t = (sv - S[i - 1]) / Math.max(1e-9, S[i] - S[i - 1]); return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; };
+  const start = (total - (n * dash + (n - 1) * gap)) / 2;
+  for (let k = 0; k < n; k++) { const s0 = start + k * (dash + gap), s1 = s0 + dash, cur = [at(s0)]; for (let i = 0; i < S.length; i++) if (S[i] > s0 + 1e-6 && S[i] < s1 - 1e-6) cur.push(pts[i].slice(0, 2)); cur.push(at(s1)); ribbon('p', cur, w, y, CI.white); }
+}
+for (const b of BENDS.values()) {
+  const c = b.at, R = b.R, [A, B] = b.arms, cA = CLS[A.cls], cB = CLS[B.cls];
+  const a = A.dir, d = B.dir, O = [c[0] + (a[0] + d[0]) * R, c[1] + (a[1] + d[1]) * R], u0 = [-d[0], -d[1]], u1 = [-a[0], -a[1]];   // arc from the tangent point on leg A (O + R u0) to the one on leg B (O + R u1)
+  const NS = 28, EX = 0.06, pts = [], T = [];   // 0.06 m of overlap into the straight edges at both ends: no hairline crack on the shared edge
+  pts.push([c[0] + a[0] * (R + EX), c[1] + a[1] * (R + EX), 0]); T.push(0);
+  for (let k = 0; k <= NS; k++) { const t = k / NS * Math.PI / 2; pts.push([O[0] + R * (u0[0] * Math.cos(t) + u1[0] * Math.sin(t)), O[1] + R * (u0[1] * Math.cos(t) + u1[1] * Math.sin(t)), 0]); T.push(k / NS); }
+  pts.push([c[0] + d[0] * (R + EX), c[1] + d[1] * (R + EX), 0]); T.push(1);
+  const sm = (t) => t * t * (3 - 2 * t), lerp = (x, y, t) => x + (y - x) * sm(t);   // class change (a lane drop on the arc): eased, constant-ish slope
+  const half = T.map((t) => lerp(cA.w / 2, cB.w / 2, t)), sw = T.map((t) => lerp(cA.sidewalk, cB.sidewalk, t)), mh = T.map((t) => lerp(cA.median / 2, cB.median / 2, t));
+  const neg = (v) => v.map((x) => -x), add = (u, v) => u.map((x, i) => x + v[i]);
+  const strip = (o0, o1, y, ci) => { const P0 = offsetVar(pts, o0), P1 = offsetVar(pts, o1); for (let i = 0; i + 1 < pts.length; i++) { emitTri('r', P0[i], P1[i], P0[i + 1], y, ci); emitTri('r', P1[i], P1[i + 1], P0[i + 1], y, ci); } };
+  const wall = (o, y0, y1) => { const P = offsetVar(pts, o); for (let i = 0; i + 1 < P.length; i++) emitWall(P[i][0], P[i][1], P[i + 1][0], P[i + 1][1], y0, y1, CI.kerb); };
+  strip(neg(half), half, H.asph, CI.asph);
+  if (Math.max(...mh) > 0.02) { strip(neg(mh), mh, H.med, CI.median); wall(neg(mh), H.asph, H.med); wall(mh, H.asph, H.med); }
+  if (Math.max(...sw) > 0.02) for (const sg of [-1, 1]) { const o0 = half.map((h) => sg * h), o1 = half.map((h, i) => sg * (h + sw[i])); strip(o0, o1, H.walk, CI.walk); wall(o0, H.asph, H.walk); }
+  // paint (only on the arc proper, the extensions are skipped): arterial lane dashes while they stay clear of the kerb, collector centre dashes once the median has closed
+  const arcIdx = pts.map((_, i) => i).filter((i) => i > 0 && i < pts.length - 1);
+  if (Math.max(...mh) > 0.02) for (const sg of [-1, 1]) {   // arterial lane line at median / 2 + lane, only where it stays >= 0.7 m inside the kerb
+    const o = T.map((t, i) => sg * (mh[i] + (cA.median > 0 ? cA : cB).lane)), P = offsetVar(pts, o);
+    const keep = arcIdx.filter((i) => Math.abs(o[i]) < half[i] - 0.7);
+    if (keep.length > 2) dashPoly(keep.map((i) => P[i]), 1.0, 1.4, 0.18, H.paint);
+  }
+  if (A.cls === 'collector' || B.cls === 'collector') { const centre = arcIdx.filter((i) => mh[i] < 0.05); if (centre.length > 2) dashPoly(centre.map((i) => pts[i]), 1.0, 1.2, 0.18, H.paint); }   // collector centre dashes once the median has closed
+  bendsOut.push({ node: b.node, at: c, R, half: Math.max(...half), sw: Math.max(...sw) });
 }
 
 // ---- 4. markings of the straight streets
@@ -1253,7 +1291,12 @@ const isWater = (x, z) => inPoly(x, z, seaPoly) || (riverDist(x, z) < PLAN.water
 const inSplitZone = (x, z, pad) => splitZones.some((poly) => inPoly(x, z, poly) || poly.some((p, i) => segDist(x, z, p, poly[(i + 1) % poly.length]) < pad));
 const YARDS = PLAN.areas.filter((a) => a.kind === 'parking').map((a) => { const xs = a.poly.map((q) => q[0]), zs = a.poly.map((q) => q[1]); return [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)]; }).concat(PLAN.blocks.filter((b) => b.zone === 'industrial' || b.zone === 'logistics').map((b) => b.lot || b.rect));   // paved lots with painted bays: no tree stands on them
 const yardAt = (x, z) => YARDS.some((r) => x > r[0] - 0.8 && x < r[2] + 0.8 && z > r[1] - 0.8 && z < r[3] + 0.8);
-const blocked = (x, z, pad = 0.6) => !!(inSplitZone(x, z, pad) || yardAt(x, z) || rasterAt(x, z) || rasterAt(x + pad, z) || rasterAt(x - pad, z) || rasterAt(x, z + pad) || rasterAt(x, z - pad) || motorHosts.some((h) => { const p = [x, z]; return p[h.axis] >= h.lo && p[h.axis] <= h.hi && Math.abs(p[1 - h.axis] - h.c) < MW + pad; }) || ringAt(x, z) || rangeRamp(x, z) || railBlocked(x, z) || STRUCT.blockers.some((b) => x > b[0] - 1 && x < b[2] + 1 && z > b[1] - 1 && z < b[3] + 1)) || isWater(x, z);
+const bendAt = (x, z, pad) => bendsOut.some((b) => {   // on the arc band of a bend (quadrant towards the corner node only)
+  const bb = BENDS.get(b.node), O = [b.at[0] + (bb.arms[0].dir[0] + bb.arms[1].dir[0]) * b.R, b.at[1] + (bb.arms[0].dir[1] + bb.arms[1].dir[1]) * b.R];
+  const r = Math.hypot(x - O[0], z - O[1]); if (Math.abs(r - b.R) >= b.half + b.sw + pad) return false;
+  const ax = bb.arms[0].dir, ay = bb.arms[1].dir; return (x - O[0]) * (b.at[0] - O[0]) + (z - O[1]) * (b.at[1] - O[1]) > -2 * pad - 1 && ((x - O[0]) * (-ay[0]) + (z - O[1]) * (-ay[1]) > -1) && ((x - O[0]) * (-ax[0]) + (z - O[1]) * (-ax[1]) > -1);
+});
+const blocked = (x, z, pad = 0.6) => !!(inSplitZone(x, z, pad) || yardAt(x, z) || bendAt(x, z, pad) || rasterAt(x, z) || rasterAt(x + pad, z) || rasterAt(x - pad, z) || rasterAt(x, z + pad) || rasterAt(x, z - pad) || motorHosts.some((h) => { const p = [x, z]; return p[h.axis] >= h.lo && p[h.axis] <= h.hi && Math.abs(p[1 - h.axis] - h.c) < MW + pad; }) || ringAt(x, z) || rangeRamp(x, z) || railBlocked(x, z) || STRUCT.blockers.some((b) => x > b[0] - 1 && x < b[2] + 1 && z > b[1] - 1 && z < b[3] + 1)) || isWater(x, z);
 const rampSegs = rampsOut.flatMap((r) => r.pts.slice(1).map((p, i) => [r.pts[i], p]));
 const rangeRamp = (x, z) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < 2.2);
 const railBlocked = (x, z) => railOut.bed.some((b) => x >= b[0] - 1 && x <= b[2] + 1 && z >= b[1] - 1 && z <= b[3] + 1) || segDist(x, z, PLAN.rail.spur.pts[0], PLAN.rail.spur.pts[PLAN.rail.spur.pts.length - 1]) < 4;
@@ -1363,6 +1406,7 @@ for (const [kind, list] of Object.entries(furniture)) for (const f of list) { co
 const graph = {
   nodes: PLAN.nodes.map((n) => [n.id, n.x, n.z, n.kind || '']),
   edges: PLAN.edges.map((e) => { const a = N.get(e.a), b = N.get(e.b); return [e.id, e.a, e.b, e.cls, a.x, a.z, b.x, b.z, e.name || '']; }),
+  bends: bendsOut.map((b) => [b.node, b.at[0], b.at[1], b.R]),
   rings: ringsOut.map((r) => [r.id, r.at[0], r.at[1], r.R, r.Ri]),
   minis: minisOut.map((r) => [r.id, r.at[0], r.at[1], r.R, r.Ri]),
   ramps: rampsOut.map((r) => [r.ic, r.kind, r.pts.map((p) => [R2(p[0]), R2(p[1]), R3(p[2] || 0)])]),
