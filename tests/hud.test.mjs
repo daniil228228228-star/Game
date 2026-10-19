@@ -37,7 +37,7 @@ check(vp.w === 390 && vp.h === 664, `iPhone 13 emulation viewport 390x664 (${vp.
 const runStack = (subset) => ev(async (subset) => {
   const ALL = [['carryRouteV139', 'Carry route: planks to the site 3/5'], ['manualCoachV143', '2/3 · Неси груз к зелёному маяку'], ['shiftGoalV127', 'Shift goal: deliver 6 loads'], ['nextCard', 'Next: build the sawmill'], ['secondaryObjectiveV36', 'Secondary: 2 houses'], ['contractsCard', 'Contracts 1/3'], ['companyChip', 'Company L2'], ['eventBanner', 'Event: demand +35%']];
   const CARDS = ALL.filter((c) => !subset || subset.includes(c[0]));
-  const IDS = [...CARDS.map((c) => c[0]), 'toast'];
+  const IDS = [...CARDS.map((c) => c[0]), 'toast', 'miniMapDockV161'];   // 2026-10-19: the minimap dock is one more top card (assets/minimap-v161.js), measured pairwise with the rest
   const mk = (id, text) => { let el = document.getElementById(id); if (!el) { el = document.createElement('div'); el.id = id; document.body.appendChild(el); } el.textContent = text; return el; };
   const force = () => {
     document.body.classList.remove('v139-carrying', 'v138-context-action', 'v50-action-focus', 'v47-moving');
@@ -95,7 +95,7 @@ for (const [name, subset] of SCEN) {
   check(res.some((x) => x.all), `${name}: every card was on screen in at least one attempt (forced visible)`);
   check(res.some((x) => x.all && !x.overlaps.length), `${name}: no two cards overlap at 390x664 (attempts: ${J(res.map((x) => x.overlaps))})`);
   const fin = res.find((x) => x.all && !x.overlaps.length); if (fin) check(Math.max(...Object.values(fin.m).filter(Boolean).map((r) => r.b)) < 640, `${name}: the whole stack ends above the bottom controls (lowest card edge ${Math.max(...Object.values(fin.m).filter(Boolean).map((r) => r.b))} px of 664)`);
-  if (subset && fin) check(fin.m.carryRouteV139.t <= 80, `${name}: the carry-route card keeps its own top (${fin.m.carryRouteV139.t} px), the others go below it`);
+  if (subset && fin) check(fin.m.carryRouteV139.t <= 80 || fin.m.carryRouteV139.t <= fin.m.miniMapDockV161.b + 10, `${name}: the carry-route card keeps its own top or sits right under the minimap dock (${fin.m.carryRouteV139.t} px, dock bottom ${fin.m.miniMapDockV161.b}), the others go below it`);
 }
 
 // ---- 2b. FADE-IN race (2026-10-11 (17), user screenshot 1: toast "Помощь принята · ускорение 1.1с · энергия 2/3" on top of the carry-route card + the "1/3 · Иди к золотому маяку" strip, "Новая смена" below):

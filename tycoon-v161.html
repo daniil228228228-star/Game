@@ -27766,15 +27766,16 @@ body.v46-ultra-tight #prestigeBtn{display:none!important}
   function layoutTopV46(){
     const vw=innerWidth,vh=innerHeight;
     const hud=rect($('hud'));let base=(hud?.bottom||8)+7;
-    // v161 (2026-10-19): the minimap dock (assets/minimap-v161.js) is a top card on the right, under the menu button; every other top card keeps clear of it
-    const mmDock=$('miniMapDockV161');let mmRect=null;
-    if(mmDock){const trb=rect($('topRightBtns'));setVar('--v46-minimap-top',(trb?trb.bottom:56)+6);mmRect=rect(mmDock);}
     const next=$('nextCard');setVar('--v46-next-top',base);
     let nr=rect(next);let centerBottom=nr?.bottom||base;
     const sec=$('secondaryObjectiveV36');
     if(visible(sec)){setVar('--v46-secondary-top',centerBottom+6);const sr=rect(sec);centerBottom=sr?.bottom||centerBottom;}
     const prestige=$('prestigeBtn');
     if(visible(prestige)){setVar('--v46-prestige-top',centerBottom+7);const pr=rect(prestige);centerBottom=pr?.bottom||centerBottom;}
+    // v161 (2026-10-19): the minimap dock (assets/minimap-v161.js) is a top card on the right, under the menu button (and under the full-width cards when they are on screen);
+    // every other top card keeps clear of it (blockers + placed below)
+    const mmDock=$('miniMapDockV161');let mmRect=null;
+    if(mmDock){const trb=rect($('topRightBtns')),wide=nr||rect(sec)||(visible(prestige)?rect(prestige):null);setVar('--v46-minimap-top',Math.max((trb?trb.bottom:56)+6,wide?centerBottom+6:0));mmRect=rect(mmDock);}
     const company=$('companyChip');setVar('--v46-company-top',base);
     const contracts=$('contractsCard');setVar('--v46-contracts-top',base);
     let cr=rect(contracts),cor=rect(company);nr=rect(next);
