@@ -51,12 +51,15 @@ const check = (ok, msg) => { console.log((ok ? 'ok: ' : 'FAIL: ') + msg); if (!o
   }
   check(bad.length === 0, `ground under ramp axes higher than 0.6 m is solid fill unless a road passes underneath (${n} samples, bad ${bad.length}: ${JSON.stringify(bad.slice(0, 3))})`);
   check(D.struct.fills.length > 400 && D.struct.fills.every((q) => q.length === 8 && q.every(Number.isFinite)), `${D.struct.fills.length} fill quads, finite`);
-  // a point in a bank footprint is inaccessible to a walker standing on the ground, accessible to one standing on the deck above it
-  const f = D.struct.fills.find((q) => D.inFill((q[0] + q[2] + q[4] + q[6]) / 4, (q[1] + q[3] + q[5] + q[7]) / 4));
-  check(!!f, 'D.inFill answers for a fill quad centre');
-  let walk = 0, enter = 0;
-  for (const q of D.struct.fills.filter((_, i) => i % 7 === 0)) { const cx = (q[0] + q[2] + q[4] + q[6]) / 4, cz = (q[1] + q[3] + q[5] + q[7]) / 4; if (!D.inFill(cx, cz)) continue; walk++; const reach = D.surfaces(cx, cz).filter((v) => v <= 0.8); if (D.access(cx, cz, 0.45, 0) && reach.length && reach.every((v) => v > 0.45)) enter++;   // a deck lower than 0.45 m is a kerb-high step the walker may take }
-  check(enter === 0, `a walker at ground level cannot enter any fill (${walk} quads sampled, ${enter} enterable)`);
+  // the walker's height decides: at fill points whose only surface is a deck higher than a step (0.8 m) a ground walker (hint 0) is refused, a walker on the deck (hint = its height) and the
+  // hint-less query (teleport, minimap) are accepted - so the strip under a ramp cannot be entered from the side and the player can never be lifted onto a deck from below
+  let high = 0, refused = 0, onDeck = 0, noHint = 0;
+  for (const q of D.struct.fills.filter((_, i) => i % 5 === 0)) {
+    const cx = (q[0] + q[2] + q[4] + q[6]) / 4, cz = (q[1] + q[3] + q[5] + q[7]) / 4, s = D.surfaces(cx, cz);
+    if (!D.inFill(cx, cz) || !s.length || Math.min(...s) <= 0.8 || !D.access(cx, cz, 0.45)) continue;
+    high++; if (!D.access(cx, cz, 0.45, 0)) refused++; if (D.access(cx, cz, 0.45, Math.min(...s))) onDeck++; if (D.access(cx, cz, 0.45)) noHint++;
+  }
+  check(high > 20 && refused === high && onDeck === high && noHint === high, `access(x, z, margin, hint): ${high} deck-only fill points refused at ground level (${refused}), accepted on the deck (${onDeck}) and without a hint (${noHint})`);
 }
 
 // ---- 4. retaining walls: grass banks wherever the free ground allows; the few walls left are mid-tone concrete with a plinth and panel joints, never taller than the deck itself
