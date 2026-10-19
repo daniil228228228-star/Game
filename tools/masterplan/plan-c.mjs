@@ -84,7 +84,7 @@ export function buildPlan() {
     { x: 160, cls: 'service', name: 'Портовый пр.', spans: [[160, 214]] },
     { x: 200, cls: 'local', name: 'Окраинная ул.', spans: [[-108, 120]] },
     { x: 280, cls: 'service', name: 'Терминальный пр.', spans: [[160, 214]] },
-    { x: 296, cls: 'service', name: 'въезд P+R', spans: [[0, 44]], lot: 'P+R' },
+    { x: 296, cls: 'service', name: 'въезд P+R', spans: [[0, 58]], lot: 'P+R' },
   ];
   const H = [
     { z: -190, cls: 'collector', name: 'Промышленная ул.', spans: [[80, 160]] },   // starts at x 80: the south-east ramps of the cloverleaf I1 sweep x 0..110
@@ -92,7 +92,9 @@ export function buildPlan() {
     { z: -108, cls: 'local', name: 'Привокзальная ул.', spans: [[-194, -40], [40, 200]] },
     { z: -80, cls: 'collector', name: 'Вокзальная ул.', spans: [[-300, 200]] },
     { z: -40, cls: 'local', spans: [[-280, -232], [-194, 200]] },
-    { z: 0, cls: 'arterial', name: 'Центральная магистраль', spans: [[-300, 300]] },
+    // Keep a complete eastern approach beyond the P+R signal (stop line + zebra + vehicle clearance),
+    // not the former four-metre stump ending immediately at the new controlled junction.
+    { z: 0, cls: 'arterial', name: 'Центральная магистраль', spans: [[-300, 316]] },
     { z: 40, cls: 'local', spans: [[-280, -232], [-160, 200]] },
     { z: 80, cls: 'collector', name: 'Университетский б-р', spans: [[-300, 200]] },
     { z: 120, cls: 'local', spans: [[-280, -232], [-194, -160], [-80, 80], [160, 200]] },
@@ -136,7 +138,7 @@ export function buildPlan() {
   }
   // motorways (own node keys: they cross the street grid only on bridges)
   const mnode = (x, z) => node(x + 1e-3, z + 1e-3);
-  const M1x = [-300, 0, M2_X, 370];   // runs on past the map edge: the east cloverleaf ramps join it there
+  const M1x = [-300, 0, M2_X, 394];   // 24 m of receiving road after the eastern ramp joins at x370; a vehicle must fit beyond the merge
   for (let i = 0; i + 1 < M1x.length; i++) addEdge(mnode(M1x[i], M1_Z), mnode(M1x[i + 1], M1_Z), 'motorway', 'М1 Северная хорда', { dir: 'x', ref: 'M1' });
   const M2z = [-370, M1_Z, 0, 88];
   for (let i = 0; i + 1 < M2z.length; i++) addEdge(mnode(M2_X, M2z[i]), mnode(M2_X, M2z[i + 1]), 'motorway', 'М2 Восточная хорда', { dir: 'z', ref: 'M2', ...(M2z[i] < RAIL_Z && M2z[i + 1] > RAIL_Z ? { overRail: RAIL_Z } : {}) });
@@ -207,6 +209,10 @@ export function buildPlan() {
     '-232,-160': { type: 'roundabout', R: 11, lanes: 1 }, '-232,0': { type: 'roundabout', R: 11, lanes: 1 }, '-232,160': { type: 'roundabout', R: 11, lanes: 1 },
     '-232,-80': { type: 'priority', major: null }, '-232,80': { type: 'priority', major: null }, '-80,188': { type: 'priority', major: null }, '80,-190': { type: 'priority', major: null },
     '160,-190': { type: 'roundabout', R: 11, lanes: 1 }, '250,0': { type: 'signal', big: true, name: 'Светофорный узел I2' }, '0,-190': { type: 'riro' }, '334,160': { type: 'roundabout', R: 8, lanes: 1, turnaround: true },
+    // The parking must permit both arrival and return. A RIRO exit here would strand returning
+    // traffic on the outbound regional edge. The access is a controlled junction, not a graph exception.
+    '296,0': { type: 'signal', name: 'Въезд P+R', coordination: 'I2' },
+    '296,58': { type: 'roundabout', R: 8, lanes: 1, turnaround: true, name: 'Разворот P+R' },
   };
   const junctions = [];
   for (const n of nodeArr) {
@@ -336,7 +342,7 @@ export function buildPlan() {
     { kind: 'verge', poly: [[204, -164], [300, -164], [300, 44], [204, 44]] }, { kind: 'verge', poly: [[204, 44], [268, 44], [268, 72], [204, 72]] },
     { kind: 'verge', poly: [[298, 44], [300, 44], [300, 72], [298, 72]] }, { kind: 'verge', poly: [[204, 72], [300, 72], [300, 156], [204, 156]] },
     { kind: 'park', poly: [[256, 40], [300, 40], [300, 156], [256, 156]], name: 'Восточный лесопарк' },
-    { kind: 'parking', poly: [[268, 44], [298, 44], [298, 72], [268, 72]], name: 'P+R' },
+    { kind: 'parking', poly: [[268, 44], [308, 44], [308, 72], [268, 72]], name: 'P+R' },
     { kind: 'parking', poly: [[292, 177], [330, 177], [330, 210], [292, 210]], name: 'Контейнерный двор' },   // paved yards with bay lines beside the port service loop (it serves them; no bare grey plates)
     { kind: 'embankment', poly: [[-236, -168], [-188, -168], [-188, 206], [-236, 206]] },
     { kind: 'beach', poly: [[-300, 164], [-236, 164], [-226, 192], [-226, 212], [-300, 212]] },

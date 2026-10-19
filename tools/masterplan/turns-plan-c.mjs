@@ -1,11 +1,28 @@
 // Turning-movement matrix of the plan C street graph (2026-10-19).  node tools/masterplan/turns-plan-c.mjs [--all]
 // Directed graph with right-hand traffic: every street / motorway edge is two directed lines (heading +/-), ramps are one-way (point order = travel direction) and are
-// attached to the directed host line at the coordinate of their exit / entry point; a junction node connects every incident edge with every other one (a U-turn only on a
+// attached to the directed host line at the coordinate of their exit / entry point; a junction connects permitted movements only (RIRO enforced; a U-turn only on a
 // roundabout / mini roundabout); a node without a junction connects only the straight continuation (a motorway crossing a street grade-separated has no connection).
 // "direct" = inside the interchange: ramps + host lines only, NO junction turn (the movement exists without leaving the node); "full" = the whole network.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// Shared legality contract for graph consumers. x east / z south: positive cross product is a right turn.
+// A RIRO junction is NOT an ordinary all-movements junction, including for collinear minor approaches.
+export function movementAllowed(P, j, A, B, node) {
+  if (A.id === B.id) return !!j && ['roundabout', 'mini'].includes(j.type);
+  const collinear = A.dir === B.dir && (A.cls === 'motorway') === (B.cls === 'motorway');
+  if (!j) return collinear;
+  if (j.type !== 'riro') return true;
+  const rank = { motorway: 5, arterial: 4, collector: 3, service: 2, local: 1 };
+  const incident = P.edges.filter((e) => e.a === node.id || e.b === node.id);
+  const major = incident.reduce((a, e) => !a || rank[e.cls] > rank[a.cls] ? e : a, null);
+  if (collinear) return A.dir === major.dir;
+  const opposite = (e) => P.nodes.find((n) => n.id === (e.a === node.id ? e.b : e.a));
+  const a = opposite(A), b = opposite(B);
+  const cross = (node.x - a.x) * (b.z - node.z) - (node.z - a.z) * (b.x - node.x);
+  return cross > 0;
+}
 
 export function buildTurnGraph(P, arms) {
   const N = new Map(P.nodes.map((n) => [n.id, n])), E = P.edges, J = new Map(P.junctions.map((j) => [j.id, j]));
@@ -48,10 +65,10 @@ export function buildTurnGraph(P, arms) {
   const incident = new Map(); for (const e of E) for (const id of [e.a, e.b]) { if (!incident.has(id)) incident.set(id, []); incident.get(id).push(e); }
   const nodeEdges = [];   // junction connections (turns): kept apart so that "direct" can leave them out
   for (const [id, es] of incident) {
-    const j = J.get(id), uturn = j && (j.type === 'roundabout' || j.type === 'mini');
+    const j = J.get(id);
     for (const A of es) for (const B of es) {
       const inA = [1, -1].map((s) => lines.get(A.id + '|' + s)).find((L) => L.end === id), outB = [1, -1].map((s) => lines.get(B.id + '|' + s)).find((L) => L.start === id);
-      if (A === B && !uturn) continue;
+      if (!movementAllowed(P, j, A, B, N.get(id))) continue;
       if (A === B) { const inL = [1, -1].map((s) => lines.get(A.id + '|' + s)).find((L) => L.end === id), outL = [1, -1].map((s) => lines.get(A.id + '|' + s)).find((L) => L.start === id); nodeEdges.push({ u: endV(inL), v: startV(outL), w: 0, name: 'U-turn at ' + id, turn: true }); continue; }
       const collinear = A.dir === B.dir && (A.cls === 'motorway') === (B.cls === 'motorway');
       if (j || collinear) nodeEdges.push({ u: endV(inA), v: startV(outB), w: 0, name: id, turn: !collinear });
@@ -67,7 +84,7 @@ export function buildTurnGraph(P, arms) {
   };
   const dijkstra2 = (g, s, t) => { if (s === t) return { len: 0, via: [] }; return dijkstra(g, s, t); };
   const compress = (via) => { const o = []; for (const n of via) if (!o.length || o[o.length - 1] !== n) o.push(n); return o; };
-  return { armV, direct: graph(false), full: graph(true), dijkstra, compress, rampEdges, nodeEdges };
+  return { armV, direct: graph(false), full: graph(true), dijkstra, compress, rampEdges, nodeEdges, lines };
 }
 
 // arms of the interchanges and of the I2 crossing (edge id, heading sign along its axis: +1 = E / S, -1 = W / N, coordinate along the axis)

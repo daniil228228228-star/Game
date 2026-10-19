@@ -133,7 +133,7 @@
   const cone = (r, h, seg, color, x, y, z) => ({ geo: new THREE.ConeGeometry(r, h, seg), color, x, y, z });
   const PROTO = {
     lamp: () => mergeGeoms([cyl(0.07, 0.05, 3.5, 6, 0x4a4f55, 0, 1.75, 0), box(0.1, 0.1, 0.9, 0x4a4f55, 0, 3.45, 0.4), box(0.28, 0.1, 0.5, 0xf3e3a8, 0, 3.38, 0.78)]),
-    sig: () => mergeGeoms([cyl(0.07, 0.07, 3.3, 6, 0x3a3f44, 0, 1.65, 0), box(0.1, 0.1, 0.9, 0x3a3f44, 0, 3.15, 0.35), box(0.3, 0.86, 0.28, 0x22252a, 0, 3.0, 0.8), box(0.17, 0.17, 0.05, 0xd33a2e, 0, 3.3, 0.96), box(0.17, 0.17, 0.05, 0x6b5a22, 0, 3.0, 0.96), box(0.17, 0.17, 0.05, 0x2a6b3a, 0, 2.7, 0.96)]),
+    sig: () => mergeGeoms([cyl(0.07, 0.07, 3.3, 6, 0x3a3f44, 0, 1.65, 0), box(0.1, 0.1, 0.9, 0x3a3f44, 0, 3.15, 0.35), box(0.3, 0.86, 0.28, 0x22252a, 0, 3.0, 0.8)]),
     pole: () => mergeGeoms([cyl(0.04, 0.04, 2.3, 5, 0x8d9298, 0, 1.15, 0)]),
     plate: () => mergeGeoms([box(0.6, 0.6, 0.04, 0xffffff, 0, 2.3, 0.04)]),
     stop: () => mergeGeoms([box(2.2, 0.08, 1.1, 0xe07a2f, 0, 2.3, 0), box(0.07, 2.3, 0.07, 0x4a4f55, -1.0, 1.15, 0.45), box(0.07, 2.3, 0.07, 0x4a4f55, 1.0, 1.15, 0.45), box(2.0, 1.6, 0.04, 0xaed0dc, 0, 1.3, -0.5), box(1.4, 0.07, 0.35, 0x8a6a45, 0, 0.5, -0.3)]),
@@ -161,6 +161,15 @@
   }
   const geoCache = {};
   function sharedGeo(name) { return geoCache[name] || (geoCache[name] = PROTO[name]()); }
+  let visibleSignalHeads=[];
+  api.updateSignalLights=(state)=>{
+    const inst=instances.signalLights;if(!inst)return;
+    let changed=false;
+    visibleSignalHeads.forEach((s,n)=>{const phase=state(s[3],[s[4],s[5]]);if(s.phase===phase)return;s.phase=phase;changed=true;
+      ['red','amber','green'].forEach((color,k)=>{tint.setHex(color===phase?[0xff352a,0xffbc25,0x35e467][k]:0x20252a).convertSRGBToLinear();inst.setColorAt(n*3+k,tint);});
+    });
+    if(changed)inst.instanceColor.needsUpdate=true;
+  };
   function rebuildFurniture() {
     const lists = { lamp: [], sig: [], pole: [], plate: [], stop: [], tree: [], cat: [] };
     for (const [key, c] of cells) {
@@ -172,6 +181,11 @@
     const each = (k, fn) => { let n = 0; for (const a of lists[k]) for (let i = 0; i < a.length; i += strideOf[k]) fn(a, i, n++); };
     const setM = (inst, n, x, y, z, yaw, s = 1) => { dummy.position.set(x, y, z); dummy.rotation.set(0, yaw, 0); dummy.scale.setScalar(s); dummy.updateMatrix(); inst.setMatrixAt(n, dummy.matrix); };
     for (const k of ['lamp', 'sig', 'pole', 'stop']) makeInstanced(k, count(k), (inst) => each(k, (a, i, n) => setM(inst, n, a[i], 0, a[i + 1], a[i + 2])), { geo: sharedGeo(k), shadow: k === 'lamp' });
+    visibleSignalHeads=D.graph.signalHeads.filter(s=>cells.has(Math.floor(s[0]/CELL)+','+Math.floor(s[1]/CELL))).map(s=>s.slice());
+    makeInstanced('signalLights',visibleSignalHeads.length*3,inst=>visibleSignalHeads.forEach((s,n)=>{
+      for(let k=0;k<3;k++)setM(inst,n*3+k,s[0]+Math.sin(s[2])*.96,3.3-k*.3,s[1]+Math.cos(s[2])*.96,s[2]);
+    }),{geo:new THREE.BoxGeometry(.17,.17,.05),material:new THREE.MeshBasicMaterial({color:0xffffff})});
+    api.updateSignalLights(window.PlanCTrafficV161?.state||(()=> 'red'));
     // lamp glow: the heads light up at night (one instanced box + one additive ground pool, both driven by isNightV40())
     const lampN = count('lamp');
     makeInstanced('lampglow', lampN, (inst) => each('lamp', (a, i, n) => setM(inst, n, a[i] + Math.sin(a[i + 2]) * 0.78, 3.36, a[i + 1] + Math.cos(a[i + 2]) * 0.78, a[i + 2])), { geo: new THREE.BoxGeometry(0.3, 0.06, 0.5), material: glowMat });

@@ -50,7 +50,8 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
   for (const e of PLAN.edges) {
     if (e.split) continue;   // I2: the straight axis of the split street is a lawn island; its carriageways are checked below
     const a = N.get(e.a), b = N.get(e.b), L = Math.hypot(b.x - a.x, b.z - a.z);
-    const rA = (D.graph.rings.find((q) => q[0] === e.a) || [0, 0, 0, 0])[3], rB = (D.graph.rings.find((q) => q[0] === e.b) || [0, 0, 0, 0])[3];   // inside a roundabout the island is not road
+    const circles=D.graph.rings.concat(D.graph.minis);
+    const rA = (circles.find((q) => q[0] === e.a) || [0, 0, 0, 0])[3], rB = (circles.find((q) => q[0] === e.b) || [0, 0, 0, 0])[3];   // islands have no straight road: both ring sizes are checked around their circumference below
     const bR = (id) => { const b = (D.graph.bends || []).find((q) => q[0] === id); return b ? b[3] : 0; }, bA = bR(e.a), bB = bR(e.b);   // a bend: the axis leaves the straight edge at the tangent point (the arc is checked in 1e)
     for (let s = 0.3; s < L; s += 1.1) { if (s < rA || s > L - rB || s < bA || s > L - bB) continue; const x = a.x + (b.x - a.x) * s / L, z = a.z + (b.z - a.z) * s / L; if (e.cls === 'motorway' && Math.abs(x - 250) < 0.01 && z > 66.9) continue;   /* M2's trumpet end: the centre line is the widening median island (21 m taper, drawn as lawn) */ samples++; if (!asphaltAt(x, z) && !(e.cls === 'motorway' && (medAt(x, z) || (Math.abs(x - 250) < 0.01 && Math.abs(Math.abs(z) - 18.5) < 1.2))))   /* the tip of M2's median nose has zero width */ holes.push([e.id, R(x), R(z)]); }
   }
@@ -120,7 +121,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
   check(overlaps === 0, `data: no two asphalt rectangles overlap (${asphRects.length} rectangles, ${overlaps} overlaps)`);
   // 3. roundabouts: the ring is asphalt all around, the island is not
   const bad = [];
-  for (const [id, x, z, Rr, Ri] of D.graph.rings) {
+  for (const [id, x, z, Rr, Ri] of D.graph.rings.concat(D.graph.minis)) {
     for (let k = 0; k < 24; k++) { const an = k / 24 * Math.PI * 2 + 0.07, m = (Rr + Ri) / 2; if (!asphaltAt(x + Math.cos(an) * m, z + Math.sin(an) * m)) bad.push([id, 'ring', k]); }
     if (asphaltAt(x, z)) bad.push([id, 'island']);
   }
@@ -377,7 +378,7 @@ await run(async () => {
       for (const e of D.graph.edges) {
         const [id, , , cls, x0, z0, x1, z1] = e, L = Math.hypot(x1 - x0, z1 - z0);
         for (let s = 0.5; s < L; s += 6) {
-          if (D.graph.rings.some((q) => (q[0] === e[1] && s < q[3] + 1) || (q[0] === e[2] && L - s < q[3] + 1))) continue;
+          if (D.graph.rings.concat(D.graph.minis).some((q) => (q[0] === e[1] && s < q[3] + 1) || (q[0] === e[2] && L - s < q[3] + 1))) continue;
           if ((D.graph.bends || []).some((q) => (q[0] === e[1] && s < q[3] + 1) || (q[0] === e[2] && L - s < q[3] + 1))) continue;   // bend: the arc replaces the corner   // inside a roundabout: island
           const x = x0 + (x1 - x0) * s / L, z = z0 + (z1 - z0) * s / L; n++;
           if (cls === 'motorway' && D.surfaces(x, z).some((h) => h > 0.08)) continue;
@@ -393,14 +394,14 @@ await run(async () => {
     check(ray.count === 0, `raycast from above: every graph edge is drawn (${ray.n} rays on 221 edges, holes ${J(ray.holes)})`);
     const rings = await ev(() => {
       const D = PlanCDataV161, rc = new THREE.Raycaster(), roots = PlanCV161.root.children.filter((o) => o.isMesh && !o.isInstancedMesh), out = [];
-      for (const [id, x, z, R, Ri] of D.graph.rings) {
+      for (const [id, x, z, R, Ri] of D.graph.rings.concat(D.graph.minis)) {
         let ok = 0;
         for (let k = 0; k < 12; k++) { const a = k / 12 * 6.283 + 0.2, m = (R + Ri) / 2; rc.set(new THREE.Vector3(x + Math.cos(a) * m, 5, z + Math.sin(a) * m), new THREE.Vector3(0, -1, 0)); const h = rc.intersectObjects(roots, false)[0]; if (h && h.point.y > 0.045 && h.point.y < 0.07) ok++; }
         out.push(ok);
       }
       return out;
     });
-    check(rings.length === 7 && rings.every((n) => n >= 11), `roundabouts: the ring of all 7 is drawn at asphalt height (${J(rings)})`);
+    check(rings.length === PLAN.counts.roundabouts && rings.every((n) => n >= 11), `roundabouts: all ${PLAN.counts.roundabouts} rings are drawn at asphalt height (${J(rings)})`);
     // draw-call budget: the whole layer, layer hidden vs shown with the same camera, at ten places (the game's own radius)
     await ev(() => { PlanCV161.R_BUILD = 128; PlanCV161.R_KEEP = 190; });
     const spots = [[11, -11], [0, 0], [0, -230], [250, -240], [250, 0], [250, 160], [-232, -160], [-40, -110], [120, 180], [-200, 190], [-100, -200]];

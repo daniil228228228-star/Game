@@ -13,7 +13,15 @@ const stops = Object.values(D.cells).flatMap((c) => {
   const a = c.f?.stop || [], r = []; for (let i = 0; i < a.length; i += 4) r.push(a.slice(i, i + 4)); return r;
 });
 const stop = stops.find((s) => Math.abs(s[0]) < 150 && Math.abs(s[1]) < 100);
-const specs = process.argv.includes('--interchanges') ? [
+const specs = process.argv.includes('--navigation') ? [
+  { name: 'mini-ring', at: [D.graph.minis[0][1],0.4,D.graph.minis[0][2]], dist: 31, az: 0.3, el: 1.3 },
+  { name: 'i2-east-receiving', at: [285,0.4,3], dist: 42, az: 0.2, el: 1.3 },
+  { name: 'central-square', at: [0,0.5,0], dist: 54, az: 0.1, el: 1.3 },
+] : process.argv.includes('--network-fixes') ? [
+  { name: 'pnr-return', at: [288, 0.5, 35], dist: 95, az: 0.2, el: 1.25 },
+  { name: 'port-turnaround', at: [315, 0.5, 160], dist: 85, az: 0.3, el: 1.2 },
+  { name: 'm1-east', at: [325, 1, -240], dist: 120, az: 0.2, el: 1.25 },
+] : process.argv.includes('--interchanges') ? [
   { name: 'diamond-main', at: [0, 1, -240], dist: 170, az: 0.6, el: 0.9 },
   { name: 'diamond-east', at: [250, 1, 0], dist: 150, az: 2.1, el: 0.9 },
   { name: 'motorway-toe', at: [-100, 0.5, -240], dist: 27, az: -1.0, el: 0.32 },

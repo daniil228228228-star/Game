@@ -2409,6 +2409,7 @@ function appendMainRoadSlice(route,a,b){
   else {for(let i=a.segment;i>b.segment;i--)if(ROAD_CUM[i]<a.s-.05&&ROAD_CUM[i]>b.s+.05)appendTransportPoint(route,ROAD_NODES[i]);}
 }
 function buildRoadRoute(fromPos, toPos) {
+  if(window.LAYOUT_V161==='C')return window.PlanCTrafficV161?.route(fromPos,toPos)||[];
   const fromAccess=serviceAccessDescriptor(fromPos),toAccess=serviceAccessDescriptor(toPos);
   const route=[];appendTransportPoint(route,fromPos);
   // If both endpoints are inside the depot, stay on the depot road tree instead of driving
@@ -7437,7 +7438,7 @@ function updateVehicleProgressWatch(vehicle, dt) {
   const ud = vehicle.userData;
   const moving = ['to_source', 'outbound', 'returning'].includes(ud.state);
   if (!ud._auditLastPos) ud._auditLastPos = vehicle.position.clone();
-  if (!moving || ud._auditWatchState !== ud.state) {
+  if (!moving || ud._auditWatchState !== ud.state || window.LAYOUT_V161==='C'&&ud._planCSignalWait) {
     ud._auditLastPos.copy(vehicle.position);
     ud._auditSampleTime = 0;
     ud._auditStuck = 0;
@@ -7473,6 +7474,23 @@ function completeVehicleDelivery(ud) {
 
 // Traffic follows physical order on a lane. IDs are only a deterministic tie
 // breaker when two vehicles approach each other, never the following rule.
+// Shared by the city kernel and service fleet; declared in the core BEFORE the first animation frame.
+function vehicleSameLevelV161(a,b,ha=1.6,hb=1.6){
+  if(window.LAYOUT_V161!=='C')return true;
+  if(!a||!b||!Number.isFinite(a.y)||!Number.isFinite(b.y))return false;
+  return a.y+ha>b.y+.05&&b.y+hb>a.y+.05;
+}
+function vehicleSurfaceYV161(sample,previous,offset=.04){
+  if(window.LAYOUT_V161!=='C')return .04;
+  const D=window.PlanCDataV161;if(!D)return null;
+  if(sample.roadId){const router=window.PlanCTrafficV161||D,h=router.roadY?.(sample.roadId,sample.x,sample.z);return h==null?null:h+offset;}
+  const supports=D.surfaces(sample.x,sample.z);if(!supports.length)return null;
+  if(sample.planC){return Number.isFinite(sample.y)&&supports.some(h=>Math.abs(h-sample.y)<.12)?sample.y+offset:null;}
+  // Transitional legacy paths have no edge identity. Preserve the nearest current level, never the highest deck.
+  const hint=(Number.isFinite(previous?.y)?previous.y:offset)-offset;
+  const h=supports.reduce((a,b)=>Math.abs(b-hint)<Math.abs(a-hint)?b:a);
+  return Math.abs(h-hint)<=.75?h+offset:null;
+}
 function serviceVehicleYieldFactor(vehicle, target) {
   const ud = vehicle.userData;
   const arbitrationNow = performance.now();
@@ -7487,6 +7505,7 @@ function serviceVehicleYieldFactor(vehicle, target) {
 
   for (const other of serviceVehicles) {
     if (other === vehicle || other.visible === false) continue;
+    if(!vehicleSameLevelV161(vehicle.position,other.position))continue;
     const ox = other.position.x - vehicle.position.x;
     const oz = other.position.z - vehicle.position.z;
     const distance = Math.hypot(ox, oz);
@@ -7686,7 +7705,12 @@ function moveWorkVehicle(vehicle, dt) {
     ud.path = buildRoadRoute(vehicle.position, ud.home);
     ud.pathIndex = 0;
   }
-  if (!ud.path || !ud.path.length) assignVehicleJob(vehicle);
+  if (!ud.path || !ud.path.length){
+    if(window.LAYOUT_V161==='C'&&auditMovingState){
+      ud._planCRetry=(ud._planCRetry||0)-dt;
+      if(ud._planCRetry<=0){const goal=ud.state==='to_source'?ud.cargoSource:ud.state==='returning'?ud.home:ud.jobTarget;ud.path=goal?buildRoadRoute(vehicle.position,goal):[];ud.pathIndex=0;ud._planCRetry=2;}
+    }else assignVehicleJob(vehicle);
+  }
   if (ud.mixerDrum && ud.state !== 'idle') ud.mixerDrum.rotation.x += dt * (ud.state === 'loading' ? 3.8 : 2.2);
 
   // Lift arms/outriggers/rider: retract and hide by default (driving/idle/returning), only
@@ -7701,6 +7725,7 @@ function moveWorkVehicle(vehicle, dt) {
   if (ud.state === 'idle') {
     ud.currentSpeed = THREE.MathUtils.lerp(ud.currentSpeed || 0, 0, Math.min(1, dt * 4));
     vehicle.position.lerp(ud.home, Math.min(1, dt * 2));
+    if(window.LAYOUT_V161==='C'&&window.PlanCTrafficV161)vehicle.position.y=window.PlanCTrafficV161.overlay(vehicle.position.x,vehicle.position.z,0);
     ud.recheck = (ud.recheck || 0) - dt;
     if (ud.recheck <= 0) {
       ud.recheck = logisticsRecheckTime();
@@ -7757,12 +7782,13 @@ function moveWorkVehicle(vehicle, dt) {
   }
 
   const path = ud.path;
+  if(!path?.length){ud.currentSpeed=0;return;}
   const nextIndex = Math.min(ud.pathIndex + 1, path.length - 1);
   const target = path[nextIndex];
   const dx = target.x - vehicle.position.x;
   const dz = target.z - vehicle.position.z;
   const dist = Math.hypot(dx, dz);
-  if (dist < 0.12) {
+  if (dist < (path.planC ? .005 : .12)) {
     if (nextIndex >= path.length - 1) {
       if (ud.state === 'to_source') {
         ud.state = 'loading';
@@ -7814,7 +7840,7 @@ function moveWorkVehicle(vehicle, dt) {
   // v28.8 traffic physics: accelerate instead of snapping to full speed, slow for turns,
   // waypoints, the player and nearby service vehicles. This prevents visible clipping.
   let avoidance = 1;
-  const playerDist = Math.hypot(player.position.x - vehicle.position.x, player.position.z - vehicle.position.z);
+  const playerDist = vehicleSameLevelV161(vehicle.position,player.position,1.6,1.8)?Math.hypot(player.position.x - vehicle.position.x, player.position.z - vehicle.position.z):Infinity;
   const playerMotion = Math.hypot(playerVelocity?.x || 0, playerVelocity?.z || 0);
   if (playerDist < 1.22) {
     ud._v81PlayerBlock = (ud._v81PlayerBlock || 0) + dt;
@@ -7832,16 +7858,34 @@ function moveWorkVehicle(vehicle, dt) {
   // ordinary city cars yield to service trucks in the V82 city motion kernel. This removes
   // reciprocal stop-stop deadlocks at depot/main-road junctions.
   if (typeof livingCityRuntime !== 'undefined') for (const actor of [livingCityRuntime.ambulance,livingCityRuntime.police,livingCityRuntime.fire,livingCityRuntime.bus]) {
-    const cityVehicle=actor?.group;if(!cityVehicle?.visible)continue;const od=Math.hypot(cityVehicle.position.x-vehicle.position.x,cityVehicle.position.z-vehicle.position.z);
+    const cityVehicle=actor?.group;if(!cityVehicle?.visible||!vehicleSameLevelV161(vehicle.position,cityVehicle.position))continue;const od=Math.hypot(cityVehicle.position.x-vehicle.position.x,cityVehicle.position.z-vehicle.position.z);
     if(od<.94){avoidance=0;break;} else if(od<1.85) avoidance=Math.min(avoidance,(od-.94)/.91);
   }
   const desiredVehicleSpeed = vehicleSpeed * turnFactor * arrivalFactor * THREE.MathUtils.clamp(avoidance, 0, 1);
   const speedResponse = desiredVehicleSpeed > (ud.currentSpeed || 0) ? 2.8 : 5.0;
   ud.currentSpeed = THREE.MathUtils.lerp(ud.currentSpeed || 0, desiredVehicleSpeed, 1 - Math.exp(-speedResponse * dt));
   if (avoidance <= 0.02) ud.currentSpeed = Math.max(0, (ud.currentSpeed || 0) - dt * 5.5);
-  const step = Math.min(dist, Math.max(0, ud.currentSpeed || 0) * dt);
-  vehicle.position.x += (dx / dist) * step;
-  vehicle.position.z += (dz / dist) * step;
+  let step = Math.min(dist, Math.max(0, ud.currentSpeed || 0) * dt);
+  ud._planCSignalWait=false;
+  if(path.planC&&window.PlanCTrafficV161){
+    let along=0;for(let i=1;i<=ud.pathIndex;i++)along+=path[i-1].distanceTo(path[i]);
+    const a=path[ud.pathIndex],vx=target.x-a.x,vz=target.z-a.z,l2=vx*vx+vz*vz;
+    along+=a.distanceTo(target)*(l2?THREE.MathUtils.clamp(((vehicle.position.x-a.x)*vx+(vehicle.position.z-a.z)*vz)/l2,0,1):0);
+    const admitted=window.PlanCTrafficV161.advance(vehicle,path,along,step);
+    ud._planCSignalWait=!!ud.planCSignalWait;
+    step=admitted;if(step===0)ud.currentSpeed=0;
+  }
+  const nextX=vehicle.position.x+(dx/dist)*step,nextZ=vehicle.position.z+(dz/dist)*step;
+  if(window.LAYOUT_V161==='C'){
+    const a=path[ud.pathIndex]||target,vx=target.x-a.x,vz=target.z-a.z,vy=target.y-a.y,l2=vx*vx+vz*vz;
+    const t=l2?THREE.MathUtils.clamp(((nextX-a.x)*vx+(nextZ-a.z)*vz)/l2,0,1):0;
+    const y=vehicleSurfaceYV161({x:nextX,z:nextZ,y:a.y+vy*t,roadId:a.roadId===target.roadId?a.roadId:null,planC:path.planC===true},vehicle.position,0);
+    if(y==null){ud.currentSpeed=0;return;}
+    vehicle.position.y=y;
+  }
+  vehicle.position.x = nextX;
+  vehicle.position.z = nextZ;
+  if(path.planC)vehicle.position.navArc=path[ud.pathIndex]?.navArc===target.navArc?target.navArc:null;
   recordFleetWear(vehicle, step);
 
   // Wheel rotation and a restrained body roll make service vehicles feel connected to the road.
@@ -7979,6 +8023,7 @@ spawnAmbientLife();
 
 let logisticsSyncTimer = 0;
 function updateAmbientLife(dt) {
+  if(window.LAYOUT_V161==='C')window.PlanCTrafficV161?.tick(dt);
   logisticsSyncTimer -= dt;
   if (logisticsSyncTimer <= 0) {
     logisticsSyncTimer = VISUAL_MOBILE ? 0.55 : 0.3;
@@ -8064,6 +8109,7 @@ function updateAmbientLife(dt) {
       const stepX = worker.velocity.x * dt;
       const stepZ = worker.velocity.z * dt;
       const solved = resolveAgentPosition(worker.group.position.x + stepX, worker.group.position.z + stepZ, 0.26, obstacles);
+      if(window.LAYOUT_V161==='C'&&window.PlanCTrafficV161&&!window.PlanCTrafficV161.walkAllowed(worker.group.position,{x:solved.x,z:solved.z})){solved.x=worker.group.position.x;solved.z=worker.group.position.z;worker.velocity.set(0,0,0);}
       worker.group.position.x = THREE.MathUtils.clamp(solved.x, -GROUND_HALF + 1, GROUND_HALF - 1);
       worker.group.position.z = THREE.MathUtils.clamp(solved.z, -GROUND_HALF + 1, GROUND_HALF - 1);
       const speedNow = Math.hypot(worker.velocity.x, worker.velocity.z);
@@ -12909,6 +12955,7 @@ function districtRouteToMain(id,buildingPos=null,publicStop=false){
   for(const p of shortestDistrictArc(id,startA,artA))appendTransportPoint(route,p);const artPath=ep.path||[ep.a,ep.b];for(const p of artPath)appendTransportPoint(route,p);return route;
 }
 function cityDistrictRoute(fromId,toId,fromBuildingPos=null,toBuildingPos=null,toPublicStop=true){
+  if(window.LAYOUT_V161==='C')return window.PlanCTrafficV161?.districtRoute(fromId,toId,fromBuildingPos?districtBuildingFront(fromId,fromBuildingPos):null,toBuildingPos?districtBuildingFront(toId,toBuildingPos):null)||[];
   const a=districtRouteToMain(fromId,fromBuildingPos,!fromBuildingPos),b=districtRouteToMain(toId,toBuildingPos,toPublicStop&&!toBuildingPos);if(!a.length||!b.length)return [];const route=[];for(const p of a)appendTransportPoint(route,p);const main=buildRoadRoute(a[a.length-1],b[b.length-1]);for(const p of main.slice(1))appendTransportPoint(route,p);for(let i=b.length-2;i>=0;i--)appendTransportPoint(route,b[i]);return route;
 }
 function serviceDistrictAndPos(kind){
@@ -12919,10 +12966,25 @@ function chooseServiceTargetDistrict(homeId){const pool=CITY_DISTRICTS.filter(d=
 function moveWaypointCityVehicle(c,dt,onComplete){return invokeTransportMotion('moveWaypointCityVehicle',c,dt,onComplete);}
 function moveCivicServiceVehicle(c,dt){
   const home=serviceDistrictAndPos(c.kind);if(!home){c.group.visible=false;c.route=null;return;}c.group.visible=true;
+  if(window.LAYOUT_V161==='C'){
+    const api=window.PlanCTrafficV161;if(!api)return;
+    const front=districtBuildingFront(home.id,home.pos);c.homeDistrict=home.id;
+    moveWaypointCityVehicle(c,dt,actor=>{
+      const departing=actor.atHome,source=actor._planCSpawned?actor.group.position:front;
+      if(departing)actor.targetDistrict=chooseServiceTargetDistrict(home.id);
+      const route=api.districtRoute(departing?home.id:actor.targetDistrict,departing?actor.targetDistrict:home.id,source,departing?null:front);
+      actor.route=route;actor.routeIndex=1;actor.pause=1;
+      if(route.length){if(!actor._planCSpawned){actor.group.position.copy(route[0]);actor.group.position.navArc=route[0].navArc;actor._planCSpawned=true;}actor.atHome=!departing;}
+    });return;
+  }
   const rebuild=()=>{c.homeDistrict=home.id;if(c.atHome){c.targetDistrict=chooseServiceTargetDistrict(home.id);c.route=cityDistrictRoute(home.id,c.targetDistrict,home.pos,null,true);c.atHome=false;c.pause=.8+Math.random()*.7;}else{c.route=cityDistrictRoute(c.targetDistrict||home.id,home.id,null,home.pos,false);c.atHome=true;c.pause=1.0+Math.random()*1.1;}c.routeIndex=1;if(c.route?.length)c.group.position.copy(c.route[0]);};
   moveWaypointCityVehicle(c,dt,(actor,initial)=>{if(!initial)actor.route=null;rebuild();});
 }
 function moveCityBus(c,dt){
+  if(window.LAYOUT_V161==='C'){
+    c.group.visible=true;
+    moveWaypointCityVehicle(c,dt,actor=>{actor.route=window.PlanCTrafficV161?.busRoute(actor)||[];actor.routeIndex=1;actor.pause=2.4;});return;
+  }
   const stops=CITY_DISTRICTS.filter(d=>districtUnlocked(d)&&districtLevel(d.id)>=2&&((cityState.districtStats[d.id]?.population||0)>5||(cityState.districtStats[d.id]?.jobs||0)>15));if(stops.length<2){c.group.visible=false;c.route=null;return;}c.group.visible=true;
   const rebuild=()=>{let from=c.targetDistrict||stops[0].id;if(!stops.some(d=>d.id===from))from=stops[0].id;let i=stops.findIndex(d=>d.id===from),to=stops[(i+1)%stops.length].id;c.fromDistrict=from;c.targetDistrict=to;c.route=cityDistrictRoute(from,to,null,null,true);c.routeIndex=1;c.pause=1.2;if(c.route?.length)c.group.position.copy(c.route[0]);};
   moveWaypointCityVehicle(c,dt,(actor,initial)=>{if(!initial)actor.route=null;rebuild();});
@@ -13048,8 +13110,10 @@ function updateLivingCity(dt){
     const adx=aimX-r.group.position.x,adz=aimZ-r.group.position.z,adist=Math.max(.001,Math.hypot(adx,adz));
     const speed=r.speed;const sx=adx/adist*speed*stepDt,sz=adz/adist*speed*stepDt;
     const solved=resolveAgentPosition(r.group.position.x+sx,r.group.position.z+sz,.18,obstacles);
+    const waitingSignal=window.LAYOUT_V161==='C'&&window.PlanCTrafficV161&&!window.PlanCTrafficV161.walkAllowed(r.group.position,{x:solved.x,z:solved.z});
+    if(waitingSignal){solved.x=r.group.position.x;solved.z=r.group.position.z;}
     const moved=Math.hypot(solved.x-r.group.position.x,solved.z-r.group.position.z);
-    r._trafficStall=adist>.55&&moved<Math.max(.002,speed*stepDt*.12)?(r._trafficStall||0)+stepDt:0;
+    r._trafficStall=!waitingSignal&&adist>.55&&moved<Math.max(.002,speed*stepDt*.12)?(r._trafficStall||0)+stepDt:0;
     r.group.position.x=solved.x;r.group.position.z=solved.z;
     const yaw=Math.atan2(adx,adz);const yd=Math.atan2(Math.sin(yaw-r.group.rotation.y),Math.cos(yaw-r.group.rotation.y));r.group.rotation.y+=yd*Math.min(1,stepDt*9);
     r.phase+=stepDt*(7+speed);const swing=Math.sin(r.phase)*.58;r.legL.rotation.x=swing;r.legR.rotation.x=-swing;r.armL.rotation.x=-swing*.75;r.armR.rotation.x=swing*.75;
@@ -31632,7 +31696,7 @@ window.__TYCOON_V74_BUILD__={
     return 10;
   }
   function staticSafeV74(p,r=.68){
-    const regHit=safe(()=>window.__TYCOON_V83_COLLISIONS__?.overlap?.(new THREE.Vector3(p.x,0,p.z),r));
+    const regHit=safe(()=>window.__TYCOON_V83_COLLISIONS__?.overlap?.(new THREE.Vector3(p.x,window.LAYOUT_V161==='C'?(p.y||0):0,p.z),r));
     if(regHit)return false;
     for(const c of (typeof STATIC_COLLIDERS!=='undefined'?STATIC_COLLIDERS:[])){
       if(!c?.pos)continue;
@@ -31646,15 +31710,20 @@ window.__TYCOON_V74_BUILD__={
     // waypoint it actually passed. The next normal movement ticks finish the recovery.
     const now=performance.now(),wu=winner?.userData,ou=other?.userData;
     if(!wu||!ou)return false;
+    if(!vehicleSameLevelV161(winner.position,other.position))return false;
     wu._v85RightOfWayUntil=now+2200;ou._v85YieldUntil=now+1800;ou.currentSpeed=0;
     const path=ou.path||[],back=path[Math.max(0,Math.min(ou.pathIndex||0,path.length-1))];
     if(back){
       const dx=back.x-other.position.x,dz=back.z-other.position.z,d=Math.hypot(dx,dz);
       if(d>.035){
         const step=Math.min(.24,d),candidate=new THREE.Vector3(other.position.x+dx/d*step,0,other.position.z+dz/d*step);
+        if(window.LAYOUT_V161==='C'){
+          const y=vehicleSurfaceYV161({x:candidate.x,z:candidate.z,y:other.position.y+(back.y-other.position.y)*step/d,roadId:back.roadId,planC:path.planC===true},other.position,0);
+          if(y==null)return true;candidate.y=y;
+        }
         const depotDist=safe(()=>window.__TYCOON_V65_TRAFFIC__?.serviceNetworkDistance?.(candidate),0);
         if(staticSafeV74(candidate,.62)&&(!Number.isFinite(depotDist)||depotDist<2.2)){
-          other.position.x=candidate.x;other.position.z=candidate.z;ou._auditStuck=0;ou._ticketStallTime=0;
+          other.position.x=candidate.x;other.position.z=candidate.z;if(window.LAYOUT_V161==='C')other.position.y=candidate.y;ou._auditStuck=0;ou._ticketStallTime=0;
           wu.currentSpeed=Math.max(.10,Math.min(.24,Number(wu.currentSpeed)||.10));return true;
         }
       }
@@ -31666,6 +31735,7 @@ window.__TYCOON_V74_BUILD__={
     const live=new Set();
     for(let i=0;i<vs.length;i++)for(let j=i+1;j<vs.length;j++){
       const a=vs[i],b=vs[j],ua=a.userData,ub=b.userData;
+      if(!vehicleSameLevelV161(a.position,b.position))continue;
       const d=Math.hypot(a.position.x-b.position.x,a.position.z-b.position.z);
       if(d>1.95)continue;
       if((ua.currentSpeed||0)>.075||(ub.currentSpeed||0)>.075)continue;
@@ -32421,6 +32491,7 @@ window.__TYCOON_V74_BUILD__={
     const p=actor.group.position,f=forwardV82(actor),c=cfgOf(actor);let factor=1;
     for(const r of livingCityRuntime.residents||[]){
       if(!r?.group?.visible)continue;
+      if(!vehicleSameLevelV161(p,r.group.position,1.6,1.8))continue;
       const ox=r.group.position.x-p.x,oz=r.group.position.z-p.z,d=Math.hypot(ox,oz);
       if(d>2.0)continue;
       const forward=ox*f.x+oz*f.z,lateral=Math.abs(ox*f.z-oz*f.x);
@@ -32438,13 +32509,14 @@ window.__TYCOON_V74_BUILD__={
 
     // Player safety. City traffic never needs the construction-truck timeout because it is
     // ambient traffic; it may simply wait until the player leaves.
-    const pd=Math.hypot(player.position.x-p.x,player.position.z-p.z);
+    const pd=vehicleSameLevelV161(p,player.position,1.6,1.8)?Math.hypot(player.position.x-p.x,player.position.z-p.z):Infinity;
     if(pd<.82)return 0;
     if(pd<1.85)factor=Math.min(factor,THREE.MathUtils.clamp((pd-.82)/1.03,0,1));
     factor=Math.min(factor,residentYieldFactorV82(actor));
 
     for(const other of cityActorsV82()){
       if(other===actor||other.group===actor.group||!other.group?.visible)continue;
+      if(!vehicleSameLevelV161(p,other.group.position))continue;
       const oc=cfgOf(other),ox=other.group.position.x-p.x,oz=other.group.position.z-p.z,d=Math.hypot(ox,oz);
       if(d>4.8)continue;
       const of=forwardV82(other),dot=f.x*of.x+f.z*of.z;
@@ -32480,6 +32552,7 @@ window.__TYCOON_V74_BUILD__={
     // Construction/service fleet has right of way over ordinary ambient traffic on access
     // roads. Emergency traffic keeps its higher priority.
     if(priorityV82(actor)<5)for(const other of serviceActorsV82()){
+      if(!vehicleSameLevelV161(p,other.group.position))continue;
       const ox=other.group.position.x-p.x,oz=other.group.position.z-p.z,d=Math.hypot(ox,oz);
       if(d>4.0)continue;
       const forward=ox*f.x+oz*f.z,lateral=Math.abs(ox*f.z-oz*f.x),oc=cfgOf(other);
@@ -32491,11 +32564,11 @@ window.__TYCOON_V74_BUILD__={
     return THREE.MathUtils.clamp(factor,0,1);
   }
   function pathDataV82(points,closed=false){
-    const p=(points||[]).filter(Boolean).map(x=>x.clone?x.clone():new THREE.Vector3(x.x,0,x.z));
+    const p=(points||[]).filter(Boolean).map(x=>{const p=x.clone?x.clone():new THREE.Vector3(x.x,window.LAYOUT_V161==='C'&&Number.isFinite(x.y)?x.y:0,x.z);if(x.roadId)p.roadId=x.roadId;if(x.navArc)p.navArc=x.navArc;return p;});
     if(closed&&p.length>1&&p[0].distanceToSquared(p[p.length-1])>.0001)p.push(p[0].clone());
     const cum=[0];let total=0;
     for(let i=0;i<p.length-1;i++){total+=p[i].distanceTo(p[i+1]);cum.push(total);}
-    return {p,cum,total:Math.max(.001,total)};
+    return {p,cum,total:Math.max(.001,total),planC:points?.planC===true,stops:points?.stops||[]};
   }
   function districtLoopDataV82(id){
     const key=`${id}|${Math.max(0,Number(districtRoadLevelV37?.(id))||0)}`;
@@ -32510,12 +32583,13 @@ window.__TYCOON_V74_BUILD__={
   function laneSideV161(){return window.LAYOUT_V161==='C'?-1:1;}
   window.__TYCOON_LANE_SIDE_V161__=laneSideV161;
   function samplePathV82(data,d,lane=0){
-    if(!data?.p?.length)return {x:0,z:0,yaw:0};
+    if(!data?.p?.length)return {x:0,y:0,z:0,yaw:0};
+    if(data.p.length===1){const p=data.p[0];return {x:p.x,y:p.y,z:p.z,yaw:0,roadId:p.roadId,planC:data.planC};}
     d=THREE.MathUtils.clamp(d,0,data.total);let i=0;
     while(i<data.p.length-2&&data.cum[i+1]<d)i++;
     const a=data.p[i],b=data.p[i+1],seg=Math.max(.001,data.cum[i+1]-data.cum[i]),t=THREE.MathUtils.clamp((d-data.cum[i])/seg,0,1);
     const dx=b.x-a.x,dz=b.z-a.z,l=Math.max(.001,Math.hypot(dx,dz)),nx=-dz/l,nz=dx/l;
-    return {x:a.x+dx*t+nx*lane,z:a.z+dz*t+nz*lane,yaw:Math.atan2(dx,dz)};
+    return {x:a.x+dx*t+nx*lane,y:a.y+(b.y-a.y)*t,z:a.z+dz*t+nz*lane,yaw:Math.atan2(dx,dz),roadId:a.roadId===b.roadId?a.roadId:null,navArc:a.navArc===b.navArc?a.navArc:null,planC:data.planC};
   }
   function smoothPathV82(points,r=.78){
     const p=[];for(const x of points||[])if(x&&(!p.length||p[p.length-1].distanceToSquared(x)>.001))p.push(x.clone());
@@ -32551,14 +32625,17 @@ window.__TYCOON_V74_BUILD__={
     const currentHeading=stateOf(actor).lastHeading,err=Math.abs(angleDelta(targetYaw,currentHeading));
     const avoid=cityVehicleAvoidanceV82(actor),turnFactor=THREE.MathUtils.clamp(1-err/1.65,.34,1);
     const wanted=targetSpeedV82(actor,speedMult)*avoid*turnFactor,speed=evolveSpeedV82(actor,wanted,dt),distance=speed*dt;
-    actor[distanceKey]=(actor[distanceKey]+dir*distance+data.total)%data.total;
-    const sm=samplePathV82(data,actor[distanceKey],-lane*dir*laneSideV161());
-    actor.group.position.set(sm.x,.04,sm.z);turnYawV82(actor,sm.yaw+(dir<0?Math.PI:0),dt,speed);spinWheelsV82(actor,distance);
+    const nextDistance=(actor[distanceKey]+dir*distance+data.total)%data.total;
+    const sm=samplePathV82(data,nextDistance,-lane*dir*laneSideV161()),y=vehicleSurfaceYV161(sm,actor.group.position);
+    if(y==null){stateOf(actor).speed=0;return;}
+    actor[distanceKey]=nextDistance;
+    actor.group.position.set(sm.x,y,sm.z);turnYawV82(actor,sm.yaw+(dir<0?Math.PI:0),dt,speed);spinWheelsV82(actor,distance);
     stateOf(actor).travel+=distance;
   }
 
   // All local/civilian city cars now use the same loop follower and the same speed unit.
   transportMotionKernel.moveDistrictLocalCar=function(c,dt){
+    if(window.LAYOUT_V161==='C')return movePlannedCityVehicleV161(c,dt);
     if(!c?.group?.visible)return;const path=districtLoopDataV82(c.districtId);if(path.p.length<2)return;
     if(!Number.isFinite(c._v82LoopDistance)){
       const total=path.total;
@@ -32567,6 +32644,7 @@ window.__TYCOON_V74_BUILD__={
     moveClosedLoopV82(c,dt,path,'_v82LoopDistance',districtTrafficSpeedFactor(c.districtId));
   };
   transportMotionKernel.moveLivingCar=function(c,dt){
+    if(window.LAYOUT_V161==='C')return movePlannedCityVehicleV161(c,dt);
     if(!c?.group?.visible)return;const active=CITY_DISTRICTS.filter(d=>districtRoadLevelV37(d.id)>0);if(!active.length){c.group.visible=false;return;}
     const idx=Math.max(0,livingCityRuntime.cars.indexOf(c)),id=active[idx%active.length].id;c.districtId=id;
     const path=districtLoopDataV82(id);if(path.p.length<2)return;
@@ -32585,52 +32663,59 @@ window.__TYCOON_V74_BUILD__={
     return out;
   }
   function arterialShuttleV82(id){
-    const key=`${id}|${districtRoadLevelV37(id)}`;
+    const side=laneSideV161(),key=`${id}|${districtRoadLevelV37(id)}|${side}`;
     if(arterialCache.has(key))return arterialCache.get(key);
     const raw=typeof districtInfrastructureConnectorPathV37==='function'?districtInfrastructureConnectorPathV37(id):districtArterialPath(id);
     const center=smoothPathV82(raw,.82),data=pathDataV82(center,false),lane=laneOffset(arterialWidthV82(id),cfgOf({kind:'arterial'}).width);
-    const a=offsetPolylineV82(data,-lane),b=offsetPolylineV82(data,lane).reverse(),loop=[...a];
+    const a=offsetPolylineV82(data,-lane*side),b=offsetPolylineV82(data,lane*side).reverse(),loop=[...a];
     // The end/start connectors stay inside the enlarged intersection pads. They remove the
     // old instant direction flip and make the car perform a compact physical U-turn.
     if(a.length&&b.length){
       const endCenter=data.p[data.p.length-1],s=a[a.length-1],e=b[0];
       const base=Math.atan2(s.z-endCenter.z,s.x-endCenter.x),rad=Math.max(.18,lane);
-      for(let i=1;i<5;i++){const ang=base+Math.PI*(i/4);loop.push(new THREE.Vector3(endCenter.x+Math.cos(ang)*rad,0,endCenter.z+Math.sin(ang)*rad));}
+      for(let i=1;i<5;i++){const ang=base+Math.PI*(i/4)*side;loop.push(new THREE.Vector3(endCenter.x+Math.cos(ang)*rad,0,endCenter.z+Math.sin(ang)*rad));}
       loop.push(e.clone());
     }
     loop.push(...b.slice(1));
     if(a.length&&b.length){
       const startCenter=data.p[0],s=b[b.length-1],e=a[0],base=Math.atan2(s.z-startCenter.z,s.x-startCenter.x),rad=Math.max(.18,lane);
-      for(let i=1;i<5;i++){const ang=base+Math.PI*(i/4);loop.push(new THREE.Vector3(startCenter.x+Math.cos(ang)*rad,0,startCenter.z+Math.sin(ang)*rad));}
+      for(let i=1;i<5;i++){const ang=base+Math.PI*(i/4)*side;loop.push(new THREE.Vector3(startCenter.x+Math.cos(ang)*rad,0,startCenter.z+Math.sin(ang)*rad));}
       loop.push(e.clone());
     }
     const result=pathDataV82(loop,true);arterialCache.set(key,result);return result;
   }
   transportMotionKernel.moveArterialCar=function(c,dt){
+    if(window.LAYOUT_V161==='C')return movePlannedCityVehicleV161(c,dt);
     if(!c?.group?.visible)return;const data=arterialShuttleV82(c.districtId);if(!data?.p?.length)return;
     if(!Number.isFinite(c._v82ArterialDistance))c._v82ArterialDistance=(Number(c.t)||0)*data.total*.48;
     const look=samplePathV82(data,(c._v82ArterialDistance+.48)%data.total,0),err=Math.abs(angleDelta(look.yaw,stateOf(c).lastHeading));
     const avoid=cityVehicleAvoidanceV82(c),turnFactor=THREE.MathUtils.clamp(1-err/1.75,.38,1);
     const speed=evolveSpeedV82(c,targetSpeedV82(c,districtTrafficSpeedFactor(c.districtId))*avoid*turnFactor,dt),distance=speed*dt;
-    c._v82ArterialDistance=(c._v82ArterialDistance+distance)%data.total;
-    const sm=samplePathV82(data,c._v82ArterialDistance,0);c.group.position.set(sm.x,.04,sm.z);turnYawV82(c,sm.yaw,dt,speed);spinWheelsV82(c,distance);stateOf(c).travel+=distance;
+    const nextDistance=(c._v82ArterialDistance+distance)%data.total;
+    const sm=samplePathV82(data,nextDistance,0),y=vehicleSurfaceYV161(sm,c.group.position);if(y==null){stateOf(c).speed=0;return;}
+    c._v82ArterialDistance=nextDistance;c.group.position.set(sm.x,y,sm.z);turnYawV82(c,sm.yaw,dt,speed);spinWheelsV82(c,distance);stateOf(c).travel+=distance;
     c.t=(c._v82ArterialDistance/data.total);
   };
 
-  function routeSignatureV82(route){return (route||[]).map(p=>`${p.x.toFixed(2)},${p.z.toFixed(2)}`).join('|');}
+  function routeSignatureV82(route){return (window.LAYOUT_V161==='C'?`C|${route?.planC===true}|`:'')+(route||[]).map(p=>`${p.x.toFixed(2)},${p.z.toFixed(2)}`+(window.LAYOUT_V161==='C'?`,${Number(p.y||0).toFixed(3)},${p.roadId||''}`:'')).join('|');}
   function nearestPathDistanceV82(data,pos){
     let best=Infinity,bestD=0;
     for(let i=0;i<data.p.length-1;i++){
-      const a=data.p[i],b=data.p[i+1],vx=b.x-a.x,vz=b.z-a.z,l2=vx*vx+vz*vz,t=l2?THREE.MathUtils.clamp(((pos.x-a.x)*vx+(pos.z-a.z)*vz)/l2,0,1):0,px=a.x+vx*t,pz=a.z+vz*t,d=Math.hypot(pos.x-px,pos.z-pz);
-      if(d<best){best=d;bestD=data.cum[i]+Math.sqrt(l2)*t;}
+      const a=data.p[i],b=data.p[i+1],vx=b.x-a.x,vz=b.z-a.z,vy=window.LAYOUT_V161==='C'?b.y-a.y:0;
+      const l2=vx*vx+vz*vz+vy*vy,t=l2?THREE.MathUtils.clamp(((pos.x-a.x)*vx+(pos.z-a.z)*vz+(window.LAYOUT_V161==='C'?(pos.y-.04-a.y)*vy:0))/l2,0,1):0,px=a.x+vx*t,pz=a.z+vz*t;
+      const d=Math.hypot(pos.x-px,pos.z-pz,window.LAYOUT_V161==='C'?pos.y-.04-a.y-vy*t:0);
+      if(d<best){best=d;bestD=data.cum[i]+(window.LAYOUT_V161==='C'?data.cum[i+1]-data.cum[i]:Math.sqrt(l2))*t;}
     }
     return bestD;
   }
   function routeDataV82(c){
-    const sig=routeSignatureV82(c.route),old=routeCache.get(c);
+    const old=routeCache.get(c);
+    if(window.LAYOUT_V161==='C'&&c.route?.planC&&old?.route===c.route)return old;
+    const sig=routeSignatureV82(c.route);
     if(old?.sig===sig)return old;
-    const smooth=smoothPathV82(c.route,.70),data=pathDataV82(smooth,false),d=nearestPathDistanceV82(data,c.group.position);
-    const v={sig,data,d};routeCache.set(c,v);return v;
+    const explicit=window.LAYOUT_V161==='C'&&c.route?.planC===true;
+    const smooth=explicit?c.route:smoothPathV82(c.route,.70),data=pathDataV82(smooth,false),d=nearestPathDistanceV82(data,c.group.position);
+    const v={sig,data,d,route:c.route};routeCache.set(c,v);return v;
   }
   transportMotionKernel.moveWaypointCityVehicle=function(c,dt,onComplete){
     if(!c?.group?.visible)return;
@@ -32644,14 +32729,25 @@ window.__TYCOON_V74_BUILD__={
     }
     if(!c.route||c.route.length<2){onComplete?.(c,true);if(!c.route||c.route.length<2)return;}
     const rd=routeDataV82(c),data=rd.data,cfg=cfgOf(c),baseLane=laneOffset(arterialWidthV82(c.targetDistrict||c.homeDistrict||CITY_DISTRICTS[0]?.id),cfg.width);
-    const taper=Math.min(1,rd.d/2.1,(data.total-rd.d)/2.1),lane=-baseLane*laneSideV161()*Math.max(0,taper);
+    const taper=Math.min(1,rd.d/2.1,(data.total-rd.d)/2.1),lane=data.planC?0:-baseLane*laneSideV161()*Math.max(0,taper);
     const look=samplePathV82(data,Math.min(data.total,rd.d+.42),lane),err=Math.abs(angleDelta(look.yaw,stateOf(c).lastHeading));
     const avoid=cityVehicleAvoidanceV82(c),turnFactor=THREE.MathUtils.clamp(1-err/1.75,.34,1),speed=evolveSpeedV82(c,targetSpeedV82(c,cityTrafficSpeedFactor())*avoid*turnFactor,dt),distance=speed*dt;
-    rd.d=Math.min(data.total,rd.d+distance);
-    const sm=samplePathV82(data,rd.d,lane);c.group.position.set(sm.x,.04,sm.z);turnYawV82(c,sm.yaw,dt,speed);spinWheelsV82(c,distance);stateOf(c).travel+=distance;
+    const permitted=data.planC&&window.PlanCTrafficV161?window.PlanCTrafficV161.advance(c,c.route,rd.d,distance):distance;
+    if(permitted===0)stateOf(c).speed=0;
+    const nextDistance=Math.min(data.total,rd.d+permitted);
+    const sm=samplePathV82(data,nextDistance,lane),y=vehicleSurfaceYV161(sm,c.group.position);if(y==null){stateOf(c).speed=0;return;}
+    rd.d=nextDistance;c.group.position.set(sm.x,y,sm.z);if(data.planC)c.group.position.navArc=sm.navArc;turnYawV82(c,sm.yaw,dt,speed);spinWheelsV82(c,permitted);stateOf(c).travel+=permitted;
     c.routeIndex=Math.min(c.route.length-1,Math.max(1,Math.round((rd.d/data.total)*(c.route.length-1))));
     if(rd.d>=data.total-.06){routeCache.delete(c);onComplete?.(c,false);}
   };
+
+  function movePlannedCityVehicleV161(c,dt){
+    if(!window.PlanCTrafficV161)return;
+    transportMotionKernel.moveWaypointCityVehicle(c,dt,actor=>{
+      const bus=actor.kind==='bus'||actor.kind==='transit';
+      actor.route=bus?window.PlanCTrafficV161.busRoute(actor):window.PlanCTrafficV161.ambientRoute(actor);actor.routeIndex=1;actor.pause=bus?2.4:.25;
+    });
+  }
 
   // V40 local transit is no longer its own "move around an angle and guess yaw" engine.
   // It uses the same district loop follower as every other local vehicle. The V40 bus mesh
@@ -32662,6 +32758,7 @@ window.__TYCOON_V74_BUILD__={
       const lv=transitLevelV40(id);if(!bus?.visible||lv<=0)continue;
       if(!bus.userData.v82Actor)bus.userData.v82Actor={group:bus,kind:'transit',districtId:id,direction:1};
       const a=bus.userData.v82Actor;a.districtId=id;
+      if(window.LAYOUT_V161==='C'){movePlannedCityVehicleV161(a,dt);continue;}
       const path=districtLoopDataV82(id);if(path.p.length<2)continue;
       const mult=districtTrafficSpeedFactor(id)*(rush?1.08:(night?.82:1))*(1+(lv-1)*.035);
       moveClosedLoopV82(a,dt,path,'_v82LoopDistance',mult);
@@ -32699,6 +32796,7 @@ window.__TYCOON_V74_BUILD__={
   };
 
   function rectOverlapV82(a,b){
+    if(!vehicleSameLevelV161(a.group.position,b.group.position))return false;
     const ca=cfgOf(a),cb=cfgOf(b),ya=headingV82(a),yb=headingV82(b),axes=[
       {x:Math.sin(ya),z:Math.cos(ya)},{x:Math.cos(ya),z:-Math.sin(ya)},
       {x:Math.sin(yb),z:Math.cos(yb)},{x:Math.cos(yb),z:-Math.sin(yb)}
@@ -33104,11 +33202,12 @@ window.__TYCOON_V74_BUILD__={
     return {nx:lnx*cy+lnz*sy,nz:-lnx*sy+lnz*cy,push};
   }
 
-  function solveCircle(x,z,r,entries,iters=4,velocity=null){
+  function solveCircle(x,z,r,entries,iters=4,velocity=null,levelY=null){
     let hit=false;
     for(let iter=0;iter<iters;iter++){
       let changed=false;
       for(const e of entries){
+        if(levelY!=null&&e.category==='vehicle'&&!vehicleSameLevelV161({y:levelY},e.pos,1.8,1.6))continue;
         const p=circlePushAgainstEntry(x,z,r,e,velocity);if(!p)continue;
         x+=p.nx*p.push;z+=p.nz*p.push;changed=true;hit=true;
         if(velocity){
@@ -33124,13 +33223,13 @@ window.__TYCOON_V74_BUILD__={
   // Compatibility: legacy audits still expect .pos/.radius, while the live solver can use OBB.
   gatherPhysicsCircles=function(){return entriesFor('player',{ignoreVehicles:false,includeCityVehicles:true});};
   resolvePlayerCircleCollisions=function(nx,nz,entries){
-    return solveCircle(nx,nz,PLAYER_RADIUS,entries||gatherPhysicsCircles(),PLAYER_COLLISION_ITERS,playerVelocity);
+    return solveCircle(nx,nz,PLAYER_RADIUS,entries||gatherPhysicsCircles(),PLAYER_COLLISION_ITERS,playerVelocity,player.position.y);
   };
   agentObstacleCircles=function(ignoreVehicles=false,includeCityVehicles=false){
     return entriesFor('agent',{ignoreVehicles,includeCityVehicles});
   };
-  resolveAgentPosition=function(nx,nz,radius,entries){
-    const out=solveCircle(nx,nz,radius,entries||agentObstacleCircles(false,true),4,null);
+  resolveAgentPosition=function(nx,nz,radius,entries,levelY=0){
+    const out=solveCircle(nx,nz,radius,entries||agentObstacleCircles(false,true),4,null,levelY);
     return {x:out.x,z:out.z};
   };
 
@@ -34247,7 +34346,7 @@ const stageIds=activeStageIdsV92(),raw=rawSegments(),segs=simplifyAtomic100(atom
      renders that one small, fixed, always-on connector unconditionally, using the exact same
      `masterGridPathToHub()` path, so the route this function returns and the pavement drawn under
      it always agree. */
-  function buildRoute(fromPos,toPos){const r=[];append(r,fromPos);const fa=serviceAccessDescriptor(fromPos),ta=serviceAccessDescriptor(toPos);if(fa&&ta){const cf=serviceChain(fa),ct=serviceChain(ta),m=new Map(ct.map((n,i)=>[n.id,i]));let fi=cf.length-1,ti=ct.length-1;for(let i=0;i<cf.length;i++)if(m.has(cf[i].id)){fi=i;ti=m.get(cf[i].id);break;}append(r,fa.node.p);for(let i=1;i<=fi;i++)append(r,cf[i].p);for(let i=ti-1;i>=0;i--)append(r,ct[i].p);append(r,toPos);return smooth(r,.68);}let fp=fromPos,tp=toPos;if(fa){const c=serviceChain(fa);append(r,fa.node.p);for(let i=1;i<c.length;i++)append(r,c[i].p);if(c.length)fp=c[c.length-1].p;}if(fa){for(const p of masterGridPathToHub(fp))append(r,p);}else{const pa=project(fp);for(const p of pathToHub(pa))append(r,p);}let tc=null;if(ta){tc=serviceChain(ta);if(tc.length)tp=tc[tc.length-1].p;}if(ta){const hubPath=masterGridPathToHub(tp).slice().reverse();for(const p of hubPath)append(r,p);}else{const pb=project(tp);for(const p of pathFromHub(pb))append(r,p);}if(tc)for(let i=tc.length-2;i>=0;i--)append(r,tc[i].p);append(r,toPos);return smooth(r,.86);}
+  function buildRoute(fromPos,toPos){if(window.LAYOUT_V161==='C')return window.PlanCTrafficV161?.route(fromPos,toPos)||[];const r=[];append(r,fromPos);const fa=serviceAccessDescriptor(fromPos),ta=serviceAccessDescriptor(toPos);if(fa&&ta){const cf=serviceChain(fa),ct=serviceChain(ta),m=new Map(ct.map((n,i)=>[n.id,i]));let fi=cf.length-1,ti=ct.length-1;for(let i=0;i<cf.length;i++)if(m.has(cf[i].id)){fi=i;ti=m.get(cf[i].id);break;}append(r,fa.node.p);for(let i=1;i<=fi;i++)append(r,cf[i].p);for(let i=ti-1;i>=0;i--)append(r,ct[i].p);append(r,toPos);return smooth(r,.68);}let fp=fromPos,tp=toPos;if(fa){const c=serviceChain(fa);append(r,fa.node.p);for(let i=1;i<c.length;i++)append(r,c[i].p);if(c.length)fp=c[c.length-1].p;}if(fa){for(const p of masterGridPathToHub(fp))append(r,p);}else{const pa=project(fp);for(const p of pathToHub(pa))append(r,p);}let tc=null;if(ta){tc=serviceChain(ta);if(tc.length)tp=tc[tc.length-1].p;}if(ta){const hubPath=masterGridPathToHub(tp).slice().reverse();for(const p of hubPath)append(r,p);}else{const pb=project(tp);for(const p of pathFromHub(pb))append(r,p);}if(tc)for(let i=tc.length-2;i>=0;i--)append(r,tc[i].p);append(r,toPos);return smooth(r,.86);}
 
   function collisionAudit(){const bad=[];for(const i of activeStageIdsV92()){const lv=Math.max(1,maxRoadLevelV37()),w=Math.max(SPECS.widths?.stageTrunk?.[lv]||2.70,SPECS.widths?.stageSpur?.[lv]||1.58),obs=obstacles(i,w),p=plan(i);for(let j=0;j<p.length-1;j++){for(const e of obs){const pad=e.category==='future-stage'?0:(e._pad||0);if(segHits(p[j],p[j+1],e,pad-.01)){bad.push({stage:i,leg:j,obstacle:e.label||e.category});break;}}}}return bad;}
   function audit(){ensureSig();const bad=collisionAudit(),g=cityWorldRuntime.stageRoads,net=g?.userData?.v86StageNetwork||null;return{version:VERSION,generation,routeCache:routeCache.size,centerlineCache:centerlineCache.size,stageRoadAssetCollisions:bad,network:net,checks:{canonicalOwner:stageRoadPolylineV367===publicApi.route&&makeStageRoadGroupV367===publicApi.makeGroup,renderedCanonical:g?.name==='v86CanonicalStageRoads',routesClear:bad.length===0,navigationUsesCanonical:buildRoadRoute===publicApi.buildRoute,projectionUsesCanonical:projectToRoad===publicApi.project,noDuplicateLiveStageGroup:scene.children.filter(x=>x===g||x?.name==='v86CanonicalStageRoads').length<=1}};}
@@ -34261,7 +34360,7 @@ const stageIds=activeStageIdsV92(),raw=rawSegments(),segs=simplifyAtomic100(atom
   projectToRoad=publicApi.project;
   buildRoadRoute=publicApi.buildRoute;
   { const baseRouteV161=buildRoadRoute; // v161 loading yards: a route to / from a truck bay runs through the yard gate (YardsV161.route), everything else is the game's own route
-    buildRoadRoute=function(fromPos,toPos){const Y=window.YardsV161;if(Y&&Y.enabled&&fromPos&&toPos){const r=Y.route(fromPos,toPos,baseRouteV161);if(r&&r.length)return r;}return baseRouteV161.apply(this,arguments);}; }
+    buildRoadRoute=function(fromPos,toPos){if(window.LAYOUT_V161==='C')return baseRouteV161.apply(this,arguments);const Y=window.YardsV161;if(Y&&Y.enabled&&fromPos&&toPos){const r=Y.route(fromPos,toPos,baseRouteV161);if(r&&r.length)return r;}return baseRouteV161.apply(this,arguments);}; }
   { const baseMoveV161=moveWorkVehicle; // v161 loading yards: a truck standing in its bay eases its heading along the bay (the short lead-in leaves it a few degrees off)
     moveWorkVehicle=function(vehicle,dt){baseMoveV161.apply(this,arguments);try{window.YardsV161?.settle(vehicle,dt);}catch(e){}}; }
   distToNearestRoadSegment=function(x,z){let best=Infinity;for(let i=0;i<Math.min(STAGES.length,Math.max(stageIndex,1));i++){const p=centerline(i);for(let j=0;j<p.length-1;j++)best=Math.min(best,pointSegDist(x,z,p[j],p[j+1]));}return best;};
@@ -39813,6 +39912,7 @@ body.v165-polish :is(.projectProgress,.cityProgress,.fleetCondition)>i{backgroun
 <script src="assets/masterplan-v161.js"></script>
 <script src="assets/roundabout-v161.js"></script>
 <script src="assets/plan-c-v161.js"></script>
+<script src="assets/plan-c-traffic-v161.js"></script>
 <link rel="stylesheet" href="assets/premium-ui-v161.css">
 </body>
 
