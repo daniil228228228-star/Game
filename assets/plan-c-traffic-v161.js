@@ -225,12 +225,23 @@
         const others=[...(window.__TYCOON_V82_TRAFFIC__?.actors?.()||[]),...(typeof serviceVehicles==='undefined'?[]:serviceVehicles.map(group=>({group})))];
         if(others.some(o=>o!==actor&&o.group?.visible&&Math.hypot(o.group.position.x-p[0],o.group.position.z-p[1])<3&&Math.abs(o.group.position.y-p[2])<2))continue;
         if(typeof player!=='undefined'&&Math.hypot(player.position.x-p[0],player.position.z-p[1])<2&&Math.abs(player.position.y-p[2])<2)continue;
-        actor.group.position.set(p[0],p[2]+.04,p[1]);actor.group.position.navArc=a.id;actor._planCSpawned=true;break;
+        // A spot is taken only if the car can really leave it (2026-10-19 review: arcs boxed in by buildings left cars frozen on the road for ever).
+        const probe=v3([p[0],p[1],p[2]+.04]);probe.navArc=a.id;
+        if(!points.some(q=>route(probe,v3([...q,0]),{access:false}).length))continue;
+        actor.group.position.set(p[0],p[2]+.04,p[1]);actor.group.position.navArc=a.id;actor._planCSpawned=true;actor._planCFail=0;break;
       }
       if(!actor._planCSpawned)return [];
     }
-    const index=actor._planCStop||0;actor._planCStop=(index+1)%points.length;
-    return route(actor.group.position,v3([...points[index],0]),{access:false});
+    // Try every loop point once: a point behind a building (obstacles) must not freeze the car.
+    for(let k=0;k<points.length;k++){
+      const index=actor._planCStop||0;actor._planCStop=(index+1)%points.length;
+      const r=route(actor.group.position,v3([...points[index],0]),{access:false});
+      if(r.length){actor._planCFail=0;return r;}
+    }
+    // Boxed in on every side: after a few tries pick a new spot, but only when nobody is close enough to see it jump.
+    actor._planCFail=(actor._planCFail||0)+1;
+    if(actor._planCFail>=3&&!(typeof player!=='undefined'&&Math.hypot(player.position.x-actor.group.position.x,player.position.z-actor.group.position.z)<45)){actor._planCSpawned=false;actor._planCFail=0;}
+    return [];
   }
   function districtRoute(fromId,toId,fromPos,toPos){
     const a=fromPos||v3([...(loops[fromId]||loops.business)[0],0]),b=toPos||v3([...(loops[toId]||loops.business)[0],0]);return route(a,b,{access:false,sourceAccess:!!fromPos,targetAccess:!!toPos});
@@ -247,9 +258,15 @@
   function busRoute(actor){
     if(actor._planCBusLine==null){actor._planCBusLine=busSerial++%busLines.length;actor._planCBusStop=0;}
     if(!actor._planCSpawned){ambientRoute(actor);if(!actor._planCSpawned)return [];}
-    const line=busLines[actor._planCBusLine],n=actor._planCBusStop;actor._planCBusStop=(n+1)%line.stations.length;
+    const line=busLines[actor._planCBusLine];
     actor.group.userData.planCBusLine=line.id;
-    return route(actor.group.position,v3([...line.stations[n],0]),{access:false});
+    // A station that is unreachable right now (a building stands on the road) is skipped, the bus tries the next one.
+    for(let k=0;k<line.stations.length;k++){
+      const n=actor._planCBusStop;actor._planCBusStop=(n+1)%line.stations.length;
+      const r=route(actor.group.position,v3([...line.stations[n],0]),{access:false});
+      if(r.length)return r;
+    }
+    return [];
   }
   function tick(dt){
     if(!Number.isFinite(dt)||dt<=0)return;clock+=Math.min(dt,.25);
