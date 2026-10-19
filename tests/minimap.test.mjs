@@ -158,7 +158,7 @@ await run(async () => {
     {
       await ev(() => { MiniMapV161.open(); });
       const white = () => ev(() => { const c = document.querySelector('#bigMapV161 canvas'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 225 && d[i + 1] > 225 && d[i + 2] > 215) n++; return n; });
-      const spots = [['I1', 0, -240, 3.0], ['I2', 250, 0, 4.0], ['I3', 250, -240, 3.0], ['I4', 250, 160, 3.0]];
+      const spots = [['I1', 0, -240, 3.0], ['I2', 250, 0, 4.0], ['I4', 250, 160, 3.0]];
       for (const [id, x, z, k] of spots) {
         await ev(([x, z, k]) => { MiniMapV161.detail = true; MiniMapV161.setView(x, z, k); MiniMapV161.redraw(); }, [x, z, k]);
         const on = await ev(() => ({ cmds: MiniMapV161.stats.detailCmds, ms: MiniMapV161.stats.detailMs, err: MiniMapV161.detailError || MiniMapV161.nodeError || null, k: MiniMapV161.view.k }));

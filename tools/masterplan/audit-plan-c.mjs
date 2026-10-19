@@ -218,7 +218,7 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
 //     (b) ramps / slip lanes / semi-direct curves: every vertex of the centre line deflects by <= 15 degrees (arcs and cubics are sampled finely).
 //     Real junctions (3+ legs) are excluded: their corners are kerb returns.
 {
-  const bad = [], info = [], MINR = { service: 14, arterial: 16, collector: 10, local: 9 }, bendOf = new Map((P.bends || []).map((b) => [b.node, b]));
+  const bad = [], info = [], MINR = { service: 14, arterial: 16, collector: 10, local: 9, motorway: 80 }, bendOf = new Map((P.bends || []).map((b) => [b.node, b]));
   for (const n of P.nodes) {
     if (n.legs !== 2) continue;
     const es = E.filter((e) => (e.a === n.id || e.b === n.id) && !e.split);

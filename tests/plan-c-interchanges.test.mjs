@@ -53,7 +53,7 @@ for (const r of motors) {
     }
   }
 }
-assert.equal(toes, 4);   // M1 x2 + M2 north end + M2 south end of the I3 deck (the I2 crossing is at grade now)
+assert.equal(toes, 2);   // the two ends of the M1 deck over I1 (I3 and the M2 decks are gone, the I2 crossing is at grade)
  console.log(`PASS ${toes} full-width ground toes, ${toeSamples} drawn-surface raycasts`);
 
 const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r) => {
@@ -67,7 +67,7 @@ for (const r of ramps) for (const k of [0, 1]) {
     ? ramps.filter((a) => a !== r && a.ic === r.ic && !/slip/.test(a.kind)).map((a) => heightOn(p, a.path)).sort((a, b) => a.distance - b.distance)[0].h : 0;
   assert.ok(Math.abs(p[2] - h) < 0.025, `${r.ic}/${r.kind} end ${k} is at its OTHER road's level: ${p[2]} vs ${h}`); ends++;
 }
-assert.equal(ends, 40); console.log(`PASS ${ends} ramp endpoints meet an independently selected host surface`);
+assert.equal(ends, 24); console.log(`PASS ${ends} ramp endpoints meet an independently selected host surface`);
 
 // The slip must turn AWAY from the motorway, not hook back into its edge.
 for (const r of ramps.filter((r) => /slip/.test(r.kind))) {

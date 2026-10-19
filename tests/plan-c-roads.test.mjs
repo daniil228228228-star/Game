@@ -198,7 +198,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
   // 8. height layer (offline): deck clearance, grades, smooth vertical curves, ramps meet their roads
   {
     const S = D.struct, top = (x, z) => Math.max(...D.surfaces(x, z));
-    const decks = [[0, -240, 'M1 over Главный пр.'], [250, -240, 'M2 over M1 (cloverleaf)']].map(([x, z, n]) => [n, top(x, z)]);
+    const decks = [[0, -240, 'M1 over Главный пр.']].map(([x, z, n]) => [n, top(x, z)]);
     check(top(250, 0) < 0.2 && top(250, -60) < 0.2, `heights: M2 is at ground level at the I2 crossing (z 0: ${top(250, 0)}, z -60: ${top(250, -60)}), no deck above the street`);
     check(decks.every(([, h]) => h - 0.8 >= 4.5 - 1e-6), `heights: every motorway deck over a road leaves >= 4.5 m headroom (deck tops ${J(decks.map(([n, h]) => [n, +h.toFixed(2)]))}, slab 0.8)`);
     check(S.openings.every(([x, half, clear]) => clear >= 2.8) && S.openings.filter(([x, half, clear]) => clear >= 4.5).length >= 7, `heights: rail embankment ${S.railY} m high with ${S.openings.length} openings (${S.openings.filter((o) => o[2] >= 4.5).length} road openings with 4.5 m headroom, ${S.openings.filter((o) => o[2] < 4.5).length} station tunnels)`);
@@ -511,7 +511,7 @@ await run(async () => {
     await shot(page, 'plan-c-02-ring-top', 0, 0, 50, 90, 0);
     await shot(page, 'plan-c-03-ring-n7', -232, -160, 45, 60, 0);
     await shot(page, 'plan-c-04-diamond-I1', 0, -240, 90, 90, 0);
-    await shot(page, 'plan-c-05-clover-I3', 250, -240, 140, 90, 0);
+    await shot(page, 'plan-c-05-bend-M1-M2', 200, -200, 130, 90, 0);
     await shot(page, 'plan-c-06-station', -40, -120, 110, 90, 0);
     await shot(page, 'plan-c-07-port', 140, 215, 120, 60, 0);
     await shot(page, 'plan-c-08-river-bridge', -210, 0, 60, 55, 20);
@@ -520,7 +520,7 @@ await run(async () => {
     await ev(() => { PlanCV161.R_BUILD = 128; PlanCV161.R_KEEP = 190; });
     // real phone view (the game's own camera), day and night, at every structure type
     if (SHOTS) {
-      const spots = [['circus', 11, -11, 0], ['signal', 0, 112, 0], ['ring-n7', -232, -146, 0], ['I1-deck', 40, -240, 0], ['I1-under', 0, -222, 0], ['I2', 250, -30, 0], ['I3', 250, -200, 0], ['I4-bridge', 262, 180, 0], ['rail-under', -160, -112, 0], ['footbridge', 131, -9, 0], ['river-bridge', -190, 0, 0], ['station', -40, -100, 0], ['port', 120, 150, 0]];
+      const spots = [['circus', 11, -11, 0], ['signal', 0, 112, 0], ['ring-n7', -232, -146, 0], ['I1-deck', 40, -240, 0], ['I1-under', 0, -222, 0], ['I2', 250, -30, 0], ['M1-M2 bend', 215, -215, 0], ['I4-bridge', 262, 180, 0], ['rail-under', -160, -112, 0], ['footbridge', 131, -9, 0], ['river-bridge', -190, 0, 0], ['station', -40, -100, 0], ['port', 120, 150, 0]];
       for (const night of [false, true]) {
         await ev((n) => { try { __TYCOON_V40__.setTime(n ? 22 : 12); } catch (_) {} }, night);
         for (const [name, x, z] of spots) {

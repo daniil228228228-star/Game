@@ -56,14 +56,14 @@ export function buildTurnGraph(P, arms) {
   }
   const armV = [];   // explicit arms: { name, ic, in: vertex, out: vertex }
   for (const a of arms || []) {
-    const mk = (spec) => { const e = E.find((q) => q.id === spec.edge), axis = e.dir === 'x' ? 0 : 1; return attach(lines.get(e.id + '|' + spec.sgn), spec.at); };
+    const mk = (spec) => { const e = E.find((q) => { if (q.split || q.dir !== spec.ax) return false; const a = N.get(q.a), b = N.get(q.b), c = spec.ax === 'x' ? a.z : a.x, lo = Math.min(spec.ax === 'x' ? a.x : a.z, spec.ax === 'x' ? b.x : b.z), hi = Math.max(spec.ax === 'x' ? a.x : a.z, spec.ax === 'x' ? b.x : b.z); return Math.abs(c - spec.c) < 0.01 && spec.at >= lo - 1e-6 && spec.at <= hi + 1e-6; }); return attach(lines.get(e.id + '|' + spec.sgn), spec.at); };
     armV.push({ ...a, vin: mk(a.in), vout: mk(a.out) });
   }
   // straight lines
   for (const L of lines.values()) { const pts = [{ t: 0, v: startV(L) }, ...L.pts.sort((p, q) => p.t - q.t), { t: L.L, v: endV(L) }]; for (let i = 0; i + 1 < pts.length; i++) addE(pts[i].v, pts[i + 1].v, pts[i + 1].t - pts[i].t, L.e.name || L.e.id); }
   // node connections
   const incident = new Map(); for (const e of E) for (const id of [e.a, e.b]) { if (!incident.has(id)) incident.set(id, []); incident.get(id).push(e); }
-  const nodeEdges = [];   // junction connections (turns): kept apart so that "direct" can leave them out
+  const bendNodes = new Set((P.bends || []).map((b) => b.node)), nodeEdges = [];   // junction connections (turns): kept apart so that "direct" can leave them out
   for (const [id, es] of incident) {
     const j = J.get(id);
     for (const A of es) for (const B of es) {
@@ -71,7 +71,7 @@ export function buildTurnGraph(P, arms) {
       if (!movementAllowed(P, j, A, B, N.get(id))) continue;
       if (A === B) { const inL = [1, -1].map((s) => lines.get(A.id + '|' + s)).find((L) => L.end === id), outL = [1, -1].map((s) => lines.get(A.id + '|' + s)).find((L) => L.start === id); nodeEdges.push({ u: endV(inL), v: startV(outL), w: 0, name: 'U-turn at ' + id, turn: true }); continue; }
       const collinear = A.dir === B.dir && (A.cls === 'motorway') === (B.cls === 'motorway');
-      if (j || collinear) nodeEdges.push({ u: endV(inA), v: startV(outB), w: 0, name: id, turn: !collinear });
+      if (j || collinear || bendNodes.has(id)) nodeEdges.push({ u: endV(inA), v: startV(outB), w: 0, name: id, turn: !collinear && !bendNodes.has(id) });
     }
   }
   const graph = (withTurns) => { const g = new Map(); const add = (x) => { if (!g.has(x.u)) g.set(x.u, []); g.get(x.u).push(x); if (!g.has(x.v)) g.set(x.v, []); }; for (const [u, l] of adj) for (const x of l) add({ u, v: x.to, w: x.w, name: x.name }); for (const x of rampEdges) add(x); for (const x of nodeEdges) if (withTurns || !x.turn) add(x); return g; };
@@ -90,28 +90,22 @@ export function buildTurnGraph(P, arms) {
 // arms of the interchanges and of the I2 crossing (edge id, heading sign along its axis: +1 = E / S, -1 = W / N, coordinate along the axis)
 export const ARMS = {
   I4: [
-    { name: 'M2 с севера', in: { edge: 'e213', sgn: 1, at: 40 }, out: { edge: 'e213', sgn: -1, at: 40 } },
-    { name: 'Портовая запад', in: { edge: 'e197', sgn: 1, at: 100 }, out: { edge: 'e197', sgn: -1, at: 100 } },
-    { name: 'Портовая восток', in: { edge: 'e199', sgn: -1, at: 322 }, out: { edge: 'e199', sgn: 1, at: 322 } },
-    { name: 'Порт. EB после слияния x275', in: { edge: 'e198', sgn: 1, at: 275 }, out: { edge: 'e198', sgn: -1, at: 275 } },
+    { name: 'M2 с севера', in: { ax: 'z', c: 250, sgn: 1, at: 40 }, out: { ax: 'z', c: 250, sgn: -1, at: 40 } },
+    { name: 'Портовая запад', in: { ax: 'x', c: 160, sgn: 1, at: 100 }, out: { ax: 'x', c: 160, sgn: -1, at: 100 } },
+    { name: 'Портовая восток', in: { ax: 'x', c: 160, sgn: -1, at: 322 }, out: { ax: 'x', c: 160, sgn: 1, at: 322 } },
+    { name: 'Порт. EB после слияния x275', in: { ax: 'x', c: 160, sgn: 1, at: 275 }, out: { ax: 'x', c: 160, sgn: -1, at: 275 } },
   ],
   I1: [
-    { name: 'М1 запад', in: { edge: 'e208', sgn: 1, at: -200 }, out: { edge: 'e208', sgn: -1, at: -200 } },
-    { name: 'М1 восток', in: { edge: 'e209', sgn: -1, at: 200 }, out: { edge: 'e209', sgn: 1, at: 200 } },
-    { name: 'Проспект север', in: { edge: 'e52', sgn: 1, at: -365 }, out: { edge: 'e52', sgn: -1, at: -365 } },
-    { name: 'Проспект юг', in: { edge: 'e52', sgn: -1, at: -110 }, out: { edge: 'e52', sgn: 1, at: -110 } },
+    { name: 'М1 запад', in: { ax: 'x', c: -240, sgn: 1, at: -200 }, out: { ax: 'x', c: -240, sgn: -1, at: -200 } },
+    { name: 'М1 восток', in: { ax: 'x', c: -240, sgn: -1, at: 150 }, out: { ax: 'x', c: -240, sgn: 1, at: 150 } },
+    { name: 'Проспект север', in: { ax: 'z', c: 0, sgn: 1, at: -365 }, out: { ax: 'z', c: 0, sgn: -1, at: -365 } },
+    { name: 'Проспект юг', in: { ax: 'z', c: 0, sgn: -1, at: -110 }, out: { ax: 'z', c: 0, sgn: 1, at: -110 } },
   ],
   I2: [
-    { name: 'М2 север', in: { edge: 'e212', sgn: 1, at: -60 }, out: { edge: 'e212', sgn: -1, at: -60 } },
-    { name: 'М2 юг', in: { edge: 'e213', sgn: -1, at: 60 }, out: { edge: 'e213', sgn: 1, at: 60 } },
-    { name: 'Центральная запад', in: { edge: 'e151', sgn: 1, at: 180 }, out: { edge: 'e151', sgn: -1, at: 180 } },
-    { name: 'Центральная восток', in: { edge: 'e155', sgn: -1, at: 293 }, out: { edge: 'e155', sgn: 1, at: 293 } },
-  ],
-  I3: [
-    { name: 'М1 запад', in: { edge: 'e209', sgn: 1, at: 100 }, out: { edge: 'e209', sgn: -1, at: 100 } },
-    { name: 'М1 восток', in: { edge: 'e210', sgn: -1, at: 370 }, out: { edge: 'e210', sgn: 1, at: 370 } },
-    { name: 'М2 север', in: { edge: 'e211', sgn: 1, at: -370 }, out: { edge: 'e211', sgn: -1, at: -370 } },
-    { name: 'М2 юг', in: { edge: 'e212', sgn: -1, at: -100 }, out: { edge: 'e212', sgn: 1, at: -100 } },
+    { name: 'М2 север', in: { ax: 'z', c: 250, sgn: 1, at: -60 }, out: { ax: 'z', c: 250, sgn: -1, at: -60 } },
+    { name: 'М2 юг', in: { ax: 'z', c: 250, sgn: -1, at: 60 }, out: { ax: 'z', c: 250, sgn: 1, at: 60 } },
+    { name: 'Центральная запад', in: { ax: 'x', c: 0, sgn: 1, at: 180 }, out: { ax: 'x', c: 0, sgn: -1, at: 180 } },
+    { name: 'Центральная восток', in: { ax: 'x', c: 0, sgn: -1, at: 293 }, out: { ax: 'x', c: 0, sgn: 1, at: 293 } },
   ],
 };
 

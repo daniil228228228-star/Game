@@ -235,7 +235,7 @@ function smoothFn(fn, lo, hi, step = 2, k = 2) {
   return (v) => { const t = Math.max(0, Math.min(n - 1e-9, (v - lo) / step)), i = Math.floor(t), f = t - i; return arr[i] * (1 - f) + arr[i + 1] * f; };
 }
 const trap = (d) => Math.max(0, Math.min(DECKH, DECKH - SLOPE * Math.max(0, d - FLATH)));
-const hM1 = smoothFn((x) => trap(Math.abs(x)), -330, 390), hM2 = smoothFn((z) => trap(Math.abs(z - M1_Z)), -390, 100);   // M2 rises only over M1 (I3); it is at ground level well before the at-grade crossing I2 (z -150 .. 88)
+const hM1 = smoothFn((x) => trap(Math.abs(x)), -330, 390), hM2 = () => 0;   // M2 rises only over M1 (I3); it is at ground level well before the at-grade crossing I2 (z -150 .. 88)
 const intervalsAbove = (fn, lo, hi, th) => { const out = []; let a = null; for (let v = lo; v <= hi + 1e-9; v += 1) { const on = fn(v) > th; if (on && a == null) a = v; if (!on && a != null) { out.push([a, v]); a = null; } } if (a != null) out.push([a, hi]); return out; };
 // Include the COMPLETE rounded toe, not only heights > 25 cm. Otherwise the
 // flat asphalt stops at an elevated, uncapped edge: a visible grass slit.
@@ -288,7 +288,7 @@ for (const e of PLAN.edges) {
   if (cl.median > 0) {
     const t0 = trimAt(s.lowNode, e), t1 = trimAt(s.highNode, e), mh = cl.median / 2;
     const lo0 = Math.min(e.dir === 'x' ? a.x : a.z, e.dir === 'x' ? N.get(e.b).x : N.get(e.b).z), hi0 = Math.max(e.dir === 'x' ? a.x : a.z, e.dir === 'x' ? N.get(e.b).x : N.get(e.b).z);
-    const mlo = e.cls === 'motorway' ? lo0 : lo0 + t0, mhi = e.cls === 'motorway' ? hi0 : hi0 - t1;
+    const mlo = e.cls === 'motorway' ? lo0 + bendR(s.lowNode) : lo0 + t0, mhi = e.cls === 'motorway' ? hi0 - bendR(s.highNode) : hi0 - t1;
     if (mhi - mlo > 1) for (const [lo, hi] of subtractIntervals(mlo, mhi, cuts)) put(lo, hi, -mh, mh, e.cls === 'motorway' ? 'medM' : 'med');
   }
 }
@@ -571,11 +571,16 @@ for (const b of BENDS.values()) {
     emitWall(P[i][0], P[i][1], P[i + 1][0], P[i + 1][1], y0, y1, CI.kerb);
   } };
   strip(neg(half), half, H.asph, CI.asph);
-  if (Math.max(...mh) > 0.02) { strip(neg(mh), mh, H.med, CI.median); wall(neg(mh), H.asph, H.med,true); wall(mh, H.asph, H.med,true); }
+  const isMw = A.cls === 'motorway';
+  if (Math.max(...mh) > 0.02) { strip(neg(mh), mh, H.med, isMw ? CI.lawnG : CI.median); wall(neg(mh), H.asph, H.med,true); wall(mh, H.asph, H.med,true); }
   if (Math.max(...sw) > 0.02) for (const sg of [-1, 1]) { const o0 = half.map((h) => sg * h), o1 = half.map((h, i) => sg * (h + sw[i])); strip(o0, o1, H.walk, CI.walk); wall(o0, H.asph, H.walk); }
   // paint (only on the arc proper, the extensions are skipped): arterial lane dashes while they stay clear of the kerb, collector centre dashes once the median has closed
   const arcIdx = pts.map((_, i) => i).filter((i) => i > 0 && i < pts.length - 1);
-  if (Math.max(...mh) > 0.02) for (const sg of [-1, 1]) {   // arterial lane line at median / 2 + lane, only where it stays >= 0.7 m inside the kerb
+  if (isMw) {   // motorway paint = the plain M1 / M2 profile: solid lines at the median kerb and 1 m inside the edge, a dashed lane divider
+    const m0 = cA.median / 2, solidAt = (o) => { const P = offsetVar(pts, T.map(() => o)); ribbon('p', arcIdx.map((i) => P[i]), 0.18, H.paint, CI.white); };
+    for (const sg of [-1, 1]) { solidAt(sg * (m0 + 0.3)); solidAt(sg * (cA.w / 2 - 1.0)); const P = offsetVar(pts, T.map(() => sg * (m0 + cA.lane))); dashPoly(arcIdx.map((i) => P[i]), 1.6, 1.8, 0.18, H.paint); }
+  }
+  if (!isMw && Math.max(...mh) > 0.02) for (const sg of [-1, 1]) {   // arterial lane line at median / 2 + lane, only where it stays >= 0.7 m inside the kerb
     const o = T.map((t, i) => sg * (mh[i] + (cA.median > 0 ? cA : cB).lane)), P = offsetVar(pts, o);
     const keep = arcIdx.filter((i) => Math.abs(o[i]) < half[i] - 0.7);
     if (keep.length > 2) dashPoly(keep.map((i) => P[i]), 1.0, 1.4, 0.18, H.paint);
@@ -597,7 +602,7 @@ for (const e of PLAN.edges) {
   const lowNode = (ax === 'x' ? a.x <= b.x : a.z <= b.z) ? e.a : e.b, highNode = lowNode === e.a ? e.b : e.a;
   const c = ax === 'x' ? a.z : a.x;
   const mo = e.cls === 'motorway';
-  const t0 = mo ? 1 : trimAt(lowNode, e), t1 = mo ? 1 : trimAt(highNode, e);
+  const t0 = mo ? (bendR(lowNode) || 1) : trimAt(lowNode, e), t1 = mo ? (bendR(highNode) || 1) : trimAt(highNode, e);
   const lo = lo0 + t0, hi = hi0 - t1;
   if (hi - lo < 1) continue;
   const parts = subtractIntervals(lo, hi, cuts);
@@ -862,8 +867,8 @@ function addParapets(pts, o, level0 = null) {   // level-aware collider pieces a
 // slip lane share an asphalt envelope; neither may put a wall across the join.
 const rampPts = [];
 const motorHosts = [
-  { id: 'M1', axis: 0, c: M1_Z, lo: -300, hi: 394, h: hM1 },
-  { id: 'M2', axis: 1, c: M2_X, lo: -370, hi: 88, h: hM2 },
+  { id: 'M1', axis: 0, c: M1_Z, lo: -300, hi: M2_X - 80, h: hM1 },   // up to the tangent point of the M1 -> M2 bend (R 80)
+  { id: 'M2', axis: 1, c: M2_X, lo: M1_Z + 80, hi: 88, h: hM2 },
 ];
 const motorHost = (p) => motorHosts.reduce((a, b) => Math.abs(p[1 - a.axis] - a.c) <= Math.abs(p[1 - b.axis] - b.c) ? a : b);
 function projectPath(p, path) {
@@ -1157,7 +1162,7 @@ function sampleAxis(axis, c, lo, hi, hfn, step = 3, extra = []) {
   return [...vs].sort((a, b) => a - b).map((v) => axis === 'x' ? [v, c, hfn(v)] : [c, v, hfn(v)]);
 }
 // motorway causeways
-const MOTOR_CROSS = { M1: [0], M2: [M1_Z] };   // axis coordinates where another road passes underneath
+const MOTOR_CROSS = { M1: [0], M2: [] };   // axis coordinates where another road passes underneath
 for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z', M2_X, M2_UP, hM2]]) for (const [a, b] of up) {
   const pts = sampleAxis(axis, c, a, b, hfn, 3, MOTOR_CROSS[ref].flatMap((v) => [v - 7.4, v + 7.4])), S = arcLen(pts), s0 = axis === 'x' ? pts[0][0] : pts[0][1];
   const crossings = MOTOR_CROSS[ref].map((v) => [v - 7.4 - s0, v + 7.4 - s0]).filter(([x0, x1]) => x1 > 0 && x0 < S[S.length - 1]).map(([x0, x1]) => [Math.max(0, x0), Math.min(S[S.length - 1], x1)]);
@@ -1330,7 +1335,6 @@ const SZ = PLAN.size;
   for (let x = Math.floor(SZ.x0 / 10) * 10; x < SZ.x1; x += 10) for (let z = Math.floor(SZ.z0 / 10) * 10; z < SZ.z1; z += 10) {
     emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass); void rnd;
   }
-  for (let x = SZ.x1; x < SZ.x1 + 100; x += 10) for (let z = -330; z < -150; z += 10) emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass);   // receiving road continues beyond the east cloverleaf merge
   for (let x = SZ.x1; x < SZ.x1 + 50; x += 10) for (let z = 120; z < 170; z += 10) emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass);
   // fields and forests never run into a junction: a farm strip or a wood cut by the straight edge of the interchange lawn read as a second shade of ground with a rectangular border
   const ICENV = PLAN.interchanges.map((ic) => { let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (const rp of ic.ramps) for (const q of rp.pts) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); } return [x0 - 40, z0 - 40, x1 + 40, z1 + 40]; });

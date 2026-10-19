@@ -138,9 +138,9 @@ export function buildPlan() {
   }
   // motorways (own node keys: they cross the street grid only on bridges)
   const mnode = (x, z) => node(x + 1e-3, z + 1e-3);
-  const M1x = [-300, 0, M2_X, 394];   // 24 m of receiving road after the eastern ramp joins at x370; a vehicle must fit beyond the merge
+  const M1x = [-300, 0, M2_X];   // M1 ends in a smooth turn into M2 at (250, -240) (the cloverleaf I3 was removed on the owner's decision, 2026-10-19)
   for (let i = 0; i + 1 < M1x.length; i++) addEdge(mnode(M1x[i], M1_Z), mnode(M1x[i + 1], M1_Z), 'motorway', 'М1 Северная хорда', { dir: 'x', ref: 'M1' });
-  const M2z = [-370, M1_Z, 0, 88];
+  const M2z = [M1_Z, 0, 88];
   for (let i = 0; i + 1 < M2z.length; i++) addEdge(mnode(M2_X, M2z[i]), mnode(M2_X, M2z[i + 1]), 'motorway', 'М2 Восточная хорда', { dir: 'z', ref: 'M2', ...(M2z[i] < RAIL_Z && M2z[i + 1] > RAIL_Z ? { overRail: RAIL_Z } : {}) });
   const exits = [...nodes.values()].filter((n) => n.legs.length === 1 && (Math.abs(n.x) >= 299.9 || n.z <= size.z0 + 0.1)).map((n) => n.id);   // roads that leave the map (to the region)
 
@@ -197,7 +197,6 @@ export function buildPlan() {
   }
   cloverAve('I1', [0, M1_Z], 'Клеверный лист: Главный пр. × М1');
   // I2 (M2 x Centralnaya) is a plain at-grade signalised crossing with the street split round two islands (see compile-plan-c.mjs 'split street'); no interchange object
-  cloverleaf('I3', [M2_X, M1_Z], 'Клеверный лист: М1 × М2');
   trumpet('I4', [M2_X, 160], 'Трубка: М2 × Портовое ш.');
 
   // ------------------------------------------------------------------ junction types
@@ -241,13 +240,19 @@ export function buildPlan() {
 
   // ------------------------------------------------------------------ bends (2026-10-19): a street that turns a corner with only two legs is a BEND, not a junction: the axis turns on a circular arc
   // (tangent length = R) instead of a right angle. R by class (game m, real x2.5): service 14 (35 m real, port / yard roads), arterial 16, collector 10, local 9 (urban 30-40 km/h).
-  const BEND_R = { service: 14, arterial: 16, collector: 10, local: 9 };
+  const BEND_R = { service: 14, arterial: 16, collector: 10, local: 9, motorway: 80 };   // motorway 80 = 200 m real (design speed 80-90 km/h)
   const bends = [];
   for (const j of junctions) {
     if (j.legs !== 2 || j.type === 'roundabout' || j.terminal || j.arms.length !== 2) continue;
     const [A, B] = j.arms; if (A.dir[0] * B.dir[0] + A.dir[1] * B.dir[1] !== 0) continue;
     const R = Math.max(BEND_R[A.cls] || 0, BEND_R[B.cls] || 0); if (!R) continue;
     j.bend = R; bends.push({ node: j.id, at: j.at, R, arms: [A, B].map((a) => ({ edge: a.edge, cls: a.cls, dir: a.dir })) });
+  }
+  for (const n of nodeArr) {   // the motorway corner (M1 -> M2): no junction, a bend of the carriageways
+    const L = n.legs.map((id) => eById.get(id)); if (L.length !== 2 || L.some((e) => e.cls !== 'motorway') || L[0].dir === L[1].dir) continue;
+    const arms = L.map((e) => { const o = byId.get(e.a === n.id ? e.b : e.a), dx = o.x - n.x, dz = o.z - n.z, l = Math.hypot(dx, dz); return { edge: e.id, cls: e.cls, dir: [Math.round(dx / l), Math.round(dz / l)] }; });
+    arms.sort((a, b) => (a.dir[1] === 0 ? 0 : 1) - (b.dir[1] === 0 ? 0 : 1));
+    bends.push({ node: n.id, at: [n.x, n.z], R: BEND_R.motorway, arms });
   }
 
   // ------------------------------------------------------------------ crossings (pedestrian), footbridges, tunnels
