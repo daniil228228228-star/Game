@@ -28,7 +28,7 @@ const mulberry = (a) => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imu
 // ---- palette (sRGB hex; the layer converts to linear) and heights (game metres above the old ground plane)
 const COLORS = {
   grass: 0x5f8f48, grassB: 0x6a9a50, lawn: 0x76a85c, park: 0x5f8f48, lawnG: 0x568041, forest: 0x3f6d37, field0: 0x9a9a52, field1: 0x6f9b45, field2: 0xb0a45a, field3: 0x7e9a4a, field4: 0x8f7a4c,
-  urban: 0x86ad68, industry: 0x8d8f86, verge: 0x5f8f48, parking: 0x43484d, embank: 0x8b9566, beach: 0xdac99b, promenade: 0xcfc6b2, port: 0x9fa09a,
+  urban: 0x5f8f48, industry: 0x8d8f86, verge: 0x5f8f48, parking: 0x43484d, embank: 0x8b9566, beach: 0xdac99b, promenade: 0xcfc6b2, port: 0x9fa09a,
   sea: 0x3f7fae, seaLight: 0x7fb7d2, river: 0x4a88b4, bank: 0xb9ae8c, dirt: 0x8d7a58,
   asph: 0x353a3f, ramp: 0x353a3f, walk: 0xc4bfae, kerb: 0xaaa595, median: 0xb8b4a4, medLawn: 0x6f9d57, medM: 0xa9a99f, plaza: 0xd4cab4, islandL: 0x558140, islandC: 0xd9d1bb,
   conc: 0xbdb9ad, concD: 0x8d8a82, sleeper: 0x4a3f36, white: 0xf2f2ec, yellow: 0xe7c85a, ballast: 0x8a8782, rail: 0x56585b, platform: 0xb8b5aa, moleC: 0x9b9a92, rock: 0x77756f,
@@ -307,7 +307,7 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
   splitZones.push([[c - 9, M2Z.z0], [c + 9, M2Z.z0], [c + 9, M2Z.z1], [c - 9, M2Z.z1]]);   // nothing random may stand on it
   // paint: polylines along the profile, continuous or dashed, per carriageway
   const line = (fn, z0, z1, step = 1) => { const o = []; for (let z = z0; z <= z1 + 1e-6; z += step) o.push([z, fn(z)]); return o; };
-  const ribbonZ = (sg, pts, dh = 0) => { if (pts.length > 1) ribbon('p', pts.map(([z, lat]) => [X(sg, lat), z]), 0.18, H.paint + dh, CI.white); };
+  const ribbonZ = (sg, pts, dh = 0) => { if (pts.length > 1) ribbon('p', pts.map(([z, lat]) => [X(sg, lat), z]), 0.16, H.paint + dh, CI.white); };
   const runOn = (sg, fn, z0, z1) => { ribbonZ(sg, line(fn, z0, M2Z.z1 - 0.5)); ribbonZ(sg, line(fn, M2Z.z1 - 1.5, z1), 0.07); };   // the last metres lie above the start of the trunk ramp's deck
   const dashZ = (sg, pts, dash = 1.6, gap = 1.8) => { let acc = 0, on = true, cur = []; const flush = () => { if (cur.length > 1 && Math.abs(cur[cur.length - 1][0] - cur[0][0]) > 0.8) ribbonZ(sg, cur); cur = []; };
     for (let i = 0; i + 1 < pts.length; i++) { const a = pts[i], b = pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]); let s0 = 0; while (s0 < L) { const lim = on ? dash : gap, take = Math.min(L - s0, lim - acc); if (on) { if (!cur.length) cur.push([a[0] + (b[0] - a[0]) * s0 / L, a[1] + (b[1] - a[1]) * s0 / L]); cur.push([a[0] + (b[0] - a[0]) * (s0 + take) / L, a[1] + (b[1] - a[1]) * (s0 + take) / L]); } s0 += take; acc += take; if (acc >= lim - 1e-9) { if (on) flush(); on = !on; acc = 0; } } }
@@ -318,7 +318,7 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
     runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 0.2, zS - 1, M2Z.z1 + 1.5);
     ribbonZ(sg, line((z) => 1.35, zN - 70, zN));   // north: median edge line at 1.35 (the plain M2 profile)
     // third-lane edge line (solid) 1.0 inside the asphalt edge: north taper and flat part, ends at the exit gore (z 64)
-    ribbonZ(sg, line((z) => outerA(z) - 1.0, M2Z.z0, zN)); ribbonZ(sg, line((z) => outerA(z >= M2Z.end3 ? M2Z.end3 : z) - 1.0, zS, M2Z.end3 + 1.2));
+    ribbonZ(sg, line((z) => outerA(z) - 1.0, M2Z.z0, zN)); ribbonZ(sg, line((z) => outerA(z >= M2Z.end3 ? M2Z.end3 : z) - 1.0, zS, M2Z.end3 + 0.3));
     // lane divider 3|2 at 5.3: dashed in the three-lane stretch, SOLID from the exit gore on, easing to the trunk ramp's edge line (6.1)
     { let zd = M2Z.z0; while (zd < zN && 2.1 * lane3(zd) < 0.7) zd += 1; dashZ(sg, line(() => 5.3, zd, zdN)); } dashZ(sg, line(() => 5.3, zdS, M2Z.end3 - 2));
     runOn(sg, (z) => 5.3 + 0.8 * f((z - M2Z.end3) / (M2Z.z1 - M2Z.end3)), M2Z.end3 - 2, M2Z.z1 + 1.5);
@@ -1081,12 +1081,18 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
     for (const run of exposedRuns(p3, sg * (CLS.ramp.w / 2 + 0.2), id, 0.3, 'barrier')) {
       // Split the height gate into contiguous runs too: filtering vertices
       // would reconnect opposite sides of a low section with a collider chord.
-      let high = [];
+      // The barrier RISES out of the ground over the deck height 0.3 -> 1.2 m (a sloped end, 2026-10-19: it used to start as a full-height slab in mid air); the colliders keep the old gate (deck > 1.2 m)
+      const tap = (h) => { const t = Math.max(0, Math.min(1, (h - 0.3) / 0.9)); return t * t * (3 - 2 * t); };
+      let vis = [];
       const flush = () => {
-        if (high.length > 1) { wallAlong(high, 0, (h) => h + 0.05, (h) => h + 0.8, CI.conc); capAlong(high, 0, 0.2, 0.8, CI.conc); addParapets(high, 0); }
-        high = [];
+        if (vis.length > 1) {
+          wallAlong(vis, 0, (h) => h + 0.05, (h) => h + 0.05 + 0.75 * tap(h), CI.conc);
+          capAlong(vis.map((q) => [q[0], q[1], q[2] - 0.75 * (1 - tap(q[2]))]), 0, 0.2, 0.8, CI.conc);
+          let hi = []; for (const q of vis.concat([[0, 0, 0]])) { if (q[2] > 1.2) hi.push(q); else { if (hi.length > 1) addParapets(hi, 0); hi = []; } }
+        }
+        vis = [];
       };
-      for (const p of run) { if (p[2] > 1.2) high.push(p); else flush(); } flush();
+      for (const p of run) { if (p[2] > 0.3) vis.push(p); else flush(); } flush();
     }
     {
       const si = sg < 0 ? 0 : 1, line = offsetVar(p3, p3.map((_, i) => sg < 0 ? offL[i] + 0.2 + adjL[i] : offR[i] - 0.2 + adjR[i])), n = p3.length, skip = sg < 0 ? skipL : skipR;
