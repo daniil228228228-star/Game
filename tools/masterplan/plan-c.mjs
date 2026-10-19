@@ -25,6 +25,10 @@ export const CLS = {
 };
 const MW = CLS.motorway.w / 2, ATT = MW - 1.0, TRK = MW - CLS.ramp.w / 2, LA3 = (MW - 1.0 + MW + 1.1) / 2;   // TRK: the trunk ramps of the trumpet are the carriageway's outer lane (centre 4.9, outer edge = the carriageway edge 6.3); LA3: centre of M2's third lane near I2 (6.35)   // ramps leave / join a motorway with their centre line inside the outer lane
 
+// Kerb-return radius (game m, real x2.5) of a street corner by the two classes; shared by the compiler and the audit.
+// arterial x arterial 5 (12.5 m), arterial x collector / local 4 (10 m), collector / local 3 (7.5 m); SERVICE (port / yard roads, semi-trailers): 8 with an arterial (20 m), 6 otherwise (15 m)
+export const kerbReturnR = (ca, cb) => { const sv = ca === 'service' || cb === 'service', ar = ca === 'arterial' || cb === 'arterial'; if (sv) return ar ? 8 : 6; if (ca === 'arterial' && cb === 'arterial') return 5; return ar ? 4 : 3; };
+
 // ---- small geometry kit (screen frame: x right, z down; a right turn = increasing angle)
 const add = (a, b) => [a[0] + b[0], a[1] + b[1]], sub = (a, b) => [a[0] - b[0], a[1] - b[1]], mul = (a, k) => [a[0] * k, a[1] * k];
 export function cubic(p0, h0, k0, p3, h3, k3, n = 28) {   // tangent-continuous taper: leaves p0 along h0, arrives at p3 along h3
@@ -332,7 +336,7 @@ export function buildPlan() {
     { kind: 'verge', poly: [[298, 44], [300, 44], [300, 72], [298, 72]] }, { kind: 'verge', poly: [[204, 72], [300, 72], [300, 156], [204, 156]] },
     { kind: 'park', poly: [[256, 40], [300, 40], [300, 156], [256, 156]], name: 'Восточный лесопарк' },
     { kind: 'parking', poly: [[268, 44], [298, 44], [298, 72], [268, 72]], name: 'P+R' },
-    { kind: 'parking', poly: [[284, 170], [330, 170], [330, 210], [284, 210]], name: 'Контейнерный двор' }, { kind: 'parking', poly: [[84, 170], [156, 170], [156, 185], [84, 185]], name: 'Портовый склад' },   // paved yards with bay lines beside the port service loop (it serves them; no bare grey plates)
+    { kind: 'parking', poly: [[292, 177], [330, 177], [330, 210], [292, 210]], name: 'Контейнерный двор' },   // paved yards with bay lines beside the port service loop (it serves them; no bare grey plates)
     { kind: 'embankment', poly: [[-236, -168], [-188, -168], [-188, 206], [-236, 206]] },
     { kind: 'beach', poly: [[-300, 164], [-236, 164], [-226, 192], [-226, 212], [-300, 212]] },
     { kind: 'promenade', poly: [[-188, 191], [44, 191], [44, 212], [-188, 212]] },

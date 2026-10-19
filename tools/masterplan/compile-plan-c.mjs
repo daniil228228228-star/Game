@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { kerbReturnR } from './plan-c.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PLAN = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools/masterplan/plan-C.json'), 'utf8'));
@@ -463,21 +464,30 @@ for (const j of PLAN.junctions) {
     minisOut.push({ id: j.id, at: c, R: Ro, Ri });
   }
 }
-// kerb returns (radius 3): at every corner where two streets meet the sidewalk corner is a quarter disc (centre = the far corner of a 3 x 3 square, tangent to both kerb lines), the rest of the square is asphalt
-// at asphalt height - the square is carved out of the sidewalk raster first, so nothing is drawn twice and no kerb outline crosses the carriageway
+// kerb returns (2026-10-19: radius by the classes of the two streets, not always 3): at every corner where two streets meet the kerb is an arc tangent to both asphalt edges; the asphalt fills the corner
+// (K -> arc), the carved square K..O is no longer sidewalk, the sidewalk is a BAND of width sw (eased from the sidewalk of one street to the other, 0 for a street without one) along the arc.
+// Radii (game m, real x2.5), AASHTO / NACTO:  arterial x arterial 5 (12.5 m, buses and trucks turn here), arterial x collector / local 4 (10 m), collector / local pairs 3 (7.5 m, urban 30-40 km/h),
+// SERVICE streets (port and yard roads, semi-trailers WB-67: inside radius 12-15 m + the entry taper) 8 with an arterial (20 m), 6 with every other class and between service streets (15 m).
+const retNorm = kerbReturnR;
 for (const j of PLAN.junctions) {
   if (j.type === 'roundabout' || j.bend) continue;
-  const c = j.at, RET = 3.0;
+  const c = j.at;
   for (const A of j.arms.filter((a) => a.dir[1] === 0)) for (const B of j.arms.filter((b) => b.dir[0] === 0)) {
-    if (A.cls === 'motorway' || B.cls === 'motorway' || CLS[A.cls].sidewalk <= 0 || CLS[B.cls].sidewalk <= 0) continue;
+    if (A.cls === 'motorway' || B.cls === 'motorway') continue;
+    const RET = retNorm(A.cls, B.cls), swA = CLS[A.cls].sidewalk, swB = CLS[B.cls].sidewalk;
     const sx = A.dir[0], sz = B.dir[1], K = [c[0] + sx * hw(B.cls), c[1] + sz * hw(A.cls)], O = [K[0] + sx * RET, K[1] + sz * RET];
-    addShape(Math.min(K[0], O[0]), Math.min(K[1], O[1]), Math.max(K[0], O[0]), Math.max(K[1], O[1]), 'carve');
+    { const O2 = [O[0] - sx * 0.04, O[1] - sz * 0.04]; addShape(Math.min(K[0], O2[0]), Math.min(K[1], O2[1]), Math.max(K[0], O2[0]), Math.max(K[1], O2[1]), 'carve'); }   // 4 cm overlap with the straight sidewalks: no hairline at the tangent line
     cornerOut.push({ K, O, sx, sz, RET });
-    const arc = []; for (let k = 0; k <= 12; k++) { const t = k / 12 * Math.PI / 2; arc.push([O[0] - sx * RET * Math.sin(t), O[1] - sz * RET * Math.cos(t)]); }
+    const NA = Math.max(12, Math.round(RET * 3)), arc = [], arc2 = [];
+    for (let k = 0; k <= NA; k++) {
+      const t = k / NA * Math.PI / 2, f = k / NA, sw = swA + (swB - swA) * (f * f * (3 - 2 * f));
+      arc.push([O[0] - sx * RET * Math.sin(t), O[1] - sz * RET * Math.cos(t)]);
+      const r2 = RET - Math.max(0, Math.min(sw, RET - 0.3)); arc2.push([O[0] - sx * r2 * Math.sin(t), O[1] - sz * r2 * Math.cos(t)]);
+    }
     for (let k = 0; k + 1 < arc.length; k++) {
       emitTri('r', K, arc[k], arc[k + 1], H.asph, CI.asph);       // asphalt between the corner and the arc
-      emitTri('r', O, arc[k], arc[k + 1], H.walk, CI.walk);       // sidewalk corner: quarter disc
       emitWall(arc[k][0], arc[k][1], arc[k + 1][0], arc[k + 1][1], H.asph, H.walk, CI.kerb);
+      if (swA > 0 || swB > 0) { emitTri('r', arc[k], arc2[k], arc[k + 1], H.walk, CI.walk); emitTri('r', arc2[k], arc2[k + 1], arc[k + 1], H.walk, CI.walk); }   // sidewalk band along the arc
     }
   }
 }
@@ -1292,12 +1302,13 @@ const isWater = (x, z) => inPoly(x, z, seaPoly) || (riverDist(x, z) < PLAN.water
 const inSplitZone = (x, z, pad) => splitZones.some((poly) => inPoly(x, z, poly) || poly.some((p, i) => segDist(x, z, p, poly[(i + 1) % poly.length]) < pad));
 const YARDS = PLAN.areas.filter((a) => a.kind === 'parking').map((a) => { const xs = a.poly.map((q) => q[0]), zs = a.poly.map((q) => q[1]); return [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)]; }).concat(PLAN.blocks.filter((b) => b.zone === 'industrial' || b.zone === 'logistics').map((b) => b.lot || b.rect));   // paved lots with painted bays: no tree stands on them
 const yardAt = (x, z) => YARDS.some((r) => x > r[0] - 0.8 && x < r[2] + 0.8 && z > r[1] - 0.8 && z < r[3] + 0.8);
+const cornerAt = (x, z, pad) => cornerOut.some((q) => x > Math.min(q.K[0], q.O[0]) - pad && x < Math.max(q.K[0], q.O[0]) + pad && z > Math.min(q.K[1], q.O[1]) - pad && z < Math.max(q.K[1], q.O[1]) + pad);
 const bendAt = (x, z, pad) => bendsOut.some((b) => {   // on the arc band of a bend (quadrant towards the corner node only)
   const bb = BENDS.get(b.node), O = [b.at[0] + (bb.arms[0].dir[0] + bb.arms[1].dir[0]) * b.R, b.at[1] + (bb.arms[0].dir[1] + bb.arms[1].dir[1]) * b.R];
   const r = Math.hypot(x - O[0], z - O[1]); if (Math.abs(r - b.R) >= b.half + b.sw + pad) return false;
   const ax = bb.arms[0].dir, ay = bb.arms[1].dir; return (x - O[0]) * (b.at[0] - O[0]) + (z - O[1]) * (b.at[1] - O[1]) > -2 * pad - 1 && ((x - O[0]) * (-ay[0]) + (z - O[1]) * (-ay[1]) > -1) && ((x - O[0]) * (-ax[0]) + (z - O[1]) * (-ax[1]) > -1);
 });
-const blocked = (x, z, pad = 0.6) => !!(inSplitZone(x, z, pad) || yardAt(x, z) || bendAt(x, z, pad) || rasterAt(x, z) || rasterAt(x + pad, z) || rasterAt(x - pad, z) || rasterAt(x, z + pad) || rasterAt(x, z - pad) || motorHosts.some((h) => { const p = [x, z]; return p[h.axis] >= h.lo && p[h.axis] <= h.hi && Math.abs(p[1 - h.axis] - h.c) < MW + pad; }) || ringAt(x, z) || rangeRamp(x, z) || railBlocked(x, z) || STRUCT.blockers.some((b) => x > b[0] - 1 && x < b[2] + 1 && z > b[1] - 1 && z < b[3] + 1)) || isWater(x, z);
+const blocked = (x, z, pad = 0.6) => !!(inSplitZone(x, z, pad) || yardAt(x, z) || bendAt(x, z, pad) || cornerAt(x, z, 0.3) || rasterAt(x, z) || rasterAt(x + pad, z) || rasterAt(x - pad, z) || rasterAt(x, z + pad) || rasterAt(x, z - pad) || motorHosts.some((h) => { const p = [x, z]; return p[h.axis] >= h.lo && p[h.axis] <= h.hi && Math.abs(p[1 - h.axis] - h.c) < MW + pad; }) || ringAt(x, z) || rangeRamp(x, z) || railBlocked(x, z) || STRUCT.blockers.some((b) => x > b[0] - 1 && x < b[2] + 1 && z > b[1] - 1 && z < b[3] + 1)) || isWater(x, z);
 const rampSegs = rampsOut.flatMap((r) => r.pts.slice(1).map((p, i) => [r.pts[i], p]));
 const rangeRamp = (x, z) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < 2.2);
 const railBlocked = (x, z) => railOut.bed.some((b) => x >= b[0] - 1 && x <= b[2] + 1 && z >= b[1] - 1 && z <= b[3] + 1) || segDist(x, z, PLAN.rail.spur.pts[0], PLAN.rail.spur.pts[PLAN.rail.spur.pts.length - 1]) < 4;
@@ -1380,8 +1391,10 @@ for (const line of PLAN.transit.lines) for (const s0 of line.stops) { let s = s0
   for (const j of PLAN.junctions) if (j.type === 'roundabout' && j.R < 12) cellOf(Math.floor(j.at[0] / CELL), Math.floor(j.at[1] / CELL)).f.tree.push(j.at[0], j.at[1], 1.1, 0.5);
 }
 const nearRampPt = (x, z, m) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < CLS.ramp.w / 2 + m);
-furniture.lamp = furniture.lamp.filter((l) => !nearRampPt(l[0], l[1], 0.8));
+const onFillet = (x, z, m) => cornerOut.some((q) => x > Math.min(q.K[0], q.O[0]) && x < Math.max(q.K[0], q.O[0]) && z > Math.min(q.K[1], q.O[1]) && z < Math.max(q.K[1], q.O[1]) && Math.hypot(x - q.O[0], z - q.O[1]) > q.RET - m);   // on the asphalt of a kerb return
+furniture.lamp = furniture.lamp.filter((l) => !nearRampPt(l[0], l[1], 0.8) && !onFillet(l[0], l[1], 0.7));
 furniture.sig = furniture.sig.filter((l) => !nearRampPt(l[0], l[1], 0.5));
+for (const l of furniture.sig) { const q = cornerOut.find((q) => l[0] > Math.min(q.K[0], q.O[0]) && l[0] < Math.max(q.K[0], q.O[0]) && l[1] > Math.min(q.K[1], q.O[1]) && l[1] < Math.max(q.K[1], q.O[1]) && Math.hypot(l[0] - q.O[0], l[1] - q.O[1]) > q.RET - 0.5); if (q) { const d = Math.hypot(l[0] - q.O[0], l[1] - q.O[1]) || 1, k = (q.RET - 0.6) / d; l[0] = R2(q.O[0] + (l[0] - q.O[0]) * k); l[1] = R2(q.O[1] + (l[1] - q.O[1]) * k); } }   // a signal head stands behind the kerb of a return, not on its asphalt
 furniture.lamp = furniture.lamp.filter((l) => !furniture.stop.some((st) => Math.hypot(st[0] - l[0], st[1] - l[1]) < 3.2));   // no lamp inside a bus stop
 for (const cellC of cells.values()) {
   const old = cellC.f.tree, kept = [];

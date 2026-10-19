@@ -1,6 +1,6 @@
 // Norm check of the masterplan C (docs/MASTERPLAN_C_PLAN.md, docs/ROAD_STANDARDS_V161.md).  node tools/masterplan/audit-plan-c.mjs [--json]
 // Game metres; 1 game m = 2.5 real m. Exit code 1 if any HARD check fails.
-import { buildPlan, CLS } from './plan-c.mjs';
+import { buildPlan, CLS, kerbReturnR } from './plan-c.mjs';
 
 const P = buildPlan();
 const N = new Map(P.nodes.map((n) => [n.id, n])), E = P.edges;
@@ -239,6 +239,29 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
   }
   if (knees.length) bad.push(...knees);
   check('no axis kink > 15 degrees without a radius: every two-leg corner is a bend (R >= 9 / 10 / 14 / 16 by class, legs hold R + 6), ramp vertices turn <= 15 degrees', !bad.length, bad.length ? bad.join('; ') : `${info.length} bends / circles: ${info.join('; ')}; ${ramps.length} ramps without a kink`);
+}
+
+// 15. kerb-return radius (2026-10-19): at every street corner of a junction the kerb arc must meet the norm of the classes (a square corner or R 3 where lorries / buses turn is a defect).
+//     Minimum radii in game m (real x2.5; AASHTO Green Book / NACTO): arterial x arterial 4 (10 m), arterial x other 3 (7.5 m), collector / local 3 (7.5 m urban, 30-40 km/h),
+//     service / port roads with semi-trailers (WB-67, inside radius 12-15 m + taper): 5 (12.5 m), with an arterial 6 (15 m).  The compiler draws kerbReturnR(): it must reach the minimum AND fit both legs
+//     (the two tangent lengths + the half width of the cross street <= the edge length).
+{
+  const bad = [], seen = [], MIN = (a, b) => (a === 'service' || b === 'service') ? ((a === 'arterial' || b === 'arterial') ? 6 : 5) : (a === 'arterial' && b === 'arterial') ? 4 : 3;
+  const tang = new Map();   // edge id + node -> largest tangent length used along the edge at that node
+  for (const j of P.junctions) {
+    if (j.type === 'roundabout' || j.bend) continue;
+    for (const A of j.arms.filter((a) => a.dir[1] === 0)) for (const B of j.arms.filter((b) => b.dir[0] === 0)) {
+      if (A.cls === 'motorway' || B.cls === 'motorway') continue;
+      const r = kerbReturnR(A.cls, B.cls), m = MIN(A.cls, B.cls);
+      seen.push(`${A.cls}x${B.cls}:${r}`);
+      if (r < m) bad.push(`${j.id} ${j.at}: ${A.cls} x ${B.cls} kerb return R ${r} < norm ${m}`);
+      for (const [arm, other] of [[A, B], [B, A]]) { const k = arm.edge + '@' + j.id, v = r + CLS[other.cls].w / 2; tang.set(k, Math.max(tang.get(k) || 0, v)); }
+    }
+  }
+  for (const e of E) { if (!P.junctions.some((q) => q.id === e.a) || !P.junctions.some((q) => q.id === e.b)) continue;   /* a stub to the map exit / a pass-through node: the street runs on (the tangent can reach across it) */
+    const ta = tang.get(e.id + '@' + e.a) || 0, tb = tang.get(e.id + '@' + e.b) || 0, a = N.get(e.a), b = N.get(e.b), L = Math.hypot(a.x - b.x, a.z - b.z); if (ta + tb > L - 1) bad.push(`${e.id} (${e.cls}, ${L} m): corner tangents ${R1(ta)} + ${R1(tb)} do not fit`); }
+  const cnt = {}; for (const k of seen) cnt[k.split(':')[0]] = k.split(':')[1];
+  check('kerb-return radius meets the class norm at every street corner (arterial 4-5, collector / local 3, service / port 5-8) and fits both legs', !bad.length, bad.length ? bad.join('; ') : `${seen.length} corners; radii ${JSON.stringify(cnt)}`);
 }
 
 if (process.argv.includes('--json')) console.log(JSON.stringify(results, null, 1));
