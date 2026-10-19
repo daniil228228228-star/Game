@@ -913,6 +913,10 @@ function constrainRampProfile(p3, S, fixed, label) {
     }
   }
 }
+function streetHostAt(p) {   // the street edge a ramp end lies on (same test as the merge wedge): {axis, c (lateral coordinate of its axis), Hw (half width)}
+  const e = PLAN.edges.find((x) => { if (x.cls === 'motorway') return false; const a = N.get(x.a), b = N.get(x.b), ax = x.dir === 'x' ? 0 : 1, lat = ax === 0 ? a.z : a.x, lo = Math.min(ax === 0 ? a.x : a.z, ax === 0 ? b.x : b.z), hi = Math.max(ax === 0 ? a.x : a.z, ax === 0 ? b.x : b.z); return Math.abs(p[1 - ax] - lat) <= hw(x.cls) + 0.8 && p[ax] >= lo - 0.01 && p[ax] <= hi + 0.01; });
+  return e ? { axis: e.dir === 'x' ? 0 : 1, c: e.dir === 'x' ? N.get(e.a).z : N.get(e.a).x, Hw: hw(e.cls) } : null;
+}
 for (const ic of PLAN.interchanges) {
   const done = [];
   const order = [...ic.ramps.keys()].sort((a, b) => Number(/slip/.test(ic.ramps[a].kind)) - Number(/slip/.test(ic.ramps[b].kind)));
@@ -924,10 +928,21 @@ for (const ic of PLAN.interchanges) {
       return { type, host, parent, h: host ? host.h(p[host.axis]) : parent ? projectPath(p, parent.p3).h : 0 };
     });
     const knots = [[0, ends[0].h], [L, ends[1].h]];
+    const crossHold = (end, k) => {   // A ramp that ends on a STREET (cross) runs along it in a merge wedge: it stays at the street's level (ground) along the whole wedge, so the ramp lane and the street lane beside it are flush
+      let hold = 0;
+      if (end.type === 'cross') {
+        const hs = streetHostAt(pts[k ? pts.length - 1 : 0]), i0 = k ? pts.length - 1 : 0, st = k ? -1 : 1;
+        if (hs && Math.abs((pts[i0 + st][hs.axis]) - pts[i0][hs.axis]) / (Math.hypot(pts[i0 + st][0] - pts[i0][0], pts[i0 + st][1] - pts[i0][1]) || 1) >= 0.8 && Math.abs(pts[i0][1 - hs.axis] - hs.c) < hs.Hw + CLS.ramp.w / 2 - 0.2) {
+          let j = i0; while (j + st >= 0 && j + st < pts.length && Math.abs(pts[j + st][1 - hs.axis] - hs.c) < hs.Hw + CLS.ramp.w / 2) j += st;
+          if (j !== i0) { knots.push([S[j], 0]); hold = k ? L - S[j] : S[j]; }
+        }
+      }
+      return hold;
+    };
     // Hold the motorway's level through the actual taper, then descend to the
     // terminal. Previously an on-ramp could already be below its host road.
     const attached = ends.map((end, k) => {
-      if (!end.host && !end.parent) return 0;
+      if (!end.host && !end.parent) return crossHold(end, k);
       const h = end.host, indices = [...pts.keys()]; if (k) indices.reverse();
       let last = indices[0];
       for (const i of indices) {
@@ -939,8 +954,7 @@ for (const ic of PLAN.interchanges) {
         last = i;
       }
       if (last !== indices[0]) knots.push([S[last], h ? h.h(pts[last][h.axis]) : projectPath(pts[last], end.parent.p3).h]);
-      let hold = k ? L - S[last] : S[last];
-      return hold;
+      return k ? L - S[last] : S[last];
     });
     const bridge = (r.bridges || [])[0]; let sBr = null;
     if (bridge) {
