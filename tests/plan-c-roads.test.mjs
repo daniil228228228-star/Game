@@ -400,7 +400,7 @@ await run(async () => {
       }
       return out;
     });
-    check(rings.length === 6 && rings.every((n) => n >= 11), `roundabouts: the ring of all 6 is drawn at asphalt height (${J(rings)})`);
+    check(rings.length === 7 && rings.every((n) => n >= 11), `roundabouts: the ring of all 7 is drawn at asphalt height (${J(rings)})`);
     // draw-call budget: the whole layer, layer hidden vs shown with the same camera, at ten places (the game's own radius)
     await ev(() => { PlanCV161.R_BUILD = 128; PlanCV161.R_KEEP = 190; });
     const spots = [[11, -11], [0, 0], [0, -230], [250, -240], [250, 0], [250, 160], [-232, -160], [-40, -110], [120, 180], [-200, 190], [-100, -200]];

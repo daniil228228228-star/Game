@@ -1,6 +1,7 @@
 // Norm check of the masterplan C (docs/MASTERPLAN_C_PLAN.md, docs/ROAD_STANDARDS_V161.md).  node tools/masterplan/audit-plan-c.mjs [--json]
 // Game metres; 1 game m = 2.5 real m. Exit code 1 if any HARD check fails.
 import { buildPlan, CLS, kerbReturnR } from './plan-c.mjs';
+import { matrix, ARMS } from './turns-plan-c.mjs';
 
 const P = buildPlan();
 const N = new Map(P.nodes.map((n) => [n.id, n])), E = P.edges;
@@ -306,6 +307,30 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
   for (const j of P.junctions) if ((j.type === 'roundabout' || j.type === 'mini') && j.circulation !== 'ccw') bad.push(`${j.id} ${j.at}: ${j.type} does not circulate counter-clockwise`);
   if (process.argv.includes('--table')) console.log(rows.join('\n'));
   check('right-hand traffic: every ramp exit / entry is on the right of its host and diverges / merges on the right, loops clockwise, slips right, roundabouts counter-clockwise', !bad.length, bad.length ? bad.join('; ') : `${rows.length} ramp ends (${rows.filter((x) => x.endsWith('OK')).length} OK, node / host / side table: --table); ${P.junctions.filter((j) => j.circulation === 'ccw').length} roundabouts ccw`);
+}
+
+// 17. turning-movement matrix (2026-10-19, tools/masterplan/turns-plan-c.mjs; `--turns` prints every row): directed graph of the network with one-way ramps, right-hand lines and junction turns.
+//     (a) every movement between two arms of a cloverleaf / trumpet exists INSIDE the interchange with at most one ramp (12 movements of I1 / I3, 6 of I4);
+//     (b) every ordered pair of arms of I1 / I2 / I3 / I4 incl. the U-turn of each arm is connected in the whole network (<= 800 m); a road that ends in a dead end after an interchange must offer a turnaround
+//         (the arm "Portovaya east after the merge" has to be able to reach M2 north within 300 m: the roundabout at the east end of the Port road);
+//     (c) I2 (at grade, no turn pockets): all 12 turning movements pass the junction box.
+{
+  const bad = [], summary = [];
+  for (const ic of Object.keys(ARMS)) {
+    const rows = matrix(P, ic); let direct = 0, tot = 0, uturns = [];
+    for (const r of rows) {
+      if (r.uturn) { uturns.push(r.full == null ? `${r.from}: NONE` : `${r.from} ${r.full} m`); if (r.full == null || r.full > 800) bad.push(`${ic} ${r.from}: no U-turn within 800 m (${r.full})`); continue; }
+      if (r.full == null || r.full > 800) { bad.push(`${ic} ${r.from} -> ${r.to}: no path (${r.full})`); continue; }
+      if (/x\d+/.test(r.from + r.to)) continue;   // helper arm
+      tot++;
+      const ramps = (r.directVia.match(/\bI\d\.\d\b/g) || []).length;
+      if (r.direct != null && ramps <= 1) direct++; else bad.push(`${ic} ${r.from} -> ${r.to}: no direct movement inside the interchange (${r.direct == null ? 'none' : r.directVia})`);
+    }
+    const hx = rows.find((r) => /x275/.test(r.from) && /север/.test(r.to));
+    if (hx && (hx.full == null || hx.full > 300)) bad.push(`${ic}: from the Port road after the loop merge to M2 north ${hx.full == null ? 'no path' : hx.full + ' m'} (> 300)`);
+    summary.push(`${ic}: ${direct}/${tot} direct, U-turns ${uturns.join(', ')}${hx ? ', after-merge -> M2 north ' + hx.full + ' m' : ''}`);
+  }
+  check('turning movements: every arm pair of I1 / I2 / I3 / I4 connected directly (<= 1 ramp) and by U-turn (<= 800 m), a turnaround after the trumpet', !bad.length, bad.length ? bad.join('; ') : summary.join(' | '));
 }
 
 if (process.argv.includes('--json')) console.log(JSON.stringify(results, null, 1));

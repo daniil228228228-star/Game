@@ -1230,7 +1230,7 @@ const SZ = PLAN.size;
     emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass); void rnd;
   }
   for (let x = SZ.x1; x < SZ.x1 + 80; x += 10) for (let z = -330; z < -150; z += 10) emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass);   // the east cloverleaf ramps of I3 run on to M1 beyond the map edge: lawn under them (no road over the void)
-  for (let x = SZ.x1; x < SZ.x1 + 40; x += 10) for (let z = 120; z < 164; z += 10) emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass);
+  for (let x = SZ.x1; x < SZ.x1 + 50; x += 10) for (let z = 120; z < 170; z += 10) emitRect('g', 'q', x, z, x + 10, z + 10, H.base, CI.grass);
   // fields and forests never run into a junction: a farm strip or a wood cut by the straight edge of the interchange lawn read as a second shade of ground with a rectangular border
   const ICENV = PLAN.interchanges.map((ic) => { let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (const rp of ic.ramps) for (const q of rp.pts) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); } return [x0 - 40, z0 - 40, x1 + 40, z1 + 40]; });
   const nearIC = (poly) => { const xs = poly.map((p) => p[0]), zs = poly.map((p) => p[1]), a = Math.min(...xs), b = Math.max(...xs), c = Math.min(...zs), d = Math.max(...zs); return ICENV.some((r) => a < r[2] && b > r[0] && c < r[3] && d > r[1]); };

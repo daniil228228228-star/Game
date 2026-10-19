@@ -96,7 +96,7 @@ export function buildPlan() {
     { z: 40, cls: 'local', spans: [[-280, -232], [-160, 200]] },
     { z: 80, cls: 'collector', name: 'Университетский б-р', spans: [[-300, 200]] },
     { z: 120, cls: 'local', spans: [[-280, -232], [-194, -160], [-80, 80], [160, 200]] },
-    { z: 160, cls: 'arterial', name: 'Южный пр. / Портовое ш.', spans: [[-300, 330]] },
+    { z: 160, cls: 'arterial', name: 'Южный пр. / Портовое ш.', spans: [[-300, 334]] },
     { z: 188, cls: 'collector', name: 'Набережная', spans: [[-194, 40]] },
     { z: 190, cls: 'service', name: 'Причальная ул.', spans: [[80, 160]] },
     { z: 214, cls: 'service', name: 'Контейнерный пр.', spans: [[160, 280]] },
@@ -206,12 +206,12 @@ export function buildPlan() {
     '0,188': { type: 'roundabout', R: 11, lanes: 1, name: 'Морская площадь' },
     '-232,-160': { type: 'roundabout', R: 11, lanes: 1 }, '-232,0': { type: 'roundabout', R: 11, lanes: 1 }, '-232,160': { type: 'roundabout', R: 11, lanes: 1 },
     '-232,-80': { type: 'priority', major: null }, '-232,80': { type: 'priority', major: null }, '-80,188': { type: 'priority', major: null }, '80,-190': { type: 'priority', major: null },
-    '160,-190': { type: 'roundabout', R: 11, lanes: 1 }, '250,0': { type: 'signal', big: true, name: 'Светофорный узел I2' }, '0,-190': { type: 'riro' },
+    '160,-190': { type: 'roundabout', R: 11, lanes: 1 }, '250,0': { type: 'signal', big: true, name: 'Светофорный узел I2' }, '0,-190': { type: 'riro' }, '334,160': { type: 'roundabout', R: 8, lanes: 1, turnaround: true },
   };
   const junctions = [];
   for (const n of nodeArr) {
     const L = n.legs.map((id) => eById.get(id)), isTerm = interchanges.some((ic) => (ic.terminals || []).some((t) => Math.hypot(t[0] - n.x, t[1] - n.z) < 0.5));
-    if (L.length < 3 && !isTerm && !(L.length === 2 && L[0].dir !== L[1].dir)) continue;
+    if (L.length < 3 && !isTerm && !(L.length === 2 && L[0].dir !== L[1].dir) && !(L.length === 1 && SPECIAL[`${n.x},${n.z}`])) continue;
     const atI2 = n.x === M2_X && n.z === 0;   // M2 meets Centralnaya at grade here
     if (L.some((e) => e.cls === 'motorway') && !atI2) continue;
     const cl = L.map((e) => e.cls), k = `${n.x},${n.z}`, RANK = { arterial: 4, collector: 3, service: 2, local: 1 };
@@ -341,7 +341,7 @@ export function buildPlan() {
     { kind: 'embankment', poly: [[-236, -168], [-188, -168], [-188, 206], [-236, 206]] },
     { kind: 'beach', poly: [[-300, 164], [-236, 164], [-226, 192], [-226, 212], [-300, 212]] },
     { kind: 'promenade', poly: [[-188, 191], [44, 191], [44, 212], [-188, 212]] },
-    { kind: 'port', poly: [[40, 164], [300, 164], [300, 256], [40, 256]] }, { kind: 'port', poly: [[300, 164], [340, 164], [340, 222], [300, 222]] },   // the Port road runs on 30 m past the map edge (lane taper): ground under it
+    { kind: 'port', poly: [[40, 164], [300, 164], [300, 256], [40, 256]] }, { kind: 'port', poly: [[300, 164], [348, 164], [348, 222], [300, 222]] },   // the Port road runs on 30 m past the map edge (lane taper): ground under it
     { kind: 'urban', poly: [[-284, -164], [204, -164], [204, 191], [-284, 191]] },
   ];
 
