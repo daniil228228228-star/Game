@@ -44,14 +44,14 @@ console.log(`PASS ${stops.length} shelters: full footprint paved, clear front wa
 // Solid motorway paint must remain continuous at the 60 m mesh-cell seams.
 const ribbon = D.struct.ribbons.find((r) => r.id === 'M1');
 let paintSamples = 0;
-for (const x of [-60, 0, 60]) for (const dz of [-5.2, -1.4, 1.4, 5.2]) for (const eps of [-0.015, 0.015]) {
+for (const x of [-60, 0, 60]) for (const dz of [-5.95, -1.4, 1.4, 5.95]) for (const eps of [-0.015, 0.015]) {
   const px = x + eps;
   const i = ribbon.p.findIndex((p, k) => k + 1 < ribbon.p.length && p[0] <= px && ribbon.p[k + 1][0] >= px);
   if (i < 0) continue;
   const a = ribbon.p[i], b = ribbon.p[i + 1], t = (px - a[0]) / (b[0] - a[0]), y = a[2] + (b[2] - a[2]) * t;
   C.ensureNear(px, -240); ctx.scene.updateMatrixWorld(true);
   const ray = new THREE.Raycaster(new THREE.Vector3(px, y + 0.2, -240 + dz), new THREE.Vector3(0, -1, 0), 0, 0.3);
-  const hit = ray.intersectObjects(C.deckMeshes(), false)[0];
+  const hit = ray.intersectObjects([...C.paintMeshes(), ...C.deckMeshes()], false)[0];
   assert.ok(hit, 'paint has a drawn face at the seam');
   const rgb = hit.object.geometry.attributes.color;
   const c = new THREE.Color().fromArray(rgb.array, hit.face.a * 3).convertLinearToSRGB().getHex();

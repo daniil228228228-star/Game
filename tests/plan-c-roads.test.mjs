@@ -377,7 +377,7 @@ await run(async () => {
     await ev(PAGE);
     check(await ev(() => window.LAYOUT_V161 === 'C' && !!window.PlanCV161 && !window.MasterplanV161 && !window.RoundaboutV161), 'fresh game (no save) = layout C: PlanCV161 present, plan B layer and the hub roundabout layer silent');
     const st = await ev(() => PlanCV161.stats());
-    check(st.cells >= 4 && st.meshes >= st.cells && st.meshes <= 2 * st.cells + 2 && st.furniture.lamp > 0 && st.furniture.sig > 0, `cells around the spawn built lazily: ${J(st)}`);
+    check(st.cells >= 4 && st.meshes >= st.cells && st.meshes <= 3 * st.cells + 2 && st.furniture.lamp > 0 && st.furniture.sig > 0, `cells around the spawn built lazily: ${J(st)}`);
     const spawn = await ev(() => ({ x: player.position.x, z: player.position.z }));
     check(Math.hypot(spawn.x - 11, spawn.z + 11) < 1.5, `player starts on the circus beside the central ring (${spawn.x.toFixed(1)}, ${spawn.z.toFixed(1)})`);
     // all cells + real raycasts onto every edge of the graph

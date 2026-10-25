@@ -1125,7 +1125,7 @@ function coveredRoad(p, own, margin = 0.2, body = false) {
     // isolated butt-ended rectangle leaves tiny uncut wedges on outside bends.
     t = Math.max(0, Math.min(1, t));
     const h = s.a[2] + (s.b[2] - s.a[2]) * t;
-    if (body === 'barrier') { if (h < p[2] - 1.25 || h > p[2] + 1.1) return false; }
+    if (body === 'barrier') { if (h < p[2] - 0.5 || h > p[2] + 1.1) return false; }   // 2026-10-25: a road more than 0.5 m below is a drop, not a neighbour (was 1.25)
     else if (body) { if (h < -0.1 || h > p[2] + 0.15) return false; }
     else if (Math.abs(h - p[2]) > 0.15) return false;
     return Math.hypot(p[0] - s.a[0] - s.dx * t, p[1] - s.a[1] - s.dz * t) < s.half + margin;
@@ -1347,7 +1347,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
         if (vis.length > 1) {
           wallAlong(vis, 0, (h) => h + 0.05, (h) => h + 0.05 + 0.75 * tap(h), CI.conc);
           capAlong(vis.map((q) => [q[0], q[1], q[2] - 0.75 * (1 - tap(q[2]))]), 0, 0.2, 0.8, CI.conc);
-          let hi = []; for (const q of vis.concat([[0, 0, 0]])) { if (q[2] > 0.6) hi.push(q); else { if (hi.length > 1) addParapets(hi, 0); hi = []; } }
+          let hi = []; for (const q of vis.concat([[0, 0, 0]])) { if (q[2] > 0.5) hi.push(q); else { if (hi.length > 1) addParapets(hi, 0); hi = []; } }
         }
         vis = [];
       };

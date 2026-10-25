@@ -99,6 +99,16 @@ export function runMarkings(P, D) {
   // lamp poles never stand on drivable asphalt at their own level
   let onRoad = []; for (const l of lamps) { if (l[3] > 0.1) continue; if (K.at('asph', l[0], l[1], 1)) onRoad.push(`${R1(l[0])},${R1(l[1])}`); }
   add('Фонари на земле', 'опора не стоит на проезжей части', onRoad.length ? `на асфальте: ${sh(onRoad)}` : 'нет', 'опора вне проезжей части', 'СП 34.13330 (опоры вне проезжей части)', onRoad.length ? 'НАРУШЕНИЕ' : 'OK');
+  // ---- G. symmetry of the motorway edges: the same shoulder (0.2 m between the edge line and the asphalt edge) on both sides of every carriageway (owner 2026-10-25) --------------------------
+  { let bad = [], n = 0;
+    for (const [x0, x1] of [[-160, -50], [50, 160]]) for (let x = x0; x <= x1; x += 4) {
+      if (nearRampEnd(x, -240, 30) || nearRampEnd(x, -246, 30) || nearRampEnd(x, -234, 30)) continue;
+      const side = (lat) => [R.near('paint', x, -240 + lat, 0.12), K.at('asph', x, -240 + lat + (lat > 0 ? 0.15 : -0.15), 3)];
+      const L = [side(-6.1), side(-6.3)], Rr = [side(6.1), side(6.3)]; n++;
+      if (L[0][0] !== Rr[0][0] || L[1][1] !== Rr[1][1]) bad.push(`${x}`);
+    }
+    for (const z of [-140, -110, -80, -50, 50, 62]) { n++; const side = (lat) => R.near('paint', 250 + lat, z, 0.12); if (side(-6.1) !== side(6.1)) bad.push(`M2 z${z}`); }
+    add('М1 / М2', 'кромки симметричны: краевая линия на одном и том же расстоянии от края асфальта слева и справа', bad.length ? `асимметрия: ${sh(bad)}` : `${n} сечений симметричны`, 'одинаковая обочина и кромочная линия по обе стороны', 'ГОСТ Р 52289-2019 (разметка 1.2.1); требование владельца 2026-10-25', bad.length ? 'НАРУШЕНИЕ' : 'OK', 'было: обочина 1.0 м справа и 0.2 м слева'); }
   // ---- F. pedestrian connectivity: a sidewalk along both sides of every urban street ----------------------------------------------------------------------
   const walkGaps = []; let wSamples = 0;
   for (const e of P.edges) {

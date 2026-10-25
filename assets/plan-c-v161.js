@@ -18,6 +18,7 @@
   scene.add(root);
   // depth precision: the follow camera is 6-8 m from what matters, so the near plane 0.35 only costs bits (a 16-bit buffer resolves ~1 mm at 5 m but 9 mm at 15 m with near 0.35; 0.6 gives 1.7x (far stays 500: the sky dome is 400 m))
   try { if (typeof camera !== 'undefined' && camera.isPerspectiveCamera) { camera.near = 0.6; camera.updateProjectionMatrix(); } } catch (_) {}
+  const WHITE_CI = D.palette.white, YELLOW_CI = D.palette.yellow;
   const api = { version: 1, enabled: true, root, cells, R_BUILD: 128, R_KEEP: 190, furniture: {}, lastBuilt: 0 };   // radii in metres around the player (tests / screenshots may widen them)
   window.PlanCV161 = api;
 
@@ -25,6 +26,9 @@
   const lin = D.colors.map((h) => new THREE.Color(h).convertSRGBToLinear());
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0.0, side: THREE.DoubleSide });
   mat.userData.planCV161 = true;
+  // Paint on its OWN mesh with a polygon offset (owner's iPhone 2026-10-25: lane lines "dance" on ramps): the lines lie 2.7 cm above the asphalt, a 16-bit depth buffer resolves ~9 cm at 60 m, so the
+  // line z-fought with the road on every slope.  Decal-style: pulled towards the camera by polygonOffset (factor -2, units -4, which scales with the slope of the surface), drawn after the road.
+  const paintMat = mat.clone(); paintMat.polygonOffset = true; paintMat.polygonOffsetFactor = -2; paintMat.polygonOffsetUnits = -4; paintMat.userData.planCV161 = true;
   api.material = mat;
   // Shadow acne on decks (owner's iPhone, 2026-10-19: horizontal stripes / arcs on every ramp lane): the deck meshes both CAST and RECEIVE the sun's shadow, so each deck
   // compares its own surface with its own entry in the 1024 map (texel 0.14 m, a sloped lane differs by up to 0.1-0.3 m across one texel, more when the quality ladder halves the map).
@@ -47,24 +51,25 @@
     const key = cx + ',' + cz, data = D.cells[key];
     if (!data) return null;
     let pos = [], nor = [], col = [];
-    const dpos = [], dnor = [], dcol = [];
-    let cur = 0;
+    const dpos = [], dnor = [], dcol = [], ppos = [], pnor = [], pcol = [];   // ground, decks, PAINT (own mesh with a polygon offset, see paintMat)
+    let cur = 0;   // 0 ground, 1 decks, 2 paint
     const slopeTris = [];   // grass banks get smooth (vertex-averaged) normals: flat shading of a cone around a loop read as alternating radial strips
     let tone = 1;   // the sun + ACES wash light colours out: grass and landscape are drawn 20 % darker than their palette entry
-    const v = (x, y, z, nx, ny, nz, c) => { const P = cur ? dpos : pos, Nn = cur ? dnor : nor, C = cur ? dcol : col; P.push(x, y, z); Nn.push(nx, ny, nz); C.push(c.r * tone, c.g * tone, c.b * tone); };
+    const v = (x, y, z, nx, ny, nz, c) => { const P = cur === 2 ? ppos : cur ? dpos : pos, Nn = cur === 2 ? pnor : cur ? dnor : nor, C = cur === 2 ? pcol : cur ? dcol : col; P.push(x, y, z); Nn.push(nx, ny, nz); C.push(c.r * tone, c.g * tone, c.b * tone); };
     for (const layer of ['g', 'r', 'p', 'd']) {
       const L = data[layer]; if (!L) continue;
-      cur = layer === 'd' ? 1 : 0; tone = layer === 'g' ? 0.8 : 1;
+      cur = layer === 'd' ? 1 : layer === 'p' ? 2 : 0; tone = layer === 'g' ? 0.8 : 1;   // paint of the ground layer 'p' and the paint triangles of the decks go to the paint mesh
       const dv = L.v;
       if (dv) for (let i = 0; i < dv.length; i += 10) {
-        const c = lin[dv[i + 9]];
+        const c = lin[dv[i + 9]]; if (layer === 'd') cur = (dv[i + 9] === WHITE_CI || dv[i + 9] === YELLOW_CI) ? 2 : 1;
         let ax = dv[i], ay = dv[i + 1], az = dv[i + 2], bx = dv[i + 3], by = dv[i + 4], bz = dv[i + 5], cx2 = dv[i + 6], cy2 = dv[i + 7], cz2 = dv[i + 8];
         let nx = (by - ay) * (cz2 - az) - (bz - az) * (cy2 - ay), ny = (bz - az) * (cx2 - ax) - (bx - ax) * (cz2 - az), nz = (bx - ax) * (cy2 - ay) - (by - ay) * (cx2 - ax);
         const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
         if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; [bx, cx2] = [cx2, bx]; [by, cy2] = [cy2, by]; [bz, cz2] = [cz2, bz]; }
         v(ax, ay, az, nx, ny, nz, c); v(bx, by, bz, nx, ny, nz, c); v(cx2, cy2, cz2, nx, ny, nz, c);
-        if (cur && dv[i + 9] === SLOPE_CI) slopeTris.push(dpos.length / 3 - 3);
+        if (cur === 1 && dv[i + 9] === SLOPE_CI) slopeTris.push(dpos.length / 3 - 3);
       }
+      if (layer === 'd') cur = 1;
       const ds = L.s;
       if (ds) for (let i = 0; i < ds.length; i += 9) {
         const x0 = ds[i], z0 = ds[i + 1], x1 = ds[i + 2], z1 = ds[i + 3], b0 = ds[i + 4], t0 = ds[i + 5], b1 = ds[i + 6], t1 = ds[i + 7], c = lin[ds[i + 8]];
@@ -111,22 +116,23 @@
       mesh.userData.v83CollisionIgnore = true; mesh.userData.planCCell = key; mesh.userData.v152Skip = true; mesh.userData.planCSolid = !!solid;
       return mesh;
     };
-    const ground = mk(pos, nor, col, 'planC_' + key, false), decks = mk(dpos, dnor, dcol, 'planCd_' + key, true);
-    if (!ground && !decks) return null;
-    return { ground, decks };
+    const ground = mk(pos, nor, col, 'planC_' + key, false), decks = mk(dpos, dnor, dcol, 'planCd_' + key, true), paint = mk(ppos, pnor, pcol, 'planCp_' + key, false);
+    if (paint) { paint.material = paintMat; paint.renderOrder = 2; paint.receiveShadow = true; }
+    if (!ground && !decks && !paint) return null;
+    return { ground, decks, paint };
   }
   function addCell(cx, cz) {
     const key = cx + ',' + cz;
     if (cells.has(key)) return false;
     const built = buildCell(cx, cz);
-    cells.set(key, { mesh: built && built.ground, decks: built && built.decks, cx, cz });
-    if (built) for (const m of [built.ground, built.decks]) if (m) { root.add(m); m.updateMatrix(); }
+    cells.set(key, { mesh: built && built.ground, decks: built && built.decks, paint: built && built.paint, cx, cz });
+    if (built) for (const m of [built.ground, built.decks, built.paint]) if (m) { root.add(m); m.updateMatrix(); }
     if (built && built.decks && typeof cameraSolidMeshes !== 'undefined' && Array.isArray(cameraSolidMeshes)) if (!cameraSolidMeshes.includes(built.decks)) cameraSolidMeshes.push(built.decks);   // the camera never goes through a wall / deck of the city
     return true;
   }
   function dropCell(key) {
     const c = cells.get(key); if (!c) return;
-    for (const m of [c.mesh, c.decks]) if (m) { root.remove(m); m.geometry.dispose(); }
+    for (const m of [c.mesh, c.decks, c.paint]) if (m) { root.remove(m); m.geometry.dispose(); }
     if (c.decks && typeof cameraSolidMeshes !== 'undefined' && Array.isArray(cameraSolidMeshes)) { const i = cameraSolidMeshes.indexOf(c.decks); if (i >= 0) cameraSolidMeshes.splice(i, 1); }
     cells.delete(key);
   }
@@ -236,9 +242,10 @@
   }
   api.ensureNear = ensureNear;
   api.deckMeshes = () => [...cells.values()].map((c) => c.decks).filter(Boolean);
+  api.paintMeshes = () => [...cells.values()].map((c) => c.paint).filter(Boolean);   // paint has its own mesh since 2026-10-25
   api.dropAll = () => { for (const k of [...cells.keys()]) dropCell(k); rebuildFurniture(); };
   api.refresh = (force) => { if (force) api.dropAll(); ensureNear(player.position.x, player.position.z); };
-  api.stats = () => { let meshes = 0, tris = 0; for (const c of cells.values()) for (const m of [c.mesh, c.decks]) if (m) { meshes++; tris += m.geometry.attributes.position.count / 3; } return { cells: cells.size, meshes, tris, furniture: { ...api.furniture } }; };
+  api.stats = () => { let meshes = 0, tris = 0; for (const c of cells.values()) for (const m of [c.mesh, c.decks, c.paint]) if (m) { meshes++; tris += m.geometry.attributes.position.count / 3; } return { cells: cells.size, meshes, tris, furniture: { ...api.furniture } }; };
   // the walkable floor: slide along the edge of the water like the plan B layer
   const SLIDE_STEP = 2;
   api.floor = D.floor; api.access = D.access;
