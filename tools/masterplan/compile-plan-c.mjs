@@ -578,6 +578,7 @@ for (const b of BENDS.values()) {
   const isMw = A.cls === 'motorway';
   if (Math.max(...mh) > 0.02) { strip(neg(mh), mh, H.med, isMw ? CI.lawnG : CI.median); wall(neg(mh), H.asph, H.med,true); wall(mh, H.asph, H.med,true); }
   if (Math.max(...sw) > 0.02) for (const sg of [-1, 1]) { const o0 = half.map((h) => sg * h), o1 = half.map((h, i) => sg * (h + sw[i])); strip(o0, o1, H.walk, CI.walk); wall(o0, H.asph, H.walk); }
+  else for (const sg of [-1, 1]) wall(half.map((h) => sg * h), H.asph, H.walk);   // 2026-10-25: a service road has no sidewalk, but its edge still has a kerb (the straight edges have; the bends had none)
   // paint (only on the arc proper, the extensions are skipped): arterial lane dashes while they stay clear of the kerb, collector centre dashes once the median has closed
   const arcIdx = pts.map((_, i) => i).filter((i) => i > 0 && i < pts.length - 1);
   if (isMw) {   // motorway paint = the plain M1 / M2 profile: solid lines at the median kerb and 1 m inside the edge, a dashed lane divider
@@ -639,6 +640,13 @@ function stopLine(c, dir, at, cls) {   // across the incoming half of an arm
   if (dir[0] === 0) emitRect('p', 'q', Math.min(A[0], B[0]), p[1] - 0.2, Math.max(A[0], B[0]), p[1] + 0.2, H.paint, CI.white);
   else emitRect('p', 'q', p[0] - 0.2, Math.min(A[1], B[1]), p[0] + 0.2, Math.max(A[1], B[1]), H.paint, CI.white);
 }
+function yieldLine(c, dir, at, cls) {   // line 1.13: a row of white triangles (base 0.5, height 0.7, pitch 0.9) across the incoming half of an arm, apexes pointing at the driver
+  const w = hw(cls), r = [dir[1], -dir[0]], p = [c[0] + dir[0] * at, c[1] + dir[1] * at], med = CLS[cls].median / 2;
+  for (let l = Math.max(0.35, med + 0.3); l <= w - 0.3; l += 0.9) {
+    const q = (t, o) => [p[0] + dir[0] * t + r[0] * (l + o), p[1] + dir[1] * t + r[1] * (l + o)];
+    emitTri('p', q(-0.35, -0.25), q(-0.35, 0.25), q(0.35, 0), H.paint, CI.white);
+  }
+}
 function arrow(c, dir, at, lat) {   // straight lane arrow on the incoming half of an arm, pointing at the junction: stem + head
   const r = [dir[1], -dir[0]], p = (t, l) => [c[0] + dir[0] * (at + t) + r[0] * (lat + l), c[1] + dir[1] * (at + t) + r[1] * (lat + l)];
   const q = [p(0.5, -0.09), p(0.5, 0.09), p(-0.5, 0.09), p(-0.5, -0.09)];
@@ -675,6 +683,7 @@ for (const j of PLAN.junctions) {
       if (!major && j.arms.length === 4 && 0) continue;
       const cross = j.arms.filter((x) => (x.dir[0] !== 0) !== (a.dir[0] !== 0)).map((x) => hw(x.cls)), ch = cross.length ? Math.max(...cross) : 0;
       const at = ch + 1.0;
+      yieldLine(c, a.dir, at, a.cls);   // 2026-10-25: GOST R 51256 line 1.13 (give-way triangles) on every minor approach
       if (j.arms.length >= 3 && major) {
         const r = [a.dir[1], -a.dir[0]];
         furniture.pole.push([c[0] + a.dir[0] * (at + 0.6) + r[0] * (hw(a.cls) + 0.5), c[1] + a.dir[1] * (at + 0.6) + r[1] * (hw(a.cls) + 0.5), yawOf(a.dir), SIGN.stop]);
@@ -693,7 +702,7 @@ for (const j of PLAN.junctions) {
         }
         continue;
       }
-      if (a.cls === 'arterial' || a.cls === 'collector' || a.cls.startsWith('motorway')) stopLine(c, a.dir, along + 1.7, a.cls);
+      if (!(j.big && a.cls.startsWith('motorway'))) stopLine(c, a.dir, along + 1.7, a.cls);   // 2026-10-25: GOST R 51256 line 1.12 on EVERY signalised approach (local / service arms had none); I2 draws its own
       if (a.cls === 'arterial' || a.cls.startsWith('motorway')) for (let k = 0; k < (a.cls === 'motorway3' ? 3 : 2); k++) arrow(c, a.dir, along + 6.5, CLS[a.cls].median / 2 + CLS[a.cls].lane * (k + 0.5));
       const r = [a.dir[1], -a.dir[0]];
       furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) + r[0] * (w + 0.55), c[1] + a.dir[1] * (along + 1.2) + r[1] * (w + 0.55), yawOf(a.dir)]);
@@ -703,6 +712,7 @@ for (const j of PLAN.junctions) {
     for (const a of j.arms) {
       const r = [a.dir[1], -a.dir[0]];
       furniture.pole.push([c[0] + a.dir[0] * (j.R + 1.2) + r[0] * (hw(a.cls) + 0.5), c[1] + a.dir[1] * (j.R + 1.2) + r[1] * (hw(a.cls) + 0.5), yawOf(a.dir), SIGN.yield]);
+      yieldLine(c, a.dir, j.R + 0.9, a.cls);   // 1.13 at the entry to the ring
     }
     furniture.pole.push([c[0] + (j.R >= 12 ? 3.2 : 0), c[1], 0, SIGN.round]);
   }
@@ -783,7 +793,7 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
     // a second arrow pair on every branch near the round end (direction of travel: inbound towards M2, outbound away from it)
     for (const sz of [-1, 1]) { const zc = sz * (hz + SPLIT.band / 2), xt = farX - side * 6 + side * 0, dirT = sz === inSz ? [side, 0] : [-side, 0]; for (const lat of [-1, 1]) arrow([xt - side * 4, zc + lat * 1.2], dirT, 0, 0); }
     // bus shelters on the outer sidewalk of both branches (line B1 runs through the crossing), facing the carriageway
-    for (const [sz, t] of [[1, 0.42], [-1, 0.58]]) { const xA = side < 0 ? farX + 6 : edgeM + side * SPLIT.R, xB = side < 0 ? edgeM + side * SPLIT.R : farX - 6, px = xA + (xB - xA) * t; furniture.stop.push([R2(px), R2(sz * (hz + SPLIT.band + 1.75)), sz > 0 ? Math.PI : 0, 'B1']); }
+    for (const [sz, t] of [[1, 0.42], [-1, 0.58]]) { const xA = side < 0 ? farX + 6 : edgeM + side * SPLIT.R, xB = side < 0 ? edgeM + side * SPLIT.R : farX - 6, px = xA + (xB - xA) * t; furniture.stop.push([R2(px), R2(sz * (hz + SPLIT.band + 1.75)), sz > 0 ? Math.PI : 0, 'B1']); const zy = sz * (hz + SPLIT.band - 0.32); emitRect('p', 'q', px - 4.5, zy - 0.125, px + 4.5, zy + 0.125, H.paint, CI.yellow); }   // + line 1.17
     // furniture on the island: lamps along the axis, a few trees
     for (const t of [0.22, 0.5, 0.78]) furniture.lamp.push([R2(xa + (xb - xa) * t), 0, 0]);
     for (const [t, zz] of [[0.14, 0], [0.34, 2.4], [0.34, -2.4], [0.66, 2.4], [0.66, -2.4], [0.86, 0]]) { const px = xa + (xb - xa) * t; cellOf(Math.floor(px / CELL), Math.floor(zz / CELL)).f.tree.push(R2(px), R2(zz), R2(0.9 + 0.2 * Math.abs(Math.sin(px))), R2(Math.abs(Math.cos(px * 3))));
@@ -1561,15 +1571,15 @@ const rangeRamp = (x, z) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2
 const railBlocked = (x, z) => railOut.bed.some((b) => x >= b[0] - 1 && x <= b[2] + 1 && z >= b[1] - 1 && z <= b[3] + 1) || segDist(x, z, PLAN.rail.spur.pts[0], PLAN.rail.spur.pts[PLAN.rail.spur.pts.length - 1]) < 4;
 
 // ---- 9. furniture lists: lamps / street trees along the streets, bus shelters, landscape trees
-const lampsPer = { arterial: 26, collector: 28, local: 32 };
+const lampsPer = { arterial: 26, collector: 28, local: 32, service: 28 };   // service: the port roads were dark (2026-10-25)
 const rndF = mulberry(99);
 for (const e of PLAN.edges) {
-  if (e.cls === 'motorway' || e.cls === 'service') continue;
+  if (e.cls === 'motorway') continue;
   const a = N.get(e.a), b = N.get(e.b), ax = e.dir, cl = CLS[e.cls], c = ax === 'x' ? a.z : a.x;
   const lo = ax === 'x' ? Math.min(a.x, b.x) : Math.min(a.z, b.z), hi = ax === 'x' ? Math.max(a.x, b.x) : Math.max(a.z, b.z);
   const lowNode = (ax === 'x' ? a.x <= b.x : a.z <= b.z) ? e.a : e.b, highNode = lowNode === e.a ? e.b : e.a;
   const t0 = trimAt(lowNode, e) + 3, t1 = trimAt(highNode, e) + 3, step = lampsPer[e.cls], cuts = furnCuts(e);
-  const sideOff = hw(e.cls) + cl.sidewalk * 0.5;
+  const sideOff = hw(e.cls) + (e.cls === 'service' ? 0.9 : cl.sidewalk * 0.5);
   const n = Math.floor((hi - lo - t0 - t1) / step);
   for (let k = 0; k <= n; k++) {
     const s = lo + t0 + (n > 0 ? k * (hi - lo - t0 - t1) / n : (hi - lo - t0 - t1) / 2);
@@ -1580,7 +1590,14 @@ for (const e of PLAN.edges) {
       if (blocked(pos[0] + (ax === 'x' ? 0 : sgn * 0.8), pos[1] + (ax === 'x' ? sgn * 0.8 : 0), 0.1) && !rasterAt(pos[0], pos[1])) continue;
       furniture.lamp.push([pos[0], pos[1], yaw]);
     }
-    if (e.cls !== 'local' && k < n) {
+    if (k === 0) for (const [q0, q1] of cuts) for (const s2 of [q0 - 2.5, q1 + 2.5]) {   // 2026-10-25: a lit portal at each end of an underpass / bridge cut (the regular grid skips +-3 m round it: 20 m of dark road)
+      if (s2 < lo + t0 - 1 || s2 > hi - t1 + 1) continue;
+      for (const sgn of e.cls === 'local' ? [1] : [-1, 1]) {
+        const pos = ax === 'x' ? [s2, c + sgn * sideOff] : [c + sgn * sideOff, s2], yaw = ax === 'x' ? (sgn > 0 ? Math.PI : 0) : (sgn > 0 ? -Math.PI / 2 : Math.PI / 2);
+        if (!blocked(pos[0] + (ax === 'x' ? 0 : sgn * 0.8), pos[1] + (ax === 'x' ? sgn * 0.8 : 0), 0.1) || rasterAt(pos[0], pos[1])) furniture.lamp.push([pos[0], pos[1], yaw]);
+      }
+    }
+    if (e.cls !== 'local' && e.cls !== 'service' && k < n) {
       const m = s + step / 2;
       if (!cuts.some(([q0, q1]) => m > q0 - 3 && m < q1 + 3)) for (const sgn of [-1, 1]) {
         const off = hw(e.cls) + cl.sidewalk + 0.9, pos = ax === 'x' ? [m, c + sgn * off] : [c + sgn * off, m];
@@ -1607,6 +1624,10 @@ for (const line of PLAN.transit.lines) for (const s0 of line.stops) { let s = s0
       const b = [s[0] + h[0] * 1.8 + r[0] * outer, s[1] + h[1] * 1.8 + r[1] * outer];
       emitRect('r', 'q', Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1]), H.walk, CI.walk);
     }
+  }
+  if (e) {   // GOST R 51256 line 1.17: a solid yellow line along the kerb on the length of the stop (2 bus lengths = 9 m), 0.25 wide, inside the asphalt edge
+    const lat = hw(e.cls) - 0.32, a0 = [s[0] - h[0] * 4.5 + r[0] * lat, s[1] - h[1] * 4.5 + r[1] * lat], a1 = [s[0] + h[0] * 4.5 + r[0] * lat, s[1] + h[1] * 4.5 + r[1] * lat], w2 = 0.125;
+    emitRect('p', 'q', Math.min(a0[0], a1[0]) - (h[0] === 0 ? w2 : 0), Math.min(a0[1], a1[1]) - (h[1] === 0 ? w2 : 0), Math.max(a0[0], a1[0]) + (h[0] === 0 ? w2 : 0), Math.max(a0[1], a1[1]) + (h[1] === 0 ? w2 : 0), H.paint, CI.yellow);
   }
   furniture.stop.push([s[0] + r[0] * off, s[1] + r[1] * off, Math.atan2(-r[0], -r[1]), line.id]);
   stopsOut.push({ line: line.id, at: s });
@@ -1637,12 +1658,49 @@ for (const line of PLAN.transit.lines) for (const s0 of line.stops) { let s = s0
   for (let k = 0; k < 16; k++) { const a = (k + 0.5) * Math.PI / 8; const px = Math.cos(a) * 19.5, pz = Math.sin(a) * 19.5; if (!rasterAt(px, pz)) cellOf(Math.floor(px / CELL), Math.floor(pz / CELL)).f.tree.push(R2(px), R2(pz), 0.95, R2(rnd())); }
   for (const j of PLAN.junctions) if (j.type === 'roundabout' && j.R < 12) cellOf(Math.floor(j.at[0] / CELL), Math.floor(j.at[1] / CELL)).f.tree.push(j.at[0], j.at[1], 1.1, 0.5);
 }
+// ---- 9b. lighting of the motorways, decks and ramps (2026-10-25, SP 52.13330: interchanges and urban motorways are lit; before: 0 lamps on M1 / M2 / ramps, 14 dark stretches > 24 m)
+// lamp = [x, z, yaw, y]: y is the height of the pole's foot (decks), the head looks at the road; alternate sides, 14 m between lamps along the road (28 m per side)
+const lampsHi = [];
+function lampsAlong(id, pts, step, off, lo = -Infinity, hi = Infinity) {
+  const S = arcLen(pts); let side = 1;
+  for (let sv = step / 2; sv < S[S.length - 1]; sv += step) {
+    let i = 1; while (i < S.length - 1 && S[i] < sv) i++;
+    const t = (sv - S[i - 1]) / ((S[i] - S[i - 1]) || 1), a = pts[i - 1], b = pts[i], x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t, h = a[2] + (b[2] - a[2]) * t;
+    const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l, px = x + nx * side * off, pz = z + nz * side * off;
+    side = -side;
+    if (x < lo || x > hi || coveredRoad([px, pz, h], id, 0.3)) continue;
+    lampsHi.push([R2(px), R2(pz), R2(Math.atan2(-nx * -side, -nz * -side)), R2(h)]);
+  }
+}
+lampsAlong('M1', sampleAxis('x', M1_Z, -170, 170, hM1, 3), 28, MW - 0.45);
+lampsAlong('M2', sampleAxis('z', M2_X, -150, -40, () => 0, 3), 28, MW + 1.4);
+lampsAlong('M2', sampleAxis('z', M2_X, 40, 86, () => 0, 3), 28, MW + 1.4);
+lampsAlong('M2', sampleAxis('z', M2_X, -40, -10, () => 0, 3), 14, 11);   // the approach of the at-grade crossing I2 (3 lanes + taper): poles outside the widened carriageway
+lampsAlong('M2', sampleAxis('z', M2_X, 10, 40, () => 0, 3), 14, 11);
+for (const r of rampPts) lampsAlong(r.id, r.p3, 24, CLS.ramp.w / 2 - 0.2);
+const rasterAtKerb = (x, z) => { const r = rasterAt(x, z); return !!(r && /asph|ramp/.test(String(r.type || r.ci || ''))) };
 const nearRampPt = (x, z, m) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < CLS.ramp.w / 2 + m);
 const onFillet = (x, z, m) => cornerOut.some((q) => x > Math.min(q.K[0], q.O[0]) && x < Math.max(q.K[0], q.O[0]) && z > Math.min(q.K[1], q.O[1]) && z < Math.max(q.K[1], q.O[1]) && Math.hypot(x - q.O[0], z - q.O[1]) > q.RET - m);   // on the asphalt of a kerb return
-furniture.lamp = furniture.lamp.filter((l) => !nearRampPt(l[0], l[1], 0.8) && !onFillet(l[0], l[1], 0.7));
+furniture.lamp = furniture.lamp.map((l) => l.length >= 4 ? l : [l[0], l[1], l[2], 0]);   // stride 4: x z yaw y
+furniture.lamp = furniture.lamp.filter((l) => l[3] > 0.1 || !nearRampPt(l[0], l[1], 0.8) && !onFillet(l[0], l[1], 0.7));
 furniture.sig = furniture.sig.filter((l) => !nearRampPt(l[0], l[1], 0.5));
 for (const l of furniture.sig) { const q = cornerOut.find((q) => l[0] > Math.min(q.K[0], q.O[0]) && l[0] < Math.max(q.K[0], q.O[0]) && l[1] > Math.min(q.K[1], q.O[1]) && l[1] < Math.max(q.K[1], q.O[1]) && Math.hypot(l[0] - q.O[0], l[1] - q.O[1]) > q.RET - 0.5); if (q) { const d = Math.hypot(l[0] - q.O[0], l[1] - q.O[1]) || 1, k = (q.RET - 0.6) / d; l[0] = R2(q.O[0] + (l[0] - q.O[0]) * k); l[1] = R2(q.O[1] + (l[1] - q.O[1]) * k); } }   // a signal head stands behind the kerb of a return, not on its asphalt
 furniture.lamp = furniture.lamp.filter((l) => !furniture.stop.some((st) => Math.hypot(st[0] - l[0], st[1] - l[1]) < 3.2));   // no lamp inside a bus stop
+furniture.lamp.push(...lampsHi.filter((l) => !furniture.stop.some((st) => Math.hypot(st[0] - l[0], st[1] - l[1]) < 3.2)));
+
+// 2026-10-25: fill-in pass - a street stretch longer than 24 m with no lamp within 14 m gets a lamp on its sidewalk (the regular grid skips junction trims, rail depot zones, portals)
+for (const e of PLAN.edges) {
+  if (e.cls === 'motorway' || e.split) continue;
+  const a = N.get(e.a), b = N.get(e.b), L = Math.hypot(b.x - a.x, b.z - a.z), dx = (b.x - a.x) / L, dz = (b.z - a.z) / L, off = hw(e.cls) + (e.cls === 'service' ? 0.9 : CLS[e.cls].sidewalk * 0.5);
+  let run = 0, st = 0;
+  const light = (s) => { const x = a.x + dx * s, z = a.z + dz * s; return furniture.lamp.some((l) => Math.abs(l[0] - x) < 14 && Math.abs(l[1] - z) < 14 && Math.hypot(l[0] - x, l[1] - z) <= 14); };
+  for (let s = 0; s <= L; s += 2) {
+    if (!light(s)) { if (!run) st = s; run += 2; if (run > 24) {   // put one in the middle of the dark run, on the side with free pavement
+      const m = st + run / 2; let done = false;
+      for (const sgn of [1, -1]) { const px = a.x + dx * m + -dz * sgn * off, pz = a.z + dz * m + dx * sgn * off; if (isWater(px, pz) || rasterAtKerb(px, pz)) continue; furniture.lamp.push([R2(px), R2(pz), R2(Math.atan2(dz * sgn, -dx * sgn)), 0]); done = true; break; }
+      run = done ? 0 : run; } } else run = 0;
+  }
+}
 for (const cellC of cells.values()) {
   const old = cellC.f.tree, kept = [];
   for (let i = 0; i < old.length; i += 4) if (!furniture.stop.some((st) => Math.hypot(st[0] - old[i], st[1] - old[i + 1]) < 2.2)) kept.push(...old.slice(i, i + 4));
@@ -1772,7 +1830,7 @@ const text = '// Generated by tools/masterplan/compile-plan-c.mjs from tools/mas
 if (process.argv.includes('--stats')) {
   let q = 0, t = 0, w = 0; for (const c of Object.values(cellsOut)) for (const L of ['g', 'r', 'p', 'd']) { q += (c[L]?.q?.length || 0) / 6; t += (c[L]?.t?.length || 0) / 8; w += (c[L]?.w?.length || 0) / 7; }
   console.log('cells', keys.length, 'quads', q, 'tris', t, 'walls', w, 'bytes', text.length, 'palette', PAL.length);
-  let trees = 0, lamps = 0, sigs = 0, poles = 0, stops = 0; for (const c of Object.values(cellsOut)) { trees += (c.f?.tree?.length || 0) / 4; lamps += (c.f?.lamp?.length || 0) / 3; sigs += (c.f?.sig?.length || 0) / 3; poles += (c.f?.pole?.length || 0) / 4; stops += (c.f?.stop?.length || 0) / 4; }
+  let trees = 0, lamps = 0, sigs = 0, poles = 0, stops = 0; for (const c of Object.values(cellsOut)) { trees += (c.f?.tree?.length || 0) / 4; lamps += (c.f?.lamp?.length || 0) / 4; sigs += (c.f?.sig?.length || 0) / 3; poles += (c.f?.pole?.length || 0) / 4; stops += (c.f?.stop?.length || 0) / 4; }
   console.log({ trees, lamps, sigs, poles, stops });
 }
 if (process.argv.includes('--check')) {

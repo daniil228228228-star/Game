@@ -16,7 +16,7 @@ const stops = [], lamps = [];
 for (const cell of Object.values(D.cells)) {
   const f = cell.f || {};
   for (let i = 0; i < (f.stop || []).length; i += 4) stops.push(f.stop.slice(i, i + 4));
-  for (let i = 0; i < (f.lamp || []).length; i += 3) lamps.push(f.lamp.slice(i, i + 3));
+  for (let i = 0; i < (f.lamp || []).length; i += 4) lamps.push(f.lamp.slice(i, i + 4));
 }
 const failures = [];
 for (const [x, z, yaw] of stops) {

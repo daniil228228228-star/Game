@@ -194,11 +194,11 @@
       const f = D.cells[key] && D.cells[key].f; if (!f) continue;
       for (const k of Object.keys(lists)) { const src = k === 'plate' ? f.pole : f[k]; if (src) lists[k].push(src); }
     }
-    const strideOf = { lamp: 3, sig: 3, pole: 4, plate: 4, stop: 4, tree: 4, cat: 3 };
+    const strideOf = { lamp: 4, sig: 3, pole: 4, plate: 4, stop: 4, tree: 4, cat: 3 };
     const count = (k) => lists[k].reduce((s, a) => s + a.length / strideOf[k], 0);
     const each = (k, fn) => { let n = 0; for (const a of lists[k]) for (let i = 0; i < a.length; i += strideOf[k]) fn(a, i, n++); };
     const setM = (inst, n, x, y, z, yaw, s = 1) => { dummy.position.set(x, y, z); dummy.rotation.set(0, yaw, 0); dummy.scale.setScalar(s); dummy.updateMatrix(); inst.setMatrixAt(n, dummy.matrix); };
-    for (const k of ['lamp', 'sig', 'pole', 'stop']) makeInstanced(k, count(k), (inst) => each(k, (a, i, n) => setM(inst, n, a[i], 0, a[i + 1], a[i + 2])), { geo: sharedGeo(k), shadow: k === 'lamp' });
+    for (const k of ['lamp', 'sig', 'pole', 'stop']) makeInstanced(k, count(k), (inst) => each(k, (a, i, n) => setM(inst, n, a[i], k === 'lamp' ? a[i + 3] : 0, a[i + 1], a[i + 2])), { geo: sharedGeo(k), shadow: k === 'lamp' });
     visibleSignalHeads=D.graph.signalHeads.filter(s=>cells.has(Math.floor(s[0]/CELL)+','+Math.floor(s[1]/CELL))).map(s=>s.slice());
     makeInstanced('signalLights',visibleSignalHeads.length*3,inst=>visibleSignalHeads.forEach((s,n)=>{
       for(let k=0;k<3;k++)setM(inst,n*3+k,s[0]+Math.sin(s[2])*.96,3.3-k*.3,s[1]+Math.cos(s[2])*.96,s[2]);
@@ -206,8 +206,8 @@
     api.updateSignalLights(window.PlanCTrafficV161?.state||(()=> 'red'));
     // lamp glow: the heads light up at night (one instanced box + one additive ground pool, both driven by isNightV40())
     const lampN = count('lamp');
-    makeInstanced('lampglow', lampN, (inst) => each('lamp', (a, i, n) => setM(inst, n, a[i] + Math.sin(a[i + 2]) * 0.78, 3.36, a[i + 1] + Math.cos(a[i + 2]) * 0.78, a[i + 2])), { geo: new THREE.BoxGeometry(0.3, 0.06, 0.5), material: glowMat });
-    makeInstanced('lamppool', lampN, (inst) => each('lamp', (a, i, n) => { dummy.position.set(a[i] + Math.sin(a[i + 2]) * 0.78, 0.13, a[i + 1] + Math.cos(a[i + 2]) * 0.78); dummy.rotation.set(-Math.PI / 2, 0, 0); dummy.scale.setScalar(1); dummy.updateMatrix(); inst.setMatrixAt(n, dummy.matrix); }), { geo: poolGeo, material: poolMat });
+    makeInstanced('lampglow', lampN, (inst) => each('lamp', (a, i, n) => setM(inst, n, a[i] + Math.sin(a[i + 2]) * 0.78, 3.36 + a[i + 3], a[i + 1] + Math.cos(a[i + 2]) * 0.78, a[i + 2])), { geo: new THREE.BoxGeometry(0.3, 0.06, 0.5), material: glowMat });
+    makeInstanced('lamppool', lampN, (inst) => each('lamp', (a, i, n) => { dummy.position.set(a[i] + Math.sin(a[i + 2]) * 0.78, 0.13 + a[i + 3], a[i + 1] + Math.cos(a[i + 2]) * 0.78); dummy.rotation.set(-Math.PI / 2, 0, 0); dummy.scale.setScalar(1); dummy.updateMatrix(); inst.setMatrixAt(n, dummy.matrix); }), { geo: poolGeo, material: poolMat });
     if (instances.lamppool) instances.lamppool.visible = night > 0.05;
     makeInstanced('cat', count('cat'), (inst) => each('cat', (a, i, n) => setM(inst, n, a[i], D.struct.railY, a[i + 1], a[i + 2])), { geo: sharedGeo('cat') });
     makeInstanced('plate', count('plate'), (inst) => each('plate', (a, i, n) => { setM(inst, n, a[i], 0, a[i + 1], a[i + 2]); tint.setHex(PLATE_COLORS[a[i + 3]] || 0xffffff).convertSRGBToLinear(); inst.setColorAt(n, tint); }), { geo: sharedGeo('plate'), material: new THREE.MeshStandardMaterial({ roughness: 0.6 }) });

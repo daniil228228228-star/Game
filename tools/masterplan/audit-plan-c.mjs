@@ -3,6 +3,7 @@
 import { buildPlan, CLS, kerbReturnR } from './plan-c.mjs';
 import { matrix, ARMS, buildTurnGraph } from './turns-plan-c.mjs';
 import { loadData, runRealWorld, accessRows } from './real-world-checks.mjs';
+import { runMarkings } from './markings-checks.mjs';
 
 const P = buildPlan();
 const N = new Map(P.nodes.map((n) => [n.id, n])), E = P.edges;
@@ -373,7 +374,11 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
 // 18-26. real-world audit of interchanges / flyovers / ramps / footbridges (2026-10-25, tools/masterplan/real-world-checks.mjs, docs/PLAN_C_REAL_WORLD_AUDIT.md): grades, vertical curves (AASHTO K), radii by design
 //     speed, clearance, barriers, earth slopes, steps in the profile, ramp terminals, footbridge ramps <= 8 %, and (part 2) a walkable path from the ground to the top of EVERY deck.
 //     `--rw` prints the whole table (markdown with --md).
-const RW = (() => { const D = loadData(), a = runRealWorld(P, D), b = accessRows(D); return { D, rows: [...a.rows, ...b.rows], access: b.info }; })();
+const RW = (() => { const D = loadData(), a = runRealWorld(P, D), b = accessRows(D), m = runMarkings(P, D); const gaps = [
+  { node: 'Знаки на развязках', item: 'дорожные знаки (указатели направлений 6.9.x, ограничение скорости 3.24, 5.x «автомагистраль») на М1 / М2 / съездах', value: 'нет (в сети только знаки 2.4 / 2.5 / 4.3 на стойках у перекрёстков)', norm: 'знаки на развязках и съездах', source: 'ГОСТ Р 52290-2004; ГОСТ Р 52289-2019', verdict: 'ДОПУЩЕНИЕ', note: 'не реализовано: нужен новый вид инстансов (бюджет + 1 вызов отрисовки), список в docs/PLAN_C_REAL_WORLD_AUDIT.md' },
+  { node: 'Съезды', item: 'сигнальные столбики 1.? / ограждение носов (гор), парапет-«зубья» 1.16.x у носов I4 и I2', value: 'зубья 1.16 есть на носах I1; на I2 острова и носах I4 нет', norm: 'направляющая разметка 1.16.1-1.16.3 на носах разделителей', source: 'ГОСТ Р 51256-2018 (1.16)', verdict: 'ДОПУЩЕНИЕ', note: 'носы I2 / I4 не размечены шевронами' },
+  { node: 'Велодорожки', item: 'велодорожки / разметка 1.23', value: 'в плане C велодорожек нет', norm: '-', source: 'СП 42.13330 п. 11.?', verdict: 'ДОПУЩЕНИЕ', note: 'не проектировались' },
+]; return { D, rows: [...a.rows, ...b.rows, ...m.rows, ...gaps], access: b.info }; })();
 {
   const groups = [
     ['18. longitudinal grades: M1 <= 5 %, ramps <= 7 %, footbridge ramps <= 8 % (AASHTO GB Tab. 8-1 / 10.9.6; SP 34.13330; SP 59.13330)', /продольный уклон|уклон пандуса/],
@@ -384,6 +389,10 @@ const RW = (() => { const D = loadData(), a = runRealWorld(P, D), b = accessRows
     ['23. earth slopes no steeper than 1:1.5, walls no higher than the deck (SP 34.13330 / AASHTO GB 4)', /откосов|стенки/],
     ['24. no steps in the profile of one road; every ramp end is flush with the road it joins', /ступень|разность высот/],
     ['25. footbridges: width, ramp scheme, no ramp on a neighbouring street', /ширина прохода|схема пандусов/],
+    ['27. stop line 1.12 on every signalised approach, zebra 1.14.1 on every approach, yield line 1.13 on every minor approach / ring entry (GOST R 51256-2018)', /стоп-линия|зебра|линия 1\.13/],
+    ['28. lines 1.1 / 1.5 / 1.2.1 / 1.2.2 continuous along streets, M1 and ramps; bus stops marked 1.17', /разметка осевая|краевые линии|разметка 1\.17/],
+    ['29. kerb along every street edge, sidewalk along every urban street (no gaps > 3 / 6 m)', /бордюр вдоль|тротуар вдоль/],
+    ['30. lighting: no dark stretch > 24 m on streets, ramps, decks, the city part of M1 / M2; no pole on the carriageway (SP 52.13330)', /освещение|опора не стоит/],
     ['26. every ribbon (deck, ramp, footbridge) can be climbed ON FOOT from the ground and left again (graph over the real access / surfaceY of the game, 0.5 m steps)', /проход пешком/],
   ];
   for (const [name, re] of groups) {
