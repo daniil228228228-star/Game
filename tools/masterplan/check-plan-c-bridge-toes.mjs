@@ -36,7 +36,7 @@ for (const bridge of bridges) {
   for (let i = 1; i < bridge.p.length; i++) {
     const a = bridge.p[i - 1], b = bridge.p[i];
     const grade = Math.abs(b[2] - a[2]) / Math.hypot(b[0] - a[0], b[1] - a[1]);
-    assert.ok(grade <= 0.42, `${bridge.id} has an excessive stair-ramp grade: ${grade}`);
+    assert.ok(grade <= 0.08 + 1e-6, `${bridge.id} ramp grade ${grade} > 8 % (SP 59.13330)`);
   }
-  console.log(`PASS ${bridge.id}: both toes meet drawn, accessible ground; stair-ramp grade <= 42%`);
+  console.log(`PASS ${bridge.id}: both toes meet drawn, accessible ground; ramp grade <= 8 %`);
 }

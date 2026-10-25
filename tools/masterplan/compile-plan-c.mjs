@@ -235,7 +235,11 @@ function smoothFn(fn, lo, hi, step = 2, k = 2) {
   return (v) => { const t = Math.max(0, Math.min(n - 1e-9, (v - lo) / step)), i = Math.floor(t), f = t - i; return arr[i] * (1 - f) + arr[i + 1] * f; };
 }
 const trap = (d) => Math.max(0, Math.min(DECKH, DECKH - SLOPE * Math.max(0, d - FLATH)));
-const hM1 = smoothFn((x) => trap(Math.abs(x)), -330, 390), hM2 = () => 0;   // M2 rises only over M1 (I3); it is at ground level well before the at-grade crossing I2 (z -150 .. 88)
+// M1 profile (2026-10-25, real-world audit): design speed 70 km/h (= the R 80 game m = 200 m real bend into M2), max grade 5 %, vertical curves by the minimum K of AASHTO Green Book Table 3-34 / 3-36
+// (70 km/h: crest K 17, sag K 22 real; a game metre is 2.5 real metres, so K_game = K / 2.5).  Flat top |x| <= FLATH, crest arc, constant grade, sag arc, ground.
+const M1_G = 0.05, M1_KC = 17 * 1.12 / 2.5, M1_KS = 22 * 1.12 / 2.5, M1_LC = M1_KC * M1_G * 100, M1_LS = M1_KS * M1_G * 100, M1_LT = DECKH / M1_G - (M1_LC + M1_LS) / 2, M1_U = M1_LC + M1_LT + M1_LS;
+const hM1 = (x) => { const u = Math.abs(x) - FLATH; if (u <= 0) return DECKH; if (u >= M1_U) return 0; if (u <= M1_LC) return DECKH - M1_G * u * u / (2 * M1_LC); if (u <= M1_LC + M1_LT) return DECKH - M1_G * M1_LC / 2 - M1_G * (u - M1_LC); return M1_G * (M1_U - u) ** 2 / (2 * M1_LS); };
+const hM2 = () => 0;   // M2 rises only over M1 (I3); it is at ground level well before the at-grade crossing I2 (z -150 .. 88)
 const intervalsAbove = (fn, lo, hi, th) => { const out = []; let a = null; for (let v = lo; v <= hi + 1e-9; v += 1) { const on = fn(v) > th; if (on && a == null) a = v; if (!on && a != null) { out.push([a, v]); a = null; } } if (a != null) out.push([a, hi]); return out; };
 // Include the COMPLETE rounded toe, not only heights > 25 cm. Otherwise the
 // flat asphalt stops at an elevated, uncapped edge: a visible grass slit.
@@ -881,6 +885,7 @@ function projectPath(p, path) {
   }
   return { h: best || 0, distance };
 }
+const RAMP_SMOOTH_K = Number(process.env.RSK || 7);   // half width (m) of the two box passes that round the ramp profile = its vertical curves (Green Book K: loops at 40 km/h need sag K 9 real = 17.5 game m of curve)
 function constrainRampProfile(p3, S, fixed, label) {
   // Keep attachment levels exact without increasing the established 7% grade
   // limit. The envelopes are cones from ALL fixed samples, not a forward-only
@@ -934,7 +939,7 @@ for (const ic of PLAN.interchanges) {
         const hs = streetHostAt(pts[k ? pts.length - 1 : 0]), i0 = k ? pts.length - 1 : 0, st = k ? -1 : 1;
         if (hs && Math.abs((pts[i0 + st][hs.axis]) - pts[i0][hs.axis]) / (Math.hypot(pts[i0 + st][0] - pts[i0][0], pts[i0 + st][1] - pts[i0][1]) || 1) >= 0.8 && Math.abs(pts[i0][1 - hs.axis] - hs.c) < hs.Hw + CLS.ramp.w / 2 - 0.2) {
           let j = i0; while (j + st >= 0 && j + st < pts.length && Math.abs(pts[j + st][1 - hs.axis] - hs.c) < hs.Hw + CLS.ramp.w / 2) j += st;
-          if (j !== i0) { knots.push([S[j], 0]); hold = k ? L - S[j] : S[j]; }
+          if (j !== i0) { knots.push([Math.max(0, Math.min(L, S[j] + (k ? -2 : 2) * RAMP_SMOOTH_K)), 0]); hold = k ? L - S[j] : S[j]; }   // 2026-10-25: the corner of the profile lies one curve length before the held wedge, so the sag curve (two box passes) ends exactly where the street level begins (before: a kink of 4.8 %, K 6 real instead of >= 9)
         }
       }
       return hold;
@@ -970,7 +975,7 @@ for (const ic of PLAN.interchanges) {
       }
       return ends[1].h;
     };
-    const hf = smoothFn(kf, 0, L, 1, 6);
+    const hf = smoothFn(kf, 0, L, 1, RAMP_SMOOTH_K);
     const p3 = pts.map((p, i) => {
       let h = hf(S[i]);
       for (const k of [0, 1]) {
@@ -1206,8 +1211,9 @@ const freeGround = (x, z, own) => {
   }
   return best;
 };
+// 2026-10-25: SLOPE_MIN 1.5 = 1:1.5, the steepest earth fill slope of SP 34.13330 (embankments to 6 m) / AASHTO GB 4.? (fill slopes 1:2 desirable, 1:1.5 with a barrier); steeper = a retaining wall (was 1.25).
 // Slope ratio (horizontal : vertical) at a deck-edge point: as flat as the free ground allows, between SLOPE_MIN (steep grass bank) and SLOPE_MAX; below SLOPE_MIN the face is a retaining wall.
-const SLOPE_MAX = 2.5, SLOPE_MIN = Number(process.env.SMIN || 1.25), SLOPE_RUN_MIN = 12, FILL_MIN_H = 0.35;
+const SLOPE_MAX = 2.5, SLOPE_MIN = Number(process.env.SMIN || 1.5), SLOPE_RUN_MIN = 12, FILL_MIN_H = 0.35;
 const ratioAt = (x, z, h, own) => h < 0.3 ? SLOPE_MAX : Math.max(0, Math.min(SLOPE_MAX, (freeGround(x, z, own) - 0.8) / (h + 0.05)));
 function embankModes(p3, sg, own, off = CLS.ramp.w / 2 - 0.3) {   // per segment of one side (mode[i] = segment i-1..i): true = grass bank (>= SLOPE_MIN fits), false = concrete retaining wall; slope runs shorter than SLOPE_RUN_MIN m become walls
   const body = offsetPts3(p3, sg * off), n = body.length, mode = [false];
@@ -1303,9 +1309,12 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
     const embMode = embankModes(p3, sg, id), vnB = sideNormals(offsetPts3(p3, sg * (CLS.ramp.w / 2 - 0.3)), sg), cross2 = (k) => sBr != null && Math.abs((S[k - 1] + S[k]) / 2 - sBr) < 9;
     const q = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));
     const body = offsetPts3(p3, sg * (CLS.ramp.w / 2 - 0.3));
+    const fillEdge = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.1));
     for (let i = 1; i < p3.length; i++) {
       if (Math.max(p3[i - 1][2], p3[i][2]) < 0.3) continue;
       const cross = sBr != null && Math.abs((S[i - 1] + S[i]) / 2 - sBr) < 9;
+      // 2026-10-25: the half strip under the deck is solid also where this side is hidden by the host carriageway (a slip lane running along M1 / the avenue on a rising profile): the body stays solid
+      if (!cross && Math.max(p3[i - 1][2], p3[i][2]) + 0.05 >= FILL_MIN_H) fillQuad(p3[i - 1], fillEdge[i - 1], fillEdge[i], p3[i]);
       const support = cross ? q : body;
       if (i > 1 && cross !== (sBr != null && Math.abs((S[i - 2] + S[i - 1]) / 2 - sBr) < 9)) wallConnector(body[i - 1], q[i - 1], p3[i - 1][2] + 0.05);   // body wall <-> fascia 0.5 m proud: close the slit
       for (const run of exposedRuns([support[i - 1], support[i]], 0, id, 0.3, !cross))
@@ -1386,28 +1395,78 @@ for (const { p3, mouth, S } of rampPts) {
     for (const fx of [b.a + (b.b - b.a) * 0.3, b.a + (b.b - b.a) * 0.7]) box3(fx - 0.5, lo + 0.6, fx + 0.5, hi - 0.6, -2.6, -0.75, CI.concD, false);
   }
 }
-// footbridges
+// footbridges (2026-10-25, real-world audit; before: a straight stair-ramp at 40 % to a deck 5.1 m above the road)
+// Norms: clearance over the carriageway >= 5.0 m real = 2.0 game (GOST R 52289 / SP 34.13330; AASHTO GB 16 ft min, 17 ft design) -> 2.1 game + a 0.35 m girder = deck 2.45;
+// ramps: SP 59.13330.2020 / SP 35.13330 (pedestrian ramp 5 % basic, 8 % maximum), so every flight is <= 7.5 % (8 % hard limit, audit 20).  Where the free ground up to the next street does not hold a
+// straight flight of top / 7.5 % + toe, the ramp is folded: first flight, a flat round landing (R 3), second flight beside it (the usual switchback of a pedestrian bridge).
+const FB_CLEAR = 2.1, FB_SLAB = 0.35, FB_TOP = FB_CLEAR + FB_SLAB, FB_G_FREE = 0.06, FB_G_MAX = 0.075, FB_RT = 2.6, FB_TOE = 5, FB_STEP = 1.5;
+function fbRoom(px, pz, ux, uz, from) {   // free run along (ux, uz) from `from` metres out of the point (px, pz) up to the sidewalk edge of the next crossing street (+0.8 m); 1e9 = nothing within 90 m
+  let best = 1e9;
+  { const z = PLAN.size; const tx = ux > 0 ? (z.x1 - 4 - px) / ux : ux < 0 ? (z.x0 + 4 - px) / ux : 1e9, tz = uz > 0 ? (z.z1 - 4 - pz) / uz : uz < 0 ? (z.z0 + 4 - pz) / uz : 1e9; best = Math.min(tx, tz); }   // the edge of the map
+  for (const e of PLAN.edges) {
+    if (e.cls === 'motorway') continue;
+    const a = N.get(e.a), b = N.get(e.b), half = hw(e.cls) + CLS[e.cls].sidewalk + 0.8, x0 = Math.min(a.x, b.x) - half, x1 = Math.max(a.x, b.x) + half, z0 = Math.min(a.z, b.z) - half, z1 = Math.max(a.z, b.z) + half;
+    if ((e.dir === 'x') === (ux !== 0)) continue;   // a street running along the ray is not crossed by it
+    for (let t = from; t < 90; t += 0.25) { const x = px + ux * t, z = pz + uz * t; if (x >= x0 && x <= x1 && z >= z0 && z <= z1) { best = Math.min(best, t); break; } }
+  }
+  return best;
+}
+function fbHitsStreet(pts, w, axisDir) {   // does any point of a ramp path come within w of a street's sidewalk edge? (streets running along the bridge axis are the street it stands beside)
+  for (const q of pts) for (const e of PLAN.edges) {
+    if (e.cls === 'motorway' || e.dir === axisDir) continue;
+    const a = N.get(e.a), b = N.get(e.b), half = hw(e.cls) + CLS[e.cls].sidewalk + w;
+    if (q[0] >= Math.min(a.x, b.x) - half && q[0] <= Math.max(a.x, b.x) + half && q[1] >= Math.min(a.z, b.z) - half && q[1] <= Math.max(a.z, b.z) + half) return true;
+  }
+  return false;
+}
+const FB_INFO = [];
 for (const f of PLAN.footbridges) {
   if (f.over === 'река') continue;   // FB2: not drawn - the east bank street x=-194 lies 3 m behind the channel edge (river x -207 +-10), no room for ramps; the road bridges carry the pedestrians
-  if (f.over === 'река') f.at = [PLAN.water.river.pts.reduce((b, q) => Math.abs(q[1] - f.at[1]) < Math.abs(b[1] - f.at[1]) ? q : b)[0], f.at[1]];   // centred on the river at its z (FB2: the flat span covers the 10 m channel + banks, the feet stay between the two bank streets)
-  const isRiver = f.over === 'река', over = f.over.startsWith('М') ? MW + 3 : isRiver ? 10 : hw('arterial') + CLS.arterial.sidewalk + 1.2;
-  const top = isRiver ? 1.0 : 5.1, g = isRiver ? 0.5 : 0.4,   // stair-ramps (22 degrees): the ramps of a footbridge must end before the next street (40 m grid)
-   ramp = top / g, half = over + ramp, lat = f.id === 'FB3' || f.id === 'FB4' ? 3.6 : 0;
-  // Two radius-2 smoothing passes spread the toe of the slope by 4 m. Keep that
-  // entire tail in BOTH the drawn deck and the walkable ribbon: cutting at `half`
-  // left a 0.32-0.34 m step at either entrance even after the endpoint fix in C1c.
-  const toe = half + 4;
-  const hfn = smoothFn((s) => Math.max(0, Math.min(top, top - g * (Math.abs(s) - over))), -toe, toe, 1, 2);
-  const pts = []; const ss = []; for (let s = -toe; s < toe - 0.3; s += 3) ss.push(s); ss.push(toe); for (const s of ss) pts.push(f.axis === 'x' ? [f.at[0] + s, f.at[1] + lat, hfn(s)] : [f.at[0] + lat, f.at[1] + s, hfn(s)]);
-  const S = arcLen(pts);
+  const over = f.over.startsWith('М') ? MW + 3 : hw('arterial') + CLS.arterial.sidewalk + 1.2, lat = f.id === 'FB3' || f.id === 'FB4' ? 4.8 : 0;   // beside the street it serves: the ramp (2.2 wide) lies wholly outside its sidewalk (3.2) - nobody walks under a low ramp
+  const u = f.axis === 'x' ? [1, 0] : [0, 1], v = f.axis === 'x' ? [0, 1] : [1, 0], O = [f.at[0] + v[0] * lat, f.at[1] + v[1] * lat];
+  const top = FB_TOP;
+  // one side: dense path points [x, z, climb] at FB_STEP from the end of the flat span outwards; climb = distance walked uphill (flat on the landing)
+  const sidePath = (sg) => {
+    const d = [u[0] * sg, u[1] * sg], start = [O[0] + d[0] * over, O[1] + d[1] * over], room = fbRoom(start[0], start[1], d[0], d[1], 0.01);
+    const needStraight = top / FB_G_MAX + FB_TOE, fold = room < needStraight;
+    const g = fold ? FB_G_MAX : Math.min(FB_G_FREE, Math.max(0.05, top / Math.max(1, (Math.min(room, 60) - FB_TOE - 0.6)))), nominal = top / g;   // straight, short room: as flat as the room allows (>= 5 %)
+    const pts = [[start[0], start[1], 0]]; let climb = 0;
+    const run = (dir, len, climbs) => { const n = Math.max(1, Math.round(len / FB_STEP)); for (let i = 1; i <= n; i++) { const l = len / n; const q = pts[pts.length - 1]; if (climbs) climb += l; pts.push([q[0] + dir[0] * l, q[1] + dir[1] * l, climb]); } };
+    let fs = 0;
+    if (!fold) { run(d, nominal + FB_TOE, true); }
+    else {
+      const a = Math.max(nominal / 2, (nominal + FB_TOE + 0.5) / 2), b = nominal - a;   // first flight a, second b + toe: the foot of the second flight ends >= 0.5 m outside the span end (never inside the street it started from)
+      // fold towards the side that keeps the footprint off the streets
+      const tryFold = (sgn) => { const test = []; for (let t = 2; t <= a; t += 1) test.push([start[0] + d[0] * t, start[1] + d[1] * t]); for (let t = a - b - FB_TOE; t <= a + FB_RT; t += 1) if (t > 2) test.push([start[0] + d[0] * t + sgn * v[0] * 2 * FB_RT, start[1] + d[1] * t + sgn * v[1] * 2 * FB_RT]); return !fbHitsStreet(test, 1.0, f.axis); };
+      fs = tryFold(1) ? 1 : tryFold(-1) ? -1 : 0; if (!fs) throw new Error(f.id + ': no room for a folded ramp');
+      if (lat !== 0) fs = Math.sign(lat);   // FB3 / FB4 sit beside their street: fold away from it
+      run(d, a, true);
+      const P = pts[pts.length - 1], C = [P[0] + fs * v[0] * FB_RT, P[1] + fs * v[1] * FB_RT], n = Math.max(6, Math.round(Math.PI * FB_RT / FB_STEP)), cl = climb;
+      for (let i = 1; i <= n; i++) { const th = Math.PI * i / n; pts.push([C[0] + FB_RT * (Math.cos(th) * -fs * v[0] + Math.sin(th) * d[0]), C[1] + FB_RT * (Math.cos(th) * -fs * v[1] + Math.sin(th) * d[1]), cl]); }
+      run([-d[0], -d[1]], b + FB_TOE, true);
+    }
+    return { pts, g: +g.toFixed(4), fold, fs, room };
+  };
+  const W = sidePath(-1), E = sidePath(1);
+  const span = [], nSpan = Math.max(2, Math.round(2 * over / FB_STEP)); for (let i = 1; i < nSpan; i++) { const t = -over + 2 * over * i / nSpan; span.push([O[0] + u[0] * t, O[1] + u[1] * t, 0]); }
+  // assemble west..east and give every point its nominal height (grade of its own side)
+  const full = [...W.pts.slice().reverse().map((q) => ({ q, g: W.g })), ...span.map((q) => ({ q, g: 0 })), ...E.pts.map((q) => ({ q, g: E.g }))];
+  let hs = full.map((e) => Math.max(0, top - e.g * e.q[2]));
+  for (let pass = 0; pass < 3; pass++) { const src = hs; hs = src.map((_, i) => { let sum = 0, c = 0; for (let j = -1; j <= 1; j++) { sum += src[Math.min(src.length - 1, Math.max(0, i + j))]; c++; } return sum / c; }); }
+  hs = hs.map((h, i) => (i === 0 || i === hs.length - 1 || h < 0.004) ? 0 : h);
+  const pts = full.map((e, i) => [e.q[0], e.q[1], hs[i]]);
+  // signed distance from the centre of the span for the column test: only the two end piers of the span and the piers under the ramps (never inside the roadway)
+  const inRoad = (q) => { const dx = (q[0] - O[0]) * u[0] + (q[1] - O[1]) * u[1], dz = (q[0] - O[0]) * v[0] + (q[1] - O[1]) * v[1]; return Math.abs(dx) < over - 0.01 && Math.abs(dz) < 1.5; };
   deckRibbon(pts, 2.4, 0, CI.conc);
-  for (const sg of [-1, 1]) { const off = sg * 1.25; wallAlong(pts, off, (h) => h + 0.02, (h) => h + 1.1, CI.conc); capAlong(pts, off, 0.15, 1.1, CI.conc); wallAlong(pts, off, (h) => Math.max(0, h - 0.55), (h) => h, CI.concD); addParapets(pts.filter((q) => q[2] > 0.8), off); }
-  deckRibbon(pts, 2.4, -0.55, CI.concD);
-  // columns: at the ends of the span, and every 9 m under the ramps (higher than 0.8 m)
-  for (let i = 0; i < pts.length; i += 3) { const q = pts[i], sAx = ss[i]; if (q[2] > 0.8 && Math.abs(sAx) >= over - 0.01 && (!isRiver || Math.abs(sAx) <= over + 2)) box3(q[0] - 0.3, q[1] - 0.3, q[0] + 0.3, q[1] + 0.3, 0, q[2] - 0.55, CI.concD, false); }   // supports only outside the roadway (never a pier in a lane)
-  STRUCT.ribbons.push({ id: f.id, w: 2.2, p: pts.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
-  void S;
+  for (const sg of [-1, 1]) { const off = sg * 1.25; wallAlong(pts, off, (h) => h + 0.02, (h) => h + 1.1, CI.conc); capAlong(pts, off, 0.15, 1.1, CI.conc); wallAlong(pts, off, (h) => Math.max(0, h - FB_SLAB), (h) => h, CI.concD); addParapets(pts.filter((q) => q[2] > 0.8), off); }
+  deckRibbon(pts, 2.4, -FB_SLAB, CI.concD);
+  // columns: at the ends of the span, and every ~9 m under the ramps (higher than 0.8 m)
+  for (let i = 0; i < pts.length; i += 6) { const q = pts[i]; if (q[2] > 0.8 && !inRoad(q)) box3(q[0] - 0.3, q[1] - 0.3, q[0] + 0.3, q[1] + 0.3, 0, q[2] - FB_SLAB, CI.concD, false); }
+  const pp = pts.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]);
+  STRUCT.ribbons.push({ id: f.id, w: 2.2, p: pp });
+  FB_INFO.push({ id: f.id, top: FB_TOP, clear: FB_CLEAR, sides: [W, E].map((s) => ({ g: s.g, fold: s.fold, room: s.room > 1e8 ? null : R2(s.room) })) });
 }
+STRUCT.fb = FB_INFO;
 
 // ---- 7. landscape: base grass, areas, blocks, fields, forests, water
 const SZ = PLAN.size;
