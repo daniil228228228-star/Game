@@ -2,6 +2,7 @@
 // Game metres; 1 game m = 2.5 real m. Exit code 1 if any HARD check fails.
 import { buildPlan, CLS, kerbReturnR } from './plan-c.mjs';
 import { matrix, ARMS, buildTurnGraph } from './turns-plan-c.mjs';
+import { loadData, runRealWorld, accessRows } from './real-world-checks.mjs';
 
 const P = buildPlan();
 const N = new Map(P.nodes.map((n) => [n.id, n])), E = P.edges;
@@ -366,6 +367,36 @@ const ramps = P.interchanges.flatMap((ic) => ic.ramps.map((r, i) => ({ ...r, ic:
     }
   }
   check('RIRO graph forbids left turns, minor through crossings and U-turns; preserves legal movements', !bad.length, bad.join('; ') || `${pairs} ordered approach pairs checked independently`);
+}
+
+
+// 18-26. real-world audit of interchanges / flyovers / ramps / footbridges (2026-10-25, tools/masterplan/real-world-checks.mjs, docs/PLAN_C_REAL_WORLD_AUDIT.md): grades, vertical curves (AASHTO K), radii by design
+//     speed, clearance, barriers, earth slopes, steps in the profile, ramp terminals, footbridge ramps <= 8 %, and (part 2) a walkable path from the ground to the top of EVERY deck.
+//     `--rw` prints the whole table (markdown with --md).
+const RW = (() => { const D = loadData(), a = runRealWorld(P, D), b = accessRows(D); return { D, rows: [...a.rows, ...b.rows], access: b.info }; })();
+{
+  const groups = [
+    ['18. longitudinal grades: M1 <= 5 %, ramps <= 7 %, footbridge ramps <= 8 % (AASHTO GB Tab. 8-1 / 10.9.6; SP 34.13330; SP 59.13330)', /продольный уклон|уклон пандуса/],
+    ['19. vertical curves: crest / sag K of every ramp and of M1 meet the AASHTO minimum for the speed the radius allows (Tab. 3-34 / 3-36)', /вертикальн/],
+    ['20. horizontal radius: R >= V^2 / (127 (e + f)) for the design speed (AASHTO eq. 3-8); loops >= 30 km/h', /радиус/],
+    ['21. clearance under every deck >= 5.0 m real (2.0 game m) over roads / sidewalks; footbridge 2.1 game m', /габарит/],
+    ['22. barriers: a continuous parapet on both sides of every deck higher than 1.3 m (GOST 33128)', /ограждение/],
+    ['23. earth slopes no steeper than 1:1.5, walls no higher than the deck (SP 34.13330 / AASHTO GB 4)', /откосов|стенки/],
+    ['24. no steps in the profile of one road; every ramp end is flush with the road it joins', /ступень|разность высот/],
+    ['25. footbridges: width, ramp scheme, no ramp on a neighbouring street', /ширина прохода|схема пандусов/],
+    ['26. every ribbon (deck, ramp, footbridge) can be climbed ON FOOT from the ground and left again (graph over the real access / surfaceY of the game, 0.5 m steps)', /проход пешком/],
+  ];
+  for (const [name, re] of groups) {
+    const rows = RW.rows.filter((r) => re.test(r.item)), bad = rows.filter((r) => r.verdict === 'НАРУШЕНИЕ');
+    check(name, rows.length > 0 && !bad.length, bad.length ? bad.map((r) => `${r.node}: ${r.value}`).join('; ') : `${rows.length} rows OK`);
+  }
+  const dev = RW.rows.filter((r) => r.verdict === 'ДОПУЩЕНИЕ');
+  check('documented deviations (not hard): compact cloverleaf terminals / weaving (docs/PLAN_C_REAL_WORLD_AUDIT.md)', dev.length === 0, `${dev.length} rows: terminal taper of the loops 1:6..1:9 real instead of 1:15, weave 37 m on both M1 sides, one-lane ramps without an auxiliary lane`, false);
+  if (process.argv.includes('--rw')) {
+    const md = process.argv.includes('--md');
+    if (md) { console.log('| Узел / съезд | Параметр | Значение | Норма | Источник | Вердикт | Комментарий |\n|---|---|---|---|---|---|---|'); for (const r of RW.rows) console.log(`| ${r.node} | ${r.item} | ${r.value} | ${r.norm} | ${r.source} | ${r.verdict} | ${r.note || ''} |`); }
+    else for (const r of RW.rows) console.log(`${r.verdict.padEnd(10)} ${r.node.padEnd(26)} ${r.item.slice(0, 80).padEnd(80)} ${r.value} | ${r.norm}`);
+  }
 }
 
 if (process.argv.includes('--json')) console.log(JSON.stringify(results, null, 1));

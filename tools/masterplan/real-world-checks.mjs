@@ -104,7 +104,7 @@ export function runRealWorld(P, D) {
   }
   // ---- 5. clearance under every elevated deck (the Plan C runtime treats the lowest surface above a point as a ceiling) ----------------------------------------------------
   // a ground point counts as a corridor (people / vehicles are under the deck) on a street with its sidewalks, on a motorway with its shoulders, on a ramp that is still on the ground
-  const nodeById = new Map(P.nodes.map((n) => [n.id, n])), hwOf = (e) => P.classes ? 0 : 0;
+  const nodeById = new Map(P.nodes.map((n) => [n.id, n]));
   const CLSW = { motorway: [12.6, 0], arterial: [9.2, 1.8], collector: [4.4, 1.4], local: [4.0, 1.2], service: [4.0, 0], ramp: [2.8, 0] };
   const corridor = (x, z) => {
     for (const e of P.edges) {
@@ -192,5 +192,87 @@ export function runRealWorld(P, D) {
     add('Концы всех съездов', 'разность высот съезда и дороги, к которой он примыкает', `${R2(worstJoin)} м${wj ? ' (' + wj + ')' : ''}`, '<= 0.03 м (вровень)', 'отсутствие ступени на стыке (требование владельца, "уровень не должен быть разным на одной дороге")', worstJoin <= 0.03 ? 'OK' : 'НАРУШЕНИЕ');
   }
 
-  return { rows, rampRows, m1p, gM1 };
+
+  // ---- 9. terminals: diverge / merge taper, spacing along the host, lane balance -----------------------------------------------------------------------------------
+  const LAT_SCALE = 1.29;   // lateral dimensions of the game come from the real vehicles (car 1.4 m game = 1.8 m real), longitudinal ones from the 2.5 scale: a game ratio 1:r is 1:r*2.5/1.29 in real metres
+  const nodeBy = nodeById;
+  const denseP = (pts, step = 0.25) => { const o = [pts[0]]; for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], l = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(l / step)); for (let k = 1; k <= n; k++) o.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]); } return o; };
+  const HWC = { motorway: 6.3, arterial: 4.6, collector: 2.2, local: 2.0, service: 2.0 };
+  const terminals = [];
+  for (const ic of P.interchanges) ic.ramps.forEach((r, ri) => {
+    for (const end of [0, 1]) {
+      const pts = denseP(end ? r.pts.slice().reverse() : r.pts), p = pts[0];
+      const e = P.edges.find((x) => { const a = nodeBy.get(x.a), b = nodeBy.get(x.b), dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz), t = ((p[0] - a.x) * dx + (p[1] - a.z) * dz) / (L * L); if (t < -0.01 || t > 1.01) return false; const q = [a.x + dx * t, a.z + dz * t]; return Math.hypot(q[0] - p[0], q[1] - p[1]) <= HWC[x.cls] + 0.8; });
+      if (!e || (r.noWedge || []).includes(end)) continue;
+      const ax = e.dir === 'x' ? 0 : 1, c = ax === 0 ? nodeBy.get(e.a).z : nodeBy.get(e.a).x, lat = (q) => Math.abs(q[1 - ax] - c), Hw = HWC[e.cls], touch = Hw + 1.4, d0 = lat(p);
+      if (d0 >= touch - 0.2) continue;
+      let k0 = 0; while (k0 < pts.length && lat(pts[k0]) - d0 < 0.2) k0++; let k = k0; while (k < pts.length && lat(pts[k]) < touch) k++;
+      const q = pts[Math.min(k, pts.length - 1)], dl = Math.abs(q[ax] - pts[k0][ax]), dt = lat(q) - lat(pts[k0]);
+      terminals.push({ id: `${ic.id}.${ri}`, kind: r.kind, role: end === 0 ? 'выход' : 'въезд', host: e.name, cls: e.cls, ax, lon: p[ax], nose: q[ax], side: Math.sign((p[1 - ax] - c) || 1), game: dl / dt, real: dl / dt * SCALE / LAT_SCALE });
+    }
+  });
+  const rankSeq = (cls, ax) => terminals.filter((t) => t.cls === cls && t.ax === ax);
+  for (const t of terminals) add(`${t.id} ${t.role} (${t.host})`, 'угол отхода / слияния: заложение клина', `1:${R1(t.game)} в игровых м, 1:${R1(t.real)} в реальных`, '1:15 .. 1:25 (скоростные дороги); петли 30-40 км/ч - угол до 6-8 град', 'AASHTO GB 10.9.6.3 (Табл. 10-?: taper 1:15-1:25 выходы; входы 1:50-1:70); СП 34.13330 п. 5.? / ГОСТ Р 52399', t.real >= 15 ? 'OK' : 'ДОПУЩЕНИЕ', t.real >= 7 ? 'компактная петля R 45-50 м реальных: сразу за носом идёт дуга; так делали клеверные листы 1950-60-х' : 'КОРОТКО: слияние / съезд круче 1:7 реальных; ограничено соседним перекрёстком');
+  // spacing along the host between neighbouring terminals of the same side (nose to nose)
+  for (const [cls, ax, name] of [['motorway', 0, 'М1 (I1)'], ['motorway', 1, 'М2 (I4)']]) {
+    const list = rankSeq(cls, ax); const bySide = new Map(); for (const t of list) { if (!bySide.has(t.side)) bySide.set(t.side, []); bySide.get(t.side).push(t); }
+    for (const [side, arr] of bySide) {
+      arr.sort((a, b) => a.lon - b.lon);
+      for (let i = 0; i + 1 < arr.length; i++) {
+        const a = arr[i], b = arr[i + 1], gap = Math.abs(b.lon - a.lon) * SCALE;   // between the lane-leave / lane-join points
+        const kindPair = `${a.role} -> ${b.role}`, req = a.role === b.role ? 240 : 180;
+        add(`${name}, сторона ${side > 0 ? '+' : '-'}`, `${a.id} ${a.role} -> ${b.id} ${b.role}: расстояние между терминалами`, `${R1(gap)} м`, `>= ${req} м (${a.role === b.role ? 'одноимённые' : 'въезд-выход = зона переплетения'})`, 'AASHTO GB 10.9.6.3 Рис. 10-68 (минимум между терминалами съездов); HCM 6 гл. 13 (зона переплетения)', gap >= req ? 'OK' : 'ДОПУЩЕНИЕ', gap < req ? 'клеверный лист без сборно-распределительных дорог: переплетение внутри путепровода' : '');
+      }
+    }
+  }
+  add('Съезды М1 / М2', 'баланс полос (число полос до / после терминала)', 'въезд: 1 полоса клином в крайнюю правую полосу (число полос не меняется); выход: из крайней правой полосы без сброса', 'число полос за въездом = до въезда + 1 - 1 (клин) или + доп. полоса; выход: n = n - 1 + 1 (полоса выхода)', 'AASHTO GB 10.9.6.2 (lane balance, coordination of lane reductions with basic number of lanes)', 'ДОПУЩЕНИЕ', 'однополосные съезды с клином 1:3..1:6 игровых; доп. полос разгона нет (ширина эстакады 12.6 м игровых не позволяет)');
+
+  return { rows, rampRows, m1p, gM1, terminals };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+// Part 2: can the player climb every deck on foot?  Graph of the walkable surfaces of the compiled data (ribbons = decks, ramps, footbridges, M1) with the SAME access / surfaceY functions the
+// game's updatePlayer uses (assets/plan-c-v161.js).  A deck is reachable when its centre line is continuous (surfaceY within 0.1 m of the ribbon height, access with the 0.45 m player ring
+// at that height) from an end on the ground, directly or through the ribbons it joins at the same height.  The live proof with the real updatePlayer and the joystick is tests/plan-c-walk.test.mjs.
+export function ribbonHeightAt(r, x, z) {
+  let best = Infinity, h = 0; const p = r.p;
+  for (let k = 0; k + 1 < p.length; k++) { const a = p[k], b = p[k + 1], dx = b[0] - a[0], dz = b[1] - a[1], l = dx * dx + dz * dz, t = l ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / l)) : 0, d = Math.hypot(x - a[0] - dx * t, z - a[1] - dz * t); if (d < best) { best = d; h = a[2] + (b[2] - a[2]) * t; } }
+  return { d: best, h };
+}
+export function accessGraph(D) {
+  const rib = D.struct.ribbons, names = rib.map((r, i) => (r.id === 'M1' || /^FB/.test(r.id)) ? r.id : `${r.id}#${i}`);
+  const info = rib.map((r, i) => {
+    const p = r.p, s = arcLen(p), L = s[s.length - 1], top = Math.max(...p.map((q) => q[2]));
+    let maxSlope = 0, worstStep = 0, blocked = [], samples = 0;
+    for (let v = 0; v <= L; v += 0.5) {
+      const x = lerpAt(s, p.map((q) => q[0]), v), z = lerpAt(s, p.map((q) => q[1]), v), h = lerpAt(s, p.map((q) => q[2]), v); samples++;
+      const sy = D.surfaceY(x, z, h, 0.75); if (sy == null || Math.abs(sy - h) > 0.1) { worstStep = Math.max(worstStep, sy == null ? 9 : Math.abs(sy - h)); if (blocked.length < 3) blocked.push(['surface', R1(x), R1(z), R2(h), sy == null ? null : R2(sy)]); }
+      else if (!D.access(x, z, 0.45, h)) { if (blocked.length < 3) blocked.push(['access', R1(x), R1(z), R2(h)]); }
+      if (v + 0.5 <= L) { const h2 = lerpAt(s, p.map((q) => q[2]), v + 0.5); maxSlope = Math.max(maxSlope, Math.abs(h2 - h) / 0.5); }
+    }
+    const ends = [0, p.length - 1].map((k) => {
+      const q = p[k], o = p[k === 0 ? 1 : p.length - 2], dx = q[0] - o[0], dz = q[1] - o[1], l = Math.hypot(dx, dz) || 1;
+      const ground = Math.abs(q[2]) < 0.06, out1 = [q[0] + dx / l * 1.5, q[1] + dz / l * 1.5];
+      const joins = rib.map((r2, j) => j === i ? null : (() => { const t = ribbonHeightAt(r2, q[0], q[1]); return t.d <= r2.w / 2 - 0.2 && Math.abs(t.h - q[2]) <= 0.1 ? j : null; })()).filter((j) => j != null);
+      return { at: q, ground, groundOk: ground ? (D.access(q[0], q[1], 0.45, 0) && D.access(out1[0], out1[1], 0.45, 0)) : null, joins };
+    });
+    return { name: names[i], id: r.id, w: r.w, L, top, maxSlope, worstStep, blocked, ends, samples };
+  });
+  // graph: node = ribbon; edge = joined at an end (or a ribbon that starts on the deck of another); ground = virtual node
+  const reach = new Set(), q = [];
+  info.forEach((n, i) => { if (n.ends.some((e) => e.ground && e.groundOk)) { reach.add(i); q.push(i); } });
+  const adj = info.map(() => new Set());
+  info.forEach((n, i) => n.ends.forEach((e) => e.joins.forEach((j) => { adj[i].add(j); adj[j].add(i); })));
+  while (q.length) { const i = q.shift(); for (const j of adj[i]) if (!reach.has(j)) { reach.add(j); q.push(j); } }
+  info.forEach((n, i) => { n.reachable = reach.has(i); n.neighbours = [...adj[i]].map((j) => info[j].name); });
+  return info;
+}
+export function accessRows(D) {
+  const rows = [], info = accessGraph(D);
+  const kindOf = (n) => /^FB/.test(n.id) ? 'пешеходный мост' : n.id === 'M1' ? 'эстакада М1 (скоростная дорога)' : /I1/.test(n.id) ? 'съезд клеверного листа I1' : 'съезд / путепровод трубки I4';
+  for (const n of info) {
+    const legal = /^FB/.test(n.id) ? 'пешеходам разрешён (пандус <= 8 %)' : 'пешеходам по нормам нельзя (автомагистраль / съезд без тротуара: ПДД РФ п. 4.1 / 16.? , ГОСТ Р 52289); игровой допуск = служебный проход по обочине';
+    rows.push({ node: n.name, item: `${kindOf(n)}: проход пешком с земли на верх и обратно`, value: `${n.reachable ? 'достижим' : 'НЕ достижим'}; верх ${R2(n.top)} м; длина ${R1(n.L)} м; макс. уклон ходьбы ${R1(n.maxSlope * 100)} %; ширина ${n.w} м; проб ${n.samples}, препятствий ${n.blocked.length}`, norm: 'каждая эстакада / мост достижима пешком (требование владельца); ширина >= 1.2 м; уклон <= 8 % для пешеходного моста', source: 'СП 59.13330.2020 (доступность); ПДД РФ п. 4.1, 4.2 (пешеходы на автомагистрали); игровое требование владельца 2026-10-25', verdict: n.reachable && !n.blocked.length ? 'OK' : 'НАРУШЕНИЕ', note: legal });
+  }
+  return { rows, info };
 }

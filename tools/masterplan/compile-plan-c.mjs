@@ -1298,6 +1298,19 @@ for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z'
   // solid body: ground floor is closed under the walls where the deck is higher than 0.3 m, except under the crossing roads
   for (const [x0, x1] of intervalsAbove(hfn, a, b, 0.3)) for (const [y0, y1] of subtractIntervals(x0, x1, MOTOR_CROSS[ref].map((v) => [v - 8, v + 8]))) STRUCT.blockers.push(axis === 'x' ? [y0, c - MW - 0.6, y1, c + MW + 0.6] : [c - MW - 0.6, y0, c + MW + 0.6, y1]);
 }
+// A ribbon is one walkable height per (x, z): `D.surfaces` takes the NEAREST point of each ribbon.  A ramp that passes over / under ITSELF (the loop of a trumpet runs under its own trunk bridge)
+// would hide one of the two levels (an invisible wall for the player, 2026-10-25).  Such a polyline is cut in the middle between the two crossing points into separate ribbons (same id).
+function pushRibbons(id, w, pts) {
+  const S = arcLen(pts), dense = [];   // 1 m samples (the straight parts of a ramp have vertices 9 m apart)
+  for (let v = 0; v <= S[S.length - 1]; v += 1) { let k = 1; while (k < S.length - 1 && S[k] < v) k++; const t = (v - S[k - 1]) / ((S[k] - S[k - 1]) || 1); dense.push({ s: v, x: pts[k - 1][0] + (pts[k][0] - pts[k - 1][0]) * t, z: pts[k - 1][1] + (pts[k][1] - pts[k - 1][1]) * t, h: pts[k - 1][2] + (pts[k][2] - pts[k - 1][2]) * t }); }
+  for (let i = 0; i < dense.length; i++) for (let j = i + 1; j < dense.length; j++) {
+    const a = dense[i], b = dense[j];
+    if (b.s - a.s < 12 || Math.abs(a.h - b.h) < 1.0 || Math.hypot(a.x - b.x, a.z - b.z) > w + 0.8) continue;
+    const mid = (a.s + b.s) / 2; let m = 1; while (m < S.length - 2 && S[m] < mid) m++;
+    pushRibbons(id, w, pts.slice(0, m + 1)); pushRibbons(id, w, pts.slice(m)); return;
+  }
+  STRUCT.ribbons.push({ id, w, p: pts });
+}
 // Render the pre-resolved ramp profiles. Single-lane ramps have edge lines,
 // NOT a dashed centre line suggesting a second lane.
 for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts) {
@@ -1362,7 +1375,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
     const teethAt = (sv) => { const o = at(sv); if (o.h > 0.4) return; for (const l of [-1.05, -0.35, 0.35, 1.05]) tri(o, 0, l - 0.3, 0, l + 0.3, -0.75, l); };   // apexes point back at the oncoming driver
     if (/slip/.test(kind)) { arrowAt(L * 0.36); arrowAt(L * 0.62); teethAt(L - 4.5); } else if (L > 40) { arrowAt(L * 0.4); arrowAt(L * 0.6); }
   }
-  STRUCT.ribbons.push({ id: ic + '.' + kind, w: CLS.ramp.w - 0.2, p: p3.map((p) => [R2(p[0]), R2(p[1]), R3(p[2])]) });
+  pushRibbons(ic + '.' + kind, CLS.ramp.w - 0.2, p3.map((p) => [R2(p[0]), R2(p[1]), R3(p[2])]));
 }
 // Diamond terminals: kerb returns (R 7) between the widened ramp mouth and the avenue edge, both corners; sidewalks are carved out and a ring of walk follows the arc
 const TERM_R = 7;
