@@ -328,6 +328,17 @@ const PAGE = () => {
     root.visible = true; renderer.shadowMap.autoUpdate = keep;
     return { delta: withC - without, withC, without, tris: trisWith - trisWithout };
   };
+  window.__follow = (P) => {   // joystick walk along a ribbon's vertices from its first (ground) end to the last; ys sampled every 20 frames
+    const ys = []; PlanCV161.R_BUILD = 128; PlanCV161.ensureNear(P[0][0], P[0][1]); player.position.set(P[0][0], 0, P[0][1]); playerVelocity.set(0, 0, 0); PlanCV161.level = 0; let f = 0;
+    for (const q of P) for (let n = 0; n < 600 && Math.hypot(player.position.x - q[0], player.position.z - q[1]) > 0.7; n++, f++) {
+      const dx = q[0] - player.position.x, dz = q[1] - player.position.z, l = Math.hypot(dx, dz) || 1;
+      camera.getWorldDirection(camForward); camForward.y = 0; camForward.normalize(); camRight.crossVectors(camForward, worldUp).normalize();
+      joyVec.z = dx / l * camForward.x + dz / l * camForward.z; joyVec.x = dx / l * camRight.x + dz / l * camRight.z;
+      updatePlayer(1 / 30); if (f % 20 === 0) ys.push(+player.position.y.toFixed(2));
+    }
+    joyVec.x = joyVec.z = 0; playerVelocity.set(0, 0, 0);
+    return { x: +player.position.x.toFixed(2), z: +player.position.z.toFixed(2), y: +player.position.y.toFixed(2), ys };
+  };
   window.__drive = (sx, sz, dx, dz, steps) => {
     player.position.set(sx, 0, sz); playerVelocity.set(0, 0, 0); if (window.PlanCV161) PlanCV161.level = 0;
     const l = Math.hypot(dx, dz); dx /= l; dz /= l;
@@ -444,7 +455,7 @@ await run(async () => {
     const hw = await ev(() => {
       const out = {};
       PlanCV161.ensureNear(-120, -240); out.m1 = __drive(-120, -240, 1, 0, 800);
-      PlanCV161.ensureNear(123, 0); out.fb = __drive(123.6, -60, 0, 1, 700);
+      PlanCV161.ensureNear(123, 0); out.fb = __follow(PlanCDataV161.struct.ribbons.find((r) => r.id === 'FB3').p);   // 2026-10-25: FB3 is a switchback (flight, landing, flight) 4.8 m east of its street: follow its ribbon with the joystick
       out.under = [-232, -160, -80, 250].map((x) => { PlanCV161.ensureNear(x, -120); return __drive(x, -150, 0, 1, 260).z; });
       PlanCV161.ensureNear(-120, -120); out.blockedEmb = __drive(-120, -150, 0, 1, 260).z;
       PlanCV161.ensureNear(40, -240); out.parapet = __drive(40, -240, 0, -1, 120);   // on the M1 deck pushing north into the parapet
@@ -452,7 +463,8 @@ await run(async () => {
       return out;
     });
     check(Math.max(...hw.m1.ys) >= 5.2 && hw.m1.x > 20, `walk east along M1 climbs to the deck over the avenue (max y ${Math.max(...hw.m1.ys)}, x ${hw.m1.x}) and steps are smooth (${J(hw.m1.ys.slice(0, 8))}...)`);
-    check(Math.max(...hw.fb.ys) >= 5.0 && hw.fb.z > 80 && hw.fb.y < 0.2, `walk along footbridge FB3 across the Central magistral: up to ${Math.max(...hw.fb.ys)} m and back down (end z ${hw.fb.z}, y ${hw.fb.y})`);
+    const fb3top = Math.max(...D.struct.ribbons.filter((r) => r.id === 'FB3')[0].p.map((q) => q[2]));   // 2.45: clearance 2.1 game m = 5.25 m real over the road + 0.35 girder (was a 5.1 m stair-ramp deck)
+    check(Math.max(...hw.fb.ys) >= fb3top - 0.4 && fb3top >= 2.4 && hw.fb.z > 5 && hw.fb.y < 0.2, `walk along footbridge FB3 across the Central magistral: up to ${Math.max(...hw.fb.ys)} m of ${fb3top} and back down (end z ${hw.fb.z}, y ${hw.fb.y})`);
     check(hw.under.every((z) => z > -118), `walk south through the 4 underpasses of the rail embankment (end z ${J(hw.under)})`);
     check(hw.blockedEmb < -124, `the embankment between the underpasses is solid (end z ${hw.blockedEmb})`);
     check(hw.parapet.z >= -246.6 && hw.parapet.z <= -233.4 && hw.parapet.y > 3 && hw.parapetS.z <= -233.4 && hw.parapetS.y > 3, `the player on the M1 deck is held by the parapets (z ${hw.parapet.z} / ${hw.parapetS.z}, y ${hw.parapet.y})`);
