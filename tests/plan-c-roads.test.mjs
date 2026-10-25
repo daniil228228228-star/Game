@@ -253,10 +253,11 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
     const bad = [], stops = [], lamps = [];
     for (const [key, c] of Object.entries(D.cells)) {
       const f = c.f || {};
-      for (const [kind, stride] of [['lamp', 3], ['sig', 3], ['pole', 4], ['stop', 4], ['tree', 4]]) {
+      for (const [kind, stride] of [['lamp', 4], ['sig', 3], ['pole', 4], ['stop', 4], ['tree', 4]]) {
         const a = f[kind] || [];
         for (let i = 0; i < a.length; i += stride) {
           const x = a[i], z = a[i + 1];
+          if (kind === 'lamp' && a[i + 3] > 0.1) continue;   // 2026-10-25: poles ON a deck / ramp (height > 0.1) stand on their own road's edge by design; checked by audit 30 (never on the lane)
           if (kind === 'pole' && rings.some((r) => Math.hypot(x - r[1], z - r[2]) < 0.1)) continue;   // the roundabout sign stands on its island
           const onRing = rings.some((r) => { const d = Math.hypot(x - r[1], z - r[2]); return d > r[4] + 0.05 && d < r[3] - 0.05; });
           if (inR(A, x, z, 0.15) || onRing || nearRamp(x, z)) bad.push([kind, +x.toFixed(1), +z.toFixed(1)]);
@@ -277,10 +278,11 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
       const bad2 = [];
       for (const [key, c] of Object.entries(D.cells)) {
         const f = c.f || {};
-        for (const [kind, stride] of [['lamp', 3], ['sig', 3], ['pole', 4], ['tree', 4]]) {
+        for (const [kind, stride] of [['lamp', 4], ['sig', 3], ['pole', 4], ['tree', 4]]) {
           const a = f[kind] || [];
           for (let i = 0; i < a.length; i += stride) {
             const x = a[i], z = a[i + 1];
+            if (kind === 'lamp' && a[i + 3] > 0.1) continue;
             if (kind === 'pole' && rings.some((r) => Math.hypot(x - r[1], z - r[2]) < 0.1)) continue;
             const why = inT(T, x, z) ? 'asphalt' : kind === 'tree' && (inT(WT2, x, z) || inR(W, x, z, 0.0)) ? 'sidewalk' : M.some((m) => x > m[0] - 0.15 && x < m[2] + 0.15 && z > m[1] - 0.15 && z < m[3] + 0.15) ? 'paint' : null;
             if (why && !(kind === 'tree' && rings.some((r) => Math.hypot(x - r[1], z - r[2]) < r[4]))) bad2.push([kind, why, +x.toFixed(1), +z.toFixed(1)]);
