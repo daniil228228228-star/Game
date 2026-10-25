@@ -1,6 +1,7 @@
 // Plan C surfaces (2026-10-19 (15)), NO browser: z-fighting layers, solid fill under decks / banks, continuous road profile, retaining walls and grass banks, closed wall ends.
 // The data is read from assets/plan-c-data-v161.js; the probes are tools/probe-coplanar-plan-c.mjs and tools/probe-profile-plan-c.mjs (they print the details when a rule fails).
 //   node tests/plan-c-surfaces.test.mjs
+import fs from 'node:fs';
 import { loadData, surfaces, scan } from '../tools/probe-coplanar-plan-c.mjs';
 import { buildTop } from '../tools/probe-profile-plan-c.mjs';
 
@@ -116,6 +117,37 @@ const check = (ok, msg) => { console.log((ok ? 'ok: ' : 'FAIL: ') + msg); if (!o
     if (!covers) open.push([+x.toFixed(1), +z.toFixed(1), +hi.toFixed(2)]);
   }
   check(open.length === 0, `retaining-wall ends higher than 0.4 m are closed (${ends.length} ends, open ${open.length}: ${JSON.stringify(open.slice(0, 4))})`);
+}
+
+
+// ---- 2026-10-25 (owner, c1t): floating grass wedges, single sheets, lamps in the carriageway, zebras gone
+{
+  const T = surfaces(D), slope = T.filter((t) => t.ci === P.slope), road = T.filter((t) => t.ci === P.asph || t.ci === P.ramp);
+  const grid = 4, B = new Map(), key = (i, j) => i * 100003 + j;
+  road.forEach((t, n) => { const xs = t.p.map((q) => q[0]), zs = t.p.map((q) => q[2]); for (let i = Math.floor(Math.min(...xs) / grid); i <= Math.floor(Math.max(...xs) / grid); i++) for (let j = Math.floor(Math.min(...zs) / grid); j <= Math.floor(Math.max(...zs) / grid); j++) { const k = key(i, j); if (!B.has(k)) B.set(k, []); B.get(k).push(n); } });
+  const bary = (t, x, z, m = 0.02) => { const [a, b, c] = t.p; const den = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]); if (Math.abs(den) < 1e-12) return null; const u = ((b[2] - c[2]) * (x - c[0]) + (c[0] - b[0]) * (z - c[2])) / den, v = ((c[2] - a[2]) * (x - c[0]) + (a[0] - c[0]) * (z - c[2])) / den, w = 1 - u - v; if (u < m || v < m || w < m) return null; return a[1] * u + b[1] * v + c[1] * w; };
+  const above = []; let n = 0;
+  for (const t of slope) { const [a, b, c] = t.p, area = Math.abs((b[0] - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (b[2] - a[2])) / 2, m = Math.max(2, Math.min(8, Math.ceil(Math.sqrt(area / 0.3))));
+    for (let i = 0; i < m; i++) for (let j = 0; j + i < m; j++) { const u = (i + 0.33) / m, v = (j + 0.33) / m, w = 1 - u - v, x = a[0] * u + b[0] * v + c[0] * w, z = a[2] * u + b[2] * v + c[2] * w, y = a[1] * u + b[1] * v + c[1] * w; n++;
+      for (const k of B.get(key(Math.floor(x / grid), Math.floor(z / grid))) || []) { const yr = bary(road[k], x, z); if (yr !== null && y - yr > 0.25) { above.push([+x.toFixed(1), +z.toFixed(1), +(y - yr).toFixed(2)]); break; } } } }
+  check(above.length === 0, `no grass bank triangle floats over a drivable surface (${slope.length} bank triangles, ${n} samples, over a road: ${above.length} ${JSON.stringify(above.slice(0, 3))})`);
+  // every bank end has its vertical cap: the cap is a wall-layer quad in the bank colour (emitTri3 used to DROP vertical triangles, so every bank stood open and showed its back as a floating wedge)
+  let caps = 0; for (const c of Object.values(D.cells)) { const q = c.d && c.d.s; if (q) for (let i = 0; i < q.length; i += 9) if (q[i + 8] === P.slope) caps++; }
+  check(caps >= 20, `grass bank ends are closed by vertical caps (${caps} cap quads)`);
+  // no vertical / degenerate triangle in any list (the generator drops them silently otherwise)
+  let vert = 0; for (const c of Object.values(D.cells)) for (const L of ['g', 'r', 'p', 'd']) { const v = c[L] && c[L].v; if (!v) continue; for (let i = 0; i < v.length; i += 10) { const a = [v[i], v[i + 1], v[i + 2]], b = [v[i + 3], v[i + 4], v[i + 5]], d = [v[i + 6], v[i + 7], v[i + 8]], ny = Math.abs((b[2] - a[2]) * (d[0] - a[0]) - (b[0] - a[0]) * (d[2] - a[2])), cx = (b[1] - a[1]) * (d[2] - a[2]) - (b[2] - a[2]) * (d[1] - a[1]), cz = (b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0]); if (ny < 1e-6 && Math.hypot(cx, ny, cz) / 2 > 0.02) vert++; } }
+  check(vert === 0, `no vertical triangles in the triangle lists (they would be dropped: ${vert})`);
+  // every material of the city is double-sided and opaque: a wall seen from behind never vanishes
+  const src = fs.readFileSync(new URL('../assets/plan-c-v161.js', import.meta.url), 'utf8');
+  check(/new THREE\.MeshStandardMaterial\(\{[^}]*side: THREE\.DoubleSide/.test(src) && !/transparent: *true/.test(src.slice(0, src.indexOf('instanced'))), 'city surface material is DoubleSide and opaque (walls / piers / parapets / banks are seen from both sides)');
+  // lamps never stand on the carriageway: no lamp foot inside an asphalt / ramp triangle of its own level
+  const lamps = []; for (const c of Object.values(D.cells)) { const l = c.f && c.f.lamp; if (l) for (let i = 0; i < l.length; i += 4) lamps.push([l[i], l[i + 1], l[i + 3]]); }
+  const inLane = [];
+  for (const [x, z, y] of lamps) for (const k of B.get(key(Math.floor(x / grid), Math.floor(z / grid))) || []) { const yr = bary(road[k], x, z, 0); if (yr !== null && Math.abs(yr - y) < 0.4) { inLane.push([x, z, y]); break; } }
+  check(inLane.length === 0, `no lamp pole stands inside a carriageway polygon (${lamps.length} lamps, ${inLane.length} inside: ${JSON.stringify(inLane.slice(0, 4))})`);
+  // ground zebras are off
+  let zebra = 0; for (const c of Object.values(D.cells)) { const q = c.p && c.p.q; if (q) for (let i = 0; i < q.length; i += 6) { const w = Math.abs(q[i + 2] - q[i]), h = Math.abs(q[i + 3] - q[i + 1]); if (q[i + 5] === P.white && Math.abs(Math.min(w, h) - 0.5) < 1e-6 && Math.max(w, h) >= 1.0 && Math.max(w, h) <= 1.7) zebra++; } }
+  check(zebra === 0, `no zebra bars on the ground (${zebra})`);
 }
 
 console.log(failed ? failed + ' check(s) failed' : 'all checks passed');

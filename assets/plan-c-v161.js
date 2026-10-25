@@ -34,7 +34,8 @@
   // depth-buffer steps at EVERY distance (the world lift grows with d^2 exactly like the resolution of a perspective depth buffer: 5 mm at 10 m, 45 mm at 30 m, 0.18 m at 60 m for k = 6e-5 and near 0.6),
   // so a line 27 mm above its asphalt wins the depth test at any distance, whatever the bit depth or the slope of the ramp.  Same constant on every paint mesh = no line over a line.
   const PAINT_NDC_BIAS = 6e-5;
-  paintMat.onBeforeCompile = (sh) => { sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  gl_Position.z -= ' + PAINT_NDC_BIAS.toExponential(1) + ' * gl_Position.w;'); };
+  // only DECK / RAMP paint carries the bias (attribute pbias = 1): ground paint keeps the plain polygon offset, so a bay line 5 cm under an asphalt layer can never show through at a distance
+  paintMat.onBeforeCompile = (sh) => { sh.vertexShader = 'attribute float pbias;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  gl_Position.z -= pbias * ' + PAINT_NDC_BIAS.toExponential(1) + ' * gl_Position.w;'); };
   paintMat.customProgramCacheKey = () => 'planCPaint' + PAINT_NDC_BIAS;
   api.paintNdcBias = PAINT_NDC_BIAS;
   api.material = mat;
@@ -59,17 +60,18 @@
     const key = cx + ',' + cz, data = D.cells[key];
     if (!data) return null;
     let pos = [], nor = [], col = [];
-    const dpos = [], dnor = [], dcol = [], ppos = [], pnor = [], pcol = [];   // ground, decks, PAINT (own mesh with a polygon offset, see paintMat)
+    const dpos = [], dnor = [], dcol = [], ppos = [], pnor = [], pcol = [], pbias = [];   // ground, decks, PAINT (own mesh with a polygon offset, see paintMat)
     let cur = 0;   // 0 ground, 1 decks, 2 paint
     const slopeTris = [];   // grass banks get smooth (vertex-averaged) normals: flat shading of a cone around a loop read as alternating radial strips
     let tone = 1;   // the sun + ACES wash light colours out: grass and landscape are drawn 20 % darker than their palette entry
-    const v = (x, y, z, nx, ny, nz, c) => { const P = cur === 2 ? ppos : cur ? dpos : pos, Nn = cur === 2 ? pnor : cur ? dnor : nor, C = cur === 2 ? pcol : cur ? dcol : col; P.push(x, y, z); Nn.push(nx, ny, nz); C.push(c.r * tone, c.g * tone, c.b * tone); };
+    let deckPaint = 0;   // 1 while a deck-layer paint triangle is emitted
+    const v = (x, y, z, nx, ny, nz, c) => { if (cur === 2) pbias.push(deckPaint); const P = cur === 2 ? ppos : cur ? dpos : pos, Nn = cur === 2 ? pnor : cur ? dnor : nor, C = cur === 2 ? pcol : cur ? dcol : col; P.push(x, y, z); Nn.push(nx, ny, nz); C.push(c.r * tone, c.g * tone, c.b * tone); };
     for (const layer of ['g', 'r', 'p', 'd']) {
       const L = data[layer]; if (!L) continue;
-      cur = layer === 'd' ? 1 : layer === 'p' ? 2 : 0; tone = layer === 'g' ? 0.8 : 1;   // paint of the ground layer 'p' and the paint triangles of the decks go to the paint mesh
+      deckPaint = 0; cur = layer === 'd' ? 1 : layer === 'p' ? 2 : 0; tone = layer === 'g' ? 0.8 : 1;   // paint of the ground layer 'p' and the paint triangles of the decks go to the paint mesh
       const dv = L.v;
       if (dv) for (let i = 0; i < dv.length; i += 10) {
-        const c = lin[dv[i + 9]]; if (layer === 'd') cur = (dv[i + 9] === WHITE_CI || dv[i + 9] === YELLOW_CI) ? 2 : 1;
+        const c = lin[dv[i + 9]]; if (layer === 'd') { cur = (dv[i + 9] === WHITE_CI || dv[i + 9] === YELLOW_CI) ? 2 : 1; deckPaint = 1; }
         let ax = dv[i], ay = dv[i + 1], az = dv[i + 2], bx = dv[i + 3], by = dv[i + 4], bz = dv[i + 5], cx2 = dv[i + 6], cy2 = dv[i + 7], cz2 = dv[i + 8];
         let nx = (by - ay) * (cz2 - az) - (bz - az) * (cy2 - ay), ny = (bz - az) * (cx2 - ax) - (bx - ax) * (cz2 - az), nz = (bx - ax) * (cy2 - ay) - (by - ay) * (cx2 - ax);
         const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
@@ -117,6 +119,7 @@
       g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
       g.setAttribute('normal', new THREE.Float32BufferAttribute(Nn, 3));
       g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+      if (name.startsWith('planCp_')) g.setAttribute('pbias', new THREE.Float32BufferAttribute(pbias, 1));
       g.boundingBox = new THREE.Box3(new THREE.Vector3(cx * CELL, -3, cz * CELL), new THREE.Vector3((cx + 1) * CELL, 8, (cz + 1) * CELL));
       g.boundingSphere = new THREE.Sphere(new THREE.Vector3((cx + 0.5) * CELL, 2, (cz + 0.5) * CELL), CELL * 0.8);
       const mesh = new THREE.Mesh(g, mat);

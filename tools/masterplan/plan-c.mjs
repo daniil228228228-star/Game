@@ -154,9 +154,9 @@ export function buildPlan() {
     const { r, Lu, Lv, ku, kv, k1, k2, g } = CL, hwA = CLS.arterial.w / 2, ATA = hwA - 0.9, ramps = [];
     const lobe = (h1, l1, h2, l2) => {   // road 1 first: loop from road 1 (near the crossing) round 270 degrees to road 2
       const o1 = h2 + 2.8, o2 = h1 + 2.8, C = [h2 + g + r, h1 + g + r];
-      return join(cubic([o1, l1], [1, 0], k1, [h2 + g + r, h1 + g], [1, 0], k2, 12), arc(C, r, -90, 180), cubic([h2 + g, h1 + g + r], [0, -1], k2, [l2, o2], [0, -1], k1, 12));
+      return join(cubic([o1, l1], [1, 0], k1, [h2 + g + r, h1 + g], [1, 0], k2, 24), arc(C, r, -90, 180, 3), cubic([h2 + g, h1 + g + r], [0, -1], k2, [l2, o2], [0, -1], k1, 24));   // 2026-10-25: 3 degree steps (kerb / parapet facets were visible on the owner's phone)
     };
-    const outer = (l2, L2, k2, L1, l1, k1) => cubic([l2, L2], [0, -1], k2, [L1, l1], [1, 0], k1, 36);   // from road 2 (far) to road 1 (far)
+    const outer = (l2, L2, k2, L1, l1, k1) => cubic([l2, L2], [0, -1], k2, [L1, l1], [1, 0], k1, 72);   // from road 2 (far) to road 1 (far)
     const T1 = [(p) => p, (p) => [-p[0], -p[1]]], T2 = [([a, b]) => [-b, a], ([a, b]) => [b, -a]];   // rotations 0 / 180 (loop starts on M1) and 90 / 270 (loop starts on the avenue)
     for (let q = 0; q < 2; q++) {
       const F = frame(at, 0);

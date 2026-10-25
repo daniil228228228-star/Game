@@ -863,7 +863,9 @@ const stRail = PLAN.rail.stations[0];
   // yard (ground) and spur (ground, starts at the embankment wall)
   const y = PLAN.rail.yard; emitRect('g', 'q', y.x0, y.z0, y.x1, y.z1, H.rail, CI.ballast);
   for (let k = 0; k < y.tracks; k++) { const zz = y.z0 + 3 + k * (y.z1 - y.z0 - 6) / (y.tracks - 1); for (const o of [-0.6, 0.6]) emitRect('g', 'q', y.x0, zz + o - 0.07, y.x1, zz + o + 0.07, H.railPaint, CI.rail); }
-  const sp = PLAN.rail.spur.pts.filter((q) => q[1] < RAIL_Z - 5.4); ribbon('g', sp, 2.6, H.rail, CI.ballast);
+  // 2026-10-25 owner: "трамвайные пути на парковке прямо" - the industrial spur ran through two lots and ended in nothing (no depot, no train uses it): not drawn until it serves something
+  const DRAW_SPUR = false, sp = DRAW_SPUR ? PLAN.rail.spur.pts.filter((q) => q[1] < RAIL_Z - 5.4) : [];
+  if (sp.length > 1) ribbon('g', sp, 2.6, H.rail, CI.ballast);
   for (const o of [-0.6, 0.6]) { const off = sp.map((p, i) => { const q = sp[Math.min(sp.length - 1, i + 1)], r = sp[Math.max(0, i - 1)]; let dx = q[0] - r[0], dz = q[1] - r[1]; const l = Math.hypot(dx, dz) || 1; return [p[0] - dz / l * o, p[1] + dx / l * o]; }); ribbon('g', off, 0.14, H.railPaint, CI.rail); }
 }
 
@@ -1514,7 +1516,10 @@ const SZ = PLAN.size;
   // parking lots are paved and have bay lines (two rows of 2.8 m bays + a 6 m aisle), painted on the lot
   for (const a of PLAN.areas) if (a.kind === 'parking') {
     const xs = a.poly.map((q) => q[0]), zs = a.poly.map((q) => q[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs), zm = (z0 + z1) / 2;
-    for (const [za, zb] of [[z0 + 1, zm - 3.4], [zm + 3.4, z1 - 1]]) for (let x = x0 + 2; x <= x1 - 2 + 1e-6; x += 2.8) emitRect('p', 'q', x - 0.06, za, x + 0.06, zb, -0.015, CI.white);
+    // 2026-10-25: a bay line is never painted where a street / a roundabout ring (with its sidewalk) lies: it used to run UNDER the asphalt and show through it at a grazing view or a far distance
+    const roadNear = (x, z) => PLAN.edges.some((e) => { if (e.cls === 'motorway') return false; const A = N.get(e.a), B = N.get(e.b); return segDist(x, z, [A.x, A.z], [B.x, B.z]) < hw(e.cls) + CLS[e.cls].sidewalk + 0.6; }) || PLAN.junctions.some((j) => (j.type === 'roundabout' || j.type === 'mini') && Math.hypot(x - j.at[0], z - j.at[1]) < (j.type === 'mini' ? 5.6 : j.R) + 4.2);
+    const bayLine = (x, za, zb) => { let run = null; for (let z = za; z <= zb + 1e-6; z += 0.5) { const bad = roadNear(x, z); if (!bad && !run) run = z; if ((bad || z + 0.5 > zb + 1e-6) && run !== null) { const end = bad ? z - 0.5 : zb; if (end - run > 1.2) emitRect('p', 'q', x - 0.06, run, x + 0.06, end, -0.015, CI.white); run = null; } } };
+    for (const [za, zb] of [[z0 + 1, zm - 3.4], [zm + 3.4, z1 - 1]]) for (let x = x0 + 2; x <= x1 - 2 + 1e-6; x += 2.8) bayLine(x, za, zb);
   }
   const ZONE = { residential: 'resid', mixed: 'mixed', cbd: 'cbd', industrial: 'indus', logistics: 'indus', railyard: 'indus', station: 'station', busterm: 'station', villas: 'villas', school: 'school', hospital: 'hospital', park: 'park', market: 'market', east: 'mixed', stadium: 'stadium', campus: 'school', waterfront: 'waterf' };
   for (const b of PLAN.blocks) { const r = b.lot || b.rect; emitRect('g', 'q', r[0], r[1], r[2], r[3], H.zone2, CI[ZONE[b.zone] || 'resid']); }
@@ -1681,10 +1686,16 @@ function lampsAlong(id, pts, step, off, lo = -Infinity, hi = Infinity, offLow = 
   for (let sv = step / 2; sv < S[S.length - 1]; sv += step) {
     let i = 1; while (i < S.length - 1 && S[i] < sv) i++;
     const t = (sv - S[i - 1]) / ((S[i] - S[i - 1]) || 1), a = pts[i - 1], b = pts[i], x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t, h = a[2] + (b[2] - a[2]) * t;
-    const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l, o2 = h < 0.3 ? offLow : off, px = x + nx * side * o2, pz = z + nz * side * o2;
+    const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l, o2 = h < 0.3 ? offLow : off;
+    if (x < lo || x > hi) { side = -side; continue; }
+    // the planned side first; where another road lies there (a loop beside the M1 deck) the other side of the same ramp, so no stretch goes dark
+    let placed = false;
+    for (const sd of [side, -side]) {
+      const px = x + nx * sd * o2, pz = z + nz * sd * o2;
+      if (coveredRoad([px, pz, h], id, 0.3)) continue;
+      lampsHi.push([R2(px), R2(pz), R2(Math.atan2(-nx * sd, -nz * sd)), R2(h)]); placed = true; break;
+    }
     side = -side;
-    if (x < lo || x > hi || coveredRoad([px, pz, h], id, 0.3)) continue;
-    lampsHi.push([R2(px), R2(pz), R2(Math.atan2(-nx * -side, -nz * -side)), R2(h)]);
   }
 }
 lampsAlong('M1', sampleAxis('x', M1_Z, -170, 170, hM1, 3), 28, MW + 0.15 + PARAPET_T / 2, -Infinity, Infinity, MW + 1.4);   // on the deck inside the parapet, on the ground beside the carriageway
