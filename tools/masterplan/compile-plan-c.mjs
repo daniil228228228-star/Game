@@ -1298,19 +1298,7 @@ for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z'
   // solid body: ground floor is closed under the walls where the deck is higher than 0.3 m, except under the crossing roads
   for (const [x0, x1] of intervalsAbove(hfn, a, b, 0.3)) for (const [y0, y1] of subtractIntervals(x0, x1, MOTOR_CROSS[ref].map((v) => [v - 8, v + 8]))) STRUCT.blockers.push(axis === 'x' ? [y0, c - MW - 0.6, y1, c + MW + 0.6] : [c - MW - 0.6, y0, c + MW + 0.6, y1]);
 }
-// A ribbon is one walkable height per (x, z): `D.surfaces` takes the NEAREST point of each ribbon.  A ramp that passes over / under ITSELF (the loop of a trumpet runs under its own trunk bridge)
-// would hide one of the two levels (an invisible wall for the player, 2026-10-25).  Such a polyline is cut in the middle between the two crossing points into separate ribbons (same id).
-function pushRibbons(id, w, pts) {
-  const S = arcLen(pts), dense = [];   // 1 m samples (the straight parts of a ramp have vertices 9 m apart)
-  for (let v = 0; v <= S[S.length - 1]; v += 1) { let k = 1; while (k < S.length - 1 && S[k] < v) k++; const t = (v - S[k - 1]) / ((S[k] - S[k - 1]) || 1); dense.push({ s: v, x: pts[k - 1][0] + (pts[k][0] - pts[k - 1][0]) * t, z: pts[k - 1][1] + (pts[k][1] - pts[k - 1][1]) * t, h: pts[k - 1][2] + (pts[k][2] - pts[k - 1][2]) * t }); }
-  for (let i = 0; i < dense.length; i++) for (let j = i + 1; j < dense.length; j++) {
-    const a = dense[i], b = dense[j];
-    if (b.s - a.s < 12 || Math.abs(a.h - b.h) < 1.0 || Math.hypot(a.x - b.x, a.z - b.z) > w + 0.8) continue;
-    const mid = (a.s + b.s) / 2; let m = 1; while (m < S.length - 2 && S[m] < mid) m++;
-    pushRibbons(id, w, pts.slice(0, m + 1)); pushRibbons(id, w, pts.slice(m)); return;
-  }
-  STRUCT.ribbons.push({ id, w, p: pts });
-}
+function pushRibbons(id, w, pts) { STRUCT.ribbons.push({ id, w, p: pts }); }   // (D.surfaces below returns every level of a ribbon: a ramp can cross over / under itself)
 // Render the pre-resolved ramp profiles. Single-lane ramps have edge lines,
 // NOT a dashed centre line suggesting a second lane.
 for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts) {
@@ -1753,9 +1741,12 @@ const FLOOR_FN = `
   // heights of every walkable surface above (x, z): [0 if ground] + ribbon heights (a ribbon counts inside its half width)
   D.surfaces=function(x,z){
     var out=[];if(D.ground(x,z))out.push(0);
-    for(var i=0;i<rib.length;i++){var r=rib[i],bb=r.bb;if(x<bb[0]||x>bb[2]||z<bb[1]||z>bb[3])continue;var p=r.p,hw=r.w/2,best=1e9,bh=0;
-      for(var k=0;k+1<p.length;k++){var a=p[k],b=p[k+1],dx=b[0]-a[0],dz=b[1]-a[1],l=dx*dx+dz*dz,t=l?Math.max(0,Math.min(1,((x-a[0])*dx+(z-a[1])*dz)/l)):0,d=Math.hypot(x-(a[0]+dx*t),z-(a[1]+dz*t));if(d<best){best=d;bh=a[2]+(b[2]-a[2])*t;}}
-      if(best<=hw)out.push(bh);}
+    for(var i=0;i<rib.length;i++){var r=rib[i],bb=r.bb;if(x<bb[0]||x>bb[2]||z<bb[1]||z>bb[3])continue;var p=r.p,hw=r.w/2,cd=[],ch=[];
+      // one height per LEVEL of the ribbon within its half width: a ramp that passes over / under itself (the loop of a trumpet runs under its own trunk bridge) has two (2026-10-25)
+      for(var k=0;k+1<p.length;k++){var a=p[k],b=p[k+1],dx=b[0]-a[0],dz=b[1]-a[1],l=dx*dx+dz*dz,t=l?Math.max(0,Math.min(1,((x-a[0])*dx+(z-a[1])*dz)/l)):0,d=Math.hypot(x-(a[0]+dx*t),z-(a[1]+dz*t));
+        if(d>hw)continue;var h=a[2]+(b[2]-a[2])*t,m=-1;for(var c=0;c<ch.length;c++)if(Math.abs(ch[c]-h)<.8){m=c;break;}
+        if(m<0){cd.push(d);ch.push(h);}else if(d<cd[m]){cd[m]=d;ch[m]=h;}}
+      for(var c2=0;c2<ch.length;c2++)out.push(ch[c2]);}
     var access=window.PlanCTrafficV161?.overlay(x,z,0);if(access>0)out.push(access);
     return out;
   };
