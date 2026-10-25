@@ -1664,23 +1664,23 @@ for (const line of PLAN.transit.lines) for (const s0 of line.stops) { let s = s0
 // ---- 9b. lighting of the motorways, decks and ramps (2026-10-25, SP 52.13330: interchanges and urban motorways are lit; before: 0 lamps on M1 / M2 / ramps, 14 dark stretches > 24 m)
 // lamp = [x, z, yaw, y]: y is the height of the pole's foot (decks), the head looks at the road; alternate sides, 14 m between lamps along the road (28 m per side)
 const lampsHi = [];
-function lampsAlong(id, pts, step, off, lo = -Infinity, hi = Infinity) {
+function lampsAlong(id, pts, step, off, lo = -Infinity, hi = Infinity, offLow = off) {
   const S = arcLen(pts); let side = 1;
   for (let sv = step / 2; sv < S[S.length - 1]; sv += step) {
     let i = 1; while (i < S.length - 1 && S[i] < sv) i++;
     const t = (sv - S[i - 1]) / ((S[i] - S[i - 1]) || 1), a = pts[i - 1], b = pts[i], x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t, h = a[2] + (b[2] - a[2]) * t;
-    const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l, px = x + nx * side * off, pz = z + nz * side * off;
+    const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l, o2 = h < 0.3 ? offLow : off, px = x + nx * side * o2, pz = z + nz * side * o2;
     side = -side;
     if (x < lo || x > hi || coveredRoad([px, pz, h], id, 0.3)) continue;
     lampsHi.push([R2(px), R2(pz), R2(Math.atan2(-nx * -side, -nz * -side)), R2(h)]);
   }
 }
-lampsAlong('M1', sampleAxis('x', M1_Z, -170, 170, hM1, 3), 28, MW - 0.45);
+lampsAlong('M1', sampleAxis('x', M1_Z, -170, 170, hM1, 3), 28, MW - 0.45, -Infinity, Infinity, MW + 1.4);   // on the deck inside the parapet, on the ground beside the carriageway
 lampsAlong('M2', sampleAxis('z', M2_X, -150, -40, () => 0, 3), 28, MW + 1.4);
 lampsAlong('M2', sampleAxis('z', M2_X, 40, 86, () => 0, 3), 28, MW + 1.4);
 lampsAlong('M2', sampleAxis('z', M2_X, -40, -10, () => 0, 3), 14, 11);   // the approach of the at-grade crossing I2 (3 lanes + taper): poles outside the widened carriageway
 lampsAlong('M2', sampleAxis('z', M2_X, 10, 40, () => 0, 3), 14, 11);
-for (const r of rampPts) lampsAlong(r.id, r.p3, 24, CLS.ramp.w / 2 - 0.2);
+for (const r of rampPts) lampsAlong(r.id, r.p3, 24, CLS.ramp.w / 2 - 0.2, -Infinity, Infinity, CLS.ramp.w / 2 + 1.0);   // on the deck: on the lane edge inside the parapet; on the ground: beside the ramp
 const nearRampPt = (x, z, m) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < CLS.ramp.w / 2 + m);
 const onFillet = (x, z, m) => cornerOut.some((q) => x > Math.min(q.K[0], q.O[0]) && x < Math.max(q.K[0], q.O[0]) && z > Math.min(q.K[1], q.O[1]) && z < Math.max(q.K[1], q.O[1]) && Math.hypot(x - q.O[0], z - q.O[1]) > q.RET - m);   // on the asphalt of a kerb return
 furniture.lamp = furniture.lamp.map((l) => l.length >= 4 ? l : [l[0], l[1], l[2], 0]);   // stride 4: x z yaw y
