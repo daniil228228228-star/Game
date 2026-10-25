@@ -148,7 +148,7 @@ export function runRealWorld(P, D) {
     const name = idOf(r, i), off = isFB(r) ? 1.25 : r.w / 2 + 0.15; let n = 0, miss = 0, firstMiss = null;
     const s = arcLen(r.p), L = s[s.length - 1];
     for (let v = 0; v <= L; v += 1.5) {
-      const x = lerpAt(s, r.p.map((q) => q[0]), v), z = lerpAt(s, r.p.map((q) => q[1]), v), h = lerpAt(s, r.p.map((q) => q[2]), v); if (h < 1.3) continue;
+      const x = lerpAt(s, r.p.map((q) => q[0]), v), z = lerpAt(s, r.p.map((q) => q[1]), v), h = lerpAt(s, r.p.map((q) => q[2]), v); if (h < 0.7) continue;
       const a = [lerpAt(s, r.p.map((q) => q[0]), Math.max(0, v - 1)), lerpAt(s, r.p.map((q) => q[1]), Math.max(0, v - 1))], b = [lerpAt(s, r.p.map((q) => q[0]), Math.min(L, v + 1)), lerpAt(s, r.p.map((q) => q[1]), Math.min(L, v + 1))];
       const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1;
       for (const sg of [-1, 1]) {
@@ -160,7 +160,7 @@ export function runRealWorld(P, D) {
     }
     if (n) barrierRows.push({ name, n, miss, firstMiss });
   });
-  for (const b of barrierRows) add(b.name, 'ограждение (парапет) с обеих сторон на высоте > 1.3 м', `${b.n - b.miss} из ${b.n} проб (${b.miss ? 'нет у ' + b.firstMiss.join(', ') : 'сплошное'})`, 'сплошное ограждение на эстакаде / мосту (удерживающее, высота >= 0.8 м)', 'ГОСТ 33128-2014 (ограждения дорожные), СП 35.13330 п. 6.? ; AASHTO GB 10.? / 4.? (bridge rail)', b.miss === 0 ? 'OK' : 'НАРУШЕНИЕ');
+  for (const b of barrierRows) add(b.name, 'ограждение (парапет) с обеих сторон при перепаде > 0.7 м', `${b.n - b.miss} из ${b.n} проб (${b.miss ? 'нет у ' + b.firstMiss.join(', ') : 'сплошное'})`, 'сплошное ограждение на эстакаде / мосту (удерживающее, высота >= 0.8 м)', 'ГОСТ 33128-2014 (ограждения дорожные), СП 35.13330 п. 6.? ; AASHTO GB 10.? / 4.? (bridge rail)', b.miss === 0 ? 'OK' : 'НАРУШЕНИЕ');
 
   // ---- 7. earth slopes ------------------------------------------------------------------------------------------------------------------------------------------
   {

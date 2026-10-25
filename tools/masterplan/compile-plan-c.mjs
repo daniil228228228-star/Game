@@ -1341,13 +1341,13 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
       // Split the height gate into contiguous runs too: filtering vertices
       // would reconnect opposite sides of a low section with a collider chord.
       // The barrier RISES out of the ground over the deck height 0.3 -> 1.2 m (a sloped end, 2026-10-19: it used to start as a full-height slab in mid air); the colliders keep the old gate (deck > 1.2 m)
-      const tap = (h) => { const t = Math.max(0, Math.min(1, (h - 0.3) / 0.9)); return t * t * (3 - 2 * t); };
+      const tap = (h) => { const t = Math.max(0, Math.min(1, (h - 0.3) / 0.35)); return t * t * (3 - 2 * t); };   // 2026-10-25: full height from a 0.65 m drop (owner: no fence on the climb; GOST 33128: a barrier from the first dangerous drop), was 1.2 m
       let vis = [];
       const flush = () => {
         if (vis.length > 1) {
           wallAlong(vis, 0, (h) => h + 0.05, (h) => h + 0.05 + 0.75 * tap(h), CI.conc);
           capAlong(vis.map((q) => [q[0], q[1], q[2] - 0.75 * (1 - tap(q[2]))]), 0, 0.2, 0.8, CI.conc);
-          let hi = []; for (const q of vis.concat([[0, 0, 0]])) { if (q[2] > 1.2) hi.push(q); else { if (hi.length > 1) addParapets(hi, 0); hi = []; } }
+          let hi = []; for (const q of vis.concat([[0, 0, 0]])) { if (q[2] > 0.6) hi.push(q); else { if (hi.length > 1) addParapets(hi, 0); hi = []; } }
         }
         vis = [];
       };
@@ -1471,7 +1471,7 @@ for (const f of PLAN.footbridges) {
   // signed distance from the centre of the span for the column test: only the two end piers of the span and the piers under the ramps (never inside the roadway)
   const inRoad = (q) => { const dx = (q[0] - O[0]) * u[0] + (q[1] - O[1]) * u[1], dz = (q[0] - O[0]) * v[0] + (q[1] - O[1]) * v[1]; return Math.abs(dx) < over - 0.01 && Math.abs(dz) < 1.5; };
   deckRibbon(pts, 2.4, 0, CI.conc);
-  for (const sg of [-1, 1]) { const off = sg * 1.25; wallAlong(pts, off, (h) => h + 0.02, (h) => h + 1.1, CI.conc); capAlong(pts, off, 0.15, 1.1, CI.conc); wallAlong(pts, off, (h) => Math.max(0, h - FB_SLAB), (h) => h, CI.concD); addParapets(pts.filter((q) => q[2] > 0.8), off); }
+  for (const sg of [-1, 1]) { const off = sg * 1.25; wallAlong(pts, off, (h) => h + 0.02, (h) => h + 1.1, CI.conc); capAlong(pts, off, 0.15, 1.1, CI.conc); wallAlong(pts, off, (h) => Math.max(0, h - FB_SLAB), (h) => h, CI.concD); addParapets(pts.filter((q) => q[2] > 0.5), off); }
   deckRibbon(pts, 2.4, -FB_SLAB, CI.concD);
   // columns: at the ends of the span, and every ~9 m under the ramps (higher than 0.8 m)
   for (let i = 0; i < pts.length; i += 6) { const q = pts[i]; if (q[2] > 0.8 && !inRoad(q)) box3(q[0] - 0.3, q[1] - 0.3, q[0] + 0.3, q[1] + 0.3, 0, q[2] - FB_SLAB, CI.concD, false); }
