@@ -29,6 +29,14 @@
   // Paint on its OWN mesh with a polygon offset (owner's iPhone 2026-10-25: lane lines "dance" on ramps): the lines lie 2.7 cm above the asphalt, a 16-bit depth buffer resolves ~9 cm at 60 m, so the
   // line z-fought with the road on every slope.  Decal-style: pulled towards the camera by polygonOffset (factor -2, units -4, which scales with the slope of the surface), drawn after the road.
   const paintMat = mat.clone(); paintMat.polygonOffset = true; paintMat.polygonOffsetFactor = -2; paintMat.polygonOffsetUnits = -4; paintMat.userData.planCV161 = true;
+  // 2026-10-25 (owner: the lane lines still dance on ramps on the iPhone, SwiftShader cannot show it): polygonOffset is implementation-defined (a mobile GPU may honour `units` as a fraction of a 16-bit
+  // step or ignore the slope factor), so the paint is ALSO pulled towards the camera in the vertex shader by a constant in NDC depth: z_clip -= k * w.  A constant NDC offset is a constant number of
+  // depth-buffer steps at EVERY distance (the world lift grows with d^2 exactly like the resolution of a perspective depth buffer: 5 mm at 10 m, 45 mm at 30 m, 0.18 m at 60 m for k = 6e-5 and near 0.6),
+  // so a line 27 mm above its asphalt wins the depth test at any distance, whatever the bit depth or the slope of the ramp.  Same constant on every paint mesh = no line over a line.
+  const PAINT_NDC_BIAS = 6e-5;
+  paintMat.onBeforeCompile = (sh) => { sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  gl_Position.z -= ' + PAINT_NDC_BIAS.toExponential(1) + ' * gl_Position.w;'); };
+  paintMat.customProgramCacheKey = () => 'planCPaint' + PAINT_NDC_BIAS;
+  api.paintNdcBias = PAINT_NDC_BIAS;
   api.material = mat;
   // Shadow acne on decks (owner's iPhone, 2026-10-19: horizontal stripes / arcs on every ramp lane): the deck meshes both CAST and RECEIVE the sun's shadow, so each deck
   // compares its own surface with its own entry in the 1024 map (texel 0.14 m, a sloped lane differs by up to 0.1-0.3 m across one texel, more when the quality ladder halves the map).

@@ -124,7 +124,7 @@ function ribbon(layer, pts, w, y, ci, join = true) {   // constant-width strip a
 function emitTri3(a, b, c, ci) {   // a,b,c = [x, y, z]
   const x0 = Math.min(a[0], b[0], c[0]), x1 = Math.max(a[0], b[0], c[0]), z0 = Math.min(a[2], b[2], c[2]), z1 = Math.max(a[2], b[2], c[2]);
   const den = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
-  if (Math.abs(den) < 1e-9) return;
+  if (Math.abs(den) < 1e-9) { if (process.env.DROP_DEBUG && Math.hypot(a[0]-b[0],a[2]-b[2])+Math.hypot(b[0]-c[0],b[2]-c[2]) > 0.2) console.log('DROPPED vertical/degenerate tri', JSON.stringify([a,b,c].map((q)=>q.map((v)=>+v.toFixed(2))))); return; }
   const yAt = (x, z) => { const u = ((b[2] - c[2]) * (x - c[0]) + (c[0] - b[0]) * (z - c[2])) / den, v = ((c[2] - a[2]) * (x - c[0]) + (a[0] - c[0]) * (z - c[2])) / den; return u * a[1] + v * b[1] + (1 - u - v) * c[1]; };
   for (const cx of cellRange(x0, x1 + 1e-6)) for (const cz of cellRange(z0, z1 + 1e-6)) {
     const poly = clipPoly([[a[0], a[2]], [b[0], b[2]], [c[0], c[2]]], cx * CELL, cz * CELL, (cx + 1) * CELL, (cz + 1) * CELL);
@@ -1156,15 +1156,24 @@ function exposedRuns(pts, off, own, margin = 0.2, body = false) {
   }
   flush(); return runs;
 }
+// 2026-10-25: a parapet is a CLOSED SOLID, not one sheet + a floating strip (owner: "бортики просвечивают"): inner face, outer face (0.28 m apart), a 0.34 m cap on top and end faces.
+// faces: sg is the side of the carriageway edge the run lies on; bFn / tFn are the bottom / top heights of the wall of a run point, capLift the extra height of the cap above tFn (0 = flush).
+const PARAPET_T = 0.28, PARAPET_CAP = 0.34;
+function parapetSolid(run, sg, bFn, tFn, capPts, capDy) {
+  if (run.length < 2) return;
+  wallAlong(run, 0, bFn, tFn, CI.conc); wallAlong(run, sg * PARAPET_T, bFn, tFn, CI.conc);
+  deckRibbon(offsetPts3(capPts, sg * PARAPET_T / 2), PARAPET_CAP, capDy, CI.conc);   // cap
+  const a = offsetPts3(run, 0), b = offsetPts3(run, sg * PARAPET_T);
+  for (const k of [0, run.length - 1]) { const bb = bFn(run[k][2]), tt = tFn(run[k][2]); emitQuadS(a[k][0], a[k][1], b[k][0], b[k][1], bb, tt, bb, tt, CI.conc); }   // end faces
+}
 function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median half or 0), crossings: [[s0,s1]] along arc length, paint: {edge, divider}, kerbC, walls: true}
   const S = arcLen(pts);
   const inCross = (s) => o.crossings.some(([a, b]) => s > a && s < b);
   deckRibbon(pts, o.w, 0.05, CI.asph);
   // parapets (both sides) + caps
   for (const sg of [-1, 1]) for (const run of exposedRuns(pts, sg * (o.w / 2 + 0.15), o.id, 0.3, 'barrier')) {
-    wallAlong(run, 0, (h) => h + 0.05, (h) => h + 0.05 + Math.min(0.9, h * 3), CI.conc);
     // The cap follows the same taper as the concrete face at the ground toe.
-    deckRibbon(run.map((p) => [p[0], p[1], p[2] + Math.min(0.9, p[2] * 3)]), 0.3, 0.05, CI.conc);
+    parapetSolid(run, sg, (h) => h + 0.05, (h) => h + 0.05 + Math.min(0.9, h * 3), run.map((p) => [p[0], p[1], p[2] + Math.min(0.9, p[2] * 3)]), 0.05);
     addParapets(run.filter((p) => p[2] > 0.2), 0);
   }
   if (o.med) for (const sg of [-1, 1]) {
@@ -1298,7 +1307,9 @@ function wallFace(a, b, ha, hb, nx, nz, acc) {
 function embankCap(q, sg, nextDir, rat) {   // vertical end face of a grass bank where it meets a retaining wall / a bridge span: a triangle deck edge - foot - ground, drawn from both sides
   const h = q[2] + 0.05, l = Math.hypot(nextDir[0], nextDir[1]) || 1, nx = sg * -nextDir[1] / l, nz = sg * nextDir[0] / l, w = rat * h;
   const T = [q[0], h, q[1]], F = [q[0] + nx * w, 0, q[1] + nz * w], G = [q[0], 0, q[1]];
-  emitTri3(T, F, G, CI.slope); emitTri3(T, G, F, CI.slope);
+  // 2026-10-25: emitTri3 projects to the XZ plane and silently DROPPED this vertical triangle (den ~ 0) - every bank end stood open, the sheet of grass showed from behind / below as a floating wedge (owner, night shots near I1).
+  // A vertical triangle is a wall-layer quad with one zero-height end: bottom edge G -> F on the ground, top T above G.
+  if (h > 0.02 && w > 0.02) emitQuadS(G[0], G[2], F[0], F[2], 0, h, 0, 0, CI.slope);
 }
 // Where a wall of one support line meets a wall / fascia on another (a bridge fascia stands 0.5 m proud of the body wall) a vertical connector closes the slit.
 function wallConnector(p, q, h) { if (Math.hypot(p[0] - q[0], p[1] - q[1]) > 0.02 && h > 0.05) emitQuadS(p[0], p[1], q[0], q[1], 0, h, 0, h, CI.conc); }
@@ -1347,8 +1358,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
       let vis = [];
       const flush = () => {
         if (vis.length > 1) {
-          wallAlong(vis, 0, (h) => h + 0.05, (h) => h + 0.05 + 0.75 * tap(h), CI.conc);
-          capAlong(vis.map((q) => [q[0], q[1], q[2] - 0.75 * (1 - tap(q[2]))]), 0, 0.2, 0.8, CI.conc);
+          parapetSolid(vis, sg, (h) => h + 0.05, (h) => h + 0.05 + 0.75 * tap(h), vis.map((q) => [q[0], q[1], q[2] - 0.75 * (1 - tap(q[2]))]), 0.8);
           let hi = []; for (const q of vis.concat([[0, 0, 0]])) { if (q[2] > 0.5) hi.push(q); else { if (hi.length > 1) addParapets(hi, 0); hi = []; } }
         }
         vis = [];
@@ -1677,12 +1687,12 @@ function lampsAlong(id, pts, step, off, lo = -Infinity, hi = Infinity, offLow = 
     lampsHi.push([R2(px), R2(pz), R2(Math.atan2(-nx * -side, -nz * -side)), R2(h)]);
   }
 }
-lampsAlong('M1', sampleAxis('x', M1_Z, -170, 170, hM1, 3), 28, MW - 0.45, -Infinity, Infinity, MW + 1.4);   // on the deck inside the parapet, on the ground beside the carriageway
+lampsAlong('M1', sampleAxis('x', M1_Z, -170, 170, hM1, 3), 28, MW + 0.15 + PARAPET_T / 2, -Infinity, Infinity, MW + 1.4);   // on the deck inside the parapet, on the ground beside the carriageway
 lampsAlong('M2', sampleAxis('z', M2_X, -150, -40, () => 0, 3), 28, MW + 1.4);
 lampsAlong('M2', sampleAxis('z', M2_X, 40, 86, () => 0, 3), 28, MW + 1.4);
 lampsAlong('M2', sampleAxis('z', M2_X, -40, -10, () => 0, 3), 14, 11);   // the approach of the at-grade crossing I2 (3 lanes + taper): poles outside the widened carriageway
 lampsAlong('M2', sampleAxis('z', M2_X, 10, 40, () => 0, 3), 14, 11);
-for (const r of rampPts) lampsAlong(r.id, r.p3, 24, CLS.ramp.w / 2 - 0.2, -Infinity, Infinity, CLS.ramp.w / 2 + 1.0);   // on the deck: on the lane edge inside the parapet; on the ground: beside the ramp
+for (const r of rampPts) lampsAlong(r.id, r.p3, 24, CLS.ramp.w / 2 + 0.2 + PARAPET_T / 2, -Infinity, Infinity, CLS.ramp.w / 2 + 1.0);   // on the deck: on the lane edge inside the parapet; on the ground: beside the ramp
 const nearRampPt = (x, z, m) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < CLS.ramp.w / 2 + m);
 const onFillet = (x, z, m) => cornerOut.some((q) => x > Math.min(q.K[0], q.O[0]) && x < Math.max(q.K[0], q.O[0]) && z > Math.min(q.K[1], q.O[1]) && z < Math.max(q.K[1], q.O[1]) && Math.hypot(x - q.O[0], z - q.O[1]) > q.RET - m);   // on the asphalt of a kerb return
 furniture.lamp = furniture.lamp.map((l) => l.length >= 4 ? l : [l[0], l[1], l[2], 0]);   // stride 4: x z yaw y
