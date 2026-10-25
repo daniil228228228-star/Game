@@ -1566,6 +1566,7 @@ const bendAt = (x, z, pad) => bendsOut.some((b) => {   // on the arc band of a b
   const ax = bb.arms[0].dir, ay = bb.arms[1].dir; return (x - O[0]) * (b.at[0] - O[0]) + (z - O[1]) * (b.at[1] - O[1]) > -2 * pad - 1 && ((x - O[0]) * (-ay[0]) + (z - O[1]) * (-ay[1]) > -1) && ((x - O[0]) * (-ax[0]) + (z - O[1]) * (-ax[1]) > -1);
 });
 const blocked = (x, z, pad = 0.6) => !!(inSplitZone(x, z, pad) || yardAt(x, z) || bendAt(x, z, pad) || cornerAt(x, z, 0.3) || rasterAt(x, z) || rasterAt(x + pad, z) || rasterAt(x - pad, z) || rasterAt(x, z + pad) || rasterAt(x, z - pad) || motorHosts.some((h) => { const p = [x, z]; return p[h.axis] >= h.lo && p[h.axis] <= h.hi && Math.abs(p[1 - h.axis] - h.c) < MW + pad; }) || ringAt(x, z) || rangeRamp(x, z) || railBlocked(x, z) || STRUCT.blockers.some((b) => x > b[0] - 1 && x < b[2] + 1 && z > b[1] - 1 && z < b[3] + 1)) || isWater(x, z);
+const lampSpotBad = (x, z) => { const r = rasterAt(x, z); return !!(r && r.type !== 'walk') || isWater(x, z) || inSplitZone(x, z, 0.5) || bendAt(x, z, 0.4) || cornerAt(x, z, 0.3); };   // a lamp stands on a sidewalk or on bare ground, never on asphalt / a median / a ring
 const rampSegs = rampsOut.flatMap((r) => r.pts.slice(1).map((p, i) => [r.pts[i], p]));
 const rangeRamp = (x, z) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < 2.2);
 const railBlocked = (x, z) => railOut.bed.some((b) => x >= b[0] - 1 && x <= b[2] + 1 && z >= b[1] - 1 && z <= b[3] + 1) || segDist(x, z, PLAN.rail.spur.pts[0], PLAN.rail.spur.pts[PLAN.rail.spur.pts.length - 1]) < 4;
@@ -1594,7 +1595,7 @@ for (const e of PLAN.edges) {
       if (s2 < lo + t0 - 1 || s2 > hi - t1 + 1) continue;
       for (const sgn of e.cls === 'local' ? [1] : [-1, 1]) {
         const pos = ax === 'x' ? [s2, c + sgn * sideOff] : [c + sgn * sideOff, s2], yaw = ax === 'x' ? (sgn > 0 ? Math.PI : 0) : (sgn > 0 ? -Math.PI / 2 : Math.PI / 2);
-        if (!blocked(pos[0] + (ax === 'x' ? 0 : sgn * 0.8), pos[1] + (ax === 'x' ? sgn * 0.8 : 0), 0.1) || rasterAt(pos[0], pos[1])) furniture.lamp.push([pos[0], pos[1], yaw]);
+        if (!lampSpotBad(pos[0], pos[1]) && !motorHosts.some((h) => pos[h.axis] >= h.lo && pos[h.axis] <= h.hi && Math.abs(pos[1 - h.axis] - h.c) < MW + 0.6)) furniture.lamp.push([pos[0], pos[1], yaw]);
       }
     }
     if (e.cls !== 'local' && e.cls !== 'service' && k < n) {
@@ -1678,7 +1679,6 @@ lampsAlong('M2', sampleAxis('z', M2_X, 40, 86, () => 0, 3), 28, MW + 1.4);
 lampsAlong('M2', sampleAxis('z', M2_X, -40, -10, () => 0, 3), 14, 11);   // the approach of the at-grade crossing I2 (3 lanes + taper): poles outside the widened carriageway
 lampsAlong('M2', sampleAxis('z', M2_X, 10, 40, () => 0, 3), 14, 11);
 for (const r of rampPts) lampsAlong(r.id, r.p3, 24, CLS.ramp.w / 2 - 0.2);
-const rasterAtKerb = (x, z) => { const r = rasterAt(x, z); return !!(r && /asph|ramp/.test(String(r.type || r.ci || ''))) };
 const nearRampPt = (x, z, m) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < CLS.ramp.w / 2 + m);
 const onFillet = (x, z, m) => cornerOut.some((q) => x > Math.min(q.K[0], q.O[0]) && x < Math.max(q.K[0], q.O[0]) && z > Math.min(q.K[1], q.O[1]) && z < Math.max(q.K[1], q.O[1]) && Math.hypot(x - q.O[0], z - q.O[1]) > q.RET - m);   // on the asphalt of a kerb return
 furniture.lamp = furniture.lamp.map((l) => l.length >= 4 ? l : [l[0], l[1], l[2], 0]);   // stride 4: x z yaw y
@@ -1697,10 +1697,11 @@ for (const e of PLAN.edges) {
   for (let s = 0; s <= L; s += 2) {
     if (!light(s)) { if (!run) st = s; run += 2; if (run > 24) {   // put one in the middle of the dark run, on the side with free pavement
       const m = st + run / 2; let done = false;
-      for (const sgn of [1, -1]) { const px = a.x + dx * m + -dz * sgn * off, pz = a.z + dz * m + dx * sgn * off; if (isWater(px, pz) || rasterAtKerb(px, pz)) continue; furniture.lamp.push([R2(px), R2(pz), R2(Math.atan2(dz * sgn, -dx * sgn)), 0]); done = true; break; }
+      for (const sh of [0, 4, -4, 8, -8]) for (const sgn of done ? [] : [1, -1]) { const px = a.x + dx * (m + sh) + -dz * sgn * off, pz = a.z + dz * (m + sh) + dx * sgn * off; if (lampSpotBad(px, pz) || furniture.stop.some((st) => Math.hypot(st[0] - px, st[1] - pz) < 3.4)) continue; furniture.lamp.push([R2(px), R2(pz), R2(Math.atan2(dz * sgn, -dx * sgn)), 0]); done = true; }
       run = done ? 0 : run; } } else run = 0;
   }
 }
+furniture.lamp = furniture.lamp.filter((l) => !furniture.stop.some((st) => Math.hypot(st[0] - l[0], st[1] - l[1]) < 3.2));   // still no lamp inside a bus stop
 for (const cellC of cells.values()) {
   const old = cellC.f.tree, kept = [];
   for (let i = 0; i < old.length; i += 4) if (!furniture.stop.some((st) => Math.hypot(st[0] - old[i], st[1] - old[i + 1]) < 2.2)) kept.push(...old.slice(i, i + 4));
