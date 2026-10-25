@@ -627,7 +627,9 @@ for (const e of PLAN.edges) {
 
 // ---- 5. junction furniture: zebra crossings, stop lines, signal / sign points
 const poleSet = [], furnCat = [];   // pole / head positions for the cell furniture lists, filled below
+const GROUND_ZEBRAS = false;   // 2026-10-25 owner: ground pedestrian crossings removed for now (ugly), to be redesigned; footbridges stay
 function zebra(c, dir, at, cls, len = 1.6) {   // bars parallel to the street, symmetric about the centre line / median
+  if (!GROUND_ZEBRAS) return;
   const w = hw(cls), med = CLS[cls].median / 2, p = [c[0] + dir[0] * at, c[1] + dir[1] * at], start = med > 0 ? med + 0.4 : 0.475;
   for (const sg of [-1, 1]) for (let l = start; l <= w - 0.4; l += 0.95) {
     const o = sg * l;
@@ -779,7 +781,7 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
     const inSz = side < 0 ? 1 : -1, zx = noseX - side * 3.2, sx = zx + side * 3.0;   // zebra in front of the nose, the stop line 3 m before it (away from M2)
     for (const sz of [-1, 1]) {
       const z0 = sz * hz, z1 = sz * (hz + SPLIT.band), lo = Math.min(z0, z1), hi = Math.max(z0, z1);
-      for (let z = lo + 0.45; z < hi - 0.3; z += 0.9) emitRect('p', 'q', zx - 0.9, z - 0.25, zx + 0.9, z + 0.25, H.paint, CI.white);
+      if (GROUND_ZEBRAS) for (let z = lo + 0.45; z < hi - 0.3; z += 0.9) emitRect('p', 'q', zx - 0.9, z - 0.25, zx + 0.9, z + 0.25, H.paint, CI.white);
       if (sz === inSz) {
         emitRect('p', 'q', sx - 0.2, lo + 0.1, sx + 0.2, hi - 0.1, H.paint, CI.white);
         const zc = sz * (hz + SPLIT.band / 2), xA = sx + side * 1.5, xB = farX - side * 6;

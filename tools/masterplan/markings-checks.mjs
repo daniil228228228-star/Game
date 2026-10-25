@@ -22,7 +22,8 @@ export function runMarkings(P, D) {
     const along = (j.type === 'signal' ? Math.max(ch, j.boxZ && a.dir[0] !== 0 ? j.boxZ : 0) : ch) + 2.2;
     if (j.type === 'signal') {
       nStop++; if (!across(along + 1.7, 0.5, (x, z) => R.near('paint', x, z, 0.25))) miss.stop.push(`${j.id} ${j.at} ${a.cls} ${a.dir}`);
-      nZebra++; if (!across(along, 0.9, (x, z) => R.near('paint', x, z, 0.12))) miss.zebra.push(`${j.id} ${j.at} ${a.cls} ${a.dir}`);
+      // 2026-10-25: ground zebras are removed for now (owner), the check is off until they return
+      if (false) nZebra++; if (false && !across(along, 0.9, (x, z) => R.near('paint', x, z, 0.12))) miss.zebra.push(`${j.id} ${j.at} ${a.cls} ${a.dir}`);
     } else if ((j.type === 'priority' || j.type === 'riro') && !(j.major && a.cls === j.major)) {
       nYield++; if (!across(ch + 1.0, 0.6, (x, z) => R.near('paint', x, z, 0.2))) miss.yield.push(`${j.id} ${j.at} ${a.cls} ${a.dir}`);
     } else if (j.type === 'roundabout') {
@@ -31,7 +32,7 @@ export function runMarkings(P, D) {
   }
   const sh = (a) => a.slice(0, 4).join('; ') + (a.length > 4 ? ` ... (+${a.length - 4})` : '');
   add('Все светофорные перекрёстки', 'стоп-линия 1.12 на каждом подходе', `${nStop - miss.stop.length} из ${nStop}${miss.stop.length ? ' (нет: ' + sh(miss.stop) + ')' : ''}`, 'стоп-линия перед светофором на каждой полосе подхода', 'ГОСТ Р 51256-2018 п. 5.1.? (линия 1.12), ГОСТ Р 52289-2019 п. 5.? ', miss.stop.length ? 'НАРУШЕНИЕ' : 'OK', 'было: местные улицы и служебные проезды без стоп-линии');
-  add('Все светофорные перекрёстки', 'пешеходный переход 1.14.1 (зебра) на каждом подходе', `${nZebra - miss.zebra.length} из ${nZebra}${miss.zebra.length ? ' (нет: ' + sh(miss.zebra) + ')' : ''}`, 'зебра у каждого подхода регулируемого перекрёстка', 'ГОСТ Р 51256-2018 п. 5.1.? (1.14.1), СП 42.13330 п. 11.? ', miss.zebra.length ? 'НАРУШЕНИЕ' : 'OK');
+  add('Все светофорные перекрёстки', 'пешеходный переход 1.14.1 (зебра) на каждом подходе', `${nZebra - miss.zebra.length} из ${nZebra} (наземные переходы убраны до переработки)${miss.zebra.length ? ' (нет: ' + sh(miss.zebra) + ')' : ''}`, 'зебра у каждого подхода регулируемого перекрёстка', 'ГОСТ Р 51256-2018 п. 5.1.? (1.14.1), СП 42.13330 п. 11.? ', miss.zebra.length ? 'НАРУШЕНИЕ' : 'OK');
   add('Перекрёстки с главной дорогой / RIRO', 'линия 1.13 «уступи дорогу» на каждом второстепенном подходе', `${nYield - miss.yield.length} из ${nYield}${miss.yield.length ? ' (нет: ' + sh(miss.yield) + ')' : ''}`, 'линия 1.13 (треугольники) перед знаком 2.4', 'ГОСТ Р 51256-2018 п. 5.1.? (1.13)', miss.yield.length ? 'НАРУШЕНИЕ' : 'OK', 'было: 61 из 218 подходов');
   add('Кольца', 'линия 1.13 у въезда на кольцо', `${nRing - miss.ring.length} из ${nRing}${miss.ring.length ? ' (нет: ' + sh(miss.ring) + ')' : ''}`, 'въезд на кольцо - «уступи дорогу» (знак 4.3 + линия 1.13)', 'ГОСТ Р 51256-2018 (1.13), ПДД п. 13.11', miss.ring.length ? 'НАРУШЕНИЕ' : 'OK');
 
@@ -48,7 +49,7 @@ export function runMarkings(P, D) {
       for (let s = from; s <= L - from; s += 0.5) {
         const x = a.x + dx * s + nx * lat, z = a.z + dz * s + nz * lat;
         if (e.cls === 'motorway' && (Math.abs(x - 0) < 0 || x < -165 || x > 165)) { run = 0; continue; }   // M1: the city part only (the bend and the rural ends are drawn by the bend / zone code)
-        const inWedge = nearRampEnd(x, z, 24);
+        const inWedge = nearRampEnd(x, z, 24) || [a, b].some((q) => q.kind === 'roundabout' && Math.hypot(q.x - x, q.z - z) < 22);   // roundabout approach: the splitter island owns the lines (the zebra no longer bridges the gap, 2026-10-25)
         if (paintNear(x, z)) { if (run * 0.5 > maxGap) gaps.push([R1(st), R1(run * 0.5)]); run = 0; } else { if (!run) st = s; run++; if (inWedge) run = 0; }
       }
       if (run * 0.5 > maxGap) gaps.push([R1(st), R1(run * 0.5)]);
