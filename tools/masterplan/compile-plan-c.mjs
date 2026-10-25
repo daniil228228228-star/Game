@@ -211,6 +211,8 @@ for (const n of PLAN.nodes) {
 }
 const rightOf = (h) => [-h[1], h[0]];
 const MW = CLS.motorway.w / 2;
+// 2026-10-25 (owner: "half a metre of road on the right, none on the left"): both shoulders of a motorway carriageway are 0.2 m wide - the edge line lies 0.2 m inside the asphalt edge (it was 1.0 m on the outer side, 0.2 m on the median side)
+const M_EDGE = MW - 0.2, M_MEDLINE = CLS.motorway.median / 2 + 0.3, LANE_DIV = (M_MEDLINE + M_EDGE) / 2;   // lane divider in the middle of the two lanes (3.75)
 const ringW = (j) => j.lanes === 2 ? 5.4 : 3.0;   // circulatory lane: 2 lanes 5.4 (>= 5.0), 1 lane 3.0 (car + truck swept path >= 2.6)
 const laneW = (cls) => CLS[cls].lane || (CLS[cls].w - CLS[cls].median) / 2 / CLS[cls].lanes;
 const RAIL_Z = PLAN.rail.pts[0][1], M1_Z = -240, M2_X = 250;
@@ -349,16 +351,16 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
     runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 0.2, zS - 1, M2Z.z1 + 1.5);
     ribbonZ(sg, line((z) => 1.35, zN - 70, zN));   // north: median edge line at 1.35 (the plain M2 profile)
     // third-lane edge line (solid) 1.0 inside the asphalt edge: north taper and flat part, ends at the exit gore (z 64)
-    ribbonZ(sg, line((z) => outerA(z) - 1.0, M2Z.z0, zN)); ribbonZ(sg, line((z) => outerA(z) - 1.0, zS, M2Z.end3 - 2));
+    ribbonZ(sg, line((z) => outerA(z) - 0.2, M2Z.z0, zN)); ribbonZ(sg, line((z) => outerA(z) - 0.2, zS, M2Z.end3 - 2));
     // lane divider 3|2 at 5.3: dashed in the three-lane stretch, SOLID from the exit gore on, easing to the trunk ramp's edge line (6.1)
     // outer edge line: solid at 5.3 up to the exit gore, then easing to the trunk ramp's edge line (6.1)
-    runOn(sg, (z) => 5.3 + 0.8 * f((z - M2Z.end3) / (M2Z.z1 - M2Z.end3)), M2Z.end3 - 2, M2Z.z1 + 1.5);
+    runOn(sg, () => M_EDGE, M2Z.end3 - 2, M2Z.z1 + 1.5);
     // lane divider 2|1 at 3.2: dashed from the box until lane 1 has become too narrow (inner edge line within 0.45 m of it)
-    let zEnd = zS; while (zEnd < M2Z.z1 && inner(zEnd) + 0.25 < 3.2 - 0.45) zEnd += 1;
-    dashZ(sg, line(() => 3.2, zdS, zEnd)); dashZ(sg, line(() => 3.2, M2Z.z0 + 0, zdN));
+    let zEnd = zS; while (zEnd < M2Z.z1 && inner(zEnd) + 0.25 < LANE_DIV - 0.45) zEnd += 1;
+    dashZ(sg, line(() => LANE_DIV, zdS, zEnd)); dashZ(sg, line(() => LANE_DIV, M2Z.z0 + 0, zdN));
   }
   // lane-drop arrows for the inner lane of the southbound (west) carriageway, bent towards the exit side
-  for (const zA of [zS + 8, zS + 26]) { const lat = (inner(zA) + 3.2) / 2 + 0.1, ang = 12 * Math.PI / 180; arrowH(X(-1, lat), zA, -Math.sin(ang), Math.cos(ang)); }
+  for (const zA of [zS + 8, zS + 26]) { const lat = (inner(zA) + LANE_DIV) / 2 + 0.1, ang = 12 * Math.PI / 180; arrowH(X(-1, lat), zA, -Math.sin(ang), Math.cos(ang)); }
 }
 for (const { L, wide, narrow, node, sgn } of TRANS.values()) {
   const hn = hw(narrow.cls), hd = hw(wide.cls), sn = CLS[narrow.cls].sidewalk, sd = CLS[wide.cls].sidewalk, ax = wide.dir, c = ax === 'z' ? node.x : node.z, mh = CLS[wide.cls].median / 2;
@@ -583,7 +585,7 @@ for (const b of BENDS.values()) {
   const arcIdx = pts.map((_, i) => i).filter((i) => i > 0 && i < pts.length - 1);
   if (isMw) {   // motorway paint = the plain M1 / M2 profile: solid lines at the median kerb and 1 m inside the edge, a dashed lane divider
     const m0 = cA.median / 2, solidAt = (o) => { const P = offsetVar(pts, T.map(() => o)); ribbon('p', arcIdx.map((i) => P[i]), 0.18, H.paint, CI.white); };
-    for (const sg of [-1, 1]) { solidAt(sg * (m0 + 0.3)); solidAt(sg * (cA.w / 2 - 1.0)); const P = offsetVar(pts, T.map(() => sg * (m0 + cA.lane))); dashPoly(arcIdx.map((i) => P[i]), 1.6, 1.8, 0.18, H.paint); }
+    for (const sg of [-1, 1]) { solidAt(sg * (m0 + 0.3)); solidAt(sg * M_EDGE); const P = offsetVar(pts, T.map(() => sg * LANE_DIV)); dashPoly(arcIdx.map((i) => P[i]), 1.6, 1.8, 0.18, H.paint); }
   }
   if (!isMw && Math.max(...mh) > 0.02) for (const sg of [-1, 1]) {   // arterial lane line at median / 2 + lane, only where it stays >= 0.7 m inside the kerb
     const o = T.map((t, i) => sg * (mh[i] + (cA.median > 0 ? cA : cB).lane)), P = offsetVar(pts, o);
@@ -613,7 +615,7 @@ for (const e of PLAN.edges) {
   const parts = subtractIntervals(lo, hi, cuts);
   for (const [pl, ph] of parts) {
     if (mo) {
-      const mh = CLS.motorway.median / 2, mdv = mh + CLS.motorway.lane, edge = MW - CLS.motorway.shoulder;
+      const mh = CLS.motorway.median / 2, mdv = LANE_DIV, edge = M_EDGE;
       for (const o of [-(mh + 0.3), mh + 0.3]) solid(ax, c + o, pl, ph, 0.18, H.paint, CI.white);
       for (const o of [-mdv, mdv]) dashed(ax, c + o, pl, ph, 0.18, 1.6, 1.8, H.paint, CI.white);
       for (const o of [-edge, edge]) solid(ax, c + o, pl, ph, 0.18, H.paint, CI.white);
@@ -1303,7 +1305,7 @@ const MOTOR_CROSS = { M1: [0], M2: [] };   // axis coordinates where another roa
 for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z', M2_X, M2_UP, hM2]]) for (const [a, b] of up) {
   const pts = sampleAxis(axis, c, a, b, hfn, 3, MOTOR_CROSS[ref].flatMap((v) => [v - 7.4, v + 7.4])), S = arcLen(pts), s0 = axis === 'x' ? pts[0][0] : pts[0][1];
   const crossings = MOTOR_CROSS[ref].map((v) => [v - 7.4 - s0, v + 7.4 - s0]).filter(([x0, x1]) => x1 > 0 && x0 < S[S.length - 1]).map(([x0, x1]) => [Math.max(0, x0), Math.min(S[S.length - 1], x1)]);
-  structureDeck(pts, { id: ref, w: CLS.motorway.w, med: CLS.motorway.median / 2, crossings, paint: { edge: MW - 1.1, divider: CLS.motorway.median / 2 + CLS.motorway.lane, inner: CLS.motorway.median / 2 + 0.3 } });
+  structureDeck(pts, { id: ref, w: CLS.motorway.w, med: CLS.motorway.median / 2, crossings, paint: { edge: M_EDGE - 0.15, divider: LANE_DIV, inner: CLS.motorway.median / 2 + 0.3 } });
   STRUCT.ribbons.push({ id: ref, w: CLS.motorway.w, p: pts.map((q) => [R2(q[0]), R2(q[1]), R2(q[2])]) });
   // solid body: ground floor is closed under the walls where the deck is higher than 0.3 m, except under the crossing roads
   for (const [x0, x1] of intervalsAbove(hfn, a, b, 0.3)) for (const [y0, y1] of subtractIntervals(x0, x1, MOTOR_CROSS[ref].map((v) => [v - 8, v + 8]))) STRUCT.blockers.push(axis === 'x' ? [y0, c - MW - 0.6, y1, c + MW + 0.6] : [c - MW - 0.6, y0, c + MW + 0.6, y1]);

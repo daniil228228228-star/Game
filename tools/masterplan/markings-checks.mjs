@@ -42,7 +42,7 @@ export function runMarkings(P, D) {
     let lines = [], maxGap = 6;
     if (e.cls === 'arterial') lines = [[-(cl.median / 2 + cl.lane), 'полосная 1.5'], [cl.median / 2 + cl.lane, 'полосная 1.5']];
     else if (e.cls === 'collector') lines = [[0, 'осевая 1.5']];
-    else if (e.cls === 'motorway' && e.ref === 'M1') { lines = [[-(cl.median / 2 + 0.3), 'разделительная 1.2.1'], [cl.median / 2 + 0.3, 'разделительная 1.2.1'], [-(cl.w / 2 - 1), 'краевая 1.2.1'], [cl.w / 2 - 1, 'краевая 1.2.1']]; }
+    else if (e.cls === 'motorway' && e.ref === 'M1') { lines = [[-(cl.median / 2 + 0.3), 'разделительная 1.2.1'], [cl.median / 2 + 0.3, 'разделительная 1.2.1'], [-(cl.w / 2 - 0.2), 'краевая 1.2.1'], [cl.w / 2 - 0.2, 'краевая 1.2.1']]; }
     for (const [lat, name] of lines) {
       const lo = e.cls === 'motorway' ? 0 : 12, from = e.cls === 'motorway' ? 0 : lo; const gaps = []; let run = 0, st = 0;
       for (let s = from; s <= L - from; s += 0.5) {
