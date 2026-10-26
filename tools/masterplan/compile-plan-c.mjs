@@ -372,10 +372,13 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
     for (let i = 0; i + 1 < pts.length; i++) { const a = pts[i], b = pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]); let s0 = 0; while (s0 < L) { const lim = on ? dash : gap, take = Math.min(L - s0, lim - acc); if (on) { if (!cur.length) cur.push([a[0] + (b[0] - a[0]) * s0 / L, a[1] + (b[1] - a[1]) * s0 / L]); cur.push([a[0] + (b[0] - a[0]) * (s0 + take) / L, a[1] + (b[1] - a[1]) * (s0 + take) / L]); } s0 += take; acc += take; if (acc >= lim - 1e-9) { if (on) flush(); on = !on; acc = 0; } } }
     flush(); };
   const zN = -BOX - 2, zS = BOX + 2, zdN = -BOX - 6, zdS = BOX + 6;   // solid lines stop 2 m short of the box; lane DASHES stop 6 m short (a dash never touches the stop line or the zebra)   // markings stop 2 m short of the box (the zebra / stop line zone starts there)
+  // the median noses (round kerbed caps, NOSE_MIN): z of the cap centre on each side, and a painted arc round each cap that joins the two median edge lines
+  let NOSE_S = BOX, NOSE_N = -BOX; for (const z of zs) { if (z > 0 && inner(z) > NOSE_MIN) { NOSE_S = z; break; } } for (const z of zs) if (z < 0 && inner(z) > NOSE_MIN) NOSE_N = z;
+  for (const [zt, sgz] of [[NOSE_S, -1], [NOSE_N, 1]]) { const r = inner(zt) + 0.2, arcPts = []; for (let k = 0; k <= 16; k++) { const t = Math.PI * k / 16; arcPts.push([c + Math.cos(t) * r, zt + sgz * Math.sin(t) * r]); } ribbon('p', arcPts, 0.16, H.paint, CI.white); }
   for (const sg of [-1, 1]) {
     // median edge line (solid): from the nose tip on, following the inner edge
-    runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 0.2, zS - 1, M2Z.z1);
-    ribbonZ(sg, line((z) => Math.max(0.2, inner(z) + 0.2 + 0.05 * Math.max(0, Math.min(1, (-z - BOX - 8) / 4))), zN - 70, zN));   // north: median edge line, converging into a V at the nose like the south one (owner 2026-10-26 (9); was a constant 1.35)
+    runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 0.2, NOSE_S, M2Z.z1);   // 2026-10-26 (9) owner: the median edge lines run round the nose (arc below), not on past it in a V
+    ribbonZ(sg, line((z) => inner(z) + 0.2, zN - 70, NOSE_N));   // north: median edge line along the kerb up to the nose, closed by the arc round it (owner 2026-10-26 (9))
     // third-lane edge line (solid) 1.0 inside the asphalt edge: north taper and flat part, ends at the exit gore (z 64)
     ribbonZ(sg, line((z) => outerA(z) - 0.2, M2Z.z0, zN));   // (south of the box: drawn by the wedge-aware block below)
     // lane divider 3|2 at 5.3: dashed in the three-lane stretch, SOLID from the exit gore on, easing to the trunk ramp's edge line (6.1)
