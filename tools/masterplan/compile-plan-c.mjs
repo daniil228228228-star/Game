@@ -332,12 +332,15 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
   const f = (t) => t <= 0 ? 0 : t >= 1 ? 1 : t < K ? t * t / (2 * K * (1 - K)) : t > 1 - K ? 1 - (1 - t) * (1 - t) / (2 * K * (1 - K)) : (t - K / 2) / (1 - K);   // constant slope with parabolic ends
   const L3N = 70, IN = 3.5 - 1.1, BOX = M2Z.box;
   const lane3 = () => 0;   // no third lane any more: two lanes per direction all along the zone
-  const outerA = (z) => 6.3 + 2.1 * lane3(z);                      // asphalt edge (shoulder included)
+  // 2026-10-26 (8) owner ('сначала две, потом одна, потом снова две'): two lanes all the way to the exit at ZG; there the OUTER lane leaves as the ground ramp (its own asphalt) and the
+  // inner lane shifts out to the trunk ramp (inner edge 1.1 -> 3.5, outer edge = inner + 2.8) between ZG and the zone end. Before: the inner lane closed from z 26 while the exit added a lane.
+  const ZG = 58;
+  const outerA = (z) => z <= ZG ? 6.3 + 2.1 * lane3(z) : inner(z) + 2.8;   // asphalt edge (shoulder included)
   const inner = (z) => {                                           // median half width
     const a = Math.abs(z);
     if (a <= BOX) return 0;
     const nose = a < BOX + 8 ? 1.1 * (3 * ((a - BOX) / 8) ** 2 - 2 * ((a - BOX) / 8) ** 3) : 1.1;
-    return z > BOX + 8 ? 1.1 + IN * f((z - M2Z.in0 - 8) / (M2Z.z1 - M2Z.in0 - 8)) : nose;
+    return z > BOX + 8 ? (z <= ZG ? 1.1 : 1.1 + IN * f((z - ZG) / (M2Z.z1 - ZG))) : nose;
   };
   const zs = []; for (let z = M2Z.z0; z < M2Z.z1 + 0.01; z += 1) zs.push(z);
   const X = (sg, lat) => c + sg * lat;
@@ -377,14 +380,19 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
     ribbonZ(sg, line((z) => outerA(z) - 0.2, M2Z.z0, zN));   // (south of the box: drawn by the wedge-aware block below)
     // lane divider 3|2 at 5.3: dashed in the three-lane stretch, SOLID from the exit gore on, easing to the trunk ramp's edge line (6.1)
     // outer edge line: solid at 5.3 up to the exit gore, then easing to the trunk ramp's edge line (6.1)
-    { const zA = zS, zB = M2Z.z1, pieces = splitBy(zA, zB, wedgeSpansAxis('z', c, sg));   // 2026-10-26 (6): broken (1.0 / 1.0) along the exit / entrance wedge of the ramps a / c, solid elsewhere
+    { const zA = zS, zB = ZG, pieces = splitBy(zA, zB, wedgeSpansAxis('z', c, sg));   // 2026-10-26 (6): broken (1.0 / 1.0) along the exit / entrance wedge of the ramps a / c, solid elsewhere
       for (const [a, b, brk] of pieces) { if (brk) { const e = Math.min(b, M2Z.z1 - 1.5); dashZ(sg, line(() => M_EDGE, a, e), BRK_DASH, BRK_GAP); if (b > e) runOn(sg, () => M_EDGE, e, b); } else runOn(sg, () => M_EDGE, a, b); } }
     // lane divider 2|1 at 3.2: dashed from the box until lane 1 has become too narrow (inner edge line within 0.45 m of it)
-    let zEnd = zS; while (zEnd < M2Z.z1 && inner(zEnd) + 0.25 < LANE_DIV - 0.45) zEnd += 1;
-    dashZ(sg, line(() => LANE_DIV, zdS, zEnd)); dashZ(sg, line(() => LANE_DIV, M2Z.z0 + 0, zdN));
+    dashZ(sg, line(() => LANE_DIV, zdS, ZG));
+    // trunk lane: its outer edge line starts at the gore nose (where the ground ramp's inner edge is 0.4 m clear of it); between ZG and the nose the ramp paints its own broken line
+    { const r = PLAN.interchanges.flatMap((ic) => ic.ramps).filter((q) => q.kind === 'direct' && Math.sign(q.pts[0][0] - c) === sg || q.kind === 'direct' && Math.sign(q.pts[q.pts.length - 1][0] - c) === sg && Math.abs(q.pts[q.pts.length - 1][1] - ZG) < 3)
+        .find((q) => [q.pts[0], q.pts[q.pts.length - 1]].some((p) => Math.abs(p[1] - ZG) < 3 && Math.sign(p[0] - c) === sg));
+      const latAt = (z) => { if (!r) return 99; let best = 99; for (let k = 1; k < r.pts.length; k++) { const A = r.pts[k - 1], B = r.pts[k]; if ((A[1] - z) * (B[1] - z) <= 0 && A[1] !== B[1]) { const t = (z - A[1]) / (B[1] - A[1]); best = Math.min(best, Math.abs(A[0] + (B[0] - A[0]) * t - c)); } } return best; };
+      let zn = ZG; while (zn < M2Z.z1 && latAt(zn) - CLS.ramp.w / 2 - (inner(zn) + 2.8) < 0.4) zn += 0.5;
+      runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 2.6, zn, M2Z.z1); } dashZ(sg, line(() => LANE_DIV, M2Z.z0 + 0, zdN));
   }
   // lane-drop arrows for the inner lane of the southbound (west) carriageway, bent towards the exit side
-  for (const zA of [zS + 8, zS + 17]) { const lat = (inner(zA) + LANE_DIV) / 2 + 0.1, ang = Math.atan((inner(zA + 1) - inner(zA - 1)) / 4); arrowH(X(-1, lat), zA, -Math.sin(ang), Math.cos(ang)); }   // 2026-10-26 (6): along the lane axis (it was bent 12 degrees: odd angles in the owner's frame); the lane centre slope is ~1 degree
+  if (false) for (const zA of [zS + 8, zS + 17]) { const lat = (inner(zA) + LANE_DIV) / 2 + 0.1, ang = Math.atan((inner(zA + 1) - inner(zA - 1)) / 4); arrowH(X(-1, lat), zA, -Math.sin(ang), Math.cos(ang)); }   // 2026-10-26 (6): along the lane axis (it was bent 12 degrees: odd angles in the owner's frame); the lane centre slope is ~1 degree
 }
 for (const { L, wide, narrow, node, sgn } of TRANS.values()) {
   const hn = hw(narrow.cls), hd = hw(wide.cls), sn = CLS[narrow.cls].sidewalk, sd = CLS[wide.cls].sidewalk, ax = wide.dir, c = ax === 'z' ? node.x : node.z, mh = CLS[wide.cls].median / 2;
@@ -1219,10 +1227,12 @@ for (const r of rampPts) indexRoad(r.id, r.p3, CLS.ramp.w);
 for (const e of PLAN.edges) if (e.cls !== 'motorway') {
   const a = N.get(e.a), b = N.get(e.b); indexRoad(e.id, [[a.x, a.z, 0], [b.x, b.z, 0]], CLS[e.cls].w);
 }
+const M2_LANE_EXITS = new Set(PLAN.interchanges.flatMap((ic) => ic.ramps.map((r, k) => r.kind === 'direct' && r.noWedge ? ic.id + '.' + k : null)).filter(Boolean));
 function coveredRoad(p, own, margin = 0.2, body = false) {
   const segments = roadIndex.get(Math.floor(p[0] / INDEX_CELL) + ',' + Math.floor(p[1] / INDEX_CELL)) || [];
   return segments.some((s) => {
     if (s.id === own || !s.ll || own === 'kerb' && !/^I[1-4]\./.test(s.id)) return false;
+    if (s.id === 'M2' && margin < 0.1 && M2_LANE_EXITS.has(own) && p[1] > 55 && p[1] < M2Z.z1 + 1) return false;   // 2026-10-26 (8): the exit / entrance ramp IS M2's outer lane there: its lines are not hidden under M2
     let t = ((p[0] - s.a[0]) * s.dx + (p[1] - s.a[1]) * s.dz) / s.ll;
     if (t < 0 && s.first || t > 1 && s.last) return false;
     // Internal vertices share a cap: treating every polyline segment as an

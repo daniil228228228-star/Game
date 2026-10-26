@@ -1,4 +1,9 @@
 // Compile permitted directed movements into geometry, using the DRAWN pavement as the clearance oracle.
+// 2026-10-26 (8): M2 between I2 and I4 keeps two lanes; the OUTER lane becomes the exit / entrance ramp at z 58 and the inner lane shifts out to the trunk ramp (compile-plan-c drawM2Zone).
+// The single through path keeps the outer lane to z 58 (where the ramp attaches, centre 4.8) and then eases onto the shifting trunk lane (centre 4.9 at z 88).
+const m2F=t=>{const K=.25;return t<=0?0:t>=1?1:t<K?t*t/(2*K*(1-K)):t>1-K?1-(1-t)*(1-t)/(2*K*(1-K)):(t-K/2)/(1-K);};
+const m2Ease=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);};
+const m2ThroughLat=q=>{const t=1.1+2.4*m2F((q-58)/30)+1.4;return q<=58?5.0+(4.8-5.0)*m2Ease((q-40)/18):4.8+(t-4.8)*m2Ease((q-58)/12);};
 import { buildTurnGraph } from './turns-plan-c.mjs';
 const len=(a,b)=>Math.hypot(b[0]-a[0],b[1]-a[1],(b[2]||0)-(a[2]||0));
 const mix=(a,b,t)=>a.map((v,i)=>v+(b[i]-v)*t);
@@ -42,7 +47,7 @@ export function compileLanePaths(P,D){
     const L=lineOf(v),s=v.split('@')[1];let t=s==='0'?trim(L,L.start):s==='end'?L.L-trim(L,L.end):Number(s);
     const h=heading(L),r=right(h),q=L.sgn>0?L.lo+t:L.hi-t,offset=lane(L),p=L.axis===0?[q,L.c,0]:[L.c,q,0];
     // I2's split streets are bands around islands, not their axis. The far joins use the inner through lane.
-    const o=L.e.split?8.4:(L.e.dir==='x'&&L.c===0&&q>180?1.6:offset);
+    const o=L.e.split?8.4:(L.e.dir==='x'&&L.c===0&&q>180?1.6:(L.e.cls==='motorway'&&L.axis===1&&L.c===250&&q>20&&q<88.5?m2ThroughLat(q):offset));
     p[0]+=r[0]*o;p[1]+=r[1]*o;p[2]=height(L.e.id,...p);V.set(v,p);
   }
   for(const r of G.rampEdges){const id=r.name.split(' ')[0],pts=levels.get(id).p;V.set(r.u,pts[0].slice());V.set(r.v,pts.at(-1).slice());}
@@ -89,7 +94,8 @@ export function compileLanePaths(P,D){
     const a=V.get(u),b=V.get(edge.v),A=lineOf(u),B=lineOf(edge.v),h=heading(A),k=heading(B);
     if(/^I\d\./.test(edge.name)){const id=edge.name.split(' ')[0];addArc(edge,'ramp',levels.get(id).p,id);continue;}
     if(u.split('@')[0]===edge.v.split('@')[0]){
-      const pts=resample([a,b],1).map(p=>[p[0],p[1],height(A.e.id,...p)]);
+      let pts=resample([a,b],1).map(p=>[p[0],p[1],height(A.e.id,...p)]);
+      if(A.e.cls==='motorway'&&A.axis===1&&A.c===250){const r=right(h),o0=lane(A);pts=pts.map(p=>{const q=p[1],o=q>20&&q<88.5?m2ThroughLat(q):o0,x=A.c+r[0]*o;return [x,q,height(A.e.id,x,q)];});}   // follows the shifting through lane
       let path=pts;if(!valid(path)&&A.e.cls!=='motorway')path=repair(a,b,path,p=>A.e.split?(p[1]*A.sgn>=.8):true);
       addArc(edge,'street',path,A.e.split?null:A.e.id);continue;
     }

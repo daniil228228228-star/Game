@@ -187,13 +187,14 @@ export function buildPlan() {
     const R2 = TR_R2, yb = hw + CLS.ramp.w / 2 + 0.4, X2 = C[0] - Rr - R2;   // entry arc radius R2 (was 17): the ramp leaves the road later, the lead-in starts TR_L m before the arc
     const d = join(cubic([X2 - TR_L, hw - TR_Y], [1, 0], TR_K, [X2, yb], [1, 0], TR_K, 12), arc([X2, yb + R2], R2, -90, 0), ...(R2 < 17 ? [seg([C[0] - Rr, yb + R2], [C[0] - Rr, C[1]], 3)] : []), arc(C, Rr, 180, 0), seg([TRK, C[1]], [TRK, top], 10));
     const LM = MW + CLS.ramp.w / 2, LH = hw + CLS.ramp.w / 2;   // added lanes beside M2 and beside the through road
+    // 2026-10-26 (8) owner ('сначала две потом одна потом снова две', 'проще и красивее'): M2 keeps two lanes up to the exit; the OUTER lane itself becomes the ground ramp at z -102 (lane-drop exit, no added deceleration lane), the inner lane shifts out to the trunk ramp after the gore. Entrance c mirrored.
     // 2026-10-26 (7) owner ('стенка посреди асфальта'): the ground ramps leave the carriageway at z -102 on a 1:12 taper, 2.5 m of gore at z -72, so a gore opens BEFORE the trunk ramp beside them climbs (before: 14 m parallel to -66, the trunk's wall rose out of one shared asphalt surface)
-    const TP = [-0.083, 0.9965], a = join(cubic([-ATT, -118], [0, 1], 8, [-LM, -102], [0, 1], 8, 10), cubic([-LM, -102], [0, 1], 10, [-LM - 3.2, -64], TP, 10, 12), cubic([-LM - 3.2, -64], TP, 18, [-34, -LH], [-1, 0], 24, 36), seg([-34, -LH], [-50, -LH], 3), cubic([-50, -LH], [-1, 0], 6, [-64, -(hw - 1.0)], [-1, 0], 6, 10));
-    const c = join(cubic([64, -(hw - 1.0)], [-1, 0], 6, [50, -LH], [-1, 0], 6, 10), seg([50, -LH], [34, -LH], 3), cubic([34, -LH], [-1, 0], 24, [LM + 3.2, -64], [TP[0], -TP[1]], 18, 36), cubic([LM + 3.2, -64], [TP[0], -TP[1]], 10, [LM, -102], [0, -1], 10, 12), cubic([LM, -102], [0, -1], 8, [ATT, -118], [0, -1], 8, 10));
+    const LO = MW - CLS.ramp.w / 2 - 0.1, TP = [-0.2, 0.9798], a = join(cubic([-LO, -102], [0, 1], 16, [-12, -66], TP, 20, 18), cubic([-12, -66], TP, 20, [-34, -LH], [-1, 0], 26, 36), seg([-34, -LH], [-50, -LH], 3), cubic([-50, -LH], [-1, 0], 6, [-64, -(hw - 1.0)], [-1, 0], 6, 10));
+    const c = join(cubic([64, -(hw - 1.0)], [-1, 0], 6, [50, -LH], [-1, 0], 6, 10), seg([50, -LH], [34, -LH], 3), cubic([34, -LH], [-1, 0], 26, [12, -66], [TP[0], -TP[1]], 20, 36), cubic([12, -66], [TP[0], -TP[1]], 20, [LO, -102], [0, -1], 16, 18));
     ramps.push({ kind: 'loop', pts: b.map(F), r, attach: ['motorway', 'cross'], noWedge: [0], bridges: [[F([-TRK, -hw - 4]), F([-TRK, hw + 4])]], note: 'М2 на юг -> Портовое ш. на восток (петля 270°)' });
     ramps.push({ kind: 'semi-direct', pts: d.map(F), attach: ['cross', 'motorway'], noWedge: [1], bridges: [[F([TRK, hw + 4]), F([TRK, -hw - 4])]], note: 'Южный пр. на восток -> М2 на север (раструб вокруг петли)' });
-    ramps.push({ kind: 'direct', pts: a.map(F), attach: ['motorway', 'cross'], note: 'М2 на юг -> Южный пр. на запад' });
-    ramps.push({ kind: 'direct', pts: c.map(F), attach: ['cross', 'motorway'], note: 'Портовое ш. на запад -> М2 на север' });
+    ramps.push({ kind: 'direct', pts: a.map(F), attach: ['motorway', 'cross'], noWedge: [0], note: 'М2 на юг -> Южный пр. на запад' });
+    ramps.push({ kind: 'direct', pts: c.map(F), attach: ['cross', 'motorway'], noWedge: [1], note: 'Портовое ш. на запад -> М2 на север' });
     interchanges.push({ id, kind: 'trumpet', name, at, ramps, trunkEnd: F([0, top]), note: 'три ветви: М2 заканчивается; раструб на стороне порта' });
   }
   cloverAve('I1', [0, M1_Z], 'Клеверный лист: Главный пр. × М1');
