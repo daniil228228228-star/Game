@@ -1,3 +1,13 @@
+# 2026-10-26 (3) - Plan C: marking coverage pass, fewer arrows, lamps behind the pavement (c1w)
+
+- Coverage audit (markings-checks.mjs section H, audit 28): per class % of 2 m windows with a centre / lane line, list of streets with 0 marking. Before: local 0 % (72 streets), service 2 %. Now local / service get a dashed centre line (1.5), collector / arterial 94-97 %. Blocks < 60 m between junction trims are exempt (all junction).
+- Arrows: I2 had 3 arrow pairs per branch (6) -> 1; ramps 2 -> 1 (only > 60 m), slip lanes 0 (dashed give-way only). Signal approaches keep one set per lane.
+- Give-way dashes thinner (0.25 x 0.5, gap 0.5).
+- Lamps on ramps use the per-vertex asphalt edge (merge wedges) + 0.45 m, M1 lamps behind the parapet (MW + 0.3). Test: no lamp base within 0.12 m of a carriageway (a lamp may stand on a parapet cap).
+- I2: top / phone frames of all four approaches show no oversized slabs; the thick blocks in the owner's shot are most likely the old 0.6 x 0.4 give-way dashes seen from close (now thinner) - not reproduced exactly. The notch next to the player was not found in the data.
+- M2 east / I4: the strip between two asphalt parts is the parapet of the elevated loop (ramp I4.8, 0.8 m up) beside the ground ramp I4.10; the lamp on it stands on the parapet cap. Parapets already stand on the pavement (thickness inward), NOT re-designed as a New Jersey median.
+- NOT done: hatching at gore areas, taper markings, turn-pocket arrows, a numeric "barrier base flush" test.
+
 # 2026-10-26 (2) - Plan C: give-way "teeth" replaced by dashed give-way lines (c1v)
 
 Owner (c1u): "убери зубья, вместо них нормальную разметку". `yieldLine()` (compile-plan-c.mjs) drew 2 loose white triangles per half arm (shark teeth), the roundabout entries an extra row of little teeth at R + 0.35, slip-lane merges 4 triangles (`teethAt`). Now: one DASHED transverse give-way line across the whole incoming half of the arm (0.4 m wide, 0.6 m dashes, 0.4 m gaps, centred, perpendicular to the lane), slip lanes 3 dashes, ring entry teeth removed (the line at R + 0.9 remains). Stop lines (signals), arrows (only the real lane arrows) unchanged. The tan wedge next to the player in the owner's shots is the GAME's ground guidance arrow, not a marking. `plan-c-roads` bar heuristic ignores the 0.4 m dashes. Frames: docs/shots-2026-10-26/ (j118, j80, sig, rb, rbn7, x2, n-j118, n-j80). Owner shots: docs/owner-shots-2026-10-26/.

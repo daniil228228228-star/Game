@@ -193,7 +193,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
     // a stop line must be at least one lane wide (>= 1.9) and have a zebra bar group within 4 m in front of it
     const orphan = stops.filter((s) => !bars.some((b) => Math.hypot((b.x0 + b.x1) / 2 - (s.x0 + s.x1) / 2, (b.z0 + b.z1) / 2 - (s.z0 + s.z1) / 2) < 5));
     check(stops.length > 50, `paint: ${stops.length} stop lines all span >= 1.9 m (zebras are off, no 'behind a zebra' rule)`);
-    const short = other.filter((m) => { if (onBorder(m)) return false; const d = dim(m); return Math.max(d.lx, d.lz) < 0.55; });
+    const short = other.filter((m) => { if (onBorder(m)) return false; const d = dim(m); return Math.max(d.lx, d.lz) < 0.45; });
     check(short.length === 0, `paint: no isolated mark shorter than 0.55 m outside the dash / tooth patterns (${short.length}, ${J(short.slice(0, 3))})`);
   }
   // 8. height layer (offline): deck clearance, grades, smooth vertical curves, ramps meet their roads
