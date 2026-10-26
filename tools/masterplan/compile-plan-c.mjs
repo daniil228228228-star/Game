@@ -787,7 +787,7 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
     wall(inner, H.asph, H.island + 0.03, CI.kerb);
     const c0 = [(xa + xb) / 2, 0];
     for (let i = 0; i < inner.length; i++) { const j = (i + 1) % inner.length; emitTri('r', c0, inner[i], inner[j], H.island + 0.03, CI.islandC); }
-    const lawn = rr(xa, xb, hz, rcs, -0.7);
+    const lawn = rr(xa, xb, hz, rcs, -0.38);   // 2026-10-26: kerb top 0.38 m wide (was 0.7)
     for (let i = 0; i < lawn.length; i++) { const j = (i + 1) % lawn.length; emitTri('r', c0, lawn[i], lawn[j], H.island + 0.06, CI.islandL); }
     splitZones.push(outer2.map((q) => [q[0], q[1]]));
     islandsOut.push({ side, poly: inner.map((q) => [R2(q[0]), R2(q[1])]), outer: outer.map((q) => [R2(q[0]), R2(q[1])]) });
@@ -1331,6 +1331,7 @@ function embankFace(run, sg, slope, rat, off, vnAt) {   // vnAt(P) -> [nx, nz] o
 }
 // A retaining wall is built like a real one: dark plinth (0.6 m), a concrete face in mid tone (not the glaring white of the cap), a pale coping band under the edge.
 function wallFace(a, b, ha, hb, nx, nz, acc) {
+  if (Math.max(ha, hb) < 0.6) { emitQuadS(a[0], a[1], b[0], b[1], 0, ha, 0, hb, CI.kerb); return; }   // 2026-10-26: a low edge of a ramp (rising from the ground) is a pale kerb, not a thin dark brown plinth line (owner: 'sliver along the carriageway')
   const pa = Math.min(0.6, ha), pb = Math.min(0.6, hb), ca = Math.max(pa, ha - 0.3), cb = Math.max(pb, hb - 0.3);
   emitQuadS(a[0], a[1], b[0], b[1], 0, pa, 0, pb, CI.concD);
   if (ha > 0.6 || hb > 0.6) emitQuadS(a[0], a[1], b[0], b[1], pa, ca, pb, cb, CI.wall);
@@ -1724,7 +1725,7 @@ function lampsAlong(id, pts, step, off, lo = -Infinity, hi = Infinity, offLow = 
   for (let sv = step / 2; sv < S[S.length - 1]; sv += step) {
     let i = 1; while (i < S.length - 1 && S[i] < sv) i++;
     const t = (sv - S[i - 1]) / ((S[i] - S[i - 1]) || 1), a = pts[i - 1], b = pts[i], x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t, h = a[2] + (b[2] - a[2]) * t;
-    const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l, o2 = h < 0.3 ? offLow : off;
+    const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l, o2 = h < (edgeAt ? 0.75 : 0.3) ? offLow : off;   // ramps: while the parapet is still tapering (h < 0.75) the pole stands on the ground beside it, never at the end of the barrier
     const ro = edgeAt ? edgeAt(i, sv) : null;   // ramps: the PER-VERTEX asphalt edge (merge wedges / flared mouths are wider than the plain lane); the pole stands behind it, never on the pavement
     if (x < lo || x > hi) { side = -side; continue; }
     // the planned side first; where another road lies there (a loop beside the M1 deck) the other side of the same ramp, so no stretch goes dark
