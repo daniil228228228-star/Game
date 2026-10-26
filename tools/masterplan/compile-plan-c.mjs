@@ -1280,8 +1280,9 @@ const JOIN_TOP = 0.9, JOIN_BLEND = 6;   // a ramp parapet that runs INTO the hos
 function parapetSolid(run, sg, bFn, tFn, j0 = false, j1 = false) {   // the top of the wall (and its cap) sinks to the base over the last PARAPET_TAPER metres of a run: a tapered terminal, never a full-height block ending in mid air (owner: "pale wedge" at the merge with M1)
   if (run.length < 2) return;
   const S = arcLen(run), L = S[S.length - 1], ease = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+  const g0 = typeof GORE_TIPS !== 'undefined' && nearGoreTip(run[0]), g1 = typeof GORE_TIPS !== 'undefined' && nearGoreTip(run[run.length - 1]);   // a gore nose: square end at full height (a block joins it to the other parapet)
   const top = run.map((p, i) => {
-    const b = bFn(p[2]), d0 = j0 ? Infinity : S[i], d1 = j1 ? Infinity : L - S[i], dm = Math.min(d0, d1);
+    const b = bFn(p[2]), d0 = j0 || g0 ? Infinity : S[i], d1 = j1 || g1 ? Infinity : L - S[i], dm = Math.min(d0, d1);
     const k = dm === Infinity ? 1 : L < 2 * PARAPET_TAPER ? ease(dm / (L / 2 || 1)) : ease(dm / PARAPET_TAPER);
     let t = tFn(p[2]);
     const jw = Math.max(j0 ? ease(1 - S[i] / JOIN_BLEND) : 0, j1 ? ease(1 - (L - S[i]) / JOIN_BLEND) : 0);
@@ -1474,6 +1475,24 @@ function embankCap(q, sg, nextDir, rat) {   // vertical end face of a grass bank
 }
 // Where a wall of one support line meets a wall / fascia on another (a bridge fascia stands 0.5 m proud of the body wall) a vertical connector closes the slit.
 function wallConnector(p, q, h) { if (Math.hypot(p[0] - q[0], p[1] - q[1]) > 0.02 && h > 0.05) emitQuadS(p[0], p[1], q[0], q[1], 0, h, 0, h, CI.conc); }
+// 2026-10-26 (9) owner ('чтобы сходилось в одно место'): where an elevated ramp runs into the motorway deck, the paved gap between their parapets is a closed gore. Its NOSE is where
+// the gap between the two asphalt edges is GORE_D: there the motorway parapet ends (it is hidden where the ramp is closer) and the ramp's inner parapet is cut too; a parapet block joins
+// the two ends (no tapered beaks). GORE_TIPS = [{ R (ramp parapet point), M (motorway parapet point), y }].
+const GORE_D = 0.45, GORE_TIPS = [];
+function goreGap(rId, sg) {   // per vertex: the gap d (m) between the ramp's asphalt edge on side sg and the motorway edge, or null where they are not an elevated side-by-side pair
+  const r = rampPts.find((q) => q.id === rId), ro = rampOffs.get(rId); if (!r || r.noWedge) return null;
+  const Ea = offsetVar(r.p3, r.p3.map((_, i) => sg < 0 ? ro.offL[i] : ro.offR[i]));
+  return { Ea, d: r.p3.map((p, i) => { const m = motorHost(Ea[i]), latE = Math.abs(Ea[i][1 - m.axis] - m.c), latA = Math.abs(p[1 - m.axis] - m.c), d = latE - MW, hh = m.h(Ea[i][m.axis]);
+    return latE < latA && d > -0.5 && d < 2.5 && p[2] > 0.6 && Math.abs(hh - p[2]) < 0.4 && Ea[i][m.axis] > m.lo && Ea[i][m.axis] < m.hi ? { d, m, hh } : null; }) };
+}
+for (const r of rampPts) for (const sg of [-1, 1]) {
+  const g = goreGap(r.id, sg); if (!g) continue;
+  for (let i = 0; i + 1 < r.p3.length; i++) { const A = g.d[i], B = g.d[i + 1]; if (!A || !B || (A.d - GORE_D) * (B.d - GORE_D) > 0) continue;
+    const t = (GORE_D - A.d) / ((B.d - A.d) || 1), e = [g.Ea[i][0] + (g.Ea[i + 1][0] - g.Ea[i][0]) * t, g.Ea[i][1] + (g.Ea[i + 1][1] - g.Ea[i][1]) * t], m = A.m, sgl = Math.sign(e[1 - m.axis] - m.c);
+    const R = e.slice(); R[1 - m.axis] = m.c + sgl * (MW + GORE_D + 0.2 - PARAPET_T / 2); const M = e.slice(); M[1 - m.axis] = m.c + sgl * (MW + 0.15 - PARAPET_T / 2); const Rf = e.slice(); Rf[1 - m.axis] = m.c + sgl * (MW + GORE_D + 0.2);
+    GORE_TIPS.push({ R, M, Rf, y: r.p3[i][2] + (r.p3[i + 1][2] - r.p3[i][2]) * t + 0.05, id: r.id, sg }); }
+}
+const nearGoreTip = (pt) => GORE_TIPS.some((g) => Math.hypot(pt[0] - g.R[0], pt[1] - g.R[1]) < 1.2 || Math.hypot(pt[0] - g.M[0], pt[1] - g.M[1]) < 1.2);
 // motorway causeways
 const MOTOR_CROSS = { M1: [0], M2: [] };   // axis coordinates where another road passes underneath
 for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z', M2_X, M2_UP, hM2]]) for (const [a, b] of up) {
@@ -1515,7 +1534,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare, noWedge } o
     if (!noWedge) { const Ea = offsetVar(p3, p3.map((_, i) => sg < 0 ? offL[i] : offR[i])), P = [];
       for (let i = 0; i < p3.length; i++) {
         const m = motorHost(Ea[i]), latE = Math.abs(Ea[i][1 - m.axis] - m.c), latA = Math.abs(p3[i][1 - m.axis] - m.c), d = latE - MW, hh = m.h(Ea[i][m.axis]);
-        if (latE < latA && d > 0.02 && d < 2.5 && p3[i][2] > 0.6 && Math.abs(hh - p3[i][2]) < 0.4 && Ea[i][m.axis] > m.lo && Ea[i][m.axis] < m.hi) { const q = Ea[i].slice(), sgl = Math.sign(Ea[i][1 - m.axis] - m.c); q[1 - m.axis] = m.c + sgl * (MW - 0.05); const e = Ea[i].slice(); e[1 - m.axis] += sgl * 0.05; P[i] = [e, q, p3[i][2] + 0.05, hh + 0.05]; }
+        if (latE < latA && d > 0.02 && d < 2.5 && p3[i][2] > 0.6 && Math.abs(hh - p3[i][2]) < 0.4 && Ea[i][m.axis] > m.lo && Ea[i][m.axis] < m.hi) { const q = Ea[i].slice(), sgl = Math.sign(Ea[i][1 - m.axis] - m.c); q[1 - m.axis] = m.c + sgl * (MW - 0.05); const e = Ea[i].slice(); e[1 - m.axis] += sgl * 0.05; P[i] = [e, q, p3[i][2] + 0.05, hh + 0.05, d]; }
       }
       for (let i = 0; i + 1 < p3.length; i++) if (P[i] && P[i + 1]) {
         const [a0, b0, ya, yb] = P[i], [a1, b1, ya1, yb1] = P[i + 1];
@@ -1523,6 +1542,20 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare, noWedge } o
       } else if (P[i] || P[i + 1]) {   // the tip where the gap closes (or opens): a triangle to the next asphalt-edge point
         const [k, j] = P[i] ? [i, i + 1] : [i + 1, i], [a0, b0, ya, yb] = P[k], t = Ea[j];
         emitTri3([a0[0], ya, a0[1]], [b0[0], yb, b0[1]], [t[0], p3[j][2] + 0.05, t[1]], CI.asph);
+      }
+      // 2026-10-26 (9) owner ('кусок асфальта летает', 'чтобы сходилось в одно место'): the paved gap between the two parapets is a closed gore: at its open end (the wide one) a concrete
+      // end wall from the ground to the deck plus a parapet across, at the narrow end a parapet block across, so both parapets run into ONE nose and nothing hangs over the trench below
+      for (let i = 0; i < p3.length; i++) if (P[i] && (!P[i - 1] || !P[i + 1])) {
+        const [e, q, ya, yb, d] = P[i], inward = P[i + 1] ? 1 : -1, nb = p3[Math.max(0, Math.min(p3.length - 1, i + inward))], tx = nb[0] - p3[i][0], tz = nb[1] - p3[i][1], tl = Math.hypot(tx, tz) || 1, ux = tx / tl * PARAPET_T, uz = tz / tl * PARAPET_T;
+        const y = Math.min(ya, yb), E = [e[0] - (q[0] - e[0]) * 0.08, e[1] - (q[1] - e[1]) * 0.08], Q = q;
+        if (d > 1.2) { const wx = ux / PARAPET_T * WALL_T, wz = uz / PARAPET_T * WALL_T; emitQuadS(E[0], E[1], Q[0], Q[1], 0, y, 0, y, CI.wall); emitQuadS(E[0] + wx, E[1] + wz, Q[0] + wx, Q[1] + wz, 0, y, 0, y, CI.concD); }
+        if (d > 1.2) {
+        emitQuadS(E[0], E[1], Q[0], Q[1], y, y + 0.8, y, y + 0.8, CI.kerb); emitQuadS(E[0] + ux, E[1] + uz, Q[0] + ux, Q[1] + uz, y, y + 0.8, y, y + 0.8, CI.kerb);
+        emitTri3([E[0], y + 0.8, E[1]], [Q[0], y + 0.8, Q[1]], [E[0] + ux, y + 0.8, E[1] + uz], CI.kerb); emitTri3([Q[0], y + 0.8, Q[1]], [Q[0] + ux, y + 0.8, Q[1] + uz], [E[0] + ux, y + 0.8, E[1] + uz], CI.kerb); }      }
+      for (const g of GORE_TIPS.filter((q) => q.id === id && q.sg === sg)) {   // the gore nose: one parapet block from the ramp's parapet end to the motorway's
+        const dx = g.M[0] - g.R[0], dz = g.M[1] - g.R[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l * PARAPET_T / 2, nz = dx / l * PARAPET_T / 2, A = [g.R[0] - dx / l * PARAPET_T / 2, g.R[1] - dz / l * PARAPET_T / 2], B = [g.M[0] + dx / l * PARAPET_T / 2, g.M[1] + dz / l * PARAPET_T / 2], y = g.y, t = y + 0.8;
+        for (const o of [-1, 1]) emitQuadS(A[0] + nx * o, A[1] + nz * o, B[0] + nx * o, B[1] + nz * o, y, t, y, t, CI.kerb);
+        emitTri3([A[0] - nx, t, A[1] - nz], [B[0] - nx, t, B[1] - nz], [A[0] + nx, t, A[1] + nz], CI.conc); emitTri3([B[0] - nx, t, B[1] - nz], [B[0] + nx, t, B[1] + nz], [A[0] + nx, t, A[1] + nz], CI.conc);
       } }
     const body = offsetVar(p3, offP);   // 2026-10-26: the support wall / bank top is in the SAME plane as the parapet's outer face (was 0.5 m inside it: a step, the parapet looked like a separate slab)
     const fillEdge = offsetVar(p3, offP.map((o) => o - sg * 0.1));
@@ -1542,7 +1575,11 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare, noWedge } o
     }
     // 2026-10-25: the parapet follows the PER-VERTEX asphalt edge (offL / offR: the merge wedge converges on the host kerb), not a constant offset: it used to run straight on while the asphalt edge curved in - a wavy, stepped kerb where a ramp joins M1
     const parapetLine = offsetVar(p3, p3.map((_, i) => (flare || mouth != null) ? sg * (CLS.ramp.w / 2 + 0.2) : sg < 0 ? offL[i] - 0.2 + adjPL[i] : offR[i] + 0.2 + adjPR[i]));   // flared exits / diamond mouths keep the plain offset (their widened asphalt would push the wall into the neighbouring lane)
-    for (const run of exposedRuns(parapetLine, 0, id, Math.max(...p3.map((q) => q[2])) < 1.0 ? 0.3 : 0.3, 'barrier')) {
+    const gg = goreGap(id, sg), goreCut = (pt) => { if (!gg) return false; let k = 0, b = 1e9; for (let i = 0; i < parapetLine.length; i++) { const dd = Math.hypot(parapetLine[i][0] - pt[0], parapetLine[i][1] - pt[1]); if (dd < b) { b = dd; k = i; } } return !!gg.d[k] && gg.d[k].d < GORE_D; };   // the ramp's inner parapet stops at the gore nose
+    const dens = (run) => { const o = [run[0]]; for (let i = 1; i < run.length; i++) { const A = run[i - 1], B = run[i], near = GORE_TIPS.some((g) => g.id === id && g.sg === sg && Math.min(Math.hypot(g.R[0] - A[0], g.R[1] - A[1]), Math.hypot(g.R[0] - B[0], g.R[1] - B[1])) < 4), k = near ? Math.max(1, Math.ceil(Math.hypot(B[0] - A[0], B[1] - A[1]) / 0.25)) : 1; for (let j = 1; j <= k; j++) o.push(A.map((v, c) => v + (B[c] - v) * j / k)); } return o; };   // fine steps: the cut lands within 0.25 m of the nose
+    const goreD = (pt) => { if (!gg) return 9; let best = 1e9, dd = 9; for (let i = 1; i < gg.Ea.length; i++) { if (!gg.d[i - 1] && !gg.d[i]) continue; const A = gg.Ea[i - 1], B = gg.Ea[i], vx = B[0] - A[0], vz = B[1] - A[1], l2 = vx * vx + vz * vz || 1, t = Math.max(0, Math.min(1, ((pt[0] - A[0]) * vx + (pt[1] - A[1]) * vz) / l2)), X = [A[0] + vx * t, A[1] + vz * t], dist = Math.hypot(pt[0] - X[0], pt[1] - X[1]); if (dist < best) { best = dist; const m = motorHost(X); dd = Math.abs(X[1 - m.axis] - m.c) - MW; } } return dd; };   // the gap of the ASPHALT edges at the parapet point's station (same measure as the nose)
+    const runsP = []; for (const run of exposedRuns(parapetLine, 0, id, 0.3, 'barrier')) { let cur = []; for (const q of (gg ? dens(run) : run)) { if (goreD(q) < GORE_D) { if (cur.length > 1) runsP.push(cur); cur = []; } else cur.push(q); } if (cur.length > 1) runsP.push(cur); }
+    for (const run of runsP) {
       // Split the height gate into contiguous runs too: filtering vertices
       // would reconnect opposite sides of a low section with a collider chord.
       // The barrier RISES out of the ground over the deck height 0.3 -> 1.2 m (a sloped end, 2026-10-19: it used to start as a full-height slab in mid air); the colliders keep the old gate (deck > 1.2 m)
@@ -2011,7 +2048,7 @@ const ARROW_OVERLAP = [];
     if (hits > 1) ARROW_OVERLAP.push([x, z, hits]);
   }
 }
-const data = { arrows: ARROWS, arrowOverlap: ARROW_OVERLAP, struct: { ...STRUCT, deckH: DECKH, clear: CLEAR, slope: SLOPE, railY: RAIL_Y }, version: 1, cell: CELL, size: SZ, classes: Object.fromEntries(Object.entries(CLS).map(([k, c]) => [k, [c.w, c.sidewalk, c.median, c.lanes]])), colors: PAL.map((k) => COLORS[k]), palette: CI, heights: H, cells: cellsOut, graph, floor: floorData, counts: PLAN.counts };
+const data = { arrows: ARROWS, arrowOverlap: ARROW_OVERLAP, struct: { ...STRUCT, goreTips: GORE_TIPS.map((g) => [R2(g.R[0]), R2(g.R[1]), R2(g.M[0]), R2(g.M[1])]), deckH: DECKH, clear: CLEAR, slope: SLOPE, railY: RAIL_Y }, version: 1, cell: CELL, size: SZ, classes: Object.fromEntries(Object.entries(CLS).map(([k, c]) => [k, [c.w, c.sidewalk, c.median, c.lanes]])), colors: PAL.map((k) => COLORS[k]), palette: CI, heights: H, cells: cellsOut, graph, floor: floorData, counts: PLAN.counts };
 data.graph.navigation=compileLanePaths(PLAN,data);
 if(data.graph.navigation.failures.length)throw new Error('Navigation clearance failures: '+JSON.stringify(data.graph.navigation.failures));
 const FLOOR_FN = `
