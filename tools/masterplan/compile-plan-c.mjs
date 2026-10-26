@@ -800,6 +800,7 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
       const spans = side < 0 ? [[90 + 0, 180 - th], [180 + th, 270]] : [[-90, -th], [th, 90]];
       // 2026-10-26 (7): the street's own sidewalk runs on round the ring until it meets the ring's sidewalk (a small green wedge was left between the square end and the circle)
       { const zIn = hw('arterial'), zOut = zIn + CLS.arterial.sidewalk, xs = []; const xNode = side < 0 ? 214 : 284;
+        { const u0 = side < 0 ? xNode - 2 : farX + 0.5, u1 = side < 0 ? farX - 0.5 : xNode + 2; emitRect('r', 'q', u0, -zIn + 0.02, u1, zIn - 0.02, H.asph - 0.004, CI.asph); }   // an asphalt underlay 4 mm below the joint of the street and the ring: their edges meet in T-junctions, the hairline cracks showed as a dotted line
         for (let k = 0; k <= 16; k++) { const x = xNode + (cc[0] - xNode) * k / 16; const rc = r0 * Math.cos(Math.PI / 32), dz2 = rc * rc - (x - cc[0]) ** 2, cz = dz2 > 0 ? Math.sqrt(dz2) : 0; if (cz >= zOut) break; xs.push([x, Math.max(zIn, cz)]); }
         for (const sz of [-1, 1]) for (let k = 0; k + 1 < xs.length; k++) { const [x0, l0] = xs[k], [x1, l1] = xs[k + 1]; emitTri('r', [x0, sz * l0], [x1, sz * l1], [x0, sz * zOut], H.walk, CI.walk); emitTri('r', [x1, sz * l1], [x1, sz * zOut], [x0, sz * zOut], H.walk, CI.walk); }
         // and the carriageway runs on to the ring: asphalt under the sidewalk's lower edge (a 0.6 m lawn triangle was left between the street's square end and the ring band)
