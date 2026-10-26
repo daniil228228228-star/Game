@@ -1503,6 +1503,9 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare, noWedge } o
   { const ex = rampExt.get(id); asymRibbon(p3, offL.map((v, i) => v - ex.L[i]), offR.map((v, i) => v + ex.R[i]), 0.052, CI.asph); }
   // 2026-10-26 (7) owner ('закрыть что под опорами'): a ramp body between two support walls is hollow; where it meets the bridge span its open end showed the grass and the sky under the deck.
   // An abutment closes it: a concrete face across the whole body (left support to right support) from the ground to the deck at each end of the span.
+  // 2026-10-26 (9) owner ('чтобы не было асфальта видно'): a ramp's bridge span had no underside (the asphalt was seen from below as a black ceiling): a concrete soffit at the beam bottom
+  if (sBr != null) { let run = []; const flush = () => { if (run.length > 1) deckRibbon(run, CLS.ramp.w + 0.4 + 2 * WALL_T, -0.63, CI.concD); run = []; };
+    for (let i = 0; i < p3.length; i++) { if (Math.abs(S[i] - sBr) <= 9.5) run.push(p3[i]); else flush(); } flush(); }
   if (sBr != null) for (let i = 1; i + 1 < p3.length; i++) {
     const c0 = Math.abs((S[i - 1] + S[i]) / 2 - sBr) < 9, c1 = Math.abs((S[i] + S[i + 1]) / 2 - sBr) < 9; if (c0 === c1) continue;
     const h = p3[i][2] + 0.05; if (h < 0.6) continue;
