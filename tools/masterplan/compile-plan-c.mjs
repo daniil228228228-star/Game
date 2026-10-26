@@ -1278,7 +1278,7 @@ function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median h
     for (let i = 0; i + 1 < n; i++) {
       const cross = segCross(i), slope = segSlope(i);
       for (const run of exposedRuns([q[i], q[i + 1]], 0, o.id, 0.3, !cross)) {
-        if (cross) { wallAlong(run, 0, (h) => h - 0.8, (h) => h + 0.05, CI.concD); continue; }
+        if (cross) { fasciaSolid(run, sg, (h) => h - 0.8, (h) => h + 0.05, CI.concD); continue; }
         embankFace(run, sg, slope, emb.ratio[i + 1], null, (P) => normalAt(P, q, vnQ, i, i + 1));
         if (slope) {
           if (!segSlope(i - 1) || Math.hypot(run[0][0] - q[i][0], run[0][1] - q[i][1]) > 0.05) embankCap(run[0], sg, [run[1][0] - run[0][0], run[1][1] - run[0][1]], emb.ratio[i + 1], normalAt(run[0], q, vnQ, i, i + 1));
@@ -1380,17 +1380,30 @@ function embankFace(run, sg, slope, rat, off, vnAt) {   // vnAt(P) -> [nx, nz] o
   for (let i = 0; i + 1 < run.length; i++) {
     const a = run[i], b = run[i + 1], ha = a[2] + 0.05, hb = b[2] + 0.05, dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = sg * -dz / l, nz = sg * dx / l;
     if (ha < 0.1 && hb < 0.1) continue;
-    if (!slope) { wallFace(a, b, ha, hb, nx, nz, acc); acc += l; continue; }
+    if (!slope) { wallFace(a, b, ha, hb, nx, nz, acc, i === 0, i + 2 >= run.length); acc += l; continue; }
     const na = (vnAt && vnAt(a)) || [nx, nz], nb = (vnAt && vnAt(b)) || [nx, nz];
     const wa = rat * ha, wb = rat * hb, A0 = [a[0], ha, a[1]], B0 = [b[0], hb, b[1]], A1 = [a[0] + na[0] * wa, 0, a[1] + na[1] * wa], B1 = [b[0] + nb[0] * wb, 0, b[1] + nb[1] * wb];
     emitTri3(A0, A1, B0, CI.slope); emitTri3(A1, B1, B0, CI.slope);
   }
 }
 // A retaining wall is built like a real one: dark plinth (0.6 m), a concrete face in mid tone (not the glaring white of the cap), a pale coping band under the edge.
-function wallFace(a, b, ha, hb, nx, nz, acc) {
+const WALL_T = 0.4;   // 2026-10-26 (6): a retaining wall / fascia is a CLOSED SOLID (front face, back face 0.4 m inside, end caps, soffit), not a single sheet (owner: thick, closed abutments)
+function wallBackAndEnds(a, b, ha, hb, nx, nz, first, last, ci) {
+  emitQuadS(a[0] - nx * WALL_T, a[1] - nz * WALL_T, b[0] - nx * WALL_T, b[1] - nz * WALL_T, 0, ha, 0, hb, ci);
+  if (first) emitQuadS(a[0], a[1], a[0] - nx * WALL_T, a[1] - nz * WALL_T, 0, ha, 0, ha, ci);
+  if (last) emitQuadS(b[0], b[1], b[0] - nx * WALL_T, b[1] - nz * WALL_T, 0, hb, 0, hb, ci);
+}
+function fasciaSolid(run, sg, b, t, ci) {   // beam along a crossing: front, back, soffit, end caps
+  if (run.length < 2) return;
+  wallAlong(run, 0, b, t, ci); wallAlong(run, -sg * WALL_T, b, t, ci);
+  const bot = run.map((p) => [p[0], p[1], b(p[2])]); deckRibbon(offsetPts3(bot, -sg * WALL_T / 2), WALL_T, 0, ci);
+  for (const [i, k] of [[0, 1], [run.length - 1, run.length - 2]]) { const q = offsetPts3(run, 0)[i], r2 = offsetPts3(run, -sg * WALL_T)[i]; emitQuadS(q[0], q[1], r2[0], r2[1], b(run[i][2]), t(run[i][2]), b(run[i][2]), t(run[i][2]), ci); void k; }
+}
+function wallFace(a, b, ha, hb, nx, nz, acc, first = false, last = false) {
   if (Math.max(ha, hb) < 0.6) { emitQuadS(a[0], a[1], b[0], b[1], 0, ha, 0, hb, CI.kerb); return; }   // 2026-10-26: a low edge of a ramp (rising from the ground) is a pale kerb, not a thin dark brown plinth line (owner: 'sliver along the carriageway')
   const pa = Math.min(0.6, ha), pb = Math.min(0.6, hb), ca = Math.max(pa, ha - 0.3), cb = Math.max(pb, hb - 0.3);
   emitQuadS(a[0], a[1], b[0], b[1], 0, pa, 0, pb, CI.concD);
+  wallBackAndEnds(a, b, ha, hb, nx, nz, first, last, CI.concD);
   if (ha > 0.6 || hb > 0.6) emitQuadS(a[0], a[1], b[0], b[1], pa, ca, pb, cb, CI.wall);
   if (ca < ha || cb < hb) emitQuadS(a[0], a[1], b[0], b[1], ca, ha, cb, hb, CI.conc);
   // panel joints every 6 m (0.14 m wide dark strips 3 cm proud of the face): reads as precast panels, not as one 100 m slab
@@ -1441,7 +1454,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare, noWedge } o
       const support = cross ? q : body;
       if (i > 1 && cross !== (sBr != null && Math.abs((S[i - 2] + S[i - 1]) / 2 - sBr) < 9)) wallConnector(body[i - 1], q[i - 1], p3[i - 1][2] + 0.05);   // body wall <-> fascia 0.5 m proud: close the slit
       for (const run of exposedRuns([support[i - 1], support[i]], 0, id, 0.3, !cross))
-        { if (cross) wallAlong(run, 0, (h) => h - 0.6, (h) => h + 0.05, CI.conc); else {   // an embankment face: a grass slope 1:2.5 (or a concrete retaining wall where it does not fit), never a vertical green wall
+        { if (cross) fasciaSolid(run, sg, (h) => h - 0.6, (h) => h + 0.05, CI.conc); else {   // an embankment face: a grass slope 1:2.5 (or a concrete retaining wall where it does not fit), never a vertical green wall
           embankFace(run, sg, embMode[i], embMode.ratio[i], CLS.ramp.w / 2 + 0.2, (P) => normalAt(P, support, vnB, i - 1, i));
           if (embMode[i] && (!embMode[i - 1] || cross2(i - 1) || Math.hypot(run[0][0] - support[i - 1][0], run[0][1] - support[i - 1][1]) > 0.05)) embankCap(run[0], sg, [run[1][0] - run[0][0], run[1][1] - run[0][1]], embMode.ratio[i], normalAt(run[0], support, vnB, i - 1, i));
           if (embMode[i] && (i + 1 >= embMode.length || !embMode[i + 1] || cross2(i + 1) || Math.hypot(run[run.length - 1][0] - support[i][0], run[run.length - 1][1] - support[i][1]) > 0.05)) embankCap(run[run.length - 1], sg, [run[run.length - 1][0] - run[run.length - 2][0], run[run.length - 1][1] - run[run.length - 2][1]], embMode.ratio[i], normalAt(run[run.length - 1], support, vnB, i - 1, i));

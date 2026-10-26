@@ -182,5 +182,27 @@ const check = (ok, msg) => { console.log((ok ? 'ok: ' : 'FAIL: ') + msg); if (!o
   check(baseBad.length === 0, `parapet bases rest on the deck surface (${baseBad.length} floating)`);
 }
 
+// ---- 2026-10-26 (6): retaining wall panels are CLOSED SOLIDS: behind every tall wall panel there is a parallel back face 0.4 m inside (same extent), and the first / last panel of a run has an end cap
+{
+  const walls = []; for (const c of Object.values(D.cells)) { const q = c.d && c.d.s; if (q) for (let i = 0; i < q.length; i += 9) walls.push(q.slice(i, i + 9)); }
+  const cellW = new Map(), K = (x, z) => Math.floor(x / 8) + ',' + Math.floor(z / 8);
+  for (const w of walls) { const k = K((w[0] + w[2]) / 2, (w[1] + w[3]) / 2); (cellW.get(k) || cellW.set(k, []).get(k)).push(w); }
+  let n = 0; const noBack = [];
+  for (const w of walls) {
+    if (w[8] !== P.wall || Math.max(w[5], w[7]) < 0.8) continue;
+    const dx = w[2] - w[0], dz = w[3] - w[1], len = Math.hypot(dx, dz); if (len < 0.3) continue;
+    const tx = dx / len, tz = dz / len, mx = (w[0] + w[2]) / 2, mz = (w[1] + w[3]) / 2; n++;
+    let found = false;
+    for (let i = -1; i <= 1 && !found; i++) for (let j = -1; j <= 1 && !found; j++) for (const v of cellW.get(K(mx + i * 8, mz + j * 8)) || []) {
+      if (v[8] !== P.concD) continue;
+      const vx = v[2] - v[0], vz = v[3] - v[1], vl = Math.hypot(vx, vz); if (vl < 0.3 || Math.abs((vx * tz - vz * tx) / vl) > 0.06) continue;
+      const m2x = (v[0] + v[2]) / 2, m2z = (v[1] + v[3]) / 2, perp = Math.abs((m2x - mx) * -tz + (m2z - mz) * tx), along = Math.abs((m2x - mx) * tx + (m2z - mz) * tz);
+      if (perp > 0.33 && perp < 0.47 && along < 0.6 && Math.max(v[5], v[7]) >= Math.max(w[5], w[7]) - 0.05) { found = true; break; }
+    }
+    if (!found) noBack.push([+mx.toFixed(1), +mz.toFixed(1)]);
+  }
+  check(n > 100 && noBack.length === 0, `every tall wall panel has a back face 0.4 m inside (${n} panels, missing ${noBack.length}: ${JSON.stringify(noBack.slice(0, 5))})`);
+}
+
 console.log(failed ? failed + ' check(s) failed' : 'all checks passed');
 process.exit(failed ? 1 : 0);
