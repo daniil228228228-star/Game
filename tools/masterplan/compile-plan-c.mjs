@@ -38,6 +38,7 @@ const COLORS = {
   slope: 0x628f4b, wall: 0x7d7a71,   // slope: was 0x558140 (a dark triangle against the lawn)
 };
 const PAL = Object.keys(COLORS), CI = Object.fromEntries(PAL.map((k, i) => [k, i]));
+const NOSE_MIN = 0.35;   // narrowest median nose (half width, m) that is drawn as a kerbed island
 const SPLIT_START_GAP = 1.6;   // I2: gap between a median's round nose and the asphalt of the split street's ring (the split node lies 0.8 m inside that ring)
 const H = { ground: 0, asph: 0.05, walk: 0.12, med: 0.12, paint: 0.077, ramp: 0.052, ringWalk: 0.12, island: 0.09, plaza: 0.03, fillet: 0.123, zone: -0.06, zone2: -0.05, water: -0.02, bank: -0.045, base: -0.08, rail: 0.035, railPaint: 0.066 };   // every ground layer has its own height (no coplanar overlaps = no z-fighting seams)
 
@@ -350,9 +351,14 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
     for (const sg of [-1, 1]) {
       const a0 = [X(sg, outerA(za)), za], a1 = [X(sg, outerA(zb)), zbE], b0 = [X(sg, inner(za)), za], b1 = [X(sg, inner(zb)), zbE];
       emitTri('r', a0, b0, a1, H.asph, CI.asph); emitTri('r', b0, b1, a1, H.asph, CI.asph);
-      if (inner(za) > 0.02 || inner(zb) > 0.02) emitWall(b0[0], b0[1], b1[0], b1[1], H.asph, H.med, CI.kerb);
+      if (inner(za) > NOSE_MIN && inner(zb) > NOSE_MIN) emitWall(b0[0], b0[1], b1[0], b1[1], H.asph, H.med, CI.kerb);
     }
-    if (inner(za) > 0.02 || inner(zb) > 0.02) { const m0 = inner(za), m1 = inner(zb); emitTri('r', [X(-1, m0), za], [X(1, m0), za], [X(-1, m1), zb], H.med, CI.lawnG); emitTri('r', [X(1, m0), za], [X(1, m1), zb], [X(-1, m1), zb], H.med, CI.lawnG); }
+    if (inner(za) > NOSE_MIN && inner(zb) > NOSE_MIN) { const m0 = inner(za), m1 = inner(zb); emitTri('r', [X(-1, m0), za], [X(1, m0), za], [X(-1, m1), zb], H.med, CI.lawnG); emitTri('r', [X(1, m0), za], [X(1, m1), zb], [X(-1, m1), zb], H.med, CI.lawnG); }
+    if (!(inner(za) > NOSE_MIN && inner(zb) > NOSE_MIN) && (inner(za) > 0.001 || inner(zb) > 0.001)) { const m0 = inner(za), m1 = inner(zb); emitTri('r', [X(-1, m0), za], [X(1, m0), za], [X(-1, m1), zb], H.asph, CI.asph); emitTri('r', [X(1, m0), za], [X(1, m1), zb], [X(-1, m1), zb], H.asph, CI.asph); }   // the strip before the nose is asphalt (it showed the ground through)
+    if (!(inner(za) > NOSE_MIN && inner(zb) > NOSE_MIN) && (inner(za) > NOSE_MIN) !== (inner(zb) > NOSE_MIN)) {   // 2026-10-26 (8) owner (a green hairline across the asphalt): the median starts with a ROUND kerbed nose of radius NOSE_MIN, not a lawn sliver tapering to 0
+      const zt = inner(za) > NOSE_MIN ? za : zb, sgz = inner(za) > NOSE_MIN ? 1 : -1, m = inner(zt), C = [c, zt];
+      for (let k = 0; k < 12; k++) { const t0 = Math.PI * k / 12, t1 = Math.PI * (k + 1) / 12, A = [c + Math.cos(t0) * m, zt + sgz * Math.sin(t0) * m], B = [c + Math.cos(t1) * m, zt + sgz * Math.sin(t1) * m]; emitTri('r', C, A, B, H.med, CI.lawnG); emitWall(A[0], A[1], B[0], B[1], H.asph, H.med, CI.kerb); }
+    }
   }
   splitZones.push([[c - 9, M2Z.z0], [c + 9, M2Z.z0], [c + 9, M2Z.z1], [c - 9, M2Z.z1]]);   // nothing random may stand on it
   // paint: polylines along the profile, continuous or dashed, per carriageway
@@ -679,7 +685,7 @@ function zebra(c, dir, at, cls, len = 1.6) {   // bars parallel to the street, s
   }
 }
 function stopLine(c, dir, at, cls) {   // across the incoming half of an arm
-  const w = hw(cls), med = CLS[cls].median / 2, r = [dir[1], -dir[0]], l0 = med, l1 = w, p = [c[0] + dir[0] * at, c[1] + dir[1] * at];
+  const w = cls.startsWith('motorway') ? M_EDGE + 0.08 : hw(cls), med = CLS[cls].median / 2, r = [dir[1], -dir[0]], l0 = med, l1 = w, p = [c[0] + dir[0] * at, c[1] + dir[1] * at];   // 2026-10-26 (8): a motorway stop line ends at the edge line (M2 at I2 is 2 lanes, 'motorway3' is 16.8 m wide: the bar ran 2 m out over the kerb return)
   const q = (l) => [p[0] + r[0] * l, p[1] + r[1] * l];
   const A = q(l0), B = q(l1);
   if (dir[0] === 0) emitRect('p', 'q', Math.min(A[0], B[0]), p[1] - 0.2, Math.max(A[0], B[0]), p[1] + 0.2, H.paint, CI.white);
