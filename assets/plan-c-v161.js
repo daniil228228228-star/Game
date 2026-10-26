@@ -180,7 +180,7 @@
   let night = 0;
   const glowMat = new THREE.MeshBasicMaterial({ color: 0x6d6a5e }), poolMat = new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
   const poolGeo = new THREE.CircleGeometry(3.4, 16);
-  api.setNight = (v) => { night = v; glowMat.color.setRGB(0.43 + 0.57 * v, 0.42 + 0.5 * v, 0.37 + 0.2 * v); poolMat.opacity = 0.2 * v; if (instances.lamppool) instances.lamppool.visible = v > 0.05; };
+  api.setNight = (v) => { night = v; glowMat.color.setRGB(0.43 + 0.57 * v, 0.42 + 0.5 * v, 0.37 + 0.2 * v); poolMat.opacity = 0.2 * v; if (instances.lamppool) instances.lamppool.visible = false; };
   const dummy = new THREE.Object3D(), tint = new THREE.Color();
   function makeInstanced(name, count, fill, opts = {}) {
     let inst = instances[name];
@@ -225,7 +225,7 @@
     const lampN = count('lamp');
     makeInstanced('lampglow', lampN, (inst) => each('lamp', (a, i, n) => setM(inst, n, a[i] + Math.sin(a[i + 2]) * 0.78, 3.36 + a[i + 3], a[i + 1] + Math.cos(a[i + 2]) * 0.78, a[i + 2])), { geo: new THREE.BoxGeometry(0.3, 0.06, 0.5), material: glowMat });
     makeInstanced('lamppool', lampN, (inst) => each('lamp', (a, i, n) => { dummy.position.set(a[i] + Math.sin(a[i + 2]) * 0.78, 0.13 + a[i + 3], a[i + 1] + Math.cos(a[i + 2]) * 0.78); dummy.rotation.set(-Math.PI / 2, 0, 0); dummy.scale.setScalar(1); dummy.updateMatrix(); inst.setMatrixAt(n, dummy.matrix); }), { geo: poolGeo, material: poolMat });
-    if (instances.lamppool) instances.lamppool.visible = night > 0.05;
+    if (instances.lamppool) instances.lamppool.visible = false;   // 2026-10-26 owner: the semi-transparent grey light disc on the ground (looked like a flat blob / shadow) is gone; the lamp heads still glow
     makeInstanced('cat', count('cat'), (inst) => each('cat', (a, i, n) => setM(inst, n, a[i], D.struct.railY, a[i + 1], a[i + 2])), { geo: sharedGeo('cat') });
     makeInstanced('plate', count('plate'), (inst) => each('plate', (a, i, n) => { setM(inst, n, a[i], 0, a[i + 1], a[i + 2]); tint.setHex(PLATE_COLORS[a[i + 3]] || 0xffffff).convertSRGBToLinear(); inst.setColorAt(n, tint); }), { geo: sharedGeo('plate'), material: new THREE.MeshStandardMaterial({ roughness: 0.6 }) });
     makeInstanced('tree', count('tree'), (inst) => each('tree', (a, i, n) => { const t = a[i + 3]; setM(inst, n, a[i], 0, a[i + 1], t * 6.28, a[i + 2]); tint.setRGB(0.78 + t * 0.35, 0.85 + t * 0.25, 0.75 + t * 0.3); inst.setColorAt(n, tint); }), { geo: sharedGeo('tree'), shadow: false });

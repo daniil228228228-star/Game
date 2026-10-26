@@ -1,3 +1,12 @@
+# 2026-10-26 (5) - Plan C: cleanup pass (c1y)
+
+- The "grey translucent ellipse" at night = the additive lamp ground pool (`lamppool`): switched off (heads still glow).
+- Low ramp edges (< 0.6 m, rising from the ground) are a pale kerb face instead of the dark plinth line (thin brown diagonal sliver along the carriageway).
+- Lamps on ramps never stand where the parapet is still tapering (< 0.75 m): ground-side pole instead. Island kerb ring 0.38 m (was 0.7).
+- Tan arrows in the owner's shots are the GAME's guidance arrow near the player, not road markings; the white lane arrows were not re-aligned numerically.
+- Tried and reverted: closing the 2 m parapet gap where an I1 outer ramp wedge merges into M1 (smaller exposedRuns margin) - the wall then cuts the ramp's swept corridor (plan-c-interchanges). The gap and the straight asphalt seam at x ~ 130 REMAIN.
+- NOT done: pale strip between I4.8 / I4.10, gore hatching / taper / turn-pocket arrows, full diverge audit, thick retaining panels, dark shade in loop banks, grass between abutments, L stubs / beige blob in the grid (probably sign poles / a tree seen from above, not investigated), n117 / n127 sidewalk ends, I4 sampling, lamps on the M2 median, odd arrow pair at the I2 mouth (shot 4), I2 green slivers.
+
 # 2026-10-26 (4) - Plan C: ramp diverge lines, I2 kerbs, parapet flush with the wall (c1x)
 
 - Diverge / merge markings: the through motorway's edge line on the ramp side is a BROKEN line (1.0 / 1.0) along the span where a ramp runs beside it (`wedgeSpans`), solid elsewhere on both sides. Not audited numerically for ALL diverge points (only the M2 / I4 spot opened in frames).

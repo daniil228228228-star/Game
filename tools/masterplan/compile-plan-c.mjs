@@ -1391,7 +1391,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
     }
     // 2026-10-25: the parapet follows the PER-VERTEX asphalt edge (offL / offR: the merge wedge converges on the host kerb), not a constant offset: it used to run straight on while the asphalt edge curved in - a wavy, stepped kerb where a ramp joins M1
     const parapetLine = offsetVar(p3, p3.map((_, i) => (flare || mouth != null) ? sg * (CLS.ramp.w / 2 + 0.2) : sg < 0 ? offL[i] - 0.2 : offR[i] + 0.2));   // flared exits / diamond mouths keep the plain offset (their widened asphalt would push the wall into the neighbouring lane)
-    for (const run of exposedRuns(parapetLine, 0, id, 0.3, 'barrier')) {
+    for (const run of exposedRuns(parapetLine, 0, id, Math.max(...p3.map((q) => q[2])) < 1.0 ? 0.3 : 0.3, 'barrier')) {
       // Split the height gate into contiguous runs too: filtering vertices
       // would reconnect opposite sides of a low section with a collider chord.
       // The barrier RISES out of the ground over the deck height 0.3 -> 1.2 m (a sloped end, 2026-10-19: it used to start as a full-height slab in mid air); the colliders keep the old gate (deck > 1.2 m)
