@@ -1836,7 +1836,8 @@ for (const line of PLAN.transit.lines) for (const s0 of line.stops) { let s = s0
 // ---- 9b. lighting of the motorways, decks and ramps (2026-10-25, SP 52.13330: interchanges and urban motorways are lit; before: 0 lamps on M1 / M2 / ramps, 14 dark stretches > 24 m)
 // lamp = [x, z, yaw, y]: y is the height of the pole's foot (decks), the head looks at the road; alternate sides, 14 m between lamps along the road (28 m per side)
 const lampsHi = [];
-function lampsAlong(id, pts, step, off, lo = -Infinity, hi = Infinity, offLow = off, edgeAt = null) {
+const onStreetAsph = (x, z) => PLAN.edges.some((e) => { if (e.cls === 'motorway') return false; const a = N.get(e.a), b = N.get(e.b), ax = e.dir === 'x' ? 0 : 1, c = ax === 0 ? a.z : a.x, lo = Math.min(ax === 0 ? a.x : a.z, ax === 0 ? b.x : b.z), hi = Math.max(ax === 0 ? a.x : a.z, ax === 0 ? b.x : b.z), p = ax === 0 ? x : z, q = ax === 0 ? z : x; return p > lo - 1 && p < hi + 1 && Math.abs(q - c) < hw(e.cls) + 0.4; });   // a ground pole never on a street's asphalt
+function lampsAlong(id, pts, step, off, lo = -Infinity, hi = Infinity, offLow = off, edgeAt = null, capH = 0.75) {
   const S = arcLen(pts); let side = 1;
   for (let sv = step / 2; sv < S[S.length - 1]; sv += step) {
     let i = 1; while (i < S.length - 1 && S[i] < sv) i++;
@@ -1847,14 +1848,16 @@ function lampsAlong(id, pts, step, off, lo = -Infinity, hi = Infinity, offLow = 
     // the planned side first; where another road lies there (a loop beside the M1 deck) the other side of the same ramp, so no stretch goes dark
     let placed = false;
     for (const sd of [side, -side]) {
-      const oo = ro ? Math.max(o2, (sd > 0 ? ro.R : -ro.L) + 0.45) : o2, px = x + nx * sd * oo, pz = z + nz * sd * oo;
-      if (coveredRoad([px, pz, h], id, 0.3)) continue;
-      lampsHi.push([R2(px), R2(pz), R2(Math.atan2(-nx * sd, -nz * sd)), R2(h)]); placed = true; break;
+      // 2026-10-26 (8) owner ('фонари летают'): an elevated pole stood 0.05-0.15 m OUTSIDE the wall at deck height (in the air above the bank / the ground). Now it stands ON the parapet cap
+      // (centre line of the parapet, foot = the cap top), or on the GROUND (y 0) beside a low ramp / road
+      const low = h < (edgeAt ? 0.75 : 0.3), oo = low ? (ro ? Math.max(o2, (sd > 0 ? ro.R : -ro.L) + 0.45) : o2) : ro ? (sd > 0 ? ro.R : -ro.L) + 0.2 - PARAPET_T / 2 : off, px = x + nx * sd * oo, pz = z + nz * sd * oo;
+      if (coveredRoad([px, pz, h], id, 0.3) || low && onStreetAsph(px, pz)) continue;
+      lampsHi.push([R2(px), R2(pz), R2(Math.atan2(-nx * sd, -nz * sd)), low ? 0 : R2(h + 0.05 + capH)]); placed = true; break;
     }
     side = -side;
   }
 }
-lampsAlong('M1', sampleAxis('x', M1_Z, -170, 170, hM1, 3), 28, MW + 0.3, -Infinity, Infinity, MW + 1.4);   // on the deck inside the parapet, on the ground beside the carriageway
+lampsAlong('M1', sampleAxis('x', M1_Z, -170, 170, hM1, 3), 28, MW + 0.15 - PARAPET_T / 2, -Infinity, Infinity, MW + 1.4, null, 0.9);   // on the parapet cap of the deck (top = deck + 0.95), on the ground beside the carriageway   // on the deck inside the parapet, on the ground beside the carriageway
 lampsAlong('M2', sampleAxis('z', M2_X, -150, -40, () => 0, 3), 28, MW + 1.4);
 lampsAlong('M2', sampleAxis('z', M2_X, 40, 86, () => 0, 3), 28, MW + 1.4);
 lampsAlong('M2', sampleAxis('z', M2_X, -40, -10, () => 0, 3), 14, 11);   // the approach of the at-grade crossing I2 (3 lanes + taper): poles outside the widened carriageway
