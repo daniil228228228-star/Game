@@ -617,7 +617,8 @@ for (const b of BENDS.values()) {
     const keep = arcIdx.filter((i) => Math.abs(o[i]) < half[i] - 0.7);
     if (keep.length > 2) dashPoly(keep.map((i) => P[i]), 1.0, 1.4, 0.18, H.paint);
   }
-  if (A.cls === 'collector' || B.cls === 'collector') { const centre = arcIdx.filter((i) => mh[i] < 0.05); if (centre.length > 2) dashPoly(centre.map((i) => pts[i]), 1.0, 1.2, 0.18, H.paint); }   // collector centre dashes once the median has closed
+  // 2026-10-26 (8) owner ('разметка пропала' on the port bends): every undivided street keeps its centre dashes round a bend (was collector only)
+  if (!isMw) { const centre = arcIdx.filter((i) => mh[i] < 0.05); if (centre.length > 2) dashPoly(centre.map((i) => pts[i]), 1.0, 1.2, 0.18, H.paint); }   // collector centre dashes once the median has closed
   bendsOut.push({ node: b.node, at: c, R, half: Math.max(...half), sw: Math.max(...sw) });
 }
 
