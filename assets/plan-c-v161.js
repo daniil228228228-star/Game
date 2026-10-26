@@ -26,6 +26,11 @@
   const lin = D.colors.map((h) => new THREE.Color(h).convertSRGBToLinear());
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0.0, side: THREE.DoubleSide });
   mat.userData.planCV161 = true;
+  // 2026-10-26 (9) owner ('здесь рябит': a diamond moire on the face of a ramp wall seen from the street): wall quads carry ONE stored normal whatever side is seen; the fragment shader flips it
+  // for a back face (DoubleSide) but the shadow lookup used the unflipped vertex normal, so its normalBias pushed the sample INTO the wall = self-shadow acne on every wall seen from its 'back'.
+  // The normal used for the shadow offset is turned towards the camera, like the shading normal.
+  const FLIP_SHADOW_N = (sh) => { sh.vertexShader = sh.vertexShader.replace('#include <shadowmap_vertex>', 'if (dot(transformedNormal, -mvPosition.xyz) < 0.0) transformedNormal = -transformedNormal;\n#include <shadowmap_vertex>'); };
+  mat.onBeforeCompile = FLIP_SHADOW_N; mat.customProgramCacheKey = () => 'planCFlipN';
   // Paint on its OWN mesh with a polygon offset (owner's iPhone 2026-10-25: lane lines "dance" on ramps): the lines lie 2.7 cm above the asphalt, a 16-bit depth buffer resolves ~9 cm at 60 m, so the
   // line z-fought with the road on every slope.  Decal-style: pulled towards the camera by polygonOffset (factor -2, units -4, which scales with the slope of the surface), drawn after the road.
   const paintMat = mat.clone(); paintMat.polygonOffset = true; paintMat.polygonOffsetFactor = -2; paintMat.polygonOffsetUnits = -4; paintMat.userData.planCV161 = true;
@@ -35,7 +40,7 @@
   // so a line 27 mm above its asphalt wins the depth test at any distance, whatever the bit depth or the slope of the ramp.  Same constant on every paint mesh = no line over a line.
   const PAINT_NDC_BIAS = 6e-5;
   // only DECK / RAMP paint carries the bias (attribute pbias = 1): ground paint keeps the plain polygon offset, so a bay line 5 cm under an asphalt layer can never show through at a distance
-  paintMat.onBeforeCompile = (sh) => { sh.vertexShader = 'attribute float pbias;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  gl_Position.z -= pbias * ' + PAINT_NDC_BIAS.toExponential(1) + ' * gl_Position.w;'); };
+  paintMat.onBeforeCompile = (sh) => { FLIP_SHADOW_N(sh); sh.vertexShader = 'attribute float pbias;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  gl_Position.z -= pbias * ' + PAINT_NDC_BIAS.toExponential(1) + ' * gl_Position.w;'); };
   paintMat.customProgramCacheKey = () => 'planCPaint' + PAINT_NDC_BIAS;
   api.paintNdcBias = PAINT_NDC_BIAS;
   api.material = mat;
