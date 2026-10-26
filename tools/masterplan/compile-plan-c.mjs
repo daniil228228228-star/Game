@@ -306,10 +306,19 @@ for (const e of PLAN.edges) {
     // 2026-10-26 (7) owner ('стык плохой'): a median that runs up to a split street (I2) stops 1 m before the ring's asphalt with a ROUND nose (it ended square inside the carriageway)
     const splitAt = (id) => e.cls !== 'motorway' && !e.split && PLAN.edges.some((x) => x.split && (x.a === id || x.b === id));
     const nLo = splitAt(s.lowNode), nHi = splitAt(s.highNode), cutN = SPLIT_START_GAP + mh;
-    const mlo2 = nLo ? Math.max(mlo, lo0 + cutN) : mlo, mhi2 = nHi ? Math.min(mhi, hi0 - cutN) : mhi;
+    const RING_BACK = 12;   // 2026-10-26 (9) owner ('этот выступ тоже убирай'): no raised median near a roundabout: it stops 12 m further back, the approach is plain asphalt with a double centre line
+    const rLo = e.cls !== 'motorway' && J.get(s.lowNode)?.type === 'roundabout', rHi = e.cls !== 'motorway' && J.get(s.highNode)?.type === 'roundabout';
+    const mlo2 = nLo ? Math.max(mlo, lo0 + cutN) : rLo ? mlo + RING_BACK : mlo, mhi2 = nHi ? Math.min(mhi, hi0 - cutN) : rHi ? mhi - RING_BACK : mhi;
+    for (const [on, a0, a1] of [[rLo, mlo - RING_BACK + 2, mlo2], [rHi, mhi2, mhi + RING_BACK - 2]]) if (on && mhi2 - mlo2 > 1) {
+      const j = J.get(on === rLo && a0 < mlo ? s.lowNode : s.highNode), from = Math.max(a0, (e.dir === 'x' ? Math.min(a.x, N.get(e.b).x) : Math.min(a.z, N.get(e.b).z)) + 0), to = a1;
+      const ringEdge = (node) => { const jj = J.get(node), nn = N.get(node); return { R: jj.R, at: e.dir === 'x' ? nn.x : nn.z }; };
+      const rr = ringEdge(a0 < mlo ? s.lowNode : s.highNode), startA = a0 < mlo ? Math.max(a0, rr.at + rr.R + 1.5) : a0, endA = a0 < mlo ? a1 : Math.min(a1, rr.at - rr.R - 1.5);
+      void j; void from; void to;
+      if (endA - startA > 1) for (const o of [-0.12, 0.12]) { const l0 = o - 0.08, l1 = o + 0.08; if (e.dir === 'x') emitRect('p', 'q', startA, c + l0, endA, c + l1, H.paint, CI.white); else emitRect('p', 'q', c + l0, startA, c + l1, endA, H.paint, CI.white); }   // double solid centre line 1.3
+    }
     if (mhi2 - mlo2 > 1) for (const [lo, hi] of subtractIntervals(mlo2, mhi2, cuts)) put(lo, hi, -mh, mh, e.cls === 'motorway' ? 'medM' : 'med');
     // 2026-10-26 (9) owner ('нужна эта головка на круговых? убрать'): a median that ends at a roundabout ends in the same round kerbed nose (it ended square, with painted splitter lines on to the ring)
-    const ringAt = (id) => e.cls !== 'motorway' && ['roundabout'].includes(J.get(id)?.type);
+    const ringAt = () => false;   // (round nose at roundabouts removed again by the owner: the median now stops 12 m back, see RING_BACK)
     for (const [on, at, sg] of [[nLo || ringAt(s.lowNode), mlo2, -1], [nHi || ringAt(s.highNode), mhi2, 1]]) if (on && mhi2 - mlo2 > 1) {
       const C = e.dir === 'x' ? [at, c] : [c, at], P = (t) => e.dir === 'x' ? [at + sg * Math.cos(t) * mh, c + Math.sin(t) * mh] : [c + Math.sin(t) * mh, at + sg * Math.cos(t) * mh];
       for (let k = 0; k < 12; k++) { const t0 = -Math.PI / 2 + Math.PI * k / 12, t1 = -Math.PI / 2 + Math.PI * (k + 1) / 12, A = P(t0), B = P(t1); emitTri('r', C, A, B, H.med, CI.median); emitWall(A[0], A[1], B[0], B[1], H.asph, H.med, CI.kerb); }
