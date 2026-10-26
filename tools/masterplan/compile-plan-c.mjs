@@ -1060,6 +1060,10 @@ for (const { id, p3, attach, mouth, S, flare, noWedge } of rampPts) {
       if (d >= dTouch + 1e-6) break;
       const outer = Math.max(host.Hw, Math.min(d + CLS.ramp.w / 2, host.Hw + CLS.ramp.w * (d - dEnd) / (dTouch - dEnd)));
       if (sideOut > 0) { offR[i] = outer - d; dashed[0][i] = true; } else { offL[i] = -(outer - d); dashed[1][i] = true; }
+      if (type === 'motorway') {   // 2026-10-25: the converging outer edge line lands exactly on the host's own edge line (M_EDGE - 0.15), it used to stop 0.15-0.35 m off it: a visible step where the two lines meet
+        const conv = Math.max(0, Math.min(1, 1 - (outer - host.Hw) / CLS.ramp.w)), dl = (MW - 0.2) - (M_EDGE - 0.15);
+        if (sideOut > 0) adjR[i] = -dl * conv; else adjL[i] = dl * conv;
+      }
     }
   }
   if (mouth != null) {   // terminal mouth: both edges flare symmetrically
@@ -1160,13 +1164,18 @@ function exposedRuns(pts, off, own, margin = 0.2, body = false) {
 }
 // 2026-10-25: a parapet is a CLOSED SOLID, not one sheet + a floating strip (owner: "бортики просвечивают"): inner face, outer face (0.28 m apart), a 0.34 m cap on top and end faces.
 // faces: sg is the side of the carriageway edge the run lies on; bFn / tFn are the bottom / top heights of the wall of a run point, capLift the extra height of the cap above tFn (0 = flush).
-const PARAPET_T = 0.28, PARAPET_CAP = 0.34;
-function parapetSolid(run, sg, bFn, tFn, capPts, capDy) {
+const PARAPET_T = 0.28, PARAPET_CAP = 0.34, PARAPET_TAPER = 2.6;
+function parapetSolid(run, sg, bFn, tFn) {   // the top of the wall (and its cap) sinks to the base over the last PARAPET_TAPER metres of a run: a tapered terminal, never a full-height block ending in mid air (owner: "pale wedge" at the merge with M1)
   if (run.length < 2) return;
-  wallAlong(run, 0, bFn, tFn, CI.conc); wallAlong(run, sg * PARAPET_T, bFn, tFn, CI.conc);
-  deckRibbon(offsetPts3(capPts, sg * PARAPET_T / 2), PARAPET_CAP, capDy, CI.conc);   // cap
-  const a = offsetPts3(run, 0), b = offsetPts3(run, sg * PARAPET_T);
-  for (const k of [0, run.length - 1]) { const bb = bFn(run[k][2]), tt = tFn(run[k][2]); emitQuadS(a[k][0], a[k][1], b[k][0], b[k][1], bb, tt, bb, tt, CI.conc); }   // end faces
+  const S = arcLen(run), L = S[S.length - 1], ease = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+  const top = run.map((p, i) => { const b = bFn(p[2]), t = tFn(p[2]), k = L < 2 * PARAPET_TAPER ? ease(Math.min(S[i], L - S[i]) / (L / 2 || 1)) : ease(Math.min(S[i], L - S[i]) / PARAPET_TAPER); return b + (t - b) * k; });
+  const A = offsetPts3(run, 0), B = offsetPts3(run, sg * PARAPET_T);
+  for (let i = 0; i + 1 < run.length; i++) {
+    const b0 = bFn(run[i][2]), b1 = bFn(run[i + 1][2]);
+    emitQuadS(A[i][0], A[i][1], A[i + 1][0], A[i + 1][1], b0, top[i], b1, top[i + 1], CI.conc);
+    emitQuadS(B[i][0], B[i][1], B[i + 1][0], B[i + 1][1], b0, top[i], b1, top[i + 1], CI.conc);
+  }
+  deckRibbon(offsetPts3(run.map((p, i) => [p[0], p[1], top[i]]), sg * PARAPET_T / 2), PARAPET_CAP, 0.0, CI.conc);   // cap on top, same taper
 }
 function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median half or 0), crossings: [[s0,s1]] along arc length, paint: {edge, divider}, kerbC, walls: true}
   const S = arcLen(pts);
@@ -1175,7 +1184,7 @@ function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median h
   // parapets (both sides) + caps
   for (const sg of [-1, 1]) for (const run of exposedRuns(pts, sg * (o.w / 2 + 0.15), o.id, 0.3, 'barrier')) {
     // The cap follows the same taper as the concrete face at the ground toe.
-    parapetSolid(run, sg, (h) => h + 0.05, (h) => h + 0.05 + Math.min(0.9, h * 3), run.map((p) => [p[0], p[1], p[2] + Math.min(0.9, p[2] * 3)]), 0.05);
+    parapetSolid(run, sg, (h) => h + 0.05, (h) => h + 0.05 + Math.min(0.9, h * 3));
     addParapets(run.filter((p) => p[2] > 0.2), 0);
   }
   if (o.med) for (const sg of [-1, 1]) {
@@ -1352,7 +1361,9 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
           if (embMode[i] && (i + 1 >= embMode.length || !embMode[i + 1] || cross2(i + 1) || Math.hypot(run[run.length - 1][0] - support[i][0], run[run.length - 1][1] - support[i][1]) > 0.05)) embankCap(run[run.length - 1], sg, [run[run.length - 1][0] - run[run.length - 2][0], run[run.length - 1][1] - run[run.length - 2][1]], embMode.ratio[i], normalAt(run[run.length - 1], support, vnB, i - 1, i));
         } }
     }
-    for (const run of exposedRuns(p3, sg * (CLS.ramp.w / 2 + 0.2), id, 0.3, 'barrier')) {
+    // 2026-10-25: the parapet follows the PER-VERTEX asphalt edge (offL / offR: the merge wedge converges on the host kerb), not a constant offset: it used to run straight on while the asphalt edge curved in - a wavy, stepped kerb where a ramp joins M1
+    const parapetLine = offsetVar(p3, p3.map((_, i) => sg < 0 ? rampOffs.get(id).offL[i] - 0.2 : rampOffs.get(id).offR[i] + 0.2));
+    for (const run of exposedRuns(parapetLine, 0, id, 0.3, 'barrier')) {
       // Split the height gate into contiguous runs too: filtering vertices
       // would reconnect opposite sides of a low section with a collider chord.
       // The barrier RISES out of the ground over the deck height 0.3 -> 1.2 m (a sloped end, 2026-10-19: it used to start as a full-height slab in mid air); the colliders keep the old gate (deck > 1.2 m)
@@ -1360,7 +1371,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
       let vis = [];
       const flush = () => {
         if (vis.length > 1) {
-          parapetSolid(vis, sg, (h) => h + 0.05, (h) => h + 0.05 + 0.75 * tap(h), vis.map((q) => [q[0], q[1], q[2] - 0.75 * (1 - tap(q[2]))]), 0.8);
+          parapetSolid(vis, sg, (h) => h + 0.05, (h) => h + 0.05 + 0.75 * tap(h));
           let hi = []; for (const q of vis.concat([[0, 0, 0]])) { if (q[2] > 0.5) hi.push(q); else { if (hi.length > 1) addParapets(hi, 0); hi = []; } }
         }
         vis = [];
