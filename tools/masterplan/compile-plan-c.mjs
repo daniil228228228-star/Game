@@ -1256,7 +1256,7 @@ function coveredRoad(p, own, margin = 0.2, body = false) {
     if (body === 'barrier') { if (h < p[2] - 0.5 || h > p[2] + 1.1) return false; }   // 2026-10-25: a road more than 0.5 m below is a drop, not a neighbour (was 1.25)
     else if (body) { if (h < -0.1 || h > p[2] + 0.15) return false; }
     else if (Math.abs(h - p[2]) > 0.15) return false;
-    return Math.hypot(p[0] - s.a[0] - s.dx * t, p[1] - s.a[1] - s.dz * t) < s.half + (/^I\d\./.test(own) && (s.id === 'M1' || s.id === 'M2') && body ? Math.min(margin, 0.08) : margin);   // a ramp parapet runs up to the motorway's own parapet line (MW + 0.15)
+    return Math.hypot(p[0] - s.a[0] - s.dx * t, p[1] - s.a[1] - s.dz * t) < s.half + (body === true && /^e\d/.test(s.id) ? -0.05 : /^I\d\./.test(own) && (s.id === 'M1' || s.id === 'M2') && body ? Math.min(margin, 0.08) : margin);   // 2026-10-26 (9) owner ('пустота'): a STREET hides a ramp's support face only where it really lies under it (the bell rim beside Yuzhny pr. lost its street-side face: a void under the deck)   // a ramp parapet runs up to the motorway's own parapet line (MW + 0.15)
   });
 }
 function exposedRuns(pts, off, own, margin = 0.2, body = false) {
