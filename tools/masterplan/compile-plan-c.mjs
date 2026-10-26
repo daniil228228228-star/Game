@@ -1373,6 +1373,11 @@ function embankModes(p3, sg, own, off = CLS.ramp.w / 2 + 0.2) {   // per segment
     if (len < SLOPE_RUN_MIN) for (let k = i; k < j; k++) mode[k] = false;
     i = j;
   }
+  // 2026-10-26 (7) owner ('неряшливый подъём'): a short LOW bank at the very start / end of a side that continues as a wall (I4 trunk ramps: 3 m of bank, then the wall) reads as a loose strip: the wall (a kerb while < 0.6 m) starts at the ramp's foot
+  for (const [from, step] of [[1, 1], [n - 1, -1]]) {
+    if (!mode[from]) continue; let j = from, low = true; while (j > 0 && j < n && mode[j]) { if (body[j][2] > 1.0) low = false; j += step; }
+    if (low && j > 0 && j < n && !mode[j]) for (let k = from; k !== j; k += step) mode[k] = false;
+  }
   mode.ratio = mode.map(() => SLOPE_MAX);   // one ratio per slope run (the flattest the tightest point allows): a constant cone, no faceted strips
   for (let i = 1; i < n;) {
     if (!mode[i]) { i++; continue; }
@@ -1412,8 +1417,9 @@ function embankFace(run, sg, slope, rat, off, vnAt) {   // vnAt(P) -> [nx, nz] o
 const WALL_T = 0.4;   // 2026-10-26 (6): a retaining wall / fascia is a CLOSED SOLID (front face, back face 0.4 m inside, end caps, soffit), not a single sheet (owner: thick, closed abutments)
 function wallBackAndEnds(a, b, ha, hb, nx, nz, first, last, ci) {
   emitQuadS(a[0] - nx * WALL_T, a[1] - nz * WALL_T, b[0] - nx * WALL_T, b[1] - nz * WALL_T, 0, ha, 0, hb, ci);
-  if (first) emitQuadS(a[0], a[1], a[0] - nx * WALL_T, a[1] - nz * WALL_T, 0, ha, 0, ha, ci);
-  if (last) emitQuadS(b[0], b[1], b[0] - nx * WALL_T, b[1] - nz * WALL_T, 0, hb, 0, hb, ci);
+  const ce = ci === CI.concD ? CI.wall : ci;   // 2026-10-26 (7): the END face of a wall is the face tone, not the dark plinth (a dark square at the start of a rising wall read as a hole, owner: 'просвечивает')
+  if (first) emitQuadS(a[0], a[1], a[0] - nx * WALL_T, a[1] - nz * WALL_T, 0, ha, 0, ha, ce);
+  if (last) emitQuadS(b[0], b[1], b[0] - nx * WALL_T, b[1] - nz * WALL_T, 0, hb, 0, hb, ce);
 }
 function fasciaSolid(run, sg, b, t, ci) {   // beam along a crossing: front, back, soffit, end caps
   if (run.length < 2) return;
