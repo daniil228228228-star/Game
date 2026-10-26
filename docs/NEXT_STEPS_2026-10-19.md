@@ -32,3 +32,9 @@
 
 ## Update 2026-10-26
 Done (see CHANGELOG 2026-10-26): zebras off, bank caps (floating green wedges), closed-solid tapered parapets, lamps on the parapet, deck-paint NDC bias, spur removed, bay lines clipped. Open: iPhone check of the paint bias and the bank caps; roundabout arms n117 / n127 (squared sidewalk ends); I4 finer ramp sampling (profile infeasible at 3 degrees: needs anchor fix); ground zebras redesign; retaining wall panels are still single sheets (DoubleSide).
+
+## Traffic polish (paused, 2026-10-26)
+- Paused by owner priority (road cleanup first). No traffic code changed.
+- Real Chromium runs on branch head f91eca6: `traffic`, `old-save` PASS; `plan-c-navigation`, `plan-c-signals`, `plan-c-traffic-levels`, `plan-c-static-routing` PASS (these four are node/VM tests, no browser).
+- `roads` FAILS only at 3b (stage upgrades 1->5 re-lay 0 road meshes): the first round went 71 -> 87 meshes (new meshes, 0 destroyed); cause not investigated (likely a road-family layer from c1u-c1y, or an expectation to update).
+- Not done: watching traffic in the browser (I1/I2/I4, bus bays, signals, stuck count over 3 min), vehicle orientation/height on decks, night lights, pedestrian yielding, dist/tycoon-v161-c1z.html. iPhone not verified.
