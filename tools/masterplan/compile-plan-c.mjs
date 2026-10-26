@@ -1338,8 +1338,11 @@ function sampleAxis(axis, c, lo, hi, hfn, step = 3, extra = []) {
 const OBST = (() => { const seen = new Set(), o = []; for (const l of roadIndex.values()) for (const sg of l) if (!seen.has(sg)) { seen.add(sg); o.push(sg); }
   for (const e of PLAN.edges) { if (e.cls === 'motorway') continue; const a = N.get(e.a), b = N.get(e.b), half = hw(e.cls) + CLS[e.cls].sidewalk; o.push({ id: 'street:' + e.id, a: [a.x, a.z, 0], b: [b.x, b.z, 0], half, dx: b.x - a.x, dz: b.z - a.z, ll: (b.x - a.x) ** 2 + (b.z - a.z) ** 2, street: true }); }
   return o; })();
+// 2026-10-26 (8) owner ('снести эту зелень ... закрыть тем же материалом'): a grass bank may not run out onto paved ground (port, parking, industry yards): there the support is a concrete wall
+const PAVED_AREAS = PLAN.areas.filter((a) => ['port', 'parking', 'industry'].includes(a.kind)).map((a) => a.poly);
+const pavedDist = (x, z) => { let best = 99; for (const poly of PAVED_AREAS) { let ins = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > z) !== (b[1] > z) && x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]) ins = !ins; best = Math.min(best, segDist(x, z, a, b)); } if (ins) return 0; } return best; };
 const freeGround = (x, z, own) => {
-  let best = 99;
+  let best = pavedDist(x, z) + 1.0;
   for (const s of OBST) {
     if (s.id === own) continue;
     const minx = Math.min(s.a[0], s.b[0]) - s.half - 16, maxx = Math.max(s.a[0], s.b[0]) + s.half + 16, minz = Math.min(s.a[1], s.b[1]) - s.half - 16, maxz = Math.max(s.a[1], s.b[1]) + s.half + 16;
