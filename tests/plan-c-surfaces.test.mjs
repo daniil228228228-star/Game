@@ -92,7 +92,8 @@ const check = (ok, msg) => { console.log((ok ? 'ok: ' : 'FAIL: ') + msg); if (!o
   check(maxH <= D.struct.deckH + 0.01, `no retaining wall taller than the deck (${maxH.toFixed(2)} <= ${D.struct.deckH})`);
   check(slopeTris > 800, `grass banks are the rule (${slopeTris} bank triangles)`);
   // 2026-10-25: 500 -> 560 m: the M1 profile of the real-world audit (5 % grade, 145 m approach, K 19 / 25) keeps the tall stretch of the causeway longer (+45 m) and earth slopes are limited to 1:1.5 (+20 m of wall instead of a 1:1.25 bank); all of it still lies in the two cores (checked: I1 376 m, I4 145 m)
-  check(tall < 560, `walls taller than 3.2 m total < 560 m: only the cores of I1 (M1 over the avenue) and I4 (${tall.toFixed(0)} m)`);
+  // 2026-10-26 (7): + the abutments that close the hollow ramp bodies at the I4 spans (4 faces + backs, ~20 m): 560 -> 590
+  check(tall < 590, `walls taller than 3.2 m total < 590 m: only the cores of I1 (M1 over the avenue) and I4 (${tall.toFixed(0)} m)`);
 }
 
 // ---- 5. wall ends are closed: a retaining-wall face (own colour) that ends higher than 0.35 m touches a cap / connector / bank triangle / another wall face at that point
