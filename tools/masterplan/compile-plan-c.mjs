@@ -35,7 +35,7 @@ const COLORS = {
   asph: 0x353a3f, ramp: 0x353a3f, walk: 0xc4bfae, kerb: 0xaaa595, median: 0xb8b4a4, medLawn: 0x6f9d57, medM: 0xa9a99f, plaza: 0xd4cab4, islandL: 0x558140, islandC: 0xd9d1bb,
   conc: 0x9a968b, concD: 0x67645d, sleeper: 0x4a3f36, white: 0xf2f2ec, yellow: 0xe7c85a, ballast: 0x8a8782, rail: 0x56585b, platform: 0xb8b5aa, moleC: 0x9b9a92, rock: 0x77756f,
   resid: 0x82b064, mixed: 0x95b57a, cbd: 0xaaa898, indus: 0x70757a, school: 0x90bd72, hospital: 0xa4b88e, station: 0xa9a79b, villas: 0x78b45f, waterf: 0xa6b88f, market: 0xb4ae98, stadium: 0x6fae55,
-  slope: 0x558140, wall: 0x7d7a71,
+  slope: 0x628f4b, wall: 0x7d7a71,   // slope: was 0x558140 (a dark triangle against the lawn)
 };
 const PAL = Object.keys(COLORS), CI = Object.fromEntries(PAL.map((k, i) => [k, i]));
 const H = { ground: 0, asph: 0.05, walk: 0.12, med: 0.12, paint: 0.077, ramp: 0.052, ringWalk: 0.12, island: 0.09, plaza: 0.03, fillet: 0.123, zone: -0.06, zone2: -0.05, water: -0.02, bank: -0.045, base: -0.08, rail: 0.035, railPaint: 0.066 };   // every ground layer has its own height (no coplanar overlaps = no z-fighting seams)
@@ -735,7 +735,7 @@ for (const j of PLAN.junctions) {
         }
         continue;
       }
-      if (!(j.big && a.cls.startsWith('motorway'))) stopLine(c, a.dir, along + 1.7, a.cls);   // 2026-10-25: GOST R 51256 line 1.12 on EVERY signalised approach (local / service arms had none); I2 draws its own
+      stopLine(c, a.dir, along + 1.7, a.cls);   // 2026-10-26 (6): also on the M2 approaches of I2 (they had none: the 'own' stop line was never drawn). 2026-10-25: GOST R 51256 line 1.12 on EVERY signalised approach (local / service arms had none); I2 draws its own
       const armLen = (() => { const ae = PLAN.edges.find((e) => e.id === a.edge); return ae ? Math.hypot(N.get(ae.a).x - N.get(ae.b).x, N.get(ae.a).z - N.get(ae.b).z) : 1e9; })();   // an arm edge shorter than the arrow position ends in the I2 split zone: the arrow would stand on the island
       if ((a.cls === 'arterial' || a.cls.startsWith('motorway')) && armLen > along + 9) for (let k = 0; k < 2; k++) arrow(c, a.dir, along + 6.5,   // 2026-10-26 (6): two through lanes per direction on M2 at I2 (the 'third lane' arrow stood on the edge line, outside the asphalt)
        a.cls.startsWith('motorway') ? (k ? (LANE_DIV + M_EDGE) / 2 : (M_MEDLINE + LANE_DIV) / 2) : CLS[a.cls].median / 2 + CLS[a.cls].lane * (k + 0.5));   // motorway: the middle of the lane between the painted lines

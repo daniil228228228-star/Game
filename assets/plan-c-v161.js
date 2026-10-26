@@ -111,7 +111,7 @@
     if (slopeTris.length) {
       const key = (k) => Math.round(dpos[k * 3] * 50) + ',' + Math.round(dpos[k * 3 + 1] * 50) + ',' + Math.round(dpos[k * 3 + 2] * 50), acc = new Map();
       for (const t of slopeTris) for (let j = 0; j < 3; j++) { const k = key(t + j); let a = acc.get(k); if (!a) acc.set(k, a = [0, 0, 0]); a[0] += dnor[(t + j) * 3]; a[1] += dnor[(t + j) * 3 + 1]; a[2] += dnor[(t + j) * 3 + 2]; }
-      for (const t of slopeTris) for (let j = 0; j < 3; j++) { const a = acc.get(key(t + j)), l = Math.hypot(a[0], a[1], a[2]) || 1; dnor[(t + j) * 3] = a[0] / l; dnor[(t + j) * 3 + 1] = a[1] / l; dnor[(t + j) * 3 + 2] = a[2] / l; }
+      for (const t of slopeTris) for (let j = 0; j < 3; j++) { const a = acc.get(key(t + j)), l = Math.hypot(a[0], a[1], a[2]) || 1, bx = a[0] / l * 0.5, by = a[1] / l * 0.5 + 0.5, bz = a[2] / l * 0.5, bl = Math.hypot(bx, by, bz) || 1; dnor[(t + j) * 3] = bx / bl; dnor[(t + j) * 3 + 1] = by / bl; dnor[(t + j) * 3 + 2] = bz / bl; }   // 2026-10-26 (6): half way to 'up' (a grass bank facing away from the sun read as a dark triangle against the lawn)
     }
     const mk = (P, Nn, C, name, solid) => {
       if (!P.length) return null;
