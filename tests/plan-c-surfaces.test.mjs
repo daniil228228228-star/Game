@@ -163,7 +163,7 @@ const check = (ok, msg) => { console.log((ok ? 'ok: ' : 'FAIL: ') + msg); if (!o
     if (/^FB/.test(rb.id)) continue;
     const pts = rb.p;
     for (let i = 1; i + 1 < pts.length; i += 2) {
-      const e0 = /^M/.test(rb.id) ? 0.15 : 0.3, a = pts[i - 1], b = pts[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, tx = (b[0] - a[0]) / len, tz = (b[1] - a[1]) / len, p = pts[i]; if (p[2] < 1.0 || (rb.id !== "M1" && Math.abs(p[1] + 240) < 8 && Math.abs(p[0]) < 30)) continue;   // the loop heads beside M1 share its parapet line
+      const e0 = /^M/.test(rb.id) ? 0.15 : 0.3, a = pts[i - 1], b = pts[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, tx = (b[0] - a[0]) / len, tz = (b[1] - a[1]) / len, p = pts[i]; if (p[2] < 1.0 || (Math.abs(p[1] + 240) < 8 && Math.abs(p[0]) < 30)) continue;   // the loop heads beside M1 share its parapet line
       for (const sg of [-1, 1]) {
         const px = p[0] - tz * sg, pz = p[1] + tx * sg; let panel = null, par = null;
         for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const w of cellW.get(K(p[0] + dx * 8, p[1] + dz * 8)) || []) {

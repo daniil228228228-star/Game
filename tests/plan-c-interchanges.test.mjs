@@ -115,17 +115,20 @@ for (const r of ramps) for (let i = 1; i < r.path.length; i++) {
   const a = r.path[i - 1], b = r.path[i], n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.5);
   for (let j = 0; j <= n; j++) {
     const p = a.map((v, k) => v + (b[k] - v) * j / n); samples++;
+    // 2026-10-26 (6): in the merge wedge (last 24 m of a motorway-attached end) the ramp parapet continues into the motorway's own parapet line (inner face MW - 0.13): the lane centre is only ~1.0 m from the asphalt edge there, so the swept corridor is the car (0.7 half width) + 0.1 instead of + 0.25
+    const inWedge = [0, 1].some((k) => r.attach[k] === 'motorway' && Math.hypot(p[0] - (k ? r.path.at(-1) : r.path[0])[0], p[1] - (k ? r.path.at(-1) : r.path[0])[1]) < 24);
+    const corr = inWedge ? 0.79 : 0.94;
     for (const w of walls) {
       if (p[0] < Math.min(w[0], w[2]) - 1 || p[0] > Math.max(w[0], w[2]) + 1 || p[1] < Math.min(w[1], w[3]) - 1 || p[1] > Math.max(w[1], w[3]) + 1) continue;
       const q = [[w[0], w[1], 0], [w[2], w[3], 0]], hit = heightOn(p, q);
-      if (hit.distance >= 0.94) continue;
+      if (hit.distance >= corr) continue;
       const dx = w[2] - w[0], dz = w[3] - w[1], ll = dx * dx + dz * dz;
       const t = ll ? Math.max(0, Math.min(1, ((p[0] - w[0]) * dx + (p[1] - w[1]) * dz) / ll)) : 0;
       const bottom = w[4] + (w[6] - w[4]) * t, top = w[5] + (w[7] - w[5]) * t;
       if (top > p[2] + 0.18 && bottom < p[2] + 1.2) { bad.push([r.ic, r.kind, p, w]); break; }
     }
     for (const rail of D.struct.rails) if (Math.abs(p[2] - rail[4]) < 1.4 &&
-      heightOn(p, [[rail[0], rail[1], 0], [rail[2], rail[3], 0]]).distance < 1.09) {
+      heightOn(p, [[rail[0], rail[1], 0], [rail[2], rail[3], 0]]).distance < (inWedge ? 0.94 : 1.09)) {
       badRails.push([r.ic, r.kind, p, rail]); break;
     }
   }

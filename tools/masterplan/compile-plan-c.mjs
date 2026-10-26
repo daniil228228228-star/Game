@@ -1054,7 +1054,7 @@ const roadIndex = new Map(), INDEX_CELL = 16;
 const rampOffs = new Map();
 for (const { id, p3, attach, mouth, S, flare, noWedge } of rampPts) {
   const offL = p3.map(() => -CLS.ramp.w / 2), offR = p3.map(() => CLS.ramp.w / 2), dashed = [p3.map(() => false), p3.map(() => false)];
-  const adjL = p3.map(() => 0), adjR = p3.map(() => 0), skipL = p3.map(() => false), skipR = p3.map(() => false);
+  const adjL = p3.map(() => 0), adjR = p3.map(() => 0), adjPL = p3.map(() => 0), adjPR = p3.map(() => 0), wedgeEnds = [], skipL = p3.map(() => false), skipR = p3.map(() => false);
   for (const k of [0, 1]) {
     if (flare && flare.includes(k)) {   // an exit / entrance lane that IS M2's third lane at its start: the ramp starts as wide as lane + shoulder (outer edge at 8.4) and narrows to its own width over 32 m
       const i0 = k ? p3.length - 1 : 0, step = k ? -1 : 1, outerLat = 2.1 + 6.3, dEnd = Math.abs(p3[i0][0] - M2_X);
@@ -1082,6 +1082,7 @@ for (const { id, p3, attach, mouth, S, flare, noWedge } of rampPts) {
     const lat = (v) => v[1 - host.axis] - host.c, dEnd = Math.abs(lat(p)), dTouch = host.Hw + CLS.ramp.w / 2;
     if (dEnd >= dTouch - 0.2) continue;
     const sideOut = (() => { const a = p3[Math.min(p3.length - 1, i0 + 1)], b = p3[Math.max(0, i0 - 1)], dx = a[0] - b[0], dz = a[1] - b[1], n = [-dz, dx]; return Math.sign(n[1 - host.axis] * (Math.sign(lat(p)) || 1)) || 1; })();
+    if (type === 'motorway') wedgeEnds.push({ k, side: sideOut > 0 ? 1 : -1, axis: host.axis, c: host.c, along: p[host.axis], lat: Math.sign(lat(p)) || 1 });
     for (let i = i0; i >= 0 && i < p3.length; i += step) {
       const d = Math.abs(lat(p3[i]));
       if (d >= dTouch + 1e-6) break;
@@ -1089,7 +1090,7 @@ for (const { id, p3, attach, mouth, S, flare, noWedge } of rampPts) {
       if (sideOut > 0) { offR[i] = outer - d; dashed[0][i] = true; } else { offL[i] = -(outer - d); dashed[1][i] = true; }
       if (type === 'motorway') {   // 2026-10-25: the converging outer edge line lands exactly on the host's own edge line (M_EDGE - 0.15), it used to stop 0.15-0.35 m off it: a visible step where the two lines meet
         const conv = Math.max(0, Math.min(1, 1 - (outer - host.Hw) / CLS.ramp.w)), dl = (MW - 0.2) - (M_EDGE - 0.15);
-        if (sideOut > 0) adjR[i] = -dl * conv; else adjL[i] = dl * conv;
+        if (sideOut > 0) { adjR[i] = -dl * conv; adjPR[i] = -0.05 * conv; } else { adjL[i] = dl * conv; adjPL[i] = 0.05 * conv; }   // the parapet line lands on the host's own parapet line (MW + 0.15)
       }
     }
   }
@@ -1097,8 +1098,10 @@ for (const { id, p3, attach, mouth, S, flare, noWedge } of rampPts) {
     const L = S[S.length - 1];
     for (let i = 0; i < p3.length; i++) { const ds = mouth ? L - S[i] : S[i]; if (ds >= 22) continue; const t = 1 - ds / 22, w = CLS.ramp.w / 2 + (CLS.ramp2.w / 2 - CLS.ramp.w / 2) * t * t * (3 - 2 * t); offL[i] = Math.min(offL[i], -w); offR[i] = Math.max(offR[i], w); }
   }
-  rampOffs.set(id, { offL, offR, dashed, adjL, adjR, skipL, skipR });
+  rampOffs.set(id, { offL, offR, dashed, adjL, adjR, adjPL, adjPR, wedgeEnds, skipL, skipR });
 }
+const JOINS = [...rampOffs.values()].flatMap((ro) => ro.wedgeEnds);   // where a ramp's wedge converges on a motorway edge: the ramp parapet and the motorway parapet meet there
+if (process.env.DEBUG_JOINS) console.log("JOINS", JSON.stringify(JOINS.map((w) => [w.axis, w.c, R2(w.along), w.lat, w.side])));
 const rampMasks = [];
 for (const r of rampPts) {
   const ro = rampOffs.get(r.id), l = offsetVar(r.p3, ro.offL), rr = offsetVar(r.p3, ro.offR);
@@ -1163,7 +1166,7 @@ function coveredRoad(p, own, margin = 0.2, body = false) {
     if (body === 'barrier') { if (h < p[2] - 0.5 || h > p[2] + 1.1) return false; }   // 2026-10-25: a road more than 0.5 m below is a drop, not a neighbour (was 1.25)
     else if (body) { if (h < -0.1 || h > p[2] + 0.15) return false; }
     else if (Math.abs(h - p[2]) > 0.15) return false;
-    return Math.hypot(p[0] - s.a[0] - s.dx * t, p[1] - s.a[1] - s.dz * t) < s.half + margin;
+    return Math.hypot(p[0] - s.a[0] - s.dx * t, p[1] - s.a[1] - s.dz * t) < s.half + (/^I\d\./.test(own) && (s.id === 'M1' || s.id === 'M2') && body ? Math.min(margin, 0.08) : margin);   // a ramp parapet runs up to the motorway's own parapet line (MW + 0.15)
   });
 }
 function exposedRuns(pts, off, own, margin = 0.2, body = false) {
@@ -1192,10 +1195,18 @@ function exposedRuns(pts, off, own, margin = 0.2, body = false) {
 // 2026-10-25: a parapet is a CLOSED SOLID, not one sheet + a floating strip (owner: "бортики просвечивают"): inner face, outer face (0.28 m apart), a 0.34 m cap on top and end faces.
 // faces: sg is the side of the carriageway edge the run lies on; bFn / tFn are the bottom / top heights of the wall of a run point, capLift the extra height of the cap above tFn (0 = flush).
 const PARAPET_T = 0.28, PARAPET_CAP = 0.34, PARAPET_TAPER = 2.6;
-function parapetSolid(run, sg, bFn, tFn) {   // the top of the wall (and its cap) sinks to the base over the last PARAPET_TAPER metres of a run: a tapered terminal, never a full-height block ending in mid air (owner: "pale wedge" at the merge with M1)
+const JOIN_TOP = 0.9, JOIN_BLEND = 6;   // a ramp parapet that runs INTO the host's parapet (merge wedge) eases to the host's wall height over 6 m and has no tapered end there
+function parapetSolid(run, sg, bFn, tFn, j0 = false, j1 = false) {   // the top of the wall (and its cap) sinks to the base over the last PARAPET_TAPER metres of a run: a tapered terminal, never a full-height block ending in mid air (owner: "pale wedge" at the merge with M1)
   if (run.length < 2) return;
   const S = arcLen(run), L = S[S.length - 1], ease = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
-  const top = run.map((p, i) => { const b = bFn(p[2]), t = tFn(p[2]), k = L < 2 * PARAPET_TAPER ? ease(Math.min(S[i], L - S[i]) / (L / 2 || 1)) : ease(Math.min(S[i], L - S[i]) / PARAPET_TAPER); return b + (t - b) * k; });
+  const top = run.map((p, i) => {
+    const b = bFn(p[2]), d0 = j0 ? Infinity : S[i], d1 = j1 ? Infinity : L - S[i], dm = Math.min(d0, d1);
+    const k = dm === Infinity ? 1 : L < 2 * PARAPET_TAPER ? ease(dm / (L / 2 || 1)) : ease(dm / PARAPET_TAPER);
+    let t = tFn(p[2]);
+    const jw = Math.max(j0 ? ease(1 - S[i] / JOIN_BLEND) : 0, j1 ? ease(1 - (L - S[i]) / JOIN_BLEND) : 0);
+    if (jw > 0) t = t + (b + JOIN_TOP - t) * jw;
+    return b + (t - b) * k;
+  });
   const A = offsetPts3(run, 0), B = offsetPts3(run, -sg * PARAPET_T);   // the thickness goes INWARD (towards the lane): the outer face stays where the old sheet stood, so no wall enters a neighbouring ramp's swept corridor
   for (let i = 0; i + 1 < run.length; i++) {
     const b0 = bFn(run[i][2]), b1 = bFn(run[i + 1][2]);
@@ -1211,7 +1222,8 @@ function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median h
   // parapets (both sides) + caps
   for (const sg of [-1, 1]) for (const run of exposedRuns(pts, sg * (o.w / 2 + 0.15), o.id, 0.3, 'barrier')) {
     // The cap follows the same taper as the concrete face at the ground toe.
-    parapetSolid(run, sg, (h) => h + 0.05, (h) => h + 0.05 + Math.min(0.9, h * 3));
+    const mj = (pt) => JOINS.some((w) => (o.id === 'M1' ? w.axis === 0 : w.axis === 1) && Math.abs(w.c - (o.id === 'M1' ? M1_Z : M2_X)) < 1 && Math.abs(pt[w.axis] - w.along) < 0.35 && Math.sign(pt[1 - w.axis] - w.c) === w.lat && Math.abs(Math.abs(pt[1 - w.axis] - w.c) - (o.w / 2 + 0.15)) < 0.1);
+    parapetSolid(run, sg, (h) => h + 0.05, (h) => h + 0.05 + Math.min(0.9, h * 3), mj(run[0]), mj(run[run.length - 1]));
     addParapets(run.filter((p) => p[2] > 0.2), 0);
   }
   if (o.med) for (const sg of [-1, 1]) {
@@ -1368,13 +1380,14 @@ function pushRibbons(id, w, pts) { STRUCT.ribbons.push({ id, w, p: pts }); }   /
 for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts) {
   // Merge geometry (2026-10-18 (8)): where a ramp joins a carriageway / avenue PARALLEL to it, its outer edge converges linearly onto the host's kerb line
   // (a true wedge, one asphalt contour), the edge line on the host side turns into a dashed line, the outer edge line runs on without a break.
-  const { offL, offR, dashed, adjL, adjR, skipL, skipR } = rampOffs.get(id);
+  const { offL, offR, dashed, adjL, adjR, adjPL, adjPR, wedgeEnds, skipL, skipR } = rampOffs.get(id);
   asymRibbon(p3, offL, offR, 0.052, CI.asph);
   for (const sg of [-1, 1]) {
     const embMode = embankModes(p3, sg, id), vnB = sideNormals(offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2)), sg), cross2 = (k) => sBr != null && Math.abs((S[k - 1] + S[k]) / 2 - sBr) < 9;
     const q = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));
-    const body = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));   // 2026-10-26: the support wall / bank top is in the SAME plane as the parapet's outer face (was 0.5 m inside it: a step, the parapet looked like a separate slab)
-    const fillEdge = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.1));
+    const offP = p3.map((_, i) => (flare || mouth != null) ? sg * (CLS.ramp.w / 2 + 0.2) : sg < 0 ? offL[i] - 0.2 + adjPL[i] : offR[i] + 0.2 + adjPR[i]);   // 2026-10-26 (6): the support wall / bank follows the per-vertex asphalt edge (merge wedge) like the parapet and lands on the motorway's own wall line
+    const body = offsetVar(p3, offP);   // 2026-10-26: the support wall / bank top is in the SAME plane as the parapet's outer face (was 0.5 m inside it: a step, the parapet looked like a separate slab)
+    const fillEdge = offsetVar(p3, offP.map((o) => o - sg * 0.1));
     for (let i = 1; i < p3.length; i++) {
       if (Math.max(p3[i - 1][2], p3[i][2]) < 0.3) continue;
       const cross = sBr != null && Math.abs((S[i - 1] + S[i]) / 2 - sBr) < 9;
@@ -1390,16 +1403,18 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
         } }
     }
     // 2026-10-25: the parapet follows the PER-VERTEX asphalt edge (offL / offR: the merge wedge converges on the host kerb), not a constant offset: it used to run straight on while the asphalt edge curved in - a wavy, stepped kerb where a ramp joins M1
-    const parapetLine = offsetVar(p3, p3.map((_, i) => (flare || mouth != null) ? sg * (CLS.ramp.w / 2 + 0.2) : sg < 0 ? offL[i] - 0.2 : offR[i] + 0.2));   // flared exits / diamond mouths keep the plain offset (their widened asphalt would push the wall into the neighbouring lane)
+    const parapetLine = offsetVar(p3, p3.map((_, i) => (flare || mouth != null) ? sg * (CLS.ramp.w / 2 + 0.2) : sg < 0 ? offL[i] - 0.2 + adjPL[i] : offR[i] + 0.2 + adjPR[i]));   // flared exits / diamond mouths keep the plain offset (their widened asphalt would push the wall into the neighbouring lane)
     for (const run of exposedRuns(parapetLine, 0, id, Math.max(...p3.map((q) => q[2])) < 1.0 ? 0.3 : 0.3, 'barrier')) {
       // Split the height gate into contiguous runs too: filtering vertices
       // would reconnect opposite sides of a low section with a collider chord.
       // The barrier RISES out of the ground over the deck height 0.3 -> 1.2 m (a sloped end, 2026-10-19: it used to start as a full-height slab in mid air); the colliders keep the old gate (deck > 1.2 m)
       const tap = (h) => { const t = Math.max(0, Math.min(1, (h - 0.3) / 0.35)); return t * t * (3 - 2 * t); };   // 2026-10-25: full height from a 0.65 m drop (owner: no fence on the climb; GOST 33128: a barrier from the first dangerous drop), was 1.2 m
+      const wj = wedgeEnds.filter((w) => w.side === sg), endPt = (k) => parapetLine[k ? parapetLine.length - 1 : 0];
+      const joinAt = (pt) => wj.some((w) => Math.hypot(pt[0] - endPt(w.k)[0], pt[1] - endPt(w.k)[1]) < 0.05);
       let vis = [];
       const flush = () => {
         if (vis.length > 1) {
-          parapetSolid(vis, sg, (h) => h + 0.05, (h) => h + 0.05 + 0.75 * tap(h));
+          parapetSolid(vis, sg, (h) => h + 0.05, (h) => h + 0.05 + 0.75 * tap(h), joinAt(vis[0]), joinAt(vis[vis.length - 1]));
           let hi = []; for (const q of vis.concat([[0, 0, 0]])) { if (q[2] > 0.5) hi.push(q); else { if (hi.length > 1) addParapets(hi, 0); hi = []; } }
         }
         vis = [];
