@@ -294,7 +294,9 @@ for (const e of PLAN.edges) {
   const a = N.get(e.a), s = edgeSpan(e), cl = CLS[e.cls], half = cl.w / 2, sw = cl.sidewalk, c = e.dir === 'x' ? a.z : a.x;
   const put = (lo, hi, l0, l1, type) => e.dir === 'x' ? addShape(lo, c + l0, hi, c + l1, type) : addShape(c + l0, lo, c + l1, hi, type);
   const cuts = cutsOf(e);
-  for (const [lo, hi] of subtractIntervals(s.lo, s.hi, cuts)) put(lo, hi, -half, half, 'asph');
+  const spl = (id) => !e.split && e.cls !== 'motorway' && PLAN.edges.some((x) => x.split && (x.a === id || x.b === id));   // 2026-10-26 (7): 0.15 m into the split street's ring (a hairline seam at the joint)
+  const sLo = spl(s.lowNode) ? s.lo - 0.15 : s.lo, sHi = spl(s.highNode) ? s.hi + 0.15 : s.hi;
+  for (const [lo, hi] of subtractIntervals(sLo, sHi, cuts)) put(lo, hi, -half, half, 'asph');
   if (sw > 0) for (const [lo, hi] of subtractIntervals(s.lo, s.hi, cuts)) { put(lo, hi, half, half + sw, 'walk'); put(lo, hi, -half - sw, -half, 'walk'); }
   if (cl.median > 0) {
     const t0 = trimAt(s.lowNode, e), t1 = trimAt(s.highNode, e), mh = cl.median / 2;
@@ -778,7 +780,7 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
   const strip = (A, B, y, ci, keep = () => true) => { for (let i = 0; i < A.length; i++) { const j = (i + 1) % A.length; if (!keep([(A[i][0] + A[j][0] + B[i][0] + B[j][0]) / 4, (A[i][1] + A[j][1] + B[i][1] + B[j][1]) / 4])) continue; emitTri('r', A[i], B[i], A[j], y, ci); emitTri('r', B[i], B[j], A[j], y, ci); } };
   const wall = (A, y0, y1, ci, keep = () => true) => { for (let i = 0; i < A.length; i++) { const j = (i + 1) % A.length; if (keep([(A[i][0] + A[j][0]) / 2, (A[i][1] + A[j][1]) / 2])) emitWall(A[i][0], A[i][1], A[j][0], A[j][1], y0, y1, ci); } };
   for (const side of [-1, 1]) {   // -1 west, +1 east
-    const nose = xm + side * (mw + SPLIT.band + 0.1 - 0.0) - side * 0.0, farX = side < 0 ? 218 : 286;   // 2026-10-26 (7): west 218 (was 212): the round end and its sidewalk clear the kerb returns of the Okrainnaya crossing (x 200)   // island end on the crossing side / the far end
+    const nose = xm + side * (mw + SPLIT.band + 0.1 - 0.0) - side * 0.0, farX = side < 0 ? 218 : 280;   // 2026-10-26 (7): west 218 (was 212): the round end and its sidewalk clear the kerb returns of the Okrainnaya crossing (x 200)   // island end on the crossing side / the far end
     const edgeM = xm + side * mw, noseX = edgeM + side * SPLIT.band;     // x of the island nose: one band width from the M2 edge
     const xa = Math.min(noseX, farX), xb = Math.max(noseX, farX), hz = SPLIT.hz;
     const small = 2.4, far = 6;   // both far ends are round (a stadium)
@@ -797,9 +799,11 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
       const cc = [side < 0 ? farX + far : farX - far, 0], r0 = far + SPLIT.band, r1 = r0 + SPLIT.walk, th = Math.asin((hw('arterial') + CLS.arterial.sidewalk) / r1) * 180 / Math.PI;
       const spans = side < 0 ? [[90 + 0, 180 - th], [180 + th, 270]] : [[-90, -th], [th, 90]];
       // 2026-10-26 (7): the street's own sidewalk runs on round the ring until it meets the ring's sidewalk (a small green wedge was left between the square end and the circle)
-      if (side < 0) { const zIn = hw('arterial'), zOut = zIn + CLS.arterial.sidewalk, xs = []; const xNode = 214;   // west only: the east ring opens straight into the P+R crossing
-        for (let k = 0; k <= 16; k++) { const x = xNode + (cc[0] - xNode) * k / 16; const dz2 = r0 * r0 - (x - cc[0]) ** 2, cz = dz2 > 0 ? Math.sqrt(dz2) : 0; if (cz >= zOut) break; xs.push([x, Math.max(zIn, cz)]); }
-        for (const sz of [-1, 1]) for (let k = 0; k + 1 < xs.length; k++) { const [x0, l0] = xs[k], [x1, l1] = xs[k + 1]; emitTri('r', [x0, sz * l0], [x1, sz * l1], [x0, sz * zOut], H.walk, CI.walk); emitTri('r', [x1, sz * l1], [x1, sz * zOut], [x0, sz * zOut], H.walk, CI.walk); } }
+      { const zIn = hw('arterial'), zOut = zIn + CLS.arterial.sidewalk, xs = []; const xNode = side < 0 ? 214 : 284;
+        for (let k = 0; k <= 16; k++) { const x = xNode + (cc[0] - xNode) * k / 16; const rc = r0 * Math.cos(Math.PI / 32), dz2 = rc * rc - (x - cc[0]) ** 2, cz = dz2 > 0 ? Math.sqrt(dz2) : 0; if (cz >= zOut) break; xs.push([x, Math.max(zIn, cz)]); }
+        for (const sz of [-1, 1]) for (let k = 0; k + 1 < xs.length; k++) { const [x0, l0] = xs[k], [x1, l1] = xs[k + 1]; emitTri('r', [x0, sz * l0], [x1, sz * l1], [x0, sz * zOut], H.walk, CI.walk); emitTri('r', [x1, sz * l1], [x1, sz * zOut], [x0, sz * zOut], H.walk, CI.walk); }
+        // and the carriageway runs on to the ring: asphalt under the sidewalk's lower edge (a 0.6 m lawn triangle was left between the street's square end and the ring band)
+        for (const sz of [-1, 1]) for (let k = 0; k + 1 < xs.length; k++) { const [x0, l0] = xs[k], [x1, l1] = xs[k + 1]; emitTri('r', [x0, 0], [x1, 0], [x0, sz * l0], H.asph, CI.asph); emitTri('r', [x1, 0], [x1, sz * l1], [x0, sz * l0], H.asph, CI.asph); emitWall(x0, sz * l0, x1, sz * l1, H.asph, H.walk, CI.kerb); } }
       for (const [a0, a1] of spans) {
         annulus('r', cc, r0, r1, a0, a1, H.walk, CI.walk, 5);
         const n = Math.max(2, Math.ceil((a1 - a0) / 5));
@@ -818,7 +822,8 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
     const lawn = rr(xa, xb, hz, rcs, -0.38);   // 2026-10-26: kerb top 0.38 m wide (was 0.7)
     for (let i = 0; i < lawn.length; i++) { const j = (i + 1) % lawn.length; emitTri('r', c0, lawn[i], lawn[j], H.island + 0.06, CI.islandL); }
     splitZones.push(outer2.map((q) => [q[0], q[1]]));
-    islandsOut.push({ side, poly: inner.map((q) => [R2(q[0]), R2(q[1])]), outer: outer.map((q) => [R2(q[0]), R2(q[1])]) });
+    { const inner8 = rr(xa, xb, hz, rcs, 0), outer8 = rr(xa, xb, hz, rcs.map((r, k) => (side < 0 ? (k === 0 || k === 3) : (k === 1 || k === 2)) ? 0.01 - SPLIT.band : r), SPLIT.band, 8);   // the navigation keeps its 8-facet outline (its lane paths were fitted to it; the drawn kerb is <= 5 cm further out)
+      islandsOut.push({ side, poly: inner8.map((q) => [R2(q[0]), R2(q[1])]), outer: outer8.map((q) => [R2(q[0]), R2(q[1])]) }); }
     // kerb returns at the crossing: asphalt fillets between the band edge and the M2 edge
     for (const sz of [-1, 1]) {
       const K = [edgeM, sz * (hz + SPLIT.band)], Rr = SPLIT.R, O = [edgeM + side * Rr, sz * (hz + SPLIT.band + Rr)], arc = [];
