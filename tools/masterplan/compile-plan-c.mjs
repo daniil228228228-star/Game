@@ -1417,7 +1417,7 @@ function embankFace(run, sg, slope, rat, off, vnAt) {   // vnAt(P) -> [nx, nz] o
 const WALL_T = 0.4;   // 2026-10-26 (6): a retaining wall / fascia is a CLOSED SOLID (front face, back face 0.4 m inside, end caps, soffit), not a single sheet (owner: thick, closed abutments)
 function wallBackAndEnds(a, b, ha, hb, nx, nz, first, last, ci) {
   emitQuadS(a[0] - nx * WALL_T, a[1] - nz * WALL_T, b[0] - nx * WALL_T, b[1] - nz * WALL_T, 0, ha, 0, hb, ci);
-  const ce = ci === CI.concD ? CI.wall : ci;   // 2026-10-26 (7): the END face of a wall is the face tone, not the dark plinth (a dark square at the start of a rising wall read as a hole, owner: 'просвечивает')
+  const ce = ci === CI.concD ? CI.conc : ci;   // 2026-10-26 (7): the END face of a wall is the face tone, not the dark plinth (a dark square at the start of a rising wall read as a hole, owner: 'просвечивает')
   if (first) emitQuadS(a[0], a[1], a[0] - nx * WALL_T, a[1] - nz * WALL_T, 0, ha, 0, ha, ce);
   if (last) emitQuadS(b[0], b[1], b[0] - nx * WALL_T, b[1] - nz * WALL_T, 0, hb, 0, hb, ce);
 }
