@@ -224,7 +224,7 @@ check(churn.every((c) => c.unionSame), 'idle ticks: unified road surface layer n
   }
   await ev(() => { for (const b of buildings) b.level = 1; });
   const lv1 = await ev(() => buildings.map((b) => `${b.index}:${b.level}`).join(','));
-  let beforeU = await settleU(6, 90);
+  let beforeU = await settleU(10, 120);   // 2026-10-26: 6 stable polls was flaky under swiftshader (71 -> 87 NEW meshes, 0 destroyed: late stage roads arriving after the baseline); 10 polls (9 s)
   const rounds = [];
   for (let L = 2; L <= 5; L++) {
     // the game has two construction slots: upgrade two buildings, let the planner see the upgrade sites stand (the new meshes are invisible), finish them, next pair
