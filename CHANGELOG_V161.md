@@ -1,3 +1,11 @@
+# 2026-10-26 (4) - Plan C: ramp diverge lines, I2 kerbs, parapet flush with the wall (c1x)
+
+- Diverge / merge markings: the through motorway's edge line on the ramp side is a BROKEN line (1.0 / 1.0) along the span where a ramp runs beside it (`wedgeSpans`), solid elsewhere on both sides. Not audited numerically for ALL diverge points (only the M2 / I4 spot opened in frames).
+- I2: the far-end sidewalk is an exact annular sector that ends radially where the street sidewalk takes over (was a per-quad centroid test: sloped / diagonal ends), the island nose is rounded (r 2.4 instead of 0.6), signal heads moved behind the nose corner. Same code is used for both islands. Thin 0.7 m island kerb ring unchanged. Tiny green slivers remain next to the tip sector ends.
+- Item 3 (owner decision "barrier stands on the pavement, flush with the concrete"): ramp support wall / bank top now stands in the SAME plane as the parapet outer face (w/2 + 0.2, was w/2 - 0.3 = 0.5 m inside: a step), the bank margin is 1.3 m for ramps (so slopes stay <= 1:1.5), M1 / M2 deck wall at w/2 + 0.15 = parapet face (was +0.3) and the 0.5 m cornice ledge is gone. Parapet bases rest on the deck (+0.05). Test (plan-c-surfaces): outer face coplanar with the wall panel within 2 cm (156 samples), bases on the deck. The loop heads beside M1 (cloverleaf core) are excluded from that test.
+- How the barrier at M2 east was built before: `structureDeck` / ramp loop of compile-plan-c.mjs - wall face at w/2 - 0.3 (plinth 0.6 / wall panel / coping, top = deck + 0.05), parapet 0.28 thick from w/2 + 0.2 inward, up to 0.75 m (tap) + 0.34 cap; the grass between asphalt and the elevated wall is the ground beside the parallel ground ramp, not part of the barrier.
+- Not verified: iPhone; the strip between ramp I4.8 (elevated 0.8 m) and ground ramp I4.10 is still a parapet between two asphalt parts.
+
 # 2026-10-26 (3) - Plan C: marking coverage pass, fewer arrows, lamps behind the pavement (c1w)
 
 - Coverage audit (markings-checks.mjs section H, audit 28): per class % of 2 m windows with a centre / lane line, list of streets with 0 marking. Before: local 0 % (72 streets), service 2 %. Now local / service get a dashed centre line (1.5), collector / arterial 94-97 %. Blocks < 60 m between junction trims are exempt (all junction).

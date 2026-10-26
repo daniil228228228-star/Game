@@ -814,7 +814,7 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
         const zc = sz * (hz + SPLIT.band / 2), xA = sx + side * 1.5, xB = farX - side * 6;
         dashed('x', zc, Math.min(xA, xB), Math.max(xA, xB), 0.18, 1.0, 1.4, H.paint, CI.white);
         for (const lat of [-1, 1]) arrow([sx + side * 10, zc + lat * 1.2], [side, 0], 0, 0);
-        furniture.sig.push([sx + side * 0.8, sz * (hz + SPLIT.band + 0.7), yawOf([side, 0])], [sx + side * 0.8, sz * (hz - 0.7), yawOf([side, 0])]);
+        furniture.sig.push([sx + side * 0.8, sz * (hz + SPLIT.band + 0.7), yawOf([side, 0])], [sx + side * 3.4, sz * (hz - 0.7), yawOf([side, 0])]);   // the island nose is rounded now (r 2.4): the head stands behind the corner
       } else {
         const zc = sz * (hz + SPLIT.band / 2), xA = zx + side * 3, xB = farX - side * 6;
         dashed('x', zc, Math.min(xA, xB), Math.max(xA, xB), 0.18, 1.0, 1.4, H.paint, CI.white);
