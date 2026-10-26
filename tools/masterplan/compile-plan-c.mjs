@@ -1169,13 +1169,13 @@ function parapetSolid(run, sg, bFn, tFn) {   // the top of the wall (and its cap
   if (run.length < 2) return;
   const S = arcLen(run), L = S[S.length - 1], ease = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
   const top = run.map((p, i) => { const b = bFn(p[2]), t = tFn(p[2]), k = L < 2 * PARAPET_TAPER ? ease(Math.min(S[i], L - S[i]) / (L / 2 || 1)) : ease(Math.min(S[i], L - S[i]) / PARAPET_TAPER); return b + (t - b) * k; });
-  const A = offsetPts3(run, 0), B = offsetPts3(run, sg * PARAPET_T);
+  const A = offsetPts3(run, 0), B = offsetPts3(run, -sg * PARAPET_T);   // the thickness goes INWARD (towards the lane): the outer face stays where the old sheet stood, so no wall enters a neighbouring ramp's swept corridor
   for (let i = 0; i + 1 < run.length; i++) {
     const b0 = bFn(run[i][2]), b1 = bFn(run[i + 1][2]);
     emitQuadS(A[i][0], A[i][1], A[i + 1][0], A[i + 1][1], b0, top[i], b1, top[i + 1], CI.conc);
     emitQuadS(B[i][0], B[i][1], B[i + 1][0], B[i + 1][1], b0, top[i], b1, top[i + 1], CI.conc);
   }
-  deckRibbon(offsetPts3(run.map((p, i) => [p[0], p[1], top[i]]), sg * PARAPET_T / 2), PARAPET_CAP, 0.0, CI.conc);   // cap on top, same taper
+  deckRibbon(offsetPts3(run.map((p, i) => [p[0], p[1], top[i]]), -sg * PARAPET_T / 2), PARAPET_CAP, 0.0, CI.conc);   // cap on top, same taper
 }
 function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median half or 0), crossings: [[s0,s1]] along arc length, paint: {edge, divider}, kerbC, walls: true}
   const S = arcLen(pts);
@@ -1362,7 +1362,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
         } }
     }
     // 2026-10-25: the parapet follows the PER-VERTEX asphalt edge (offL / offR: the merge wedge converges on the host kerb), not a constant offset: it used to run straight on while the asphalt edge curved in - a wavy, stepped kerb where a ramp joins M1
-    const parapetLine = offsetVar(p3, p3.map((_, i) => sg < 0 ? rampOffs.get(id).offL[i] - 0.2 : rampOffs.get(id).offR[i] + 0.2));
+    const parapetLine = offsetVar(p3, p3.map((_, i) => (flare || mouth != null) ? sg * (CLS.ramp.w / 2 + 0.2) : sg < 0 ? offL[i] - 0.2 : offR[i] + 0.2));   // flared exits / diamond mouths keep the plain offset (their widened asphalt would push the wall into the neighbouring lane)
     for (const run of exposedRuns(parapetLine, 0, id, 0.3, 'barrier')) {
       // Split the height gate into contiguous runs too: filtering vertices
       // would reconnect opposite sides of a low section with a collider chord.
@@ -1709,12 +1709,12 @@ function lampsAlong(id, pts, step, off, lo = -Infinity, hi = Infinity, offLow = 
     side = -side;
   }
 }
-lampsAlong('M1', sampleAxis('x', M1_Z, -170, 170, hM1, 3), 28, MW + 0.15 + PARAPET_T / 2, -Infinity, Infinity, MW + 1.4);   // on the deck inside the parapet, on the ground beside the carriageway
+lampsAlong('M1', sampleAxis('x', M1_Z, -170, 170, hM1, 3), 28, MW + 0.15 - PARAPET_T / 2, -Infinity, Infinity, MW + 1.4);   // on the deck inside the parapet, on the ground beside the carriageway
 lampsAlong('M2', sampleAxis('z', M2_X, -150, -40, () => 0, 3), 28, MW + 1.4);
 lampsAlong('M2', sampleAxis('z', M2_X, 40, 86, () => 0, 3), 28, MW + 1.4);
 lampsAlong('M2', sampleAxis('z', M2_X, -40, -10, () => 0, 3), 14, 11);   // the approach of the at-grade crossing I2 (3 lanes + taper): poles outside the widened carriageway
 lampsAlong('M2', sampleAxis('z', M2_X, 10, 40, () => 0, 3), 14, 11);
-for (const r of rampPts) lampsAlong(r.id, r.p3, 24, CLS.ramp.w / 2 + 0.2 + PARAPET_T / 2, -Infinity, Infinity, CLS.ramp.w / 2 + 1.0);   // on the deck: on the lane edge inside the parapet; on the ground: beside the ramp
+for (const r of rampPts) lampsAlong(r.id, r.p3, 24, CLS.ramp.w / 2 + 0.2 - PARAPET_T / 2, -Infinity, Infinity, CLS.ramp.w / 2 + 1.0);   // on the deck: on the lane edge inside the parapet; on the ground: beside the ramp
 const nearRampPt = (x, z, m) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < CLS.ramp.w / 2 + m);
 const onFillet = (x, z, m) => cornerOut.some((q) => x > Math.min(q.K[0], q.O[0]) && x < Math.max(q.K[0], q.O[0]) && z > Math.min(q.K[1], q.O[1]) && z < Math.max(q.K[1], q.O[1]) && Math.hypot(x - q.O[0], z - q.O[1]) > q.RET - m);   // on the asphalt of a kerb return
 furniture.lamp = furniture.lamp.map((l) => l.length >= 4 ? l : [l[0], l[1], l[2], 0]);   // stride 4: x z yaw y

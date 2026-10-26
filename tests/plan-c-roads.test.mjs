@@ -137,7 +137,8 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
     zebras++;
     if (!paint.some((p) => Math.hypot(p[0] - px, p[1] - pz) < 2.4)) missing.push(cr.id);
   }
-  check(missing.length === 0, `data: ${zebras} crossings of the plan all have white bars (${missing.length} missing ${J(missing.slice(0, 5))})`);
+  // 2026-10-25 owner: ground zebras are removed for now (GROUND_ZEBRAS = false in compile-plan-c.mjs): the plan keeps its crossings as data, none is painted
+  check(zebras > 0, `data: ${zebras} crossings stay in the plan as data; their ground zebras are not painted (the paint checks below assert 0 bars)`);
   // 5. floor
   check(D.access(0, 100) && D.access(150, -60) && D.access(-280, 0) && !D.floor(0, 230) && !D.floor(-210, -100) && D.floor(-210, 0) && D.floor(-210, -240) && !D.floor(400, 0), 'data: floor = land of the plan (land yes, sea / river no, bridge over the river yes, outside the map no)');
   // 6. vehicles on the real widths: car 1.4 x 2.14, truck 1.15 x 2.11, clearance >= 0.25 m
@@ -188,10 +189,10 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
       for (let k = 0; k < grp.length; k++) for (const o of bars) if (!seen.has(o) && orient(o) === orient(grp[k]) && Math.abs(o.x0 - grp[k].x0) < 1.3 && Math.abs(o.z0 - grp[k].z0) < 1.3) { seen.add(o); grp.push(o); }
       if (grp.length < 4 && !grp.some(onBorder)) lone.push([+b.x0.toFixed(1), +b.z0.toFixed(1), grp.length]);
     }
-    check(lone.length === 0 && bars.length > 400, `paint: all ${bars.length} zebra bars sit in groups of >= 4 (lone ${J(lone.slice(0, 4))})`);
+    check(lone.length === 0 && bars.length === 0, `paint: no zebra bars on the ground (${bars.length}, lone ${J(lone.slice(0, 4))})`);
     // a stop line must be at least one lane wide (>= 1.9) and have a zebra bar group within 4 m in front of it
     const orphan = stops.filter((s) => !bars.some((b) => Math.hypot((b.x0 + b.x1) / 2 - (s.x0 + s.x1) / 2, (b.z0 + b.z1) / 2 - (s.z0 + s.z1) / 2) < 5));
-    check(orphan.length === 0, `paint: ${stops.length} stop lines all span >= 1.9 m and stand behind a zebra (${J(orphan.slice(0, 3))})`);
+    check(stops.length > 50, `paint: ${stops.length} stop lines all span >= 1.9 m (zebras are off, no 'behind a zebra' rule)`);
     const short = other.filter((m) => { if (onBorder(m)) return false; const d = dim(m); return Math.max(d.lx, d.lz) < 0.55; });
     check(short.length === 0, `paint: no isolated mark shorter than 0.55 m outside the dash / tooth patterns (${short.length}, ${J(short.slice(0, 3))})`);
   }
