@@ -215,6 +215,7 @@ for (const n of PLAN.nodes) {
 const rightOf = (h) => [-h[1], h[0]];
 const MW = CLS.motorway.w / 2;
 // 2026-10-25 (owner: "half a metre of road on the right, none on the left"): both shoulders of a motorway carriageway are 0.2 m wide - the edge line lies 0.2 m inside the asphalt edge (it was 1.0 m on the outer side, 0.2 m on the median side)
+const BRK_DASH = 2.0, BRK_GAP = 3.0;   // 2026-10-26 (7): ONE broken edge-line style for every diverge / merge (GOST 1.8 / MUTCD 3B: long dashes, long gaps; 1.0 / 1.0 read as a dotted row)
 const M_EDGE = MW - 0.2, M_MEDLINE = CLS.motorway.median / 2 + 0.3, LANE_DIV = (M_MEDLINE + M_EDGE) / 2;   // lane divider in the middle of the two lanes (3.75)
 const ringW = (j) => j.lanes === 2 ? 5.4 : 3.0;   // circulatory lane: 2 lanes 5.4 (>= 5.0), 1 lane 3.0 (car + truck swept path >= 2.6)
 const laneW = (cls) => CLS[cls].lane || (CLS[cls].w - CLS[cls].median) / 2 / CLS[cls].lanes;
@@ -334,8 +335,9 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
       const ya = za <= -BOX + 1e-6 ? za - 0.05 : za, yb = zb >= BOX - 1e-6 ? zb + 0.05 : zb;
       emitTri('r', [X(-1, outerA(za)), ya], [X(1, outerA(za)), ya], [X(-1, outerA(zb)), yb], H.asph, CI.asph); emitTri('r', [X(1, outerA(za)), ya], [X(1, outerA(zb)), yb], [X(-1, outerA(zb)), yb], H.asph, CI.asph); continue;
     }
+    const zbE = zb >= M2Z.z1 - 1e-6 ? zb + 0.12 : zb;   // 2026-10-26 (7): 0.12 m under the start of the trunk ramps: no hairline crack across the carriageway (owner: a thin transverse seam in front of the player)
     for (const sg of [-1, 1]) {
-      const a0 = [X(sg, outerA(za)), za], a1 = [X(sg, outerA(zb)), zb], b0 = [X(sg, inner(za)), za], b1 = [X(sg, inner(zb)), zb];
+      const a0 = [X(sg, outerA(za)), za], a1 = [X(sg, outerA(zb)), zbE], b0 = [X(sg, inner(za)), za], b1 = [X(sg, inner(zb)), zbE];
       emitTri('r', a0, b0, a1, H.asph, CI.asph); emitTri('r', b0, b1, a1, H.asph, CI.asph);
       if (inner(za) > 0.02 || inner(zb) > 0.02) emitWall(b0[0], b0[1], b1[0], b1[1], H.asph, H.med, CI.kerb);
     }
@@ -345,7 +347,7 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
   // paint: polylines along the profile, continuous or dashed, per carriageway
   const line = (fn, z0, z1, step = 1) => { const o = []; for (let z = z0; z <= z1 + 1e-6; z += step) o.push([z, fn(z)]); return o; };
   const ribbonZ = (sg, pts, dh = 0) => { if (pts.length > 1) ribbon('p', pts.map(([z, lat]) => [X(sg, lat), z]), 0.16, H.paint + dh, CI.white); };
-  const runOn = (sg, fn, z0, z1) => { ribbonZ(sg, line(fn, z0, M2Z.z1 - 0.5)); ribbonZ(sg, line(fn, M2Z.z1 - 1.5, z1), 0.07); };   // the last metres lie above the start of the trunk ramp's deck
+  const runOn = (sg, fn, z0, z1) => { if (Math.min(z1, M2Z.z1 - 0.5) > z0) ribbonZ(sg, line(fn, z0, Math.min(z1, M2Z.z1 - 0.5))); if (z1 > M2Z.z1 - 1.5) ribbonZ(sg, line(fn, Math.max(z0, M2Z.z1 - 1.5), z1), 0.07); };   // 2026-10-26 (7): ends at z1 (it always ran on to the zone end and painted a SOLID line over the broken one along the exit taper)   // the last metres lie above the start of the trunk ramp's deck
   const dashZ = (sg, pts, dash = 1.6, gap = 1.8) => { let acc = 0, on = true, cur = []; const flush = () => { if (cur.length > 1 && Math.abs(cur[cur.length - 1][0] - cur[0][0]) > 0.8) ribbonZ(sg, cur); cur = []; };
     for (let i = 0; i + 1 < pts.length; i++) { const a = pts[i], b = pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]); let s0 = 0; while (s0 < L) { const lim = on ? dash : gap, take = Math.min(L - s0, lim - acc); if (on) { if (!cur.length) cur.push([a[0] + (b[0] - a[0]) * s0 / L, a[1] + (b[1] - a[1]) * s0 / L]); cur.push([a[0] + (b[0] - a[0]) * (s0 + take) / L, a[1] + (b[1] - a[1]) * (s0 + take) / L]); } s0 += take; acc += take; if (acc >= lim - 1e-9) { if (on) flush(); on = !on; acc = 0; } } }
     flush(); };
@@ -355,17 +357,17 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
     runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 0.2, zS - 1, M2Z.z1 + 1.5);
     ribbonZ(sg, line((z) => 1.35, zN - 70, zN));   // north: median edge line at 1.35 (the plain M2 profile)
     // third-lane edge line (solid) 1.0 inside the asphalt edge: north taper and flat part, ends at the exit gore (z 64)
-    ribbonZ(sg, line((z) => outerA(z) - 0.2, M2Z.z0, zN)); ribbonZ(sg, line((z) => outerA(z) - 0.2, zS, M2Z.end3 - 2));
+    ribbonZ(sg, line((z) => outerA(z) - 0.2, M2Z.z0, zN));   // (south of the box: drawn by the wedge-aware block below)
     // lane divider 3|2 at 5.3: dashed in the three-lane stretch, SOLID from the exit gore on, easing to the trunk ramp's edge line (6.1)
     // outer edge line: solid at 5.3 up to the exit gore, then easing to the trunk ramp's edge line (6.1)
-    { const zA = M2Z.end3 - 2, zB = M2Z.z1 + 1.5, pieces = splitBy(zA, zB, wedgeSpansAxis('z', c, sg));   // 2026-10-26 (6): broken (1.0 / 1.0) along the exit / entrance wedge of the ramps a / c, solid elsewhere
-      for (const [a, b, brk] of pieces) { if (brk) { const e = Math.min(b, M2Z.z1 - 1.5); dashZ(sg, line(() => M_EDGE, a, e), 1.0, 1.0); if (b > e) runOn(sg, () => M_EDGE, e, b); } else runOn(sg, () => M_EDGE, a, b); } }
+    { const zA = zS, zB = M2Z.z1 + 1.5, pieces = splitBy(zA, zB, wedgeSpansAxis('z', c, sg));   // 2026-10-26 (6): broken (1.0 / 1.0) along the exit / entrance wedge of the ramps a / c, solid elsewhere
+      for (const [a, b, brk] of pieces) { if (brk) { const e = Math.min(b, M2Z.z1 - 1.5); dashZ(sg, line(() => M_EDGE, a, e), BRK_DASH, BRK_GAP); if (b > e) runOn(sg, () => M_EDGE, e, b); } else runOn(sg, () => M_EDGE, a, b); } }
     // lane divider 2|1 at 3.2: dashed from the box until lane 1 has become too narrow (inner edge line within 0.45 m of it)
     let zEnd = zS; while (zEnd < M2Z.z1 && inner(zEnd) + 0.25 < LANE_DIV - 0.45) zEnd += 1;
     dashZ(sg, line(() => LANE_DIV, zdS, zEnd)); dashZ(sg, line(() => LANE_DIV, M2Z.z0 + 0, zdN));
   }
   // lane-drop arrows for the inner lane of the southbound (west) carriageway, bent towards the exit side
-  for (const zA of [zS + 8, zS + 26]) { const lat = (inner(zA) + LANE_DIV) / 2 + 0.1, ang = Math.atan((inner(zA + 1) - inner(zA - 1)) / 4); arrowH(X(-1, lat), zA, -Math.sin(ang), Math.cos(ang)); }   // 2026-10-26 (6): along the lane axis (it was bent 12 degrees: odd angles in the owner's frame); the lane centre slope is ~1 degree
+  for (const zA of [zS + 8, zS + 17]) { const lat = (inner(zA) + LANE_DIV) / 2 + 0.1, ang = Math.atan((inner(zA + 1) - inner(zA - 1)) / 4); arrowH(X(-1, lat), zA, -Math.sin(ang), Math.cos(ang)); }   // 2026-10-26 (6): along the lane axis (it was bent 12 degrees: odd angles in the owner's frame); the lane centre slope is ~1 degree
 }
 for (const { L, wide, narrow, node, sgn } of TRANS.values()) {
   const hn = hw(narrow.cls), hd = hw(wide.cls), sn = CLS[narrow.cls].sidewalk, sd = CLS[wide.cls].sidewalk, ax = wide.dir, c = ax === 'z' ? node.x : node.z, mh = CLS[wide.cls].median / 2;
@@ -615,10 +617,11 @@ function wedgeSpansAxis(ax, c, sgn) {
 
   const out = [];
   for (const ic of PLAN.interchanges) for (const r of ic.ramps) for (const k of [0, 1]) {
-    if (r.attach[k] !== 'motorway') continue;
+    if (r.attach[k] !== 'motorway' || (r.noWedge || []).includes(k)) continue;   // a trunk ramp IS the carriageway: no wedge
     const pts = k ? r.pts.slice().reverse() : r.pts, lat = (q) => (ax === 'x' ? q[1] : q[0]) - c, ap = (q) => ax === 'x' ? q[0] : q[1];
     if (Math.abs(lat(pts[0])) > MW + CLS.ramp.w || Math.sign(lat(pts[0])) !== sgn && Math.abs(lat(pts[0])) > 0.5) continue;
-    let lo = ap(pts[0]), hi = lo; for (const q of pts) { if (Math.abs(lat(q)) > MW + CLS.ramp.w + 0.8 || Math.sign(lat(q)) !== sgn) break; lo = Math.min(lo, ap(q)); hi = Math.max(hi, ap(q)); }
+    let lo = ap(pts[0]), hi = lo; for (const q of pts) { if (Math.abs(lat(q)) > MW + CLS.ramp.w / 2 + 0.05 || Math.sign(lat(q)) !== sgn) break;   // 2026-10-26 (7): broken only while the ramp SHARES the pavement (edges touch); once grass opens between them the host's edge is solid again (owner: 'разметка до съезда, потом это отдельные дороги')
+    lo = Math.min(lo, ap(q)); hi = Math.max(hi, ap(q)); }
     if (hi - lo > 4) out.push([lo - 2, hi + 2]);
   }
   return out;
@@ -644,7 +647,7 @@ for (const e of PLAN.edges) {
       for (const o of [-(mh + 0.3), mh + 0.3]) solid(ax, c + o, pl, ph, 0.18, H.paint, CI.white);
       for (const o of [-mdv, mdv]) dashed(ax, c + o, pl, ph, 0.18, 1.6, 1.8, H.paint, CI.white);
       // 2026-10-26 owner (inconsistent lines at a ramp diverge): along a diverge / merge the through road's edge line on the ramp side is a BROKEN line (dash 1.0 / gap 1.0, GOST 1.5 / 1.7 for a speed-change lane), solid everywhere else on both sides
-      for (const o of [-edge, edge]) for (const [a, b, brk] of splitBy(pl, ph, wedgeSpans(e, Math.sign(o)))) if (brk) dashed(ax, c + o, a, b, 0.18, 1.0, 1.0, H.paint, CI.white); else solid(ax, c + o, a, b, 0.18, H.paint, CI.white);
+      for (const o of [-edge, edge]) for (const [a, b, brk] of splitBy(pl, ph, wedgeSpans(e, Math.sign(o)))) if (brk) dashed(ax, c + o, a, b, 0.18, BRK_DASH, BRK_GAP, H.paint, CI.white); else solid(ax, c + o, a, b, 0.18, H.paint, CI.white);
     } else if (e.cls === 'arterial') {
       for (const o of [-(CLS.arterial.median / 2 + CLS.arterial.lane), CLS.arterial.median / 2 + CLS.arterial.lane]) dashed(ax, c + o, pl, ph, 0.18, 1.0, 1.4, H.paint, CI.white);
     } else if (e.cls === 'collector' || e.cls === 'local') dashed(ax, c, pl, ph, 0.15, 1.0, 1.5, H.paint, CI.white);   // 2026-10-26: local streets get the 1.5 centre line too (owner: 'много где разметки нет')
@@ -1114,7 +1117,7 @@ for (const { id, p3, attach, mouth, S, flare, noWedge } of rampPts) {
   if (noWedge && noWedge.length) for (let i = 0; i < p3.length; i++) {
     const m = motorHost(p3[i]), lat = p3[i][1 - m.axis] - m.c, sgnL = Math.sign(lat) || 1; if (Math.abs(lat) > MW + CLS.ramp.w) continue;
     const a = p3[Math.max(0, i - 1)], b = p3[Math.min(p3.length - 1, i + 1)], dx = b[0] - a[0], dz = b[1] - a[1], right = [-dz, dx], outSg = Math.sign((m.axis === 0 ? right[1] : right[0]) * sgnL) || 1;
-    if (wedgeSpansAxis(m.axis === 0 ? 'x' : 'z', m.c, sgnL).some(([lo, hi]) => p3[i][m.axis] > lo && p3[i][m.axis] < hi)) dashed[outSg < 0 ? 0 : 1][i] = true;
+    if (p3[i][2] < 0.3 && wedgeSpansAxis(m.axis === 0 ? 'x' : 'z', m.c, sgnL).some(([lo, hi]) => p3[i][m.axis] > lo && p3[i][m.axis] < hi)) dashed[outSg < 0 ? 0 : 1][i] = true;   // 2026-10-26 (7): a wall stands beside the raised part: a solid edge line there, broken only on the ground
   }
   rampOffs.set(id, { offL, offR, dashed, adjL, adjR, adjPL, adjPR, wedgeEnds, skipL, skipR });
 }
@@ -1130,7 +1133,7 @@ for (const r of rampPts) {
     for (const sg of [-1, 1]) {
       const e = offsetVar(r.p3, sg < 0 ? mine.offL : mine.offR);
       e.forEach((q, i) => {
-        if (q[2] > 0.3) return;
+        if (q[2] > 0.3) return;   // (only a ground road gets a shoulder in front of the neighbour's wall)
         let best = 1e9, hh = 0;
         for (const L of lines) for (let k = 1; k < L.length; k++) { const d = segDist(q[0], q[1], L[k - 1], L[k]); if (d < best) { best = d; hh = Math.max(L[k - 1][2], L[k][2]); } }
         if (best > 0.01 && best < 0.45 && hh > 0.3) (sg < 0 ? ext.L : ext.R)[i] = Math.max((sg < 0 ? ext.L : ext.R)[i], best);
@@ -1303,7 +1306,7 @@ function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median h
       // 2026-10-26 (6): along a diverge / merge wedge the motorway's edge line on the ramp side is a BROKEN line (1.0 / 1.0, the same style as the ramp's own broken line), solid elsewhere; it used to vanish under the ramp's pavement
       const spans = mh ? wedgeSpansAxis(mh.axis === 0 ? 'x' : 'z', mh.c, sg) : [], inSpan = (p) => mh && spans.some(([a, b]) => p[mh.axis] > a && p[mh.axis] < b);
       for (const run of exposedRuns(pts, sg * o.paint.edge, o.id, 0.05)) { let cur = []; const fl = () => { if (cur.length > 1) paintAlong(cur, 0, 0.18, 1, 0, 0.077, CI.white); cur = []; }; for (const p of run) { if (inSpan(p)) fl(); else cur.push(p); } fl(); }
-      for (const [a, b] of spans) { const sub = pts.filter((p) => p[mh.axis] > a && p[mh.axis] < b); if (sub.length > 1) paintAlong(sub, sg * o.paint.edge, 0.18, 1.0, 1.0, 0.077, CI.white); } if (o.paint.divider) paintAlong(pts, sg * o.paint.divider, 0.18, 1.6, 1.8, 0.077, CI.white); if (o.paint.inner) paintAlong(pts, sg * o.paint.inner, 0.18, 1, 0, 0.077, CI.white); }
+      for (const [a, b] of spans) { const sub = pts.filter((p) => p[mh.axis] > a && p[mh.axis] < b); if (sub.length > 1) paintAlong(sub, sg * o.paint.edge, 0.18, BRK_DASH, BRK_GAP, 0.077, CI.white); } if (o.paint.divider) paintAlong(pts, sg * o.paint.divider, 0.18, 1.6, 1.8, 0.077, CI.white); if (o.paint.inner) paintAlong(pts, sg * o.paint.inner, 0.18, 1, 0, 0.077, CI.white); }
     if (o.paint.center) paintAlong(pts, 0, 0.16, 1.0, 3.0, 0.077, CI.white);
   }
 }
@@ -1488,7 +1491,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare, noWedge } o
         const dz = dashed[si][i] && dashed[si][i + 1]; let j = i;
         while (j < n - 1 && !skip[j + 1] && !hs(j + 1) && (dashed[si][j] && dashed[si][j + 1]) === dz) j++;
         if (j === i) j = i + 1;
-        for (const run of exposedRuns(line.slice(i, j + 1), 0, id, 0.05)) paintAlong(run, 0, 0.16, dz ? 1.0 : 1, dz ? 1.0 : 0, 0.079, CI.white);   // one broken-line style (1.0 / 1.0) for every diverge / merge, on the motorway's edge and on the ramp
+        for (const run of exposedRuns(line.slice(i, j + 1), 0, id, 0.05)) paintAlong(run, 0, 0.16, dz ? BRK_DASH : 1, dz ? BRK_GAP : 0, 0.079, CI.white);   // one broken-line style (1.0 / 1.0) for every diverge / merge, on the motorway's edge and on the ramp
         i = j;
       }
     }

@@ -152,7 +152,7 @@ export function runMarkings(P, D) {
   }
   { const Rf = makeRaster(D, 0.05); const bad = [], seen = []; let nEnds = 0, nBroken = 0, nDoubled = 0;
     for (const ic of P.interchanges) for (const r of ic.ramps) for (const k of [0, 1]) {
-      if (r.attach[k] !== 'motorway') continue; nEnds++;
+      if (r.attach[k] !== 'motorway' || (r.noWedge || []).includes(k)) continue; nEnds++;   // a trunk ramp IS the carriageway (no wedge, no broken edge)
       const e = k ? r.pts[r.pts.length - 1] : r.pts[0], nxt = k ? r.pts[r.pts.length - 2] : r.pts[1];
       const host = [{ axis: 0, c: -240 }, { axis: 1, c: 250 }].reduce((a, b) => Math.abs(e[1 - a.axis] - a.c) <= Math.abs(e[1 - b.axis] - b.c) ? a : b), ax = host.axis, lat0 = Math.sign(e[1 - ax] - host.c) || 1, dirA = Math.sign(nxt[ax] - e[ax]) || 1;
       let doubled = 0, maxGapEdge = 0;
@@ -181,7 +181,8 @@ export function runMarkings(P, D) {
     for (const [x, z, hx, hz, ramp] of D.arrows) {
       let best = null; for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const [A, B, id] of segs.get((Math.floor(x / 6) + i) + ',' + (Math.floor(z / 6) + j)) || []) {
         const dx = B[0] - A[0], dz = B[1] - A[1], l2 = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((x - A[0]) * dx + (z - A[1]) * dz) / l2)), d = Math.hypot(x - A[0] - dx * t, z - A[1] - dz * t);
-        if (d < 2.2 && (!best || d < best.d)) best = { d, tx: dx / Math.sqrt(l2), tz: dz / Math.sqrt(l2), id }; }
+        if (d < 2.6 && (!best || d < best.d))   // 2.6: the navigation models ONE path per motorway carriageway (outer lane centre); an arrow in the inner lane lies 2.4-2.5 m from it
+          best = { d, tx: dx / Math.sqrt(l2), tz: dz / Math.sqrt(l2), id }; }
       if (!best) { noLane.push(`${R1(x)},${R1(z)}`); continue; }
       const dot = hx * best.tx + hz * best.tz; if (dot < Math.cos(6 * Math.PI / 180)) bad.push(`${R1(x)},${R1(z)} ${Math.round(Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI)}°`);
     }
