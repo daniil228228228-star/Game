@@ -1483,6 +1483,20 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare, noWedge } o
     const embMode = embankModes(p3, sg, id), vnB = sideNormals(offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2)), sg), cross2 = (k) => sBr != null && Math.abs((S[k - 1] + S[k]) / 2 - sBr) < 9;
     const q = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));
     const offP = p3.map((_, i) => (flare || mouth != null) ? sg * (CLS.ramp.w / 2 + 0.2) : sg < 0 ? offL[i] - 0.2 + adjPL[i] : offR[i] + 0.2 + adjPR[i]);   // 2026-10-26 (6): the support wall / bank follows the per-vertex asphalt edge (merge wedge) like the parapet and lands on the motorway's own wall line
+    // 2026-10-26 (8) owner ('нет нормального стыка'): where an ELEVATED ramp runs into a motorway deck, a 0-2.5 m gap between the two decks showed the ground 5 m below and the two parapets
+    // stood over it as loose beaks. The gap is paved at deck level (ramp asphalt edge to the motorway's asphalt edge, 5 cm overlap each side): one deck.
+    if (!noWedge) { const Ea = offsetVar(p3, p3.map((_, i) => sg < 0 ? offL[i] : offR[i])), P = [];
+      for (let i = 0; i < p3.length; i++) {
+        const m = motorHost(Ea[i]), latE = Math.abs(Ea[i][1 - m.axis] - m.c), latA = Math.abs(p3[i][1 - m.axis] - m.c), d = latE - MW, hh = m.h(Ea[i][m.axis]);
+        if (latE < latA && d > 0.02 && d < 2.5 && p3[i][2] > 0.6 && Math.abs(hh - p3[i][2]) < 0.4 && Ea[i][m.axis] > m.lo && Ea[i][m.axis] < m.hi) { const q = Ea[i].slice(), sgl = Math.sign(Ea[i][1 - m.axis] - m.c); q[1 - m.axis] = m.c + sgl * (MW - 0.05); const e = Ea[i].slice(); e[1 - m.axis] += sgl * 0.05; P[i] = [e, q, p3[i][2] + 0.05, hh + 0.05]; }
+      }
+      for (let i = 0; i + 1 < p3.length; i++) if (P[i] && P[i + 1]) {
+        const [a0, b0, ya, yb] = P[i], [a1, b1, ya1, yb1] = P[i + 1];
+        emitTri3([a0[0], ya, a0[1]], [b0[0], yb, b0[1]], [a1[0], ya1, a1[1]], CI.asph); emitTri3([b0[0], yb, b0[1]], [b1[0], yb1, b1[1]], [a1[0], ya1, a1[1]], CI.asph);
+      } else if (P[i] || P[i + 1]) {   // the tip where the gap closes (or opens): a triangle to the next asphalt-edge point
+        const [k, j] = P[i] ? [i, i + 1] : [i + 1, i], [a0, b0, ya, yb] = P[k], t = Ea[j];
+        emitTri3([a0[0], ya, a0[1]], [b0[0], yb, b0[1]], [t[0], p3[j][2] + 0.05, t[1]], CI.asph);
+      } }
     const body = offsetVar(p3, offP);   // 2026-10-26: the support wall / bank top is in the SAME plane as the parapet's outer face (was 0.5 m inside it: a step, the parapet looked like a separate slab)
     const fillEdge = offsetVar(p3, offP.map((o) => o - sg * 0.1));
     for (let i = 1; i < p3.length; i++) {
