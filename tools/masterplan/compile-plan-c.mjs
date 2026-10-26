@@ -1498,9 +1498,11 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare, noWedge } o
     const L = offsetVar(p3, p3.map((_, k) => offL[k] - 0.2 + adjPL[k]))[i], R = offsetVar(p3, p3.map((_, k) => offR[k] + 0.2 + adjPR[k]))[i];
     const top = h - 0.62;   // up to the underside of the fascia beam (h - 0.6): the beam stays the visible edge of the span
     const dx = p3[i + 1][0] - p3[i - 1][0], dz = p3[i + 1][1] - p3[i - 1][1], l = Math.hypot(dx, dz) || 1, sgn = c0 ? 1 : -1, nx = -sgn * dx / l, nz = -sgn * dz / l;   // outward = towards the span
-    emitQuadS(L[0], L[1], R[0], R[1], 0, 0.6, 0, 0.6, CI.concD);   // plinth band like the retaining walls
-    emitQuadS(L[0], L[1], R[0], R[1], 0.6, top, 0.6, top, CI.wall);
-    wallBackAndEnds(L, R, top, top, nx, nz, true, true, CI.concD);   // a closed solid like every retaining wall
+    // 2026-10-26 (9) owner ('здесь рябит'): 4 cm proud of the section plane, where the end caps of the two support walls lie (coplanar faces flickered)
+    const Lf = [L[0] + nx * 0.04, L[1] + nz * 0.04], Rf = [R[0] + nx * 0.04, R[1] + nz * 0.04];
+    emitQuadS(Lf[0], Lf[1], Rf[0], Rf[1], 0, 0.6, 0, 0.6, CI.concD);   // plinth band like the retaining walls
+    emitQuadS(Lf[0], Lf[1], Rf[0], Rf[1], 0.6, top, 0.6, top, CI.wall);
+    wallBackAndEnds(Lf, Rf, top, top, nx, nz, false, false, CI.concD);   // back face (no end caps: they would lie on the support walls)
   }
   for (const sg of [-1, 1]) {
     const embMode = embankModes(p3, sg, id), vnB = sideNormals(offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2)), sg), cross2 = (k) => sBr != null && Math.abs((S[k - 1] + S[k]) / 2 - sBr) < 9;
