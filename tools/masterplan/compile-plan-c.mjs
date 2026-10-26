@@ -308,7 +308,9 @@ for (const e of PLAN.edges) {
     const nLo = splitAt(s.lowNode), nHi = splitAt(s.highNode), cutN = SPLIT_START_GAP + mh;
     const mlo2 = nLo ? Math.max(mlo, lo0 + cutN) : mlo, mhi2 = nHi ? Math.min(mhi, hi0 - cutN) : mhi;
     if (mhi2 - mlo2 > 1) for (const [lo, hi] of subtractIntervals(mlo2, mhi2, cuts)) put(lo, hi, -mh, mh, e.cls === 'motorway' ? 'medM' : 'med');
-    for (const [on, at, sg] of [[nLo, mlo2, -1], [nHi, mhi2, 1]]) if (on && mhi2 - mlo2 > 1) {
+    // 2026-10-26 (9) owner ('нужна эта головка на круговых? убрать'): a median that ends at a roundabout ends in the same round kerbed nose (it ended square, with painted splitter lines on to the ring)
+    const ringAt = (id) => e.cls !== 'motorway' && ['roundabout'].includes(J.get(id)?.type);
+    for (const [on, at, sg] of [[nLo || ringAt(s.lowNode), mlo2, -1], [nHi || ringAt(s.highNode), mhi2, 1]]) if (on && mhi2 - mlo2 > 1) {
       const C = e.dir === 'x' ? [at, c] : [c, at], P = (t) => e.dir === 'x' ? [at + sg * Math.cos(t) * mh, c + Math.sin(t) * mh] : [c + Math.sin(t) * mh, at + sg * Math.cos(t) * mh];
       for (let k = 0; k < 12; k++) { const t0 = -Math.PI / 2 + Math.PI * k / 12, t1 = -Math.PI / 2 + Math.PI * (k + 1) / 12, A = P(t0), B = P(t1); emitTri('r', C, A, B, H.med, CI.median); emitWall(A[0], A[1], B[0], B[1], H.asph, H.med, CI.kerb); }
     }
@@ -547,7 +549,7 @@ for (const j of PLAN.junctions) {
         const crossing=PLAN.crossings.find(q=>q.id.startsWith(j.id+'-')&&q.arm&&q.arm[0]===d[0]&&q.arm[1]===d[1]);
         const crossAt=crossing?.setback;
         const parts=Number.isFinite(crossAt)?[[base,Math.min(tip,crossAt-.95)],[Math.max(base,crossAt+.95),tip]]:[[base,tip]];
-        for(const sg of [-1,1])for(const [lo,hi]of parts)if(hi>lo){
+        if(false)for(const sg of [-1,1])for(const [lo,hi]of parts)if(hi>lo){   // 2026-10-26 (9) owner: no painted splitter lines (the median ends in a round nose)
           const point=t=>P(t,sg*iw*(tip-t)/(tip-base));
           ribbon('p',[point(lo),point(hi)],.14,H.paint,CI.white);
         }
