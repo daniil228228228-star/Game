@@ -390,7 +390,7 @@ const RW = (() => { const D = loadData(), a = runRealWorld(P, D), b = accessRows
     ['24. no steps in the profile of one road; every ramp end is flush with the road it joins', /ступень|разность высот/],
     ['25. footbridges: width, ramp scheme, no ramp on a neighbouring street', /ширина прохода|схема пандусов/],
     ['27. stop line 1.12 on every signalised approach, zebra 1.14.1 on every approach, yield line 1.13 on every minor approach / ring entry (GOST R 51256-2018)', /стоп-линия|зебра|линия 1\.13/],
-    ['28. lines 1.1 / 1.5 / 1.2.1 / 1.2.2 continuous along streets, M1 and ramps; bus stops marked 1.17; symmetric motorway edges', /разметка осевая|краевые линии|разметка 1\.17|кромки симметричны/],
+    ['28. lines 1.1 / 1.5 / 1.2.1 / 1.2.2 continuous along streets, M1 and ramps; bus stops marked 1.17; symmetric motorway edges', /разметка осевая|краевые линии|разметка 1\.17|кромки симметричны|осевая \/ полосная|без осевой|редкой разметкой/],
     ['29. kerb along every street edge, sidewalk along every urban street (no gaps > 3 / 6 m)', /бордюр вдоль|тротуар вдоль/],
     ['30. lighting: no dark stretch > 24 m on streets, ramps, decks, the city part of M1 / M2; no pole on the carriageway (SP 52.13330)', /освещение|опора не стоит/],
     ['26. every ribbon (deck, ramp, footbridge) can be climbed ON FOOT from the ground and left again (graph over the real access / surfaceY of the game, 0.5 m steps)', /проход пешком/],

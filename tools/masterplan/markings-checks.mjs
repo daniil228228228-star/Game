@@ -118,5 +118,21 @@ export function runMarkings(P, D) {
       for (let s = 0; s <= L; s += 1) { wSamples++; if (K.near('walk', a.x + dx * s + nx * sg * o, a.z + dz * s + nz * sg * o, 0.25)) flush(); else { if (!run) st = s; run++; } } flush(); }
   }
   add('Городские улицы', 'тротуар вдоль обеих сторон улицы без разрывов длиннее 6 м', walkGaps.length ? `разрывы: ${sh(walkGaps)}` : `${wSamples} проб, разрывов нет`, 'тротуары вдоль всех городских улиц (пешеходная связность)', 'СП 42.13330.2016 п. 11.? ; СП 59.13330', walkGaps.length ? 'НАРУШЕНИЕ' : 'OK');
+
+  // ---- H. coverage of centre / lane lines along EVERY drivable street (2026-10-26, owner: "много где разметки нет"): rule table per class ------------------------------------------------
+  //   arterial: lane dividers 1.5 on both sides of the median; collector / local / service: dashed centre line 1.5.  A 2 m window "has the line" if paint lies within 0.15 m of the line in it.
+  const covRows = {}, zero = [], poor = [];
+  for (const e of P.edges) {
+    if (e.cls === 'motorway' || e.split) continue; const cl = CLS[e.cls], a = N.get(e.a), b = N.get(e.b), L = Math.hypot(b.x - a.x, b.z - a.z), dx = (b.x - a.x) / L, dz = (b.z - a.z) / L, nx = -dz, nz = dx;
+    const lines = e.cls === 'arterial' ? [-(cl.median / 2 + cl.lane), cl.median / 2 + cl.lane] : [0];
+    const lo = 12, hi = L - 12; if (hi - lo < 6 || L < 45) continue;   // a block shorter than 45 m between two junction trims is all junction
+    let win = 0, has = 0;
+    for (let s = lo; s + 2 <= hi; s += 2) for (const lat of lines) { win++; let ok = false; for (let t = 0; t <= 2 && !ok; t += 0.25) { const x = a.x + dx * (s + t) + nx * lat, z = a.z + dz * (s + t) + nz * lat; if (R.near('paint', x, z, 0.15)) ok = true; } if (ok) has++; }
+    if (!win) continue; const c = covRows[e.cls] || (covRows[e.cls] = { win: 0, has: 0, n: 0 }); c.win += win; c.has += has; c.n++;
+    if (has === 0) zero.push(e.id + ' ' + e.cls); else if (has / win < 0.35) poor.push(e.id + ' ' + e.cls + ' ' + Math.round(100 * has / win) + '%');
+  }
+  for (const [cls, c] of Object.entries(covRows)) add('Покрытие разметкой', `осевая / полосная разметка: ${cls}`, `${c.n} перегонов, окон с линией ${Math.round(100 * c.has / c.win)} %`, 'у каждого перегона с центральной линией (1.5 / 1.1) во всех окнах 2 м (штрих ~50 %)', 'ГОСТ Р 51256-2018', c.has / c.win >= 0.35 ? 'OK' : 'НАРУШЕНИЕ');
+  add('Покрытие разметкой', 'улицы совсем без осевой / полосной разметки', zero.length ? `${zero.length}: ${sh(zero)}` : 'нет', 'ни одной улицы без разметки', 'ГОСТ Р 51256-2018', zero.length ? 'НАРУШЕНИЕ' : 'OK');
+  add('Покрытие разметкой', 'улицы с редкой разметкой (< 35 % окон)', poor.length ? `${poor.length}: ${sh(poor)}` : 'нет', 'штрихи вдоль всей улицы между стоп-линиями', 'ГОСТ Р 51256-2018', poor.length ? 'НАРУШЕНИЕ' : 'OK');
   return { rows };
 }

@@ -621,7 +621,8 @@ for (const e of PLAN.edges) {
       for (const o of [-edge, edge]) solid(ax, c + o, pl, ph, 0.18, H.paint, CI.white);
     } else if (e.cls === 'arterial') {
       for (const o of [-(CLS.arterial.median / 2 + CLS.arterial.lane), CLS.arterial.median / 2 + CLS.arterial.lane]) dashed(ax, c + o, pl, ph, 0.18, 1.0, 1.4, H.paint, CI.white);
-    } else if (e.cls === 'collector') dashed(ax, c, pl, ph, 0.18, 1.0, 1.2, H.paint, CI.white);
+    } else if (e.cls === 'collector' || e.cls === 'local') dashed(ax, c, pl, ph, 0.15, 1.0, 1.5, H.paint, CI.white);   // 2026-10-26: local streets get the 1.5 centre line too (owner: 'много где разметки нет')
+    else if (e.cls === 'service') dashed(ax, c, pl, ph, 0.15, 1.0, 2.0, H.paint, CI.white);
   }
 }
 
@@ -791,10 +792,10 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
       } else {
         const zc = sz * (hz + SPLIT.band / 2), xA = zx + side * 3, xB = farX - side * 6;
         dashed('x', zc, Math.min(xA, xB), Math.max(xA, xB), 0.18, 1.0, 1.4, H.paint, CI.white);
-        for (const lat of [-1, 1]) arrow([zx + side * 9, zc + lat * 1.2], [-side, 0], 0, 0);
+        // (2026-10-26: one arrow pair per branch only - the set near the stop line of the inbound branch)
       }
     }
-    // a second arrow pair on every branch near the round end (direction of travel: inbound towards M2, outbound away from it)
+    // (the second / third arrow pairs on every branch were removed: owner 'навязчивые стрелки')
     for (const sz of [-1, 1]) { const zc = sz * (hz + SPLIT.band / 2), xt = farX - side * 6 + side * 0, dirT = sz === inSz ? [side, 0] : [-side, 0]; for (const lat of [-1, 1]) arrow([xt - side * 4, zc + lat * 1.2], dirT, 0, 0); }
     // bus shelters on the outer sidewalk of both branches (line B1 runs through the crossing), facing the carriageway
     for (const [sz, t] of [[1, 0.42], [-1, 0.58]]) { const xA = side < 0 ? farX + 6 : edgeM + side * SPLIT.R, xB = side < 0 ? edgeM + side * SPLIT.R : farX - 6, px = xA + (xB - xA) * t; furniture.stop.push([R2(px), R2(sz * (hz + SPLIT.band + 1.75)), sz > 0 ? Math.PI : 0, 'B1']); const zy = sz * (hz + SPLIT.band - 0.32); emitRect('p', 'q', px - 4.5, zy - 0.125, px + 4.5, zy + 0.125, H.paint, CI.yellow); }   // + line 1.17
@@ -1398,7 +1399,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
     };
     const arrowAt = (sv) => { const o = at(sv); if (o.h > 0.4) return; tri(o, -0.9, -0.09, -0.9, 0.09, 0.4, -0.09); tri(o, -0.9, 0.09, 0.4, 0.09, 0.4, -0.09); tri(o, 0.2, -0.5, 0.2, 0.5, 1.1, 0); };
     const teethAt = (sv) => { const o = at(sv); if (o.h > 0.4) return; for (const l of [-1.0, 0.0, 1.0]) { const a = l - 0.3, b = l + 0.3; tri(o, -0.2, a, -0.2, b, 0.2, a); tri(o, -0.2, b, 0.2, b, 0.2, a); } };   // dashed give-way line across the slip lane (3 dashes 0.6 m, gaps 0.4 m, 0.4 m wide), was 4 loose triangles
-    if (/slip/.test(kind)) { arrowAt(L * 0.36); arrowAt(L * 0.62); teethAt(L - 4.5); } else if (L > 40) { arrowAt(L * 0.4); arrowAt(L * 0.6); }
+    if (/slip/.test(kind)) { teethAt(L - 4.5); } else if (L > 60) { arrowAt(L * 0.5); }   // 2026-10-26: ONE arrow on a long ramp, none on a slip lane (was 2 per ramp + 2 per slip)
   }
   pushRibbons(ic + '.' + kind, CLS.ramp.w - 0.2, p3.map((p) => [R2(p[0]), R2(p[1]), R3(p[2])]));
 }
