@@ -153,5 +153,34 @@ const check = (ok, msg) => { console.log((ok ? 'ok: ' : 'FAIL: ') + msg); if (!o
   check(zebra === 0, `no zebra bars on the ground (${zebra})`);
 }
 
+// ---- 2026-10-26 (owner: "ограждение должно стоять на покрытии и быть вровень с бетоном"): the parapet's outer face is in the SAME plane as the wall panel / bank top under it (<= 2 cm), and its base is on the deck
+{
+  const walls = []; for (const c of Object.values(D.cells)) { const q = c.d && c.d.s; if (q) for (let i = 0; i < q.length; i += 9) walls.push(q.slice(i, i + 9)); }
+  const cellW = new Map(), K = (x, z) => Math.floor(x / 8) + ',' + Math.floor(z / 8);
+  for (const w of walls) { const k = K((w[0] + w[2]) / 2, (w[1] + w[3]) / 2); (cellW.get(k) || cellW.set(k, []).get(k)).push(w); }
+  let n = 0; const bad = [], baseBad = [];
+  for (const rb of D.struct.ribbons) {
+    if (/^FB/.test(rb.id)) continue;
+    const pts = rb.p;
+    for (let i = 1; i + 1 < pts.length; i += 2) {
+      const e0 = /^M/.test(rb.id) ? 0.15 : 0.3, a = pts[i - 1], b = pts[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, tx = (b[0] - a[0]) / len, tz = (b[1] - a[1]) / len, p = pts[i]; if (p[2] < 1.0 || (rb.id !== "M1" && Math.abs(p[1] + 240) < 8 && Math.abs(p[0]) < 30)) continue;   // the loop heads beside M1 share its parapet line
+      for (const sg of [-1, 1]) {
+        const px = p[0] - tz * sg, pz = p[1] + tx * sg; let panel = null, par = null;
+        for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const w of cellW.get(K(p[0] + dx * 8, p[1] + dz * 8)) || []) {
+          const mx = (w[0] + w[2]) / 2, mz = (w[1] + w[3]) / 2, lat = ((mx - p[0]) * -tz + (mz - p[1]) * tx) * sg, lon = (mx - p[0]) * tx + (mz - p[1]) * tz;
+          if (Math.abs(lon) > 1.2 || lat < rb.w / 2 + e0 - 0.2 || lat > rb.w / 2 + e0 + 0.2) continue;   // the neighbouring structures of a cloverleaf core (loops 0.5-1 m away) are other objects
+          const bot = Math.min(w[4], w[6]), top = Math.max(w[5], w[7]);
+          if (w[8] === P.wall && top > p[2] - 0.5) { if (panel === null || Math.abs(lat - rb.w / 2 - e0) < Math.abs(panel - rb.w / 2 - e0)) panel = lat; }
+          else if (w[8] === P.conc && bot > p[2] - 0.1 && top - bot > 0.3 && bot < p[2] + 0.3) { if (par === null || Math.abs(lat - rb.w / 2 - e0) < Math.abs(par - rb.w / 2 - e0)) par = lat; }
+          if (w[8] === P.conc && top - bot > 0.3 && bot < p[2] + 0.3 && Math.abs(bot - (p[2] + 0.05)) > 0.03 && bot > p[2] - 0.1 && w[4] === w[6] && Math.abs(w[4] - w[6]) < 1e-6 && bot > p[2] + 0.1) baseBad.push([+mx.toFixed(1), +mz.toFixed(1)]);
+        }
+        if (panel !== null && par !== null) { n++; if (Math.abs(panel - par) > 0.02) bad.push([rb.id, +px.toFixed(1), +pz.toFixed(1), +(par - panel).toFixed(2)]); }
+      }
+    }
+  }
+  check(n > 50 && bad.length === 0, `parapet outer face coplanar with the wall panel under it within 2 cm (${n} samples, bad ${bad.length}: ${JSON.stringify(bad.slice(0, 4))})`);
+  check(baseBad.length === 0, `parapet bases rest on the deck surface (${baseBad.length} floating)`);
+}
+
 console.log(failed ? failed + ' check(s) failed' : 'all checks passed');
 process.exit(failed ? 1 : 0);

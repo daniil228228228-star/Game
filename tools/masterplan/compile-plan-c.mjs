@@ -603,6 +603,23 @@ function dashed(axis, c, lo, hi, width, dash, gap, y, ci, phase = 0) {   // axis
   for (let k = 0; k < n; k++) { const s = start + k * (dash + gap), e = s + dash; if (axis === 'x') emitRect('p', 'q', s, c - width / 2, e, c + width / 2, y, ci); else emitRect('p', 'q', c - width / 2, s, c + width / 2, e, y, ci); }
 }
 function solid(axis, c, lo, hi, width, y, ci) { if (hi - lo < 0.1) return; if (axis === 'x') emitRect('p', 'q', lo, c - width / 2, hi, c + width / 2, y, ci); else emitRect('p', 'q', c - width / 2, lo, c + width / 2, hi, y, ci); }
+// spans along a motorway edge where a ramp runs beside it (diverge / merge): from the ramp end that attaches to the motorway for as long as the ramp stays within one carriageway + lane of the host's axis
+function wedgeSpans(e, sgn) {
+  const ax = e.dir, c = ax === 'x' ? N.get(e.a).z : N.get(e.a).x, out = [];
+  for (const ic of PLAN.interchanges) for (const r of ic.ramps) for (const k of [0, 1]) {
+    if (r.attach[k] !== 'motorway') continue;
+    const pts = k ? r.pts.slice().reverse() : r.pts, lat = (q) => (ax === 'x' ? q[1] : q[0]) - c, ap = (q) => ax === 'x' ? q[0] : q[1];
+    if (Math.abs(lat(pts[0])) > MW + CLS.ramp.w || Math.sign(lat(pts[0])) !== sgn && Math.abs(lat(pts[0])) > 0.5) continue;
+    let lo = ap(pts[0]), hi = lo; for (const q of pts) { if (Math.abs(lat(q)) > MW + CLS.ramp.w + 0.8 || Math.sign(lat(q)) !== sgn) break; lo = Math.min(lo, ap(q)); hi = Math.max(hi, ap(q)); }
+    if (hi - lo > 4) out.push([lo - 2, hi + 2]);
+  }
+  return out;
+}
+function splitBy(lo, hi, spans) {   // [lo, hi] -> pieces [a, b, broken]
+  const cuts = [lo, hi, ...spans.flatMap(([a, b]) => [a, b]).filter((v) => v > lo && v < hi)].sort((x, y) => x - y), out = [];
+  for (let i = 0; i + 1 < cuts.length; i++) { const m = (cuts[i] + cuts[i + 1]) / 2; if (cuts[i + 1] - cuts[i] > 0.05) out.push([cuts[i], cuts[i + 1], spans.some(([a, b]) => m > a && m < b)]); }
+  return out;
+}
 for (const e of PLAN.edges) {
   const a = N.get(e.a), b = N.get(e.b), ax = e.dir, cl = CLS[e.cls], cuts = cutsOf(e);
   const lo0 = ax === 'x' ? Math.min(a.x, b.x) : Math.min(a.z, b.z), hi0 = ax === 'x' ? Math.max(a.x, b.x) : Math.max(a.z, b.z);
@@ -618,7 +635,8 @@ for (const e of PLAN.edges) {
       const mh = CLS.motorway.median / 2, mdv = LANE_DIV, edge = M_EDGE;
       for (const o of [-(mh + 0.3), mh + 0.3]) solid(ax, c + o, pl, ph, 0.18, H.paint, CI.white);
       for (const o of [-mdv, mdv]) dashed(ax, c + o, pl, ph, 0.18, 1.6, 1.8, H.paint, CI.white);
-      for (const o of [-edge, edge]) solid(ax, c + o, pl, ph, 0.18, H.paint, CI.white);
+      // 2026-10-26 owner (inconsistent lines at a ramp diverge): along a diverge / merge the through road's edge line on the ramp side is a BROKEN line (dash 1.0 / gap 1.0, GOST 1.5 / 1.7 for a speed-change lane), solid everywhere else on both sides
+      for (const o of [-edge, edge]) for (const [a, b, brk] of splitBy(pl, ph, wedgeSpans(e, Math.sign(o)))) if (brk) dashed(ax, c + o, a, b, 0.18, 1.0, 1.0, H.paint, CI.white); else solid(ax, c + o, a, b, 0.18, H.paint, CI.white);
     } else if (e.cls === 'arterial') {
       for (const o of [-(CLS.arterial.median / 2 + CLS.arterial.lane), CLS.arterial.median / 2 + CLS.arterial.lane]) dashed(ax, c + o, pl, ph, 0.18, 1.0, 1.4, H.paint, CI.white);
     } else if (e.cls === 'collector' || e.cls === 'local') dashed(ax, c, pl, ph, 0.15, 1.0, 1.5, H.paint, CI.white);   // 2026-10-26: local streets get the 1.5 centre line too (owner: 'много где разметки нет')
@@ -739,7 +757,7 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
     const nose = xm + side * (mw + SPLIT.band + 0.1 - 0.0) - side * 0.0, farX = side < 0 ? 212 : 286;   // island end on the crossing side / the far end
     const edgeM = xm + side * mw, noseX = edgeM + side * SPLIT.band;     // x of the island nose: one band width from the M2 edge
     const xa = Math.min(noseX, farX), xb = Math.max(noseX, farX), hz = SPLIT.hz;
-    const small = 0.6, far = 6;   // both far ends are round (a stadium)
+    const small = 2.4, far = 6;   // both far ends are round (a stadium)
     const rcs = side < 0 ? [small, far, far, small] : [far, small, small, far];   // TR, TL, BL, BR
     const inner = rr(xa, xb, hz, rcs, 0), outerB = rr(xa, xb, hz, rcs.map((r, k) => (side < 0 ? (k === 0 || k === 3) : (k === 1 || k === 2)) ? 0.01 - SPLIT.band : r), SPLIT.band, 8);   // crossing-side corners of the band are SHARP (radius 0.01)
     // outer outline: sharp corners on the crossing side
@@ -750,8 +768,16 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
     const outer2 = rr(xa, xb, hz, rcs.map((r, k) => (side < 0 ? (k === 0 || k === 3) : (k === 1 || k === 2)) ? 0.01 - SPLIT.band - SPLIT.walk : r), SPLIT.band + SPLIT.walk, 8);
     // sidewalk: the round far end as a polygon strip, the straight parts as rectangles that stop exactly at the tangent point of the corner fillet
     const tipOnly = (q) => (side < 0 ? q[0] < farX + 6 + 0.01 : q[0] > farX - 6 - 0.01) && !tipStub(q);
-    strip(outer, outer2, H.walk, CI.walk, tipOnly);
-    wall(outer, H.asph, H.walk, CI.kerb, tipOnly);
+    // 2026-10-26 owner: "sidewalk returns end in a hard diagonal cut": the far end is a half circle (centre z = 0), built as an exact annular sector that stops RADIALLY where the street's own sidewalk takes over (the old per-quad centroid test left sloped ends)
+    {
+      const cc = [side < 0 ? farX + far : farX - far, 0], r0 = far + SPLIT.band, r1 = r0 + SPLIT.walk, th = Math.asin((hw('arterial') + CLS.arterial.sidewalk) / r1) * 180 / Math.PI;
+      const spans = side < 0 ? [[90 + 0, 180 - th], [180 + th, 270]] : [[-90, -th], [th, 90]];
+      for (const [a0, a1] of spans) {
+        annulus('r', cc, r0, r1, a0, a1, H.walk, CI.walk, 5);
+        const n = Math.max(2, Math.ceil((a1 - a0) / 5));
+        for (let k = 0; k < n; k++) { const t0 = (a0 + (a1 - a0) * k / n) * Math.PI / 180, t1 = (a0 + (a1 - a0) * (k + 1) / n) * Math.PI / 180; emitWall(cc[0] + Math.cos(t0) * r0, cc[1] + Math.sin(t0) * r0, cc[0] + Math.cos(t1) * r0, cc[1] + Math.sin(t1) * r0, H.asph, H.walk, CI.kerb); }
+      }
+    }
     for (const sz of [-1, 1]) {
       const xA = side < 0 ? farX + 6 : edgeM + side * SPLIT.R, xB = side < 0 ? edgeM + side * SPLIT.R : farX - 6, z0 = sz * (hz + SPLIT.band), z1 = sz * (hz + SPLIT.band + SPLIT.walk);
       emitRect('r', 'q', xA, Math.min(z0, z1), xB, Math.max(z0, z1), H.walk, CI.walk);
@@ -1195,7 +1221,7 @@ function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median h
   // sides: a grass bank where the free ground allows (2026-10-19 (15): the whole causeway used to be a 5 m white retaining wall), else a retaining wall with plinth / mid-tone face / coping,
   // a fascia beam in front of every crossing
   for (const sg of [-1, 1]) {
-    const off = o.w / 2 + 0.3, q = offsetPts3(pts, sg * off), emb = embankModes(pts, sg, o.id, off), vnQ = sideNormals(q, sg), n = q.length;
+    const off = o.w / 2 + 0.15, q = offsetPts3(pts, sg * off), emb = embankModes(pts, sg, o.id, off), vnQ = sideNormals(q, sg), n = q.length;
     const segCross = (i) => i >= 0 && i + 1 < n && inCross((S[i] + S[i + 1]) / 2), segSlope = (i) => i >= 0 && i + 1 < n && emb[i + 1] && !segCross(i) && Math.max(pts[i][2], pts[i + 1][2]) >= 0.3;
     for (let i = 0; i + 1 < n; i++) {
       const cross = segCross(i), slope = segSlope(i);
@@ -1211,7 +1237,7 @@ function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median h
     }
   }
   // cornice: a pale band along the deck edge so the slab reads as a bridge from below
-  for (const sg of [-1, 1]) for (const run of exposedRuns(pts, sg * (o.w / 2 + 0.42), o.id, 0.4)) capAlong(run, 0, 0.5, 0.07, CI.conc);
+  // (the 0.5 m cornice ledge is gone: the wall, the parapet and its cap are one flush face, 2026-10-26)
   // ceiling + abutments at crossings
   for (const [a, b] of o.crossings) {
     const idx = pts.map((_, i) => i).filter((i) => S[i] >= a - 1e-6 && S[i] <= b + 1e-6);
@@ -1249,8 +1275,8 @@ const freeGround = (x, z, own) => {
 // 2026-10-25: SLOPE_MIN 1.5 = 1:1.5, the steepest earth fill slope of SP 34.13330 (embankments to 6 m) / AASHTO GB 4.? (fill slopes 1:2 desirable, 1:1.5 with a barrier); steeper = a retaining wall (was 1.25).
 // Slope ratio (horizontal : vertical) at a deck-edge point: as flat as the free ground allows, between SLOPE_MIN (steep grass bank) and SLOPE_MAX; below SLOPE_MIN the face is a retaining wall.
 const SLOPE_MAX = 2.5, SLOPE_MIN = Number(process.env.SMIN || 1.5), SLOPE_RUN_MIN = 12, FILL_MIN_H = 0.35;
-const ratioAt = (x, z, h, own) => h < 0.3 ? SLOPE_MAX : Math.max(0, Math.min(SLOPE_MAX, (freeGround(x, z, own) - 0.8) / (h + 0.05)));
-function embankModes(p3, sg, own, off = CLS.ramp.w / 2 - 0.3) {   // per segment of one side (mode[i] = segment i-1..i): true = grass bank (>= SLOPE_MIN fits), false = concrete retaining wall; slope runs shorter than SLOPE_RUN_MIN m become walls
+const ratioAt = (x, z, h, own) => h < 0.3 ? SLOPE_MAX : Math.max(0, Math.min(SLOPE_MAX, (freeGround(x, z, own) - (/^M[12]$/.test(own) ? 0.8 : 1.3)) / (h + 0.05)));
+function embankModes(p3, sg, own, off = CLS.ramp.w / 2 + 0.2) {   // per segment of one side (mode[i] = segment i-1..i): true = grass bank (>= SLOPE_MIN fits), false = concrete retaining wall; slope runs shorter than SLOPE_RUN_MIN m become walls
   const body = offsetPts3(p3, sg * off), n = body.length, mode = [false];
   // the bank may not fold over itself on the INSIDE of a bend: its foot (ratio * height) stays within 70 % of the radius of curvature when the centre of the bend is on the bank's side
   const curveCap = (i) => {
@@ -1344,9 +1370,9 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
   const { offL, offR, dashed, adjL, adjR, skipL, skipR } = rampOffs.get(id);
   asymRibbon(p3, offL, offR, 0.052, CI.asph);
   for (const sg of [-1, 1]) {
-    const embMode = embankModes(p3, sg, id), vnB = sideNormals(offsetPts3(p3, sg * (CLS.ramp.w / 2 - 0.3)), sg), cross2 = (k) => sBr != null && Math.abs((S[k - 1] + S[k]) / 2 - sBr) < 9;
+    const embMode = embankModes(p3, sg, id), vnB = sideNormals(offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2)), sg), cross2 = (k) => sBr != null && Math.abs((S[k - 1] + S[k]) / 2 - sBr) < 9;
     const q = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));
-    const body = offsetPts3(p3, sg * (CLS.ramp.w / 2 - 0.3));
+    const body = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));   // 2026-10-26: the support wall / bank top is in the SAME plane as the parapet's outer face (was 0.5 m inside it: a step, the parapet looked like a separate slab)
     const fillEdge = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.1));
     for (let i = 1; i < p3.length; i++) {
       if (Math.max(p3[i - 1][2], p3[i][2]) < 0.3) continue;
@@ -1357,7 +1383,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
       if (i > 1 && cross !== (sBr != null && Math.abs((S[i - 2] + S[i - 1]) / 2 - sBr) < 9)) wallConnector(body[i - 1], q[i - 1], p3[i - 1][2] + 0.05);   // body wall <-> fascia 0.5 m proud: close the slit
       for (const run of exposedRuns([support[i - 1], support[i]], 0, id, 0.3, !cross))
         { if (cross) wallAlong(run, 0, (h) => h - 0.6, (h) => h + 0.05, CI.conc); else {   // an embankment face: a grass slope 1:2.5 (or a concrete retaining wall where it does not fit), never a vertical green wall
-          embankFace(run, sg, embMode[i], embMode.ratio[i], CLS.ramp.w / 2 - 0.3 + 0.1, (P) => normalAt(P, support, vnB, i - 1, i));
+          embankFace(run, sg, embMode[i], embMode.ratio[i], CLS.ramp.w / 2 + 0.2, (P) => normalAt(P, support, vnB, i - 1, i));
           if (embMode[i] && (!embMode[i - 1] || cross2(i - 1) || Math.hypot(run[0][0] - support[i - 1][0], run[0][1] - support[i - 1][1]) > 0.05)) embankCap(run[0], sg, [run[1][0] - run[0][0], run[1][1] - run[0][1]], embMode.ratio[i], normalAt(run[0], support, vnB, i - 1, i));
           if (embMode[i] && (i + 1 >= embMode.length || !embMode[i + 1] || cross2(i + 1) || Math.hypot(run[run.length - 1][0] - support[i][0], run[run.length - 1][1] - support[i][1]) > 0.05)) embankCap(run[run.length - 1], sg, [run[run.length - 1][0] - run[run.length - 2][0], run[run.length - 1][1] - run[run.length - 2][1]], embMode.ratio[i], normalAt(run[run.length - 1], support, vnB, i - 1, i));
         } }
