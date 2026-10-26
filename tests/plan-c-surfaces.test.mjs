@@ -170,15 +170,13 @@ const check = (ok, msg) => { console.log((ok ? 'ok: ' : 'FAIL: ') + msg); if (!o
         const px = p[0] - tz * sg, pz = p[1] + tx * sg; let panel = null, par = null;
         for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const w of cellW.get(K(p[0] + dx * 8, p[1] + dz * 8)) || []) {
           const mx = (w[0] + w[2]) / 2, mz = (w[1] + w[3]) / 2, lat = ((mx - p[0]) * -tz + (mz - p[1]) * tx) * sg, lon = (mx - p[0]) * tx + (mz - p[1]) * tz;
-          if (Math.abs(lon) > 1.2 || lat < rb.w / 2 + e0 - 0.2 || lat > rb.w / 2 + e0 + 0.2) continue;
-          { const wl = Math.hypot(w[2] - w[0], w[3] - w[1]) || 1; if (Math.abs(((w[2] - w[0]) * tx + (w[3] - w[1]) * tz) / wl) < 0.7) continue; }   // only faces along the road (an end cap across it is not the outer face)   // the neighbouring structures of a cloverleaf core (loops 0.5-1 m away) are other objects
+          if (Math.abs(lon) > 1.2 || lat < rb.w / 2 + e0 - 0.2 || lat > rb.w / 2 + e0 + 0.2) continue;   // the neighbouring structures of a cloverleaf core (loops 0.5-1 m away) are other objects
           const bot = Math.min(w[4], w[6]), top = Math.max(w[5], w[7]);
           if (w[8] === P.wall && top > p[2] - 0.5) { if (panel === null || Math.abs(lat - rb.w / 2 - e0) < Math.abs(panel - rb.w / 2 - e0)) panel = lat; }
           else if (w[8] === P.conc && bot > p[2] - 0.1 && top - bot > 0.3 && bot < p[2] + 0.3) { if (par === null || Math.abs(lat - rb.w / 2 - e0) < Math.abs(par - rb.w / 2 - e0)) par = lat; }
           if (w[8] === P.conc && top - bot > 0.3 && bot < p[2] + 0.3 && Math.abs(bot - (p[2] + 0.05)) > 0.03 && bot > p[2] - 0.1 && w[4] === w[6] && Math.abs(w[4] - w[6]) < 1e-6 && bot > p[2] + 0.1) baseBad.push([+mx.toFixed(1), +mz.toFixed(1)]);
         }
-        const nearGore = (D.struct.goreTips || []).some((g) => [[g[0], g[1]], [g[2], g[3]]].some(([gx, gz]) => Math.abs((gx - p[0]) * tx + (gz - p[1]) * tz) < 2 && Math.abs((gx - p[0]) * -tz + (gz - p[1]) * tx) < 10));   // the gore nose of an elevated merge: the ramp's and the motorway's structures meet there
-        if (panel !== null && par !== null && !nearGore) { n++; if (Math.abs(panel - par) > 0.02) bad.push([rb.id, +px.toFixed(1), +pz.toFixed(1), +(par - panel).toFixed(2)]); }
+        if (panel !== null && par !== null) { n++; if (Math.abs(panel - par) > 0.02) bad.push([rb.id, +px.toFixed(1), +pz.toFixed(1), +(par - panel).toFixed(2)]); }
       }
     }
   }
