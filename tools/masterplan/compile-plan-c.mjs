@@ -1149,7 +1149,7 @@ for (const { id, p3, attach, mouth, S, flare, noWedge } of rampPts) {
       const d = Math.abs(lat(p3[i]));
       if (d >= dTouch + 1e-6) break;
       const outer = Math.max(host.Hw, Math.min(d + CLS.ramp.w / 2, host.Hw + CLS.ramp.w * (d - dEnd) / (dTouch - dEnd)));
-      if (sideOut > 0) { offR[i] = outer - d; dashed[0][i] = true; if (type === 'motorway' && outer - host.Hw < 0.5) skipR[i] = true; } else { offL[i] = -(outer - d); dashed[1][i] = true; if (type === 'motorway' && outer - host.Hw < 0.5) skipL[i] = true; }   // the outer edge line starts where the wedge is 0.5 m wide (it used to start in the grass beside the 0-width tip)
+      if (sideOut > 0) { offR[i] = outer - d; dashed[0][i] = true; if (outer - host.Hw < (type === 'motorway' ? 0.5 : 0.9)) skipR[i] = true; } else { offL[i] = -(outer - d); dashed[1][i] = true; if (outer - host.Hw < (type === 'motorway' ? 0.5 : 0.9)) skipL[i] = true; }   // 2026-10-26 (9) owner ('качественнее'): also on a street merge the converging outer line stops before the wedge gets thin (two lines closing into a white sliver)   // the outer edge line starts where the wedge is 0.5 m wide (it used to start in the grass beside the 0-width tip)
       if (type === 'motorway') {   // 2026-10-25: the converging outer edge line lands exactly on the host's own edge line (M_EDGE - 0.15), it used to stop 0.15-0.35 m off it: a visible step where the two lines meet
         const conv = Math.max(0, Math.min(1, 1 - (outer - host.Hw) / CLS.ramp.w)), dl = (MW - 0.2) - (M_EDGE - 0.15);
         if (sideOut > 0) { adjR[i] = -dl * conv; adjPR[i] = -0.05 * conv; } else { adjL[i] = dl * conv; adjPL[i] = 0.05 * conv; }   // the parapet line lands on the host's own parapet line (MW + 0.15)
