@@ -345,22 +345,22 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
   }
   splitZones.push([[c - 9, M2Z.z0], [c + 9, M2Z.z0], [c + 9, M2Z.z1], [c - 9, M2Z.z1]]);   // nothing random may stand on it
   // paint: polylines along the profile, continuous or dashed, per carriageway
-  const line = (fn, z0, z1, step = 1) => { const o = []; for (let z = z0; z <= z1 + 1e-6; z += step) o.push([z, fn(z)]); return o; };
+  const line = (fn, z0, z1, step = 1) => { const o = []; for (let z = z0; z <= z1 + 1e-6; z += step) o.push([z, fn(z)]); if (o.length && o[o.length - 1][0] < z1 - 1e-6) o.push([z1, fn(z1)]); return o; };   // 2026-10-26 (7): always ends exactly at z1 (a 0.5 m gap before the trunk ramp's line)
   const ribbonZ = (sg, pts, dh = 0) => { if (pts.length > 1) ribbon('p', pts.map(([z, lat]) => [X(sg, lat), z]), 0.16, H.paint + dh, CI.white); };
-  const runOn = (sg, fn, z0, z1) => { if (Math.min(z1, M2Z.z1 - 0.5) > z0) ribbonZ(sg, line(fn, z0, Math.min(z1, M2Z.z1 - 0.5))); if (z1 > M2Z.z1 - 1.5) ribbonZ(sg, line(fn, Math.max(z0, M2Z.z1 - 1.5), z1), 0.07); };   // 2026-10-26 (7): ends at z1 (it always ran on to the zone end and painted a SOLID line over the broken one along the exit taper)   // the last metres lie above the start of the trunk ramp's deck
+  const runOn = (sg, fn, z0, z1) => { if (z1 > z0) ribbonZ(sg, line(fn, z0, Math.min(z1, M2Z.z1))); };   // 2026-10-26 (7): ends at z1 and never past the zone end, where the trunk ramp's own line starts (a lifted 1.5 m overlap read as a stepped line on the iPhone)
   const dashZ = (sg, pts, dash = 1.6, gap = 1.8) => { let acc = 0, on = true, cur = []; const flush = () => { if (cur.length > 1 && Math.abs(cur[cur.length - 1][0] - cur[0][0]) > 0.8) ribbonZ(sg, cur); cur = []; };
     for (let i = 0; i + 1 < pts.length; i++) { const a = pts[i], b = pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]); let s0 = 0; while (s0 < L) { const lim = on ? dash : gap, take = Math.min(L - s0, lim - acc); if (on) { if (!cur.length) cur.push([a[0] + (b[0] - a[0]) * s0 / L, a[1] + (b[1] - a[1]) * s0 / L]); cur.push([a[0] + (b[0] - a[0]) * (s0 + take) / L, a[1] + (b[1] - a[1]) * (s0 + take) / L]); } s0 += take; acc += take; if (acc >= lim - 1e-9) { if (on) flush(); on = !on; acc = 0; } } }
     flush(); };
   const zN = -BOX - 2, zS = BOX + 2, zdN = -BOX - 6, zdS = BOX + 6;   // solid lines stop 2 m short of the box; lane DASHES stop 6 m short (a dash never touches the stop line or the zebra)   // markings stop 2 m short of the box (the zebra / stop line zone starts there)
   for (const sg of [-1, 1]) {
     // median edge line (solid): from the nose tip on, following the inner edge
-    runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 0.2, zS - 1, M2Z.z1 + 1.5);
+    runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 0.2, zS - 1, M2Z.z1);
     ribbonZ(sg, line((z) => 1.35, zN - 70, zN));   // north: median edge line at 1.35 (the plain M2 profile)
     // third-lane edge line (solid) 1.0 inside the asphalt edge: north taper and flat part, ends at the exit gore (z 64)
     ribbonZ(sg, line((z) => outerA(z) - 0.2, M2Z.z0, zN));   // (south of the box: drawn by the wedge-aware block below)
     // lane divider 3|2 at 5.3: dashed in the three-lane stretch, SOLID from the exit gore on, easing to the trunk ramp's edge line (6.1)
     // outer edge line: solid at 5.3 up to the exit gore, then easing to the trunk ramp's edge line (6.1)
-    { const zA = zS, zB = M2Z.z1 + 1.5, pieces = splitBy(zA, zB, wedgeSpansAxis('z', c, sg));   // 2026-10-26 (6): broken (1.0 / 1.0) along the exit / entrance wedge of the ramps a / c, solid elsewhere
+    { const zA = zS, zB = M2Z.z1, pieces = splitBy(zA, zB, wedgeSpansAxis('z', c, sg));   // 2026-10-26 (6): broken (1.0 / 1.0) along the exit / entrance wedge of the ramps a / c, solid elsewhere
       for (const [a, b, brk] of pieces) { if (brk) { const e = Math.min(b, M2Z.z1 - 1.5); dashZ(sg, line(() => M_EDGE, a, e), BRK_DASH, BRK_GAP); if (b > e) runOn(sg, () => M_EDGE, e, b); } else runOn(sg, () => M_EDGE, a, b); } }
     // lane divider 2|1 at 3.2: dashed from the box until lane 1 has become too narrow (inner edge line within 0.45 m of it)
     let zEnd = zS; while (zEnd < M2Z.z1 && inner(zEnd) + 0.25 < LANE_DIV - 0.45) zEnd += 1;
