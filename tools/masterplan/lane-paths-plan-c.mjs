@@ -1,9 +1,9 @@
 // Compile permitted directed movements into geometry, using the DRAWN pavement as the clearance oracle.
 // 2026-10-26 (8): M2 between I2 and I4 keeps two lanes; the OUTER lane becomes the exit / entrance ramp at z 58 and the inner lane shifts out to the trunk ramp (compile-plan-c drawM2Zone).
-// The single through path keeps the outer lane to z 58 (where the ramp attaches, centre 4.8) and then eases onto the shifting trunk lane (centre 4.9 at z 88).
+// The single through path keeps the outer lane to z 58 (where the ramp attaches, centre 4.9) and then eases onto the shifting trunk lane (centre 4.9 at z 88).
 const m2F=t=>{const K=.25;return t<=0?0:t>=1?1:t<K?t*t/(2*K*(1-K)):t>1-K?1-(1-t)*(1-t)/(2*K*(1-K)):(t-K/2)/(1-K);};
 const m2Ease=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);};
-const m2ThroughLat=q=>{const t=1.1+2.4*m2F((q-58)/30)+1.4;return q<=58?5.0+(4.8-5.0)*m2Ease((q-40)/18):4.8+(t-4.8)*m2Ease((q-58)/12);};
+const m2ThroughLat=q=>{const t=1.1+2.4*m2F((q-58)/30)+1.4;return q<=58?5.0+(4.9-5.0)*m2Ease((q-40)/18):4.9+(t-4.9)*m2Ease((q-58)/12);};
 import { buildTurnGraph } from './turns-plan-c.mjs';
 const len=(a,b)=>Math.hypot(b[0]-a[0],b[1]-a[1],(b[2]||0)-(a[2]||0));
 const mix=(a,b,t)=>a.map((v,i)=>v+(b[i]-v)*t);
