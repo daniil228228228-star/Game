@@ -1544,7 +1544,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare, noWedge } o
     const body = offsetVar(p3, offP);   // 2026-10-26: the support wall / bank top is in the SAME plane as the parapet's outer face (was 0.5 m inside it: a step, the parapet looked like a separate slab)
     const fillEdge = offsetVar(p3, offP.map((o) => o - sg * 0.1));
     for (let i = 1; i < p3.length; i++) {
-      if (Math.max(p3[i - 1][2], p3[i][2]) < 0.3) continue;
+      if (Math.max(p3[i - 1][2], p3[i][2]) < 0.03) continue;   // 2026-10-26 (9) owner ('пустота под подъёмом'): the side of a ramp rising from the ground is closed from 3 cm on (was 0.3 m: a dark slot under the lane)
       const cross = sBr != null && Math.abs((S[i - 1] + S[i]) / 2 - sBr) < 9;
       // 2026-10-25: the half strip under the deck is solid also where this side is hidden by the host carriageway (a slip lane running along M1 / the avenue on a rising profile): the body stays solid
       if (!cross && Math.max(p3[i - 1][2], p3[i][2]) + 0.05 >= FILL_MIN_H) fillQuad(p3[i - 1], fillEdge[i - 1], fillEdge[i], p3[i]);
