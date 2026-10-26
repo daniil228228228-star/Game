@@ -66,14 +66,17 @@ function clipPoly(poly, x0, z0, x1, z1) {   // Sutherland-Hodgman against an axi
 const area2 = (p) => { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a[0] * b[1] - b[0] * a[1]; } return s; };
 const push = (arr, ...v) => { for (const n of v) arr.push(R3(n)); };   // 3 decimals: layer heights differ by 3 mm (kerb-return fillet over the sidewalk) and must survive the rounding
 
+const ARROWS = [], PAINTLOG = []; let ARROW_ON = false;   // every ground lane arrow (x, z, heading) and every other ground paint primitive (for the arrow-vs-line overlap audit)
 function emitRect(layer, sub, x0, z0, x1, z1, y, ci) {
   if (x1 - x0 < 1e-4 || z1 - z0 < 1e-4) return;
+  if (layer === 'p' && !ARROW_ON && ci === CI.white) PAINTLOG.push({ r: [x0, z0, x1, z1] });
   for (const cx of cellRange(x0, x1)) for (const cz of cellRange(z0, z1)) {
     const a = Math.max(x0, cx * CELL), b = Math.min(x1, (cx + 1) * CELL), c = Math.max(z0, cz * CELL), d = Math.min(z1, (cz + 1) * CELL);
     if (b - a > 1e-4 && d - c > 1e-4) push(cellOf(cx, cz)[layer][sub], a, c, b, d, y, ci);
   }
 }
 function emitTri(layer, a, b, c, y, ci) {   // clips to every touched cell, fan-triangulates the convex result
+  if (layer === 'p' && !ARROW_ON && ci === CI.white) PAINTLOG.push({ t: [a, b, c] });
   const x0 = Math.min(a[0], b[0], c[0]), x1 = Math.max(a[0], b[0], c[0]), z0 = Math.min(a[1], b[1], c[1]), z1 = Math.max(a[1], b[1], c[1]);
   for (const cx of cellRange(x0, x1 + 1e-6)) for (const cz of cellRange(z0, z1 + 1e-6)) {
     const poly = clipPoly([a, b, c], cx * CELL, cz * CELL, (cx + 1) * CELL, (cz + 1) * CELL);
@@ -302,8 +305,9 @@ for (const e of PLAN.edges) {
 // the tapers themselves: asphalt trapezoid, sidewalk trapezoids, kerb walls, a median nose and lane-drop arrows
 function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the unit vector (hx, hz): stem + head
   const rx = -hz, rz = hx, P = (t, l) => [x + hx * t + rx * l, z + hz * t + rz * l];
+  ARROWS.push([R2(x), R2(z), R3(hx), R3(hz)]); ARROW_ON = true;
   emitTri('p', P(-0.9, -0.09), P(-0.9, 0.09), P(0.4, -0.09), H.paint, CI.white); emitTri('p', P(-0.9, 0.09), P(0.4, 0.09), P(0.4, -0.09), H.paint, CI.white);
-  emitTri('p', P(0.2, -0.5), P(0.2, 0.5), P(1.1, 0), H.paint, CI.white);
+  emitTri('p', P(0.2, -0.5), P(0.2, 0.5), P(1.1, 0), H.paint, CI.white); ARROW_ON = false;
 }
 
 // ---- M2 between the I2 crossing and the trumpet I4, drawn as ONE smooth road (2026-10-19): every edge is a function of z (sampled each metre, a constant-slope taper with eased ends),
@@ -361,7 +365,7 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
     dashZ(sg, line(() => LANE_DIV, zdS, zEnd)); dashZ(sg, line(() => LANE_DIV, M2Z.z0 + 0, zdN));
   }
   // lane-drop arrows for the inner lane of the southbound (west) carriageway, bent towards the exit side
-  for (const zA of [zS + 8, zS + 26]) { const lat = (inner(zA) + LANE_DIV) / 2 + 0.1, ang = 12 * Math.PI / 180; arrowH(X(-1, lat), zA, -Math.sin(ang), Math.cos(ang)); }
+  for (const zA of [zS + 8, zS + 26]) { const lat = (inner(zA) + LANE_DIV) / 2 + 0.1, ang = Math.atan((inner(zA + 1) - inner(zA - 1)) / 4); arrowH(X(-1, lat), zA, -Math.sin(ang), Math.cos(ang)); }   // 2026-10-26 (6): along the lane axis (it was bent 12 degrees: odd angles in the owner's frame); the lane centre slope is ~1 degree
 }
 for (const { L, wide, narrow, node, sgn } of TRANS.values()) {
   const hn = hw(narrow.cls), hd = hw(wide.cls), sn = CLS[narrow.cls].sidewalk, sd = CLS[wide.cls].sidewalk, ax = wide.dir, c = ax === 'z' ? node.x : node.z, mh = CLS[wide.cls].median / 2;
@@ -378,7 +382,7 @@ for (const { L, wide, narrow, node, sgn } of TRANS.values()) {
   }
   // lane-drop arrows on the outer lane of the traffic that loses a lane (the approach from the wide side towards the node), bent 12 degrees towards the centre
   for (const sg of [-1, 1]) {
-    const t = L + 9, lat = sg * (mh + CLS[wide.cls].lane * 1.5), dirT = -sgn, ang = 12 * Math.PI / 180, p = W(t, lat);
+    const t = L + 9, lat = sg * (mh + CLS[wide.cls].lane * 1.5), dirT = -sgn, ang = 0, p = W(t, lat);   // 2026-10-26 (6): straight along the lane (was bent 12 degrees towards the centre)
     const hv = ax === 'z' ? [-sg * Math.sin(ang), dirT * Math.cos(ang)] : [dirT * Math.cos(ang), -sg * Math.sin(ang)];
     arrowH(p[0], p[1], hv[0], hv[1]);
   }
@@ -676,8 +680,10 @@ function yieldLine(c, dir, at, cls) {   // 2026-10-25 owner ("убери зуб�
 function arrow(c, dir, at, lat) {   // straight lane arrow on the incoming half of an arm, pointing at the junction: stem + head
   const r = [dir[1], -dir[0]], p = (t, l) => [c[0] + dir[0] * (at + t) + r[0] * (lat + l), c[1] + dir[1] * (at + t) + r[1] * (lat + l)];
   const q = [p(0.5, -0.09), p(0.5, 0.09), p(-0.5, 0.09), p(-0.5, -0.09)];
+  { const m = p(0, 0); ARROWS.push([R2(m[0]), R2(m[1]), R3(-dir[0]), R3(-dir[1])]); }   // this arrow points AGAINST dir (at the junction)
+  ARROW_ON = true;
   emitTri('p', q[0], q[1], q[2], H.paint, CI.white); emitTri('p', q[0], q[2], q[3], H.paint, CI.white);
-  emitTri('p', p(-0.45, -0.38), p(-0.45, 0.38), p(-1.15, 0), H.paint, CI.white);
+  emitTri('p', p(-0.45, -0.38), p(-0.45, 0.38), p(-1.15, 0), H.paint, CI.white); ARROW_ON = false;
 }
 const furniture = { lamp: [], sig: [], pole: [], plate: [], stop: [], cat: [] };   // world lists, then split into cells
 const yawOf = (d) => Math.atan2(d[0], d[1]);
