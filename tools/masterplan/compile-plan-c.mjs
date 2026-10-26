@@ -382,6 +382,7 @@ for (const { L, wide, narrow, node, sgn } of TRANS.values()) {
   }
   // lane-drop arrows on the outer lane of the traffic that loses a lane (the approach from the wide side towards the node), bent 12 degrees towards the centre
   for (const sg of [-1, 1]) {
+    if (/^motorway/.test(wide.cls)) continue;   // M2 has two lanes all along (no third lane to drop): no lane-drop arrow
     const t = L + 9, lat = sg * (mh + CLS[wide.cls].lane * 1.5), dirT = -sgn, ang = 0, p = W(t, lat);   // 2026-10-26 (6): straight along the lane (was bent 12 degrees towards the centre)
     const hv = ax === 'z' ? [-sg * Math.sin(ang), dirT * Math.cos(ang)] : [dirT * Math.cos(ang), -sg * Math.sin(ang)];
     arrowH(p[0], p[1], hv[0], hv[1]);
@@ -735,7 +736,9 @@ for (const j of PLAN.junctions) {
         continue;
       }
       if (!(j.big && a.cls.startsWith('motorway'))) stopLine(c, a.dir, along + 1.7, a.cls);   // 2026-10-25: GOST R 51256 line 1.12 on EVERY signalised approach (local / service arms had none); I2 draws its own
-      if (a.cls === 'arterial' || a.cls.startsWith('motorway')) for (let k = 0; k < (a.cls === 'motorway3' ? 3 : 2); k++) arrow(c, a.dir, along + 6.5, CLS[a.cls].median / 2 + CLS[a.cls].lane * (k + 0.5));
+      const armLen = (() => { const ae = PLAN.edges.find((e) => e.id === a.edge); return ae ? Math.hypot(N.get(ae.a).x - N.get(ae.b).x, N.get(ae.a).z - N.get(ae.b).z) : 1e9; })();   // an arm edge shorter than the arrow position ends in the I2 split zone: the arrow would stand on the island
+      if ((a.cls === 'arterial' || a.cls.startsWith('motorway')) && armLen > along + 9) for (let k = 0; k < 2; k++) arrow(c, a.dir, along + 6.5,   // 2026-10-26 (6): two through lanes per direction on M2 at I2 (the 'third lane' arrow stood on the edge line, outside the asphalt)
+       a.cls.startsWith('motorway') ? (k ? (LANE_DIV + M_EDGE) / 2 : (M_MEDLINE + LANE_DIV) / 2) : CLS[a.cls].median / 2 + CLS[a.cls].lane * (k + 0.5));   // motorway: the middle of the lane between the painted lines
       const r = [a.dir[1], -a.dir[0]];
       furniture.sig.push([c[0] + a.dir[0] * (along + 1.2) + r[0] * (w + 0.55), c[1] + a.dir[1] * (along + 1.2) + r[1] * (w + 0.55), yawOf(a.dir)]);
       if (a.cls.startsWith('motorway')) { const al = along + 1.2 + (a.cls === 'motorway3' ? 3.2 : 0); furniture.sig.push([c[0] + a.dir[0] * al - r[0] * (CLS[a.cls].median / 2 - 0.3), c[1] + a.dir[1] * al - r[1] * (CLS[a.cls].median / 2 - 0.3), yawOf(a.dir)]); }   // M2: the median is still a narrow nose 3 m behind the stop line - the head stands where it is wide enough   // second head on the median: two per approach
@@ -831,7 +834,7 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
       }
     }
     // (the second / third arrow pairs on every branch were removed: owner 'навязчивые стрелки')
-    for (const sz of [-1, 1]) { const zc = sz * (hz + SPLIT.band / 2), xt = farX - side * 6 + side * 0, dirT = sz === inSz ? [side, 0] : [-side, 0]; for (const lat of [-1, 1]) arrow([xt - side * 4, zc + lat * 1.2], dirT, 0, 0); }
+    // (2026-10-26 (6): the far-end arrow pairs of both branches are gone too: one pair per lane at the stop line of the inbound branch is all the norm needs, the second set 7 m further out was a duplicate)
     // bus shelters on the outer sidewalk of both branches (line B1 runs through the crossing), facing the carriageway
     for (const [sz, t] of [[1, 0.42], [-1, 0.58]]) { const xA = side < 0 ? farX + 6 : edgeM + side * SPLIT.R, xB = side < 0 ? edgeM + side * SPLIT.R : farX - 6, px = xA + (xB - xA) * t; furniture.stop.push([R2(px), R2(sz * (hz + SPLIT.band + 1.75)), sz > 0 ? Math.PI : 0, 'B1']); const zy = sz * (hz + SPLIT.band - 0.32); emitRect('p', 'q', px - 4.5, zy - 0.125, px + 4.5, zy + 0.125, H.paint, CI.yellow); }   // + line 1.17
     // furniture on the island: lamps along the axis, a few trees
@@ -1485,7 +1488,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare, noWedge } o
       const cross = (s1 - s0) * (l2 - l0) - (l1 - l0) * (s2 - s0);
       if (cross < 0) emitTri3(V(s0, l0), V(s1, l1), V(s2, l2), CI.white); else emitTri3(V(s0, l0), V(s2, l2), V(s1, l1), CI.white);
     };
-    const arrowAt = (sv) => { const o = at(sv); if (o.h > 0.4) return; tri(o, -0.9, -0.09, -0.9, 0.09, 0.4, -0.09); tri(o, -0.9, 0.09, 0.4, 0.09, 0.4, -0.09); tri(o, 0.2, -0.5, 0.2, 0.5, 1.1, 0); };
+    const arrowAt = (sv) => { const o = at(sv); if (o.h > 0.4) return; ARROWS.push([R2(o.x), R2(o.z), R3(o.tx), R3(o.tz), 1]); tri(o, -0.9, -0.09, -0.9, 0.09, 0.4, -0.09); tri(o, -0.9, 0.09, 0.4, 0.09, 0.4, -0.09); tri(o, 0.2, -0.5, 0.2, 0.5, 1.1, 0); };
     const teethAt = (sv) => { const o = at(sv); if (o.h > 0.4) return; for (const l of [-1.0, 0.0, 1.0]) { const a = l - 0.3, b = l + 0.3; tri(o, -0.2, a, -0.2, b, 0.2, a); tri(o, -0.2, b, 0.2, b, 0.2, a); } };   // dashed give-way line across the slip lane (3 dashes 0.6 m, gaps 0.4 m, 0.4 m wide), was 4 loose triangles
     if (/slip/.test(kind)) { teethAt(L - 4.5); } else if (L > 60) { arrowAt(L * 0.5); }   // 2026-10-26: ONE arrow on a long ramp, none on a slip lane (was 2 per ramp + 2 per slip)
   }
@@ -1896,7 +1899,23 @@ for (const k of keys) {
   const f = {}; for (const [s, arr] of Object.entries(c.f)) if (arr.length) f[s] = arr; if (Object.keys(f).length) o.f = f;
   cellsOut[k] = o;
 }
-const data = { struct: { ...STRUCT, deckH: DECKH, clear: CLEAR, slope: SLOPE, railY: RAIL_Y }, version: 1, cell: CELL, size: SZ, classes: Object.fromEntries(Object.entries(CLS).map(([k, c]) => [k, [c.w, c.sidewalk, c.median, c.lanes]])), colors: PAL.map((k) => COLORS[k]), palette: CI, heights: H, cells: cellsOut, graph, floor: floorData, counts: PLAN.counts };
+// arrow-vs-line overlap audit (2026-10-26 (6)): sample every ground arrow's shape against every other white paint primitive
+const ARROW_OVERLAP = [];
+{
+  const grid = new Map(), key = (i, j) => i + ',' + j;
+  for (const q of PAINTLOG) { const pts = q.r ? [[q.r[0], q.r[1]], [q.r[2], q.r[3]]] : q.t, x0 = Math.min(...pts.map((v) => v[0])), x1 = Math.max(...pts.map((v) => v[0])), z0 = Math.min(...pts.map((v) => v[1])), z1 = Math.max(...pts.map((v) => v[1])); q.b = [x0, z0, x1, z1]; for (let i = Math.floor(x0 / 4); i <= Math.floor(x1 / 4); i++) for (let j = Math.floor(z0 / 4); j <= Math.floor(z1 / 4); j++) { const k = key(i, j); (grid.get(k) || grid.set(k, []).get(k)).push(q); } }
+  const inTri = (x, z, [a, b, c]) => { const d1 = (x - b[0]) * (a[1] - b[1]) - (a[0] - b[0]) * (z - b[1]), d2 = (x - c[0]) * (b[1] - c[1]) - (b[0] - c[0]) * (z - c[1]), d3 = (x - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (z - a[1]); return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0)); };
+  for (const [x, z, hx, hz, ramp] of ARROWS) {
+    let hits = 0;
+    for (let t = -0.9; t <= 1.15; t += 0.1) for (let l = -0.5; l <= 0.5; l += 0.1) {
+      const inShape = (t <= 0.45 && Math.abs(l) <= 0.12) || (t >= 0.2 && Math.abs(l) <= 0.5 * (1.15 - t) / 0.7); if (!inShape) continue;
+      const px = x + hx * t - hz * l, pz = z + hz * t + hx * l;
+      if ((grid.get(key(Math.floor(px / 4), Math.floor(pz / 4))) || []).some((q) => px >= q.b[0] && px <= q.b[2] && pz >= q.b[1] && pz <= q.b[3] && (q.r ? true : inTri(px, pz, q.t)))) hits++;
+    }
+    if (hits > 1) ARROW_OVERLAP.push([x, z, hits]);
+  }
+}
+const data = { arrows: ARROWS, arrowOverlap: ARROW_OVERLAP, struct: { ...STRUCT, deckH: DECKH, clear: CLEAR, slope: SLOPE, railY: RAIL_Y }, version: 1, cell: CELL, size: SZ, classes: Object.fromEntries(Object.entries(CLS).map(([k, c]) => [k, [c.w, c.sidewalk, c.median, c.lanes]])), colors: PAL.map((k) => COLORS[k]), palette: CI, heights: H, cells: cellsOut, graph, floor: floorData, counts: PLAN.counts };
 data.graph.navigation=compileLanePaths(PLAN,data);
 if(data.graph.navigation.failures.length)throw new Error('Navigation clearance failures: '+JSON.stringify(data.graph.navigation.failures));
 const FLOOR_FN = `

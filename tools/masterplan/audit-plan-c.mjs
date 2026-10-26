@@ -394,6 +394,7 @@ const RW = (() => { const D = loadData(), a = runRealWorld(P, D), b = accessRows
     ['29. kerb along every street edge, sidewalk along every urban street (no gaps > 3 / 6 m)', /бордюр вдоль|тротуар вдоль/],
     ['30. lighting: no dark stretch > 24 m on streets, ramps, decks, the city part of M1 / M2; no pole on the carriageway (SP 52.13330)', /освещение|опора не стоит/],
     ['31. paint lies on pavement (no stubs in the grass); diverge / merge points: no doubled parallel lines, the host edge line is broken along the wedge (GOST R 51256-2018)', /краска \(линии, стрелки\) лежит на покрытии|сдвоенных линий|прерывистая вдоль клина|прерывистая \(>= 2/],
+    ['32. lane arrows: along the lane (<= 6 degrees to the navigation arc), nothing painted across them, one per lane', /Стрелки|стрелка направлена|на стрелке нет|одна стрелка на полосу/],
     ['26. every ribbon (deck, ramp, footbridge) can be climbed ON FOOT from the ground and left again (graph over the real access / surfaceY of the game, 0.5 m steps)', /проход пешком/],
   ];
   for (const [name, re] of groups) {

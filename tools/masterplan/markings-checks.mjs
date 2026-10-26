@@ -173,5 +173,22 @@ export function runMarkings(P, D) {
     add('Развилки съездов с М1 / М2', 'нет сдвоенных линий (две параллельные линии ближе 0.5 м) на 30 м клина', bad.length ? sh(bad) : `${nEnds} развилок, сдвоенных нет`, 'одна линия на границе полосы', 'ГОСТ Р 51256-2018 прил. А (1.5, 1.6, 1.7)', bad.length ? 'НАРУШЕНИЕ' : 'OK', '');
     add('Развилки съездов с М1 / М2', 'краевая линия магистрали вдоль клина прерывистая (>= 2 разрыва по 0.5 м на 16 м)', `${nBroken} из ${nEnds}`, 'прерывистая линия вдоль полосы перестроения', 'ГОСТ Р 51256-2018 (1.5 / 1.6)', nBroken === nEnds ? 'OK' : 'НАРУШЕНИЕ', nBroken === nEnds ? '' : seen.filter((q) => q[3] < 2).map((q) => q.slice(0, 3).join(',')).join('; '));
   }
+  // ---- J. lane arrows (2026-10-26 (6), owner: arrows at odd angles, an arrow with a bar through it) ---------------------------------------------------------------------------------------------
+  //   every ground arrow: nearest lane path (navigation arc) within 2.2 m, its heading within 6 degrees of that lane's travel direction; no other white paint inside the arrow; no two arrows of one lane within 8 m
+  { const segs = new Map(), key = (x, z) => Math.floor(x / 6) + ',' + Math.floor(z / 6);
+    for (const a of D.graph.navigation.arcs) if (a.kind !== 'turn') for (let i = 1; i < a.p.length; i++) { const A = a.p[i - 1], B = a.p[i]; for (let x = Math.floor(Math.min(A[0], B[0]) / 6); x <= Math.floor(Math.max(A[0], B[0]) / 6); x++) for (let z = Math.floor(Math.min(A[1], B[1]) / 6); z <= Math.floor(Math.max(A[1], B[1]) / 6); z++) { const k = x + ',' + z; (segs.get(k) || segs.set(k, []).get(k)).push([A, B, a.id]); } }
+    const bad = [], noLane = [], dup = [];
+    for (const [x, z, hx, hz, ramp] of D.arrows) {
+      let best = null; for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const [A, B, id] of segs.get((Math.floor(x / 6) + i) + ',' + (Math.floor(z / 6) + j)) || []) {
+        const dx = B[0] - A[0], dz = B[1] - A[1], l2 = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((x - A[0]) * dx + (z - A[1]) * dz) / l2)), d = Math.hypot(x - A[0] - dx * t, z - A[1] - dz * t);
+        if (d < 2.2 && (!best || d < best.d)) best = { d, tx: dx / Math.sqrt(l2), tz: dz / Math.sqrt(l2), id }; }
+      if (!best) { noLane.push(`${R1(x)},${R1(z)}`); continue; }
+      const dot = hx * best.tx + hz * best.tz; if (dot < Math.cos(6 * Math.PI / 180)) bad.push(`${R1(x)},${R1(z)} ${Math.round(Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI)}°`);
+    }
+    for (let i = 0; i < D.arrows.length; i++) for (let j = i + 1; j < D.arrows.length; j++) { const a = D.arrows[i], b = D.arrows[j]; if (Math.hypot(a[0] - b[0], a[1] - b[1]) < 8 && a[2] * b[2] + a[3] * b[3] > 0.9) { const dx = b[0] - a[0], dz = b[1] - a[1], lat = Math.abs(dx * -a[3] + dz * a[2]); if (lat < 1.0) dup.push(`${R1(a[0])},${R1(a[1])}`); } }
+    add('Стрелки на полосах', 'стрелка направлена вдоль полосы (<= 6° к направлению движения по навигационной дуге)', bad.length || noLane.length ? `${bad.length} с углом > 6°: ${sh(bad)}; ${noLane.length} без полосы рядом: ${sh(noLane)}` : `${D.arrows.length} стрелок, все вдоль полосы`, 'стрелка 1.18 вдоль оси полосы', 'ГОСТ Р 51256-2018 (1.18)', bad.length || noLane.length ? 'НАРУШЕНИЕ' : 'OK', '');
+    add('Стрелки на полосах', 'на стрелке нет другой белой разметки (штрих, линия поверх)', D.arrowOverlap.length ? `${D.arrowOverlap.length}: ${sh(D.arrowOverlap.map((o) => o[0] + ',' + o[1]))}` : `${D.arrows.length} стрелок без пересечений`, 'стрелка не пересекается с линиями', 'ГОСТ Р 51256-2018 п. 5.? (1.18)', D.arrowOverlap.length ? 'НАРУШЕНИЕ' : 'OK', '');
+    add('Стрелки на полосах', 'одна стрелка на полосу (нет двух стрелок одной полосы ближе 8 м)', dup.length ? sh(dup) : 'нет повторов', 'одна стрелка на полосу у подхода', 'ГОСТ Р 52289-2019 п. 5.? / 1.18', dup.length ? 'НАРУШЕНИЕ' : 'OK', '');
+  }
   return { rows };
 }
