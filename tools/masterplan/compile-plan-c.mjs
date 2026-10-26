@@ -518,7 +518,7 @@ for (const j of PLAN.junctions) {
       }   // splitter outlines stop before the zebra; mini rings have none
       // teeth on the incoming half (right of the incoming heading = rightOf(-d) = -r)
       const sgn = -1;
-      for (let l = iw + 0.2; l < w - 0.1; l += 0.7) { const q0 = P(R + 0.35, sgn * l), q1 = P(R + 0.7, sgn * (l + 0.35)), q2 = P(R + 0.7, sgn * l); emitTri('p', q0, q1, q2, H.paint, CI.white); }
+      // (the row of little teeth at the ring entry is gone: the dashed give-way line at R + 0.9 is the marking)
     }
   }
 }
@@ -644,11 +644,11 @@ function stopLine(c, dir, at, cls) {   // across the incoming half of an arm
   if (dir[0] === 0) emitRect('p', 'q', Math.min(A[0], B[0]), p[1] - 0.2, Math.max(A[0], B[0]), p[1] + 0.2, H.paint, CI.white);
   else emitRect('p', 'q', p[0] - 0.2, Math.min(A[1], B[1]), p[0] + 0.2, Math.max(A[1], B[1]), H.paint, CI.white);
 }
-function yieldLine(c, dir, at, cls) {   // line 1.13: a row of white triangles (base 0.5, height 0.7, pitch 0.9) across the incoming half of an arm, apexes pointing at the driver
-  const w = hw(cls), r = [dir[1], -dir[0]], p = [c[0] + dir[0] * at, c[1] + dir[1] * at], med = CLS[cls].median / 2;
-  for (let l = Math.max(0.35, med + 0.3); l <= w - 0.3; l += 0.9) {
-    const q = (t, o) => [p[0] + dir[0] * t + r[0] * (l + o), p[1] + dir[1] * t + r[1] * (l + o)];
-    emitTri('p', q(-0.35, -0.25), q(-0.35, 0.25), q(0.35, 0), H.paint, CI.white);
+function yieldLine(c, dir, at, cls) {   // 2026-10-25 owner ("убери зубья, нормальную разметку"): the give-way line is a DASHED transverse line (EU 1.12 style / Vienna Convention B.3: 0.4 m wide, 0.6 m dashes with 0.4 m gaps) across the whole incoming half of the arm, perpendicular to the lane - loose shark-tooth triangles read as litter
+  const w = hw(cls), r = [dir[1], -dir[0]], p = [c[0] + dir[0] * at, c[1] + dir[1] * at], med = CLS[cls].median / 2, l0 = Math.max(0.0, med) + 0.1, n = Math.max(1, Math.floor((w - 0.1 - l0 + 0.4) / 1.0)), used = n * 1.0 - 0.4, l00 = l0 + (w - 0.1 - l0 - used) / 2;
+  for (let k = 0; k < n; k++) {
+    const a = l00 + k * 1.0, b = a + 0.6, A = [p[0] + r[0] * a, p[1] + r[1] * a], B = [p[0] + r[0] * b, p[1] + r[1] * b];
+    emitRect('p', 'q', Math.min(A[0], B[0]) - (dir[0] !== 0 ? 0.2 : 0), Math.min(A[1], B[1]) - (dir[0] !== 0 ? 0 : 0.2), Math.max(A[0], B[0]) + (dir[0] !== 0 ? 0.2 : 0), Math.max(A[1], B[1]) + (dir[0] !== 0 ? 0 : 0.2), H.paint, CI.white);
   }
 }
 function arrow(c, dir, at, lat) {   // straight lane arrow on the incoming half of an arm, pointing at the junction: stem + head
@@ -1397,7 +1397,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
       if (cross < 0) emitTri3(V(s0, l0), V(s1, l1), V(s2, l2), CI.white); else emitTri3(V(s0, l0), V(s2, l2), V(s1, l1), CI.white);
     };
     const arrowAt = (sv) => { const o = at(sv); if (o.h > 0.4) return; tri(o, -0.9, -0.09, -0.9, 0.09, 0.4, -0.09); tri(o, -0.9, 0.09, 0.4, 0.09, 0.4, -0.09); tri(o, 0.2, -0.5, 0.2, 0.5, 1.1, 0); };
-    const teethAt = (sv) => { const o = at(sv); if (o.h > 0.4) return; for (const l of [-1.05, -0.35, 0.35, 1.05]) tri(o, 0, l - 0.3, 0, l + 0.3, -0.75, l); };   // apexes point back at the oncoming driver
+    const teethAt = (sv) => { const o = at(sv); if (o.h > 0.4) return; for (const l of [-1.0, 0.0, 1.0]) { const a = l - 0.3, b = l + 0.3; tri(o, -0.2, a, -0.2, b, 0.2, a); tri(o, -0.2, b, 0.2, b, 0.2, a); } };   // dashed give-way line across the slip lane (3 dashes 0.6 m, gaps 0.4 m, 0.4 m wide), was 4 loose triangles
     if (/slip/.test(kind)) { arrowAt(L * 0.36); arrowAt(L * 0.62); teethAt(L - 4.5); } else if (L > 40) { arrowAt(L * 0.4); arrowAt(L * 0.6); }
   }
   pushRibbons(ic + '.' + kind, CLS.ramp.w - 0.2, p3.map((p) => [R2(p[0]), R2(p[1]), R3(p[2])]));
