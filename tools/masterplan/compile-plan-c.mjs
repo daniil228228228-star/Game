@@ -1515,7 +1515,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare, noWedge } o
     if (!noWedge) { const Ea = offsetVar(p3, p3.map((_, i) => sg < 0 ? offL[i] : offR[i])), P = [];
       for (let i = 0; i < p3.length; i++) {
         const m = motorHost(Ea[i]), latE = Math.abs(Ea[i][1 - m.axis] - m.c), latA = Math.abs(p3[i][1 - m.axis] - m.c), d = latE - MW, hh = m.h(Ea[i][m.axis]);
-        if (latE < latA && d > 0.02 && d < 2.5 && p3[i][2] > 0.6 && Math.abs(hh - p3[i][2]) < 0.4 && Ea[i][m.axis] > m.lo && Ea[i][m.axis] < m.hi) { const q = Ea[i].slice(), sgl = Math.sign(Ea[i][1 - m.axis] - m.c); q[1 - m.axis] = m.c + sgl * (MW - 0.05); const e = Ea[i].slice(); e[1 - m.axis] += sgl * 0.05; P[i] = [e, q, p3[i][2] + 0.05, hh + 0.05]; }
+        if (latE < latA && d > 0.02 && d < 2.5 && p3[i][2] > 0.6 && Math.abs(hh - p3[i][2]) < 0.4 && Ea[i][m.axis] > m.lo && Ea[i][m.axis] < m.hi) { const q = Ea[i].slice(), sgl = Math.sign(Ea[i][1 - m.axis] - m.c); q[1 - m.axis] = m.c + sgl * (MW - 0.05); const e = Ea[i].slice(); e[1 - m.axis] += sgl * 0.05; P[i] = [e, q, p3[i][2] + 0.05, hh + 0.05, d]; }
       }
       for (let i = 0; i + 1 < p3.length; i++) if (P[i] && P[i + 1]) {
         const [a0, b0, ya, yb] = P[i], [a1, b1, ya1, yb1] = P[i + 1];
@@ -1523,6 +1523,14 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare, noWedge } o
       } else if (P[i] || P[i + 1]) {   // the tip where the gap closes (or opens): a triangle to the next asphalt-edge point
         const [k, j] = P[i] ? [i, i + 1] : [i + 1, i], [a0, b0, ya, yb] = P[k], t = Ea[j];
         emitTri3([a0[0], ya, a0[1]], [b0[0], yb, b0[1]], [t[0], p3[j][2] + 0.05, t[1]], CI.asph);
+      }
+      // 2026-10-26 (9) owner ('такого быть не должно, закрывай всё, где асфальт висит'): where the paved gap stops (the wide end) its edge hung over the trench between the two support
+      // walls. A closed concrete end wall (plinth, face, coping, back face) from the ground to the slab closes the trench there.
+      for (let i = 0; i < p3.length; i++) if (P[i] && (!P[i - 1] || !P[i + 1]) && P[i][4] > 0.6) {
+        const [e, q, ya, yb] = P[i], inward = P[i + 1] ? 1 : -1, nb = p3[Math.max(0, Math.min(p3.length - 1, i + inward))], tx = nb[0] - p3[i][0], tz = nb[1] - p3[i][1], tl = Math.hypot(tx, tz) || 1, wx = tx / tl * WALL_T, wz = tz / tl * WALL_T;
+        const y = Math.min(ya, yb), E = [e[0] - (q[0] - e[0]) * 0.1, e[1] - (q[1] - e[1]) * 0.1], Q = [q[0] + (q[0] - e[0]) * 0.1, q[1] + (q[1] - e[1]) * 0.1];
+        emitQuadS(E[0], E[1], Q[0], Q[1], 0, 0.6, 0, 0.6, CI.concD); emitQuadS(E[0], E[1], Q[0], Q[1], 0.6, y - 0.3, 0.6, y - 0.3, CI.wall); emitQuadS(E[0], E[1], Q[0], Q[1], y - 0.3, y, y - 0.3, y, CI.conc);
+        emitQuadS(E[0] + wx, E[1] + wz, Q[0] + wx, Q[1] + wz, 0, y, 0, y, CI.concD);
       } }
     const body = offsetVar(p3, offP);   // 2026-10-26: the support wall / bank top is in the SAME plane as the parapet's outer face (was 0.5 m inside it: a step, the parapet looked like a separate slab)
     const fillEdge = offsetVar(p3, offP.map((o) => o - sg * 0.1));
