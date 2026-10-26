@@ -144,6 +144,9 @@ const check = (ok, msg) => { console.log((ok ? 'ok: ' : 'FAIL: ') + msg); if (!o
   const lamps = []; for (const c of Object.values(D.cells)) { const l = c.f && c.f.lamp; if (l) for (let i = 0; i < l.length; i += 4) lamps.push([l[i], l[i + 1], l[i + 3]]); }
   const inLane = [];
   for (const [x, z, y] of lamps) for (const k of B.get(key(Math.floor(x / grid), Math.floor(z / grid))) || []) { const yr = bary(road[k], x, z, 0); if (yr !== null && Math.abs(yr - y) < 0.4) { inLane.push([x, z, y]); break; } }
+  const near = [];   // 2026-10-26: also not within 0.3 m of the pavement (owner: lamp on the road beside the barrier)
+  for (const [x, z, y] of lamps) { let hit = false; for (let a = 0; a < 8 && !hit; a++) { const px = x + Math.cos(a * Math.PI / 4) * 0.12, pz = z + Math.sin(a * Math.PI / 4) * 0.12; for (const k of B.get(key(Math.floor(px / grid), Math.floor(pz / grid))) || []) { const yr = bary(road[k], px, pz, 0); if (yr !== null && Math.abs(yr - y) < 0.4) { hit = true; break; } } } if (hit) near.push([x, z, y]); }
+  check(near.length === 0, `no lamp base within 0.12 m of a carriageway (a pole on a parapet cap stands on the pavement edge) (${near.length}: ${JSON.stringify(near.slice(0, 4))})`);
   check(inLane.length === 0, `no lamp pole stands inside a carriageway polygon (${lamps.length} lamps, ${inLane.length} inside: ${JSON.stringify(inLane.slice(0, 4))})`);
   // ground zebras are off
   let zebra = 0; for (const c of Object.values(D.cells)) { const q = c.p && c.p.q; if (q) for (let i = 0; i < q.length; i += 6) { const w = Math.abs(q[i + 2] - q[i]), h = Math.abs(q[i + 3] - q[i + 1]); if (q[i + 5] === P.white && Math.abs(Math.min(w, h) - 0.5) < 1e-6 && Math.max(w, h) >= 1.0 && Math.max(w, h) <= 1.7) zebra++; } }

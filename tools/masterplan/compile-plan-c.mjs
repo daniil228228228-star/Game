@@ -646,10 +646,10 @@ function stopLine(c, dir, at, cls) {   // across the incoming half of an arm
   else emitRect('p', 'q', p[0] - 0.2, Math.min(A[1], B[1]), p[0] + 0.2, Math.max(A[1], B[1]), H.paint, CI.white);
 }
 function yieldLine(c, dir, at, cls) {   // 2026-10-25 owner ("убери зубья, нормальную разметку"): the give-way line is a DASHED transverse line (EU 1.12 style / Vienna Convention B.3: 0.4 m wide, 0.6 m dashes with 0.4 m gaps) across the whole incoming half of the arm, perpendicular to the lane - loose shark-tooth triangles read as litter
-  const w = hw(cls), r = [dir[1], -dir[0]], p = [c[0] + dir[0] * at, c[1] + dir[1] * at], med = CLS[cls].median / 2, l0 = Math.max(0.0, med) + 0.1, n = Math.max(1, Math.floor((w - 0.1 - l0 + 0.4) / 1.0)), used = n * 1.0 - 0.4, l00 = l0 + (w - 0.1 - l0 - used) / 2;
+  const w = hw(cls), r = [dir[1], -dir[0]], p = [c[0] + dir[0] * at, c[1] + dir[1] * at], med = CLS[cls].median / 2, l0 = Math.max(0.0, med) + 0.1, n = Math.max(1, Math.floor((w - 0.1 - l0 + 0.5) / 1.0)), used = n * 1.0 - 0.5, l00 = l0 + (w - 0.1 - l0 - used) / 2;
   for (let k = 0; k < n; k++) {
-    const a = l00 + k * 1.0, b = a + 0.6, A = [p[0] + r[0] * a, p[1] + r[1] * a], B = [p[0] + r[0] * b, p[1] + r[1] * b];
-    emitRect('p', 'q', Math.min(A[0], B[0]) - (dir[0] !== 0 ? 0.2 : 0), Math.min(A[1], B[1]) - (dir[0] !== 0 ? 0 : 0.2), Math.max(A[0], B[0]) + (dir[0] !== 0 ? 0.2 : 0), Math.max(A[1], B[1]) + (dir[0] !== 0 ? 0 : 0.2), H.paint, CI.white);
+    const a = l00 + k * 1.0, b = a + 0.5, A = [p[0] + r[0] * a, p[1] + r[1] * a], B = [p[0] + r[0] * b, p[1] + r[1] * b];
+    emitRect('p', 'q', Math.min(A[0], B[0]) - (dir[0] !== 0 ? 0.125 : 0), Math.min(A[1], B[1]) - (dir[0] !== 0 ? 0 : 0.125), Math.max(A[0], B[0]) + (dir[0] !== 0 ? 0.125 : 0), Math.max(A[1], B[1]) + (dir[0] !== 0 ? 0 : 0.125), H.paint, CI.white);
   }
 }
 function arrow(c, dir, at, lat) {   // straight lane arrow on the incoming half of an arm, pointing at the junction: stem + head
@@ -1693,29 +1693,30 @@ for (const line of PLAN.transit.lines) for (const s0 of line.stops) { let s = s0
 // ---- 9b. lighting of the motorways, decks and ramps (2026-10-25, SP 52.13330: interchanges and urban motorways are lit; before: 0 lamps on M1 / M2 / ramps, 14 dark stretches > 24 m)
 // lamp = [x, z, yaw, y]: y is the height of the pole's foot (decks), the head looks at the road; alternate sides, 14 m between lamps along the road (28 m per side)
 const lampsHi = [];
-function lampsAlong(id, pts, step, off, lo = -Infinity, hi = Infinity, offLow = off) {
+function lampsAlong(id, pts, step, off, lo = -Infinity, hi = Infinity, offLow = off, edgeAt = null) {
   const S = arcLen(pts); let side = 1;
   for (let sv = step / 2; sv < S[S.length - 1]; sv += step) {
     let i = 1; while (i < S.length - 1 && S[i] < sv) i++;
     const t = (sv - S[i - 1]) / ((S[i] - S[i - 1]) || 1), a = pts[i - 1], b = pts[i], x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t, h = a[2] + (b[2] - a[2]) * t;
     const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l, o2 = h < 0.3 ? offLow : off;
+    const ro = edgeAt ? edgeAt(i, sv) : null;   // ramps: the PER-VERTEX asphalt edge (merge wedges / flared mouths are wider than the plain lane); the pole stands behind it, never on the pavement
     if (x < lo || x > hi) { side = -side; continue; }
     // the planned side first; where another road lies there (a loop beside the M1 deck) the other side of the same ramp, so no stretch goes dark
     let placed = false;
     for (const sd of [side, -side]) {
-      const px = x + nx * sd * o2, pz = z + nz * sd * o2;
+      const oo = ro ? Math.max(o2, (sd > 0 ? ro.R : -ro.L) + 0.45) : o2, px = x + nx * sd * oo, pz = z + nz * sd * oo;
       if (coveredRoad([px, pz, h], id, 0.3)) continue;
       lampsHi.push([R2(px), R2(pz), R2(Math.atan2(-nx * sd, -nz * sd)), R2(h)]); placed = true; break;
     }
     side = -side;
   }
 }
-lampsAlong('M1', sampleAxis('x', M1_Z, -170, 170, hM1, 3), 28, MW + 0.15 - PARAPET_T / 2, -Infinity, Infinity, MW + 1.4);   // on the deck inside the parapet, on the ground beside the carriageway
+lampsAlong('M1', sampleAxis('x', M1_Z, -170, 170, hM1, 3), 28, MW + 0.3, -Infinity, Infinity, MW + 1.4);   // on the deck inside the parapet, on the ground beside the carriageway
 lampsAlong('M2', sampleAxis('z', M2_X, -150, -40, () => 0, 3), 28, MW + 1.4);
 lampsAlong('M2', sampleAxis('z', M2_X, 40, 86, () => 0, 3), 28, MW + 1.4);
 lampsAlong('M2', sampleAxis('z', M2_X, -40, -10, () => 0, 3), 14, 11);   // the approach of the at-grade crossing I2 (3 lanes + taper): poles outside the widened carriageway
 lampsAlong('M2', sampleAxis('z', M2_X, 10, 40, () => 0, 3), 14, 11);
-for (const r of rampPts) lampsAlong(r.id, r.p3, 24, CLS.ramp.w / 2 + 0.2 - PARAPET_T / 2, -Infinity, Infinity, CLS.ramp.w / 2 + 1.0);   // on the deck: on the lane edge inside the parapet; on the ground: beside the ramp
+for (const r of rampPts) { const ro = rampOffs.get(r.id); lampsAlong(r.id, r.p3, 24, CLS.ramp.w / 2 + 0.2 - PARAPET_T / 2, -Infinity, Infinity, CLS.ramp.w / 2 + 1.0, (i) => ({ R: ro.offR[Math.min(i, ro.offR.length - 1)], L: ro.offL[Math.min(i, ro.offL.length - 1)] })); }   // on the deck: on the lane edge inside the parapet; on the ground: beside the ramp
 const nearRampPt = (x, z, m) => rampSegs.some(([a, b]) => Math.abs((a[0] + b[0]) / 2 - x) < 60 && segDist(x, z, a, b) < CLS.ramp.w / 2 + m);
 const onFillet = (x, z, m) => cornerOut.some((q) => x > Math.min(q.K[0], q.O[0]) && x < Math.max(q.K[0], q.O[0]) && z > Math.min(q.K[1], q.O[1]) && z < Math.max(q.K[1], q.O[1]) && Math.hypot(x - q.O[0], z - q.O[1]) > q.RET - m);   // on the asphalt of a kerb return
 furniture.lamp = furniture.lamp.map((l) => l.length >= 4 ? l : [l[0], l[1], l[2], 0]);   // stride 4: x z yaw y

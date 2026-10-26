@@ -125,7 +125,7 @@ export function runMarkings(P, D) {
   for (const e of P.edges) {
     if (e.cls === 'motorway' || e.split) continue; const cl = CLS[e.cls], a = N.get(e.a), b = N.get(e.b), L = Math.hypot(b.x - a.x, b.z - a.z), dx = (b.x - a.x) / L, dz = (b.z - a.z) / L, nx = -dz, nz = dx;
     const lines = e.cls === 'arterial' ? [-(cl.median / 2 + cl.lane), cl.median / 2 + cl.lane] : [0];
-    const lo = 12, hi = L - 12; if (hi - lo < 6 || L < 45) continue;   // a block shorter than 45 m between two junction trims is all junction
+    const lo = 12, hi = L - 12; if (hi - lo < 6 || L < 60) continue;   // a block shorter than 45 m between two junction trims is all junction
     let win = 0, has = 0;
     for (let s = lo; s + 2 <= hi; s += 2) for (const lat of lines) { win++; let ok = false; for (let t = 0; t <= 2 && !ok; t += 0.25) { const x = a.x + dx * (s + t) + nx * lat, z = a.z + dz * (s + t) + nz * lat; if (R.near('paint', x, z, 0.15)) ok = true; } if (ok) has++; }
     if (!win) continue; const c = covRows[e.cls] || (covRows[e.cls] = { win: 0, has: 0, n: 0 }); c.win += win; c.has += has; c.n++;
