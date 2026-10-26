@@ -106,7 +106,7 @@ export function buildPlan() {
   // extra split points: diamond terminals, the P+R entrance
   const DT = 18;   // half spacing of the diamond ramp terminals (36 game m = 90 m real, the 300 ft desirable spacing)
   const extraZ = {},
-     extraX = { 0: [208, M2_X, 290, 296] };   // I2 (Svetlanovskaya-style split street): the split starts at x 207 / 291, the main crossing is at x 250; P+R entrance at 296
+     extraX = { 0: [214, M2_X, 290, 296] };   // I2 (Svetlanovskaya-style split street): the split starts at x 214 / 291 (2026-10-26 (7): was 208, the west island's ring touched the Okrainnaya crossing at x 200), the main crossing is at x 250; P+R entrance at 296
 
   // ------------------------------------------------------------------ graph
   const nodes = new Map(), edges = [], key = (x, z) => `${R(x)},${R(z)}`;

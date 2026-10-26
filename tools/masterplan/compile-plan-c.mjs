@@ -38,6 +38,7 @@ const COLORS = {
   slope: 0x628f4b, wall: 0x7d7a71,   // slope: was 0x558140 (a dark triangle against the lawn)
 };
 const PAL = Object.keys(COLORS), CI = Object.fromEntries(PAL.map((k, i) => [k, i]));
+const SPLIT_START_GAP = 1.6;   // I2: gap between a median's round nose and the asphalt of the split street's ring (the split node lies 0.8 m inside that ring)
 const H = { ground: 0, asph: 0.05, walk: 0.12, med: 0.12, paint: 0.077, ramp: 0.052, ringWalk: 0.12, island: 0.09, plaza: 0.03, fillet: 0.123, zone: -0.06, zone2: -0.05, water: -0.02, bank: -0.045, base: -0.08, rail: 0.035, railPaint: 0.066 };   // every ground layer has its own height (no coplanar overlaps = no z-fighting seams)
 
 // ---- the cell store
@@ -299,7 +300,15 @@ for (const e of PLAN.edges) {
     const t0 = trimAt(s.lowNode, e), t1 = trimAt(s.highNode, e), mh = cl.median / 2;
     const lo0 = Math.min(e.dir === 'x' ? a.x : a.z, e.dir === 'x' ? N.get(e.b).x : N.get(e.b).z), hi0 = Math.max(e.dir === 'x' ? a.x : a.z, e.dir === 'x' ? N.get(e.b).x : N.get(e.b).z);
     const mlo = e.cls === 'motorway' ? lo0 + bendR(s.lowNode) : lo0 + t0, mhi = e.cls === 'motorway' ? hi0 - bendR(s.highNode) : hi0 - t1;
-    if (mhi - mlo > 1) for (const [lo, hi] of subtractIntervals(mlo, mhi, cuts)) put(lo, hi, -mh, mh, e.cls === 'motorway' ? 'medM' : 'med');
+    // 2026-10-26 (7) owner ('стык плохой'): a median that runs up to a split street (I2) stops 1 m before the ring's asphalt with a ROUND nose (it ended square inside the carriageway)
+    const splitAt = (id) => e.cls !== 'motorway' && !e.split && PLAN.edges.some((x) => x.split && (x.a === id || x.b === id));
+    const nLo = splitAt(s.lowNode), nHi = splitAt(s.highNode), cutN = SPLIT_START_GAP + mh;
+    const mlo2 = nLo ? Math.max(mlo, lo0 + cutN) : mlo, mhi2 = nHi ? Math.min(mhi, hi0 - cutN) : mhi;
+    if (mhi2 - mlo2 > 1) for (const [lo, hi] of subtractIntervals(mlo2, mhi2, cuts)) put(lo, hi, -mh, mh, e.cls === 'motorway' ? 'medM' : 'med');
+    for (const [on, at, sg] of [[nLo, mlo2, -1], [nHi, mhi2, 1]]) if (on && mhi2 - mlo2 > 1) {
+      const C = e.dir === 'x' ? [at, c] : [c, at], P = (t) => e.dir === 'x' ? [at + sg * Math.cos(t) * mh, c + Math.sin(t) * mh] : [c + Math.sin(t) * mh, at + sg * Math.cos(t) * mh];
+      for (let k = 0; k < 12; k++) { const t0 = -Math.PI / 2 + Math.PI * k / 12, t1 = -Math.PI / 2 + Math.PI * (k + 1) / 12, A = P(t0), B = P(t1); emitTri('r', C, A, B, H.med, CI.median); emitWall(A[0], A[1], B[0], B[1], H.asph, H.med, CI.kerb); }
+    }
   }
 }
 
@@ -769,7 +778,7 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
   const strip = (A, B, y, ci, keep = () => true) => { for (let i = 0; i < A.length; i++) { const j = (i + 1) % A.length; if (!keep([(A[i][0] + A[j][0] + B[i][0] + B[j][0]) / 4, (A[i][1] + A[j][1] + B[i][1] + B[j][1]) / 4])) continue; emitTri('r', A[i], B[i], A[j], y, ci); emitTri('r', B[i], B[j], A[j], y, ci); } };
   const wall = (A, y0, y1, ci, keep = () => true) => { for (let i = 0; i < A.length; i++) { const j = (i + 1) % A.length; if (keep([(A[i][0] + A[j][0]) / 2, (A[i][1] + A[j][1]) / 2])) emitWall(A[i][0], A[i][1], A[j][0], A[j][1], y0, y1, ci); } };
   for (const side of [-1, 1]) {   // -1 west, +1 east
-    const nose = xm + side * (mw + SPLIT.band + 0.1 - 0.0) - side * 0.0, farX = side < 0 ? 212 : 286;   // island end on the crossing side / the far end
+    const nose = xm + side * (mw + SPLIT.band + 0.1 - 0.0) - side * 0.0, farX = side < 0 ? 218 : 286;   // 2026-10-26 (7): west 218 (was 212): the round end and its sidewalk clear the kerb returns of the Okrainnaya crossing (x 200)   // island end on the crossing side / the far end
     const edgeM = xm + side * mw, noseX = edgeM + side * SPLIT.band;     // x of the island nose: one band width from the M2 edge
     const xa = Math.min(noseX, farX), xb = Math.max(noseX, farX), hz = SPLIT.hz;
     const small = 2.4, far = 6;   // both far ends are round (a stadium)
@@ -787,6 +796,10 @@ const SPLIT = { hz: 6, band: 4.8, walk: 2.6, R: 7 }, islandsOut = [];   // split
     {
       const cc = [side < 0 ? farX + far : farX - far, 0], r0 = far + SPLIT.band, r1 = r0 + SPLIT.walk, th = Math.asin((hw('arterial') + CLS.arterial.sidewalk) / r1) * 180 / Math.PI;
       const spans = side < 0 ? [[90 + 0, 180 - th], [180 + th, 270]] : [[-90, -th], [th, 90]];
+      // 2026-10-26 (7): the street's own sidewalk runs on round the ring until it meets the ring's sidewalk (a small green wedge was left between the square end and the circle)
+      if (side < 0) { const zIn = hw('arterial'), zOut = zIn + CLS.arterial.sidewalk, xs = []; const xNode = 214;   // west only: the east ring opens straight into the P+R crossing
+        for (let k = 0; k <= 16; k++) { const x = xNode + (cc[0] - xNode) * k / 16; const dz2 = r0 * r0 - (x - cc[0]) ** 2, cz = dz2 > 0 ? Math.sqrt(dz2) : 0; if (cz >= zOut) break; xs.push([x, Math.max(zIn, cz)]); }
+        for (const sz of [-1, 1]) for (let k = 0; k + 1 < xs.length; k++) { const [x0, l0] = xs[k], [x1, l1] = xs[k + 1]; emitTri('r', [x0, sz * l0], [x1, sz * l1], [x0, sz * zOut], H.walk, CI.walk); emitTri('r', [x1, sz * l1], [x1, sz * zOut], [x0, sz * zOut], H.walk, CI.walk); } }
       for (const [a0, a1] of spans) {
         annulus('r', cc, r0, r1, a0, a1, H.walk, CI.walk, 5);
         const n = Math.max(2, Math.ceil((a1 - a0) / 5));
