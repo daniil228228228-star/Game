@@ -178,7 +178,7 @@ check(Object.keys(D.cells).length > 100 && D.cell === 60, `data: ${Object.keys(D
     for (const c of Object.values(D.cells)) { const q = c.p && c.p.q || []; for (let i = 0; i < q.length; i += 6) if (q[i + 5] === CI.white) marks.push({ x0: q[i], z0: q[i + 1], x1: q[i + 2], z1: q[i + 3] }); }
     const onBorder = (m) => [m.x0, m.x1].some((v) => Math.abs(v / 60 - Math.round(v / 60)) < 1e-6) || [m.z0, m.z1].some((v) => Math.abs(v / 60 - Math.round(v / 60)) < 1e-6);
     const dim = (m) => ({ lx: m.x1 - m.x0, lz: m.z1 - m.z0 });
-    const bars = marks.filter((m) => { const d = dim(m); return Math.min(d.lx, d.lz) > 0.4 && Math.max(d.lx, d.lz) < 2.0; });
+    const bars = marks.filter((m) => { const d = dim(m); return Math.min(d.lx, d.lz) > 0.45 && Math.max(d.lx, d.lz) < 2.0; });
     const stops = marks.filter((m) => { const d = dim(m); return Math.min(d.lx, d.lz) >= 0.3 && Math.min(d.lx, d.lz) <= 0.45 && Math.max(d.lx, d.lz) >= 1.9; });
     const other = marks.filter((m) => !bars.includes(m) && !stops.includes(m));
     const orient = (m) => (m.x1 - m.x0) > (m.z1 - m.z0) ? 'h' : 'v';

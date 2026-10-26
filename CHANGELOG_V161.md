@@ -1,3 +1,8 @@
+# 2026-10-26 (2) - Plan C: give-way "teeth" replaced by dashed give-way lines (c1v)
+
+Owner (c1u): "убери зубья, вместо них нормальную разметку". `yieldLine()` (compile-plan-c.mjs) drew 2 loose white triangles per half arm (shark teeth), the roundabout entries an extra row of little teeth at R + 0.35, slip-lane merges 4 triangles (`teethAt`). Now: one DASHED transverse give-way line across the whole incoming half of the arm (0.4 m wide, 0.6 m dashes, 0.4 m gaps, centred, perpendicular to the lane), slip lanes 3 dashes, ring entry teeth removed (the line at R + 0.9 remains). Stop lines (signals), arrows (only the real lane arrows) unchanged. The tan wedge next to the player in the owner's shots is the GAME's ground guidance arrow, not a marking. `plan-c-roads` bar heuristic ignores the 0.4 m dashes. Frames: docs/shots-2026-10-26/ (j118, j80, sig, rb, rbn7, x2, n-j118, n-j80). Owner shots: docs/owner-shots-2026-10-26/.
+Not changed / open: the darker triangular shade inside a grass bank on loop decks (vertex-averaged normals at the bank cap), big retaining wall panels at M1 abutments (single sheets), the grass strip between the abutment walls under M1.
+
 # 2026-10-26 - Plan C: owner feedback on c1t (zebras, floating grass wedges, parapets, lamps, kerbs)
 
 Owner shots: `docs/owner-shots-2026-10-25/` (12 files). Frames after the fixes: `docs/shots-2026-10-26/` (day + night, M1 merge, loops, ramp bank).
