@@ -66,7 +66,7 @@ export function runMarkings(P, D) {
       for (let sv = 22; sv < S[S.length - 1] - 22; sv += 0.5) {
         let i = 1; while (i < S.length - 1 && S[i] < sv) i++; const t = (sv - S[i - 1]) / ((S[i] - S[i - 1]) || 1), p = pts[i - 1], q = pts[i], dx = q[0] - p[0], dz = q[1] - p[1], l = Math.hypot(dx, dz) || 1;
         const x = p[0] + dx * t - dz / l * sg * 1.2, z = p[1] + dz * t + dx / l * sg * 1.2;
-        if (paintNear(x, z, 0.2)) { if (run * 0.5 > 6) gaps.push([R1(st), R1(run * 0.5)]); run = 0; } else { if (!run) st = sv; run++; } }
+        if (paintNear(x, z, 0.2) || [[0, -240], [1, 250]].some(([hax, hc]) => { const lt = Math.abs((hax === 0 ? z : x) - hc), al = hax === 0 ? x : z; return Math.abs(lt - 6.0) < 2.0 && paintNear(hax === 0 ? al : hc + Math.sign((hax === 0 ? z : x) - hc) * 6.0, hax === 0 ? hc + Math.sign(z - hc) * 6.0 : al, 0.3); })) { if (run * 0.5 > 6) gaps.push([R1(st), R1(run * 0.5)]); run = 0; } else { if (!run) st = sv; run++; } }
       if (run * 0.5 > 6) gaps.push([R1(st), R1(run * 0.5)]);
       if (gaps.length) rampBad.push(`${ic}.${ri} ${sg > 0 ? 'R' : 'L'} ${JSON.stringify(gaps.slice(0, 2))}`);
     }
@@ -134,5 +134,44 @@ export function runMarkings(P, D) {
   for (const [cls, c] of Object.entries(covRows)) add('Покрытие разметкой', `осевая / полосная разметка: ${cls}`, `${c.n} перегонов, окон с линией ${Math.round(100 * c.has / c.win)} %`, 'у каждого перегона с центральной линией (1.5 / 1.1) во всех окнах 2 м (штрих ~50 %)', 'ГОСТ Р 51256-2018', c.has / c.win >= 0.35 ? 'OK' : 'НАРУШЕНИЕ');
   add('Покрытие разметкой', 'улицы совсем без осевой / полосной разметки', zero.length ? `${zero.length}: ${sh(zero)}` : 'нет', 'ни одной улицы без разметки', 'ГОСТ Р 51256-2018', zero.length ? 'НАРУШЕНИЕ' : 'OK');
   add('Покрытие разметкой', 'улицы с редкой разметкой (< 35 % окон)', poor.length ? `${poor.length}: ${sh(poor)}` : 'нет', 'штрихи вдоль всей улицы между стоп-линиями', 'ГОСТ Р 51256-2018', poor.length ? 'НАРУШЕНИЕ' : 'OK');
+  // ---- I. diverge / merge points and paint on pavement (2026-10-26 (6), owner: "doubled edge line on diverging ramps, ramp edge starting before the nose") ----------------------------------
+  //   (1) no paint stub off the pavement (motorway corridors and ramps): every paint cell lies within 0.12 m of asphalt / deck pavement (a line may not start in the grass beside a 0-width wedge tip)
+  //   (2) at every ramp end that joins a motorway: cross-sections every 0.7 m over the 30 m of the wedge show no two parallel lines closer than 0.5 m (doubled line) - the host's edge line and the ramp's line may meet (one cluster)
+  //   (3) the host's edge line on the ramp side is BROKEN along the wedge (some gap >= 0.5 m in 12 m of the span) and solid (no gap > 0.3 m) 6 m before / after it
+  const rampPtsAll = D.graph.ramps.flatMap(([, , pts]) => pts), nearRampPt = (x, z, d) => rampPtsAll.some((p) => Math.hypot(p[0] - x, p[1] - z) < d);
+  const lotCells = new Set(); for (const c of Object.values(D.cells)) for (const L of ['g', 'r']) { const o = c[L]; if (!o) continue;
+    const mark = (x0, z0, x1, z1) => { for (let x = Math.floor(x0); x <= Math.floor(x1); x++) for (let z = Math.floor(z0); z <= Math.floor(z1); z++) lotCells.add(x + ',' + z); };
+    if (o.q) for (let i = 0; i + 5 < o.q.length; i += 6) if (o.q[i + 5] === D.palette.parking) mark(Math.min(o.q[i], o.q[i + 2]), Math.min(o.q[i + 1], o.q[i + 3]), Math.max(o.q[i], o.q[i + 2]), Math.max(o.q[i + 1], o.q[i + 3]));
+    if (o.t) for (let i = 0; i + 7 < o.t.length; i += 8) if (o.t[i + 7] === D.palette.parking) mark(Math.min(o.t[i], o.t[i + 2], o.t[i + 4]), Math.min(o.t[i + 1], o.t[i + 3], o.t[i + 5]), Math.max(o.t[i], o.t[i + 2], o.t[i + 4]), Math.max(o.t[i + 1], o.t[i + 3], o.t[i + 5])); }
+  { const P1 = R.G.paint, nxx = R.nx; let stubs = [], total = 0;
+    for (let j = 0; j < R.nz; j++) for (let i = 0; i < nxx; i++) if (P1[j * nxx + i]) { total++; const x = -300 + (i + 0.5) * R.RES, z = -372 + (j + 0.5) * R.RES; if (lotCells.has(Math.floor(x) + ',' + Math.floor(z))) continue; if (!(Math.abs(z + 240) < 9 && Math.abs(x) < 170 || Math.abs(x - 250) < 9 && z > -100 || nearRampPt(x, z, 1.9))) continue; if (!K.near('asph', x, z, 0.14) && !K.near('walk', x, z, 0.14) && !K.near('island', x, z, 0.14) && !K.near('conc', x, z, 0.14) && !K.near('median', x, z, 0.14)) stubs.push([R1(x), R1(z)]); }
+    // group the stub cells (within 1 m of each other) into clusters
+    const cl0 = []; for (const q of stubs) { const c = cl0.find((k) => Math.hypot(k[0] - q[0], k[1] - q[1]) < 1.2); if (c) { c[2]++; } else cl0.push([q[0], q[1], 1]); }
+    const cl = cl0.filter((c) => c[2] > 3);   // 1-3 cells = a lot line grazing the 1.9 m corridor, not a stub
+    add('Вся сеть', 'краска (линии, стрелки) лежит на покрытии: нет обрывков в траве', cl.length ? `${cl.length} мест вне покрытия: ${cl.slice(0, 40).map((c) => c[0] + ',' + c[1] + ' (' + c[2] + ')').join('; ')}` : `${total} ячеек краски, вне покрытия 0`, 'краска только на асфальте / настиле', 'ГОСТ Р 51256-2018 п. 5 (разметка наносится на покрытие)', cl.length ? 'НАРУШЕНИЕ' : 'OK', '');
+  }
+  { const Rf = makeRaster(D, 0.05); const bad = [], seen = []; let nEnds = 0, nBroken = 0, nDoubled = 0;
+    for (const ic of P.interchanges) for (const r of ic.ramps) for (const k of [0, 1]) {
+      if (r.attach[k] !== 'motorway') continue; nEnds++;
+      const e = k ? r.pts[r.pts.length - 1] : r.pts[0], nxt = k ? r.pts[r.pts.length - 2] : r.pts[1];
+      const host = [{ axis: 0, c: -240 }, { axis: 1, c: 250 }].reduce((a, b) => Math.abs(e[1 - a.axis] - a.c) <= Math.abs(e[1 - b.axis] - b.c) ? a : b), ax = host.axis, lat0 = Math.sign(e[1 - ax] - host.c) || 1, dirA = Math.sign(nxt[ax] - e[ax]) || 1;
+      let doubled = 0, maxGapEdge = 0;
+      for (let t = 1; t <= 30; t += 0.7) {
+        const a = e[ax] + dirA * t;
+        for (const mask of [1, 2]) {   // ground paint and deck paint are different levels: two lines on different levels are not a doubled line
+          const lines = []; let run = null;
+          for (let l = 0.2; l <= 16; l += 0.05) { const x = ax === 0 ? a : host.c + lat0 * l, z = ax === 0 ? host.c + lat0 * l : a; const on = Rf.at('paint', x, z, mask); if (on && !run) run = [l, l]; else if (on) run[1] = l; else if (run) { lines.push((run[0] + run[1]) / 2); run = null; } }
+          for (let q = 0; q + 1 < lines.length; q++) if (lines[q + 1] - lines[q] > 0.06 && lines[q + 1] - lines[q] < 0.5) doubled++;
+        }
+      }
+      // broken edge line: along the host edge (lat 5.95 / 6.1) look for gaps over 12 m of the wedge
+      let gaps = 0, run = 0; for (let t = 4; t <= 20; t += 0.1) { const a = e[ax] + dirA * t; let on = false; for (const l of [5.95, 6.1]) { const x = ax === 0 ? a : host.c + lat0 * l, z = ax === 0 ? host.c + lat0 * l : a; if (Rf.near('paint', x, z, 0.06)) on = true; } if (!on) { run++; } else { if (run * 0.1 >= 0.5) gaps++; run = 0; } }
+      if (doubled) { nDoubled++; bad.push(`${ic.id} end ${R1(e[0])},${R1(e[1])}: ${doubled} doubled-line sections`); }
+      if (gaps >= 2) nBroken++;
+      seen.push([ic.id, R1(e[0]), R1(e[1]), gaps, doubled]);
+    }
+    add('Развилки съездов с М1 / М2', 'нет сдвоенных линий (две параллельные линии ближе 0.5 м) на 30 м клина', bad.length ? sh(bad) : `${nEnds} развилок, сдвоенных нет`, 'одна линия на границе полосы', 'ГОСТ Р 51256-2018 прил. А (1.5, 1.6, 1.7)', bad.length ? 'НАРУШЕНИЕ' : 'OK', '');
+    add('Развилки съездов с М1 / М2', 'краевая линия магистрали вдоль клина прерывистая (>= 2 разрыва по 0.5 м на 16 м)', `${nBroken} из ${nEnds}`, 'прерывистая линия вдоль полосы перестроения', 'ГОСТ Р 51256-2018 (1.5 / 1.6)', nBroken === nEnds ? 'OK' : 'НАРУШЕНИЕ', nBroken === nEnds ? '' : seen.filter((q) => q[3] < 2).map((q) => q.slice(0, 3).join(',')).join('; '));
+  }
   return { rows };
 }

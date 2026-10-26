@@ -354,7 +354,8 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
     ribbonZ(sg, line((z) => outerA(z) - 0.2, M2Z.z0, zN)); ribbonZ(sg, line((z) => outerA(z) - 0.2, zS, M2Z.end3 - 2));
     // lane divider 3|2 at 5.3: dashed in the three-lane stretch, SOLID from the exit gore on, easing to the trunk ramp's edge line (6.1)
     // outer edge line: solid at 5.3 up to the exit gore, then easing to the trunk ramp's edge line (6.1)
-    runOn(sg, () => M_EDGE, M2Z.end3 - 2, M2Z.z1 + 1.5);
+    { const zA = M2Z.end3 - 2, zB = M2Z.z1 + 1.5, pieces = splitBy(zA, zB, wedgeSpansAxis('z', c, sg));   // 2026-10-26 (6): broken (1.0 / 1.0) along the exit / entrance wedge of the ramps a / c, solid elsewhere
+      for (const [a, b, brk] of pieces) { if (brk) { const e = Math.min(b, M2Z.z1 - 1.5); dashZ(sg, line(() => M_EDGE, a, e), 1.0, 1.0); if (b > e) runOn(sg, () => M_EDGE, e, b); } else runOn(sg, () => M_EDGE, a, b); } }
     // lane divider 2|1 at 3.2: dashed from the box until lane 1 has become too narrow (inner edge line within 0.45 m of it)
     let zEnd = zS; while (zEnd < M2Z.z1 && inner(zEnd) + 0.25 < LANE_DIV - 0.45) zEnd += 1;
     dashZ(sg, line(() => LANE_DIV, zdS, zEnd)); dashZ(sg, line(() => LANE_DIV, M2Z.z0 + 0, zdN));
@@ -604,8 +605,10 @@ function dashed(axis, c, lo, hi, width, dash, gap, y, ci, phase = 0) {   // axis
 }
 function solid(axis, c, lo, hi, width, y, ci) { if (hi - lo < 0.1) return; if (axis === 'x') emitRect('p', 'q', lo, c - width / 2, hi, c + width / 2, y, ci); else emitRect('p', 'q', c - width / 2, lo, c + width / 2, hi, y, ci); }
 // spans along a motorway edge where a ramp runs beside it (diverge / merge): from the ramp end that attaches to the motorway for as long as the ramp stays within one carriageway + lane of the host's axis
-function wedgeSpans(e, sgn) {
-  const ax = e.dir, c = ax === 'x' ? N.get(e.a).z : N.get(e.a).x, out = [];
+function wedgeSpans(e, sgn) { return wedgeSpansAxis(e.dir, e.dir === 'x' ? N.get(e.a).z : N.get(e.a).x, sgn); }
+function wedgeSpansAxis(ax, c, sgn) {
+
+  const out = [];
   for (const ic of PLAN.interchanges) for (const r of ic.ramps) for (const k of [0, 1]) {
     if (r.attach[k] !== 'motorway') continue;
     const pts = k ? r.pts.slice().reverse() : r.pts, lat = (q) => (ax === 'x' ? q[1] : q[0]) - c, ap = (q) => ax === 'x' ? q[0] : q[1];
@@ -1087,7 +1090,7 @@ for (const { id, p3, attach, mouth, S, flare, noWedge } of rampPts) {
       const d = Math.abs(lat(p3[i]));
       if (d >= dTouch + 1e-6) break;
       const outer = Math.max(host.Hw, Math.min(d + CLS.ramp.w / 2, host.Hw + CLS.ramp.w * (d - dEnd) / (dTouch - dEnd)));
-      if (sideOut > 0) { offR[i] = outer - d; dashed[0][i] = true; } else { offL[i] = -(outer - d); dashed[1][i] = true; }
+      if (sideOut > 0) { offR[i] = outer - d; dashed[0][i] = true; if (type === 'motorway' && outer - host.Hw < 0.5) skipR[i] = true; } else { offL[i] = -(outer - d); dashed[1][i] = true; if (type === 'motorway' && outer - host.Hw < 0.5) skipL[i] = true; }   // the outer edge line starts where the wedge is 0.5 m wide (it used to start in the grass beside the 0-width tip)
       if (type === 'motorway') {   // 2026-10-25: the converging outer edge line lands exactly on the host's own edge line (M_EDGE - 0.15), it used to stop 0.15-0.35 m off it: a visible step where the two lines meet
         const conv = Math.max(0, Math.min(1, 1 - (outer - host.Hw) / CLS.ramp.w)), dl = (MW - 0.2) - (M_EDGE - 0.15);
         if (sideOut > 0) { adjR[i] = -dl * conv; adjPR[i] = -0.05 * conv; } else { adjL[i] = dl * conv; adjPL[i] = 0.05 * conv; }   // the parapet line lands on the host's own parapet line (MW + 0.15)
@@ -1098,9 +1101,35 @@ for (const { id, p3, attach, mouth, S, flare, noWedge } of rampPts) {
     const L = S[S.length - 1];
     for (let i = 0; i < p3.length; i++) { const ds = mouth ? L - S[i] : S[i]; if (ds >= 22) continue; const t = 1 - ds / 22, w = CLS.ramp.w / 2 + (CLS.ramp2.w / 2 - CLS.ramp.w / 2) * t * t * (3 - 2 * t); offL[i] = Math.min(offL[i], -w); offR[i] = Math.max(offR[i], w); }
   }
+  // trunk ramps (the carriageway itself, no wedge of their own): their outer edge line is BROKEN along the span where another ramp runs beside it (same rule as the motorway's own edge line, one style on both sides of a diverge / merge)
+  if (noWedge && noWedge.length) for (let i = 0; i < p3.length; i++) {
+    const m = motorHost(p3[i]), lat = p3[i][1 - m.axis] - m.c, sgnL = Math.sign(lat) || 1; if (Math.abs(lat) > MW + CLS.ramp.w) continue;
+    const a = p3[Math.max(0, i - 1)], b = p3[Math.min(p3.length - 1, i + 1)], dx = b[0] - a[0], dz = b[1] - a[1], right = [-dz, dx], outSg = Math.sign((m.axis === 0 ? right[1] : right[0]) * sgnL) || 1;
+    if (wedgeSpansAxis(m.axis === 0 ? 'x' : 'z', m.c, sgnL).some(([lo, hi]) => p3[i][m.axis] > lo && p3[i][m.axis] < hi)) dashed[outSg < 0 ? 0 : 1][i] = true;
+  }
   rampOffs.set(id, { offL, offR, dashed, adjL, adjR, adjPL, adjPR, wedgeEnds, skipL, skipR });
 }
 const JOINS = [...rampOffs.values()].flatMap((ro) => ro.wedgeEnds);   // where a ramp's wedge converges on a motorway edge: the ramp parapet and the motorway parapet meet there
+// 2026-10-26 (6): a ground ramp that runs beside a RAISED ramp / deck (I4: the ground ramp next to the trunk loop) leaves a 0.1-0.4 m grass sliver between its asphalt edge and the other's wall face
+// (owner: "barrier beside, not on the pavement"): the asphalt is widened to touch the wall face, so the wall stands on continuous pavement. Only a shoulder, the paint stays where it was.
+const rampExt = new Map();
+for (const r of rampPts) {
+  const mine = rampOffs.get(r.id), ext = { L: r.p3.map(() => 0), R: r.p3.map(() => 0) };
+  for (const o2 of rampPts) {
+    if (o2.id === r.id) continue;
+    const ro = rampOffs.get(o2.id), lines = [offsetVar(o2.p3, ro.offL.map((v, i) => v - 0.2 + ro.adjPL[i])), offsetVar(o2.p3, ro.offR.map((v, i) => v + 0.2 + ro.adjPR[i]))];
+    for (const sg of [-1, 1]) {
+      const e = offsetVar(r.p3, sg < 0 ? mine.offL : mine.offR);
+      e.forEach((q, i) => {
+        if (q[2] > 0.3) return;
+        let best = 1e9, hh = 0;
+        for (const L of lines) for (let k = 1; k < L.length; k++) { const d = segDist(q[0], q[1], L[k - 1], L[k]); if (d < best) { best = d; hh = Math.max(L[k - 1][2], L[k][2]); } }
+        if (best > 0.01 && best < 0.45 && hh > 0.3) (sg < 0 ? ext.L : ext.R)[i] = Math.max((sg < 0 ? ext.L : ext.R)[i], best);
+      });
+    }
+  }
+  rampExt.set(r.id, ext);
+}
 if (process.env.DEBUG_JOINS) console.log("JOINS", JSON.stringify(JOINS.map((w) => [w.axis, w.c, R2(w.along), w.lat, w.side])));
 const rampMasks = [];
 for (const r of rampPts) {
@@ -1223,6 +1252,8 @@ function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median h
   for (const sg of [-1, 1]) for (const run of exposedRuns(pts, sg * (o.w / 2 + 0.15), o.id, 0.3, 'barrier')) {
     // The cap follows the same taper as the concrete face at the ground toe.
     const mj = (pt) => JOINS.some((w) => (o.id === 'M1' ? w.axis === 0 : w.axis === 1) && Math.abs(w.c - (o.id === 'M1' ? M1_Z : M2_X)) < 1 && Math.abs(pt[w.axis] - w.along) < 0.35 && Math.sign(pt[1 - w.axis] - w.c) === w.lat && Math.abs(Math.abs(pt[1 - w.axis] - w.c) - (o.w / 2 + 0.15)) < 0.1);
+    { const jw = (pt) => JOINS.find((w) => (o.id === 'M1' ? w.axis === 0 : w.axis === 1) && Math.abs(w.c - (o.id === 'M1' ? M1_Z : M2_X)) < 1 && Math.abs(pt[w.axis] - w.along) < 0.35 && Math.sign(pt[1 - w.axis] - w.c) === w.lat && Math.abs(Math.abs(pt[1 - w.axis] - w.c) - (o.w / 2 + 0.15)) < 0.1);
+      const a = jw(run[0]), b = jw(run[run.length - 1]); if (a) run[0][a.axis] = a.along; if (b) run[run.length - 1][b.axis] = b.along; }
     parapetSolid(run, sg, (h) => h + 0.05, (h) => h + 0.05 + Math.min(0.9, h * 3), mj(run[0]), mj(run[run.length - 1]));
     addParapets(run.filter((p) => p[2] > 0.2), 0);
   }
@@ -1258,7 +1289,12 @@ function structureDeck(pts, o) {   // o = {w (surface), halfOuter, med (median h
   }
   // paint
   if (o.paint) {
-    for (const sg of [-1, 1]) { for (const run of exposedRuns(pts, sg * o.paint.edge, o.id, 0.05)) paintAlong(run, 0, 0.18, 1, 0, 0.077, CI.white); if (o.paint.divider) paintAlong(pts, sg * o.paint.divider, 0.18, 1.6, 1.8, 0.077, CI.white); if (o.paint.inner) paintAlong(pts, sg * o.paint.inner, 0.18, 1, 0, 0.077, CI.white); }
+    const mh = motorHosts.find((h) => h.id === o.id);
+    for (const sg of [-1, 1]) {
+      // 2026-10-26 (6): along a diverge / merge wedge the motorway's edge line on the ramp side is a BROKEN line (1.0 / 1.0, the same style as the ramp's own broken line), solid elsewhere; it used to vanish under the ramp's pavement
+      const spans = mh ? wedgeSpansAxis(mh.axis === 0 ? 'x' : 'z', mh.c, sg) : [], inSpan = (p) => mh && spans.some(([a, b]) => p[mh.axis] > a && p[mh.axis] < b);
+      for (const run of exposedRuns(pts, sg * o.paint.edge, o.id, 0.05)) { let cur = []; const fl = () => { if (cur.length > 1) paintAlong(cur, 0, 0.18, 1, 0, 0.077, CI.white); cur = []; }; for (const p of run) { if (inSpan(p)) fl(); else cur.push(p); } fl(); }
+      for (const [a, b] of spans) { const sub = pts.filter((p) => p[mh.axis] > a && p[mh.axis] < b); if (sub.length > 1) paintAlong(sub, sg * o.paint.edge, 0.18, 1.0, 1.0, 0.077, CI.white); } if (o.paint.divider) paintAlong(pts, sg * o.paint.divider, 0.18, 1.6, 1.8, 0.077, CI.white); if (o.paint.inner) paintAlong(pts, sg * o.paint.inner, 0.18, 1, 0, 0.077, CI.white); }
     if (o.paint.center) paintAlong(pts, 0, 0.16, 1.0, 3.0, 0.077, CI.white);
   }
 }
@@ -1377,11 +1413,11 @@ for (const [ref, axis, c, up, hfn] of [['M1', 'x', M1_Z, M1_UP, hM1], ['M2', 'z'
 function pushRibbons(id, w, pts) { STRUCT.ribbons.push({ id, w, p: pts }); }   // (D.surfaces below returns every level of a ribbon: a ramp can cross over / under itself)
 // Render the pre-resolved ramp profiles. Single-lane ramps have edge lines,
 // NOT a dashed centre line suggesting a second lane.
-for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts) {
+for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare, noWedge } of rampPts) {
   // Merge geometry (2026-10-18 (8)): where a ramp joins a carriageway / avenue PARALLEL to it, its outer edge converges linearly onto the host's kerb line
   // (a true wedge, one asphalt contour), the edge line on the host side turns into a dashed line, the outer edge line runs on without a break.
   const { offL, offR, dashed, adjL, adjR, adjPL, adjPR, wedgeEnds, skipL, skipR } = rampOffs.get(id);
-  asymRibbon(p3, offL, offR, 0.052, CI.asph);
+  { const ex = rampExt.get(id); asymRibbon(p3, offL.map((v, i) => v - ex.L[i]), offR.map((v, i) => v + ex.R[i]), 0.052, CI.asph); }
   for (const sg of [-1, 1]) {
     const embMode = embankModes(p3, sg, id), vnB = sideNormals(offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2)), sg), cross2 = (k) => sBr != null && Math.abs((S[k - 1] + S[k]) / 2 - sBr) < 9;
     const q = offsetPts3(p3, sg * (CLS.ramp.w / 2 + 0.2));
@@ -1410,6 +1446,7 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
       // The barrier RISES out of the ground over the deck height 0.3 -> 1.2 m (a sloped end, 2026-10-19: it used to start as a full-height slab in mid air); the colliders keep the old gate (deck > 1.2 m)
       const tap = (h) => { const t = Math.max(0, Math.min(1, (h - 0.3) / 0.35)); return t * t * (3 - 2 * t); };   // 2026-10-25: full height from a 0.65 m drop (owner: no fence on the climb; GOST 33128: a barrier from the first dangerous drop), was 1.2 m
       const wj = wedgeEnds.filter((w) => w.side === sg), endPt = (k) => parapetLine[k ? parapetLine.length - 1 : 0];
+      for (const w of wj) { const q = endPt(w.k); q[w.axis] = w.along; q[1 - w.axis] = w.c + w.lat * (MW + 0.15); }   // the join point of the ramp parapet and the motorway parapet is ONE point (the motorway run is snapped to the same along-coordinate below)
       const joinAt = (pt) => wj.some((w) => Math.hypot(pt[0] - endPt(w.k)[0], pt[1] - endPt(w.k)[1]) < 0.05);
       let vis = [];
       const flush = () => {
@@ -1424,9 +1461,12 @@ for (const { id, ic, kind, p3, bridge: sBr, S, attach, mouth, flare } of rampPts
     {
       const si = sg < 0 ? 0 : 1, line = offsetVar(p3, p3.map((_, i) => sg < 0 ? offL[i] + 0.2 + adjL[i] : offR[i] - 0.2 + adjR[i])), n = p3.length, skip = sg < 0 ? skipL : skipR;
       for (let i = 0; i < n - 1;) {
+        const hs = (k) => { if (noWedge) return false; const m = motorHost(line[k]), dl = Math.abs(line[k][1 - m.axis] - m.c); return Math.abs(dl - M_EDGE) < (dashed[si][k] ? 2.0 : 1.0) && dl < MW + CLS.ramp.w && line[k][2] < 0.3 === (m.h(line[k][m.axis]) < 0.3); };   // the ramp's host-side line within 2 m of the motorway's own (broken) edge line is left out: two parallel dashed lines 0.4-1.5 m apart read as a doubled line
+        if (skip[i] || skip[i + 1] || hs(i) || hs(i + 1)) { i++; continue; }
         const dz = dashed[si][i] && dashed[si][i + 1]; let j = i;
-        while (j < n - 1 && (dashed[si][j] && dashed[si][j + 1]) === dz) j++;
-        if (!skip[i] && !skip[j]) for (const run of exposedRuns(line.slice(i, j + 1), 0, id, 0.05)) paintAlong(run, 0, 0.16, dz ? 1.6 : 1, dz ? 1.8 : 0, 0.079, CI.white);
+        while (j < n - 1 && !skip[j + 1] && !hs(j + 1) && (dashed[si][j] && dashed[si][j + 1]) === dz) j++;
+        if (j === i) j = i + 1;
+        for (const run of exposedRuns(line.slice(i, j + 1), 0, id, 0.05)) paintAlong(run, 0, 0.16, dz ? 1.0 : 1, dz ? 1.0 : 0, 0.079, CI.white);   // one broken-line style (1.0 / 1.0) for every diverge / merge, on the motorway's edge and on the ramp
         i = j;
       }
     }
