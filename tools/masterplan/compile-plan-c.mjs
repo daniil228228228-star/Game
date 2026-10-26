@@ -375,7 +375,7 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
   for (const sg of [-1, 1]) {
     // median edge line (solid): from the nose tip on, following the inner edge
     runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 0.2, zS - 1, M2Z.z1);
-    ribbonZ(sg, line((z) => 1.35, zN - 70, zN));   // north: median edge line at 1.35 (the plain M2 profile)
+    ribbonZ(sg, line((z) => Math.max(0.2, inner(z) + 0.2 + 0.05 * Math.max(0, Math.min(1, (-z - BOX - 8) / 4))), zN - 70, zN));   // north: median edge line, converging into a V at the nose like the south one (owner 2026-10-26 (9); was a constant 1.35)
     // third-lane edge line (solid) 1.0 inside the asphalt edge: north taper and flat part, ends at the exit gore (z 64)
     ribbonZ(sg, line((z) => outerA(z) - 0.2, M2Z.z0, zN));   // (south of the box: drawn by the wedge-aware block below)
     // lane divider 3|2 at 5.3: dashed in the three-lane stretch, SOLID from the exit gore on, easing to the trunk ramp's edge line (6.1)
@@ -389,7 +389,7 @@ function arrowH(x, z, hx, hz) {   // painted arrow at (x, z) pointing along the 
         .find((q) => [q.pts[0], q.pts[q.pts.length - 1]].some((p) => Math.abs(p[1] - ZG) < 3 && Math.sign(p[0] - c) === sg));
       const latAt = (z) => { if (!r) return 99; let best = 99; for (let k = 1; k < r.pts.length; k++) { const A = r.pts[k - 1], B = r.pts[k]; if ((A[1] - z) * (B[1] - z) <= 0 && A[1] !== B[1]) { const t = (z - A[1]) / (B[1] - A[1]); best = Math.min(best, Math.abs(A[0] + (B[0] - A[0]) * t - c)); } } return best; };
       let zn = ZG; while (zn < M2Z.z1 && latAt(zn) - CLS.ramp.w / 2 - (inner(zn) + 2.8) < 0.4) zn += 0.5;
-      runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 2.6, zn, M2Z.z1); } dashZ(sg, line(() => LANE_DIV, M2Z.z0 + 0, zdN));
+      runOn(sg, (z) => inner(Math.min(z, M2Z.z1)) + 2.6, ZG, M2Z.z1); void zn; }   // from the end of the lane dashes: with the ramp's own edge line it opens a V to the gore nose (owner 2026-10-26 (9)) dashZ(sg, line(() => LANE_DIV, M2Z.z0 + 0, zdN));
   }
   // lane-drop arrows for the inner lane of the southbound (west) carriageway, bent towards the exit side
   if (false) for (const zA of [zS + 8, zS + 17]) { const lat = (inner(zA) + LANE_DIV) / 2 + 0.1, ang = Math.atan((inner(zA + 1) - inner(zA - 1)) / 4); arrowH(X(-1, lat), zA, -Math.sin(ang), Math.cos(ang)); }   // 2026-10-26 (6): along the lane axis (it was bent 12 degrees: odd angles in the owner's frame); the lane centre slope is ~1 degree
