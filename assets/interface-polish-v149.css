@@ -1,0 +1,27 @@
+:root{--ui-surface:#18212a;--ui-text:#e8edf1;--ui-muted:#b4c0ca;--ui-accent:#e5bc68;--ui-success:#8bd2a4;--ui-danger:#ed9c91}
+/* Shared management typography, updated with the v152 gameplay text floor. */
+.v30Panel :is(.name,.title,.v135Head b,.v145Title){font-size:14px!important;line-height:1.3!important}
+.v30Panel :is(.desc,.sub,.resourceLine,.status,.v145Note,.v135Offer .desc){font-size:16px!important;line-height:1.45!important;overflow-wrap:anywhere}
+.v30Panel :is(.v30Btn,.v145Mode){font-size:14px!important;min-height:44px!important;padding:10px 12px!important;white-space:normal!important;line-height:1.25!important;touch-action:manipulation}
+.v30Panel :is(.tinyV40,.capacityMetaV42,.requestBottomV40,.v145Mode small,.v145Phase,.v145Stat span,.v135Head span){font-size:12px!important;line-height:1.35!important;white-space:normal!important}
+.v30Panel :is(.reward,.v145Stat b){font-size:14px!important;line-height:1.3!important}
+.v30Panel :is(.v135Offer,.fleetCard,.staffCard,.projectCard,.baseCard,.tenderCard,.metaCard){padding:12px!important}
+.v30Panel :is(button,[role="button"]):focus-visible{outline:2px solid #e5bc68!important;outline-offset:3px!important}
+.v30Panel button:disabled{cursor:not-allowed;opacity:.65}
+#shortContractsV135 .v135Head,#fleetEconomyV145 .v145Head{flex-wrap:wrap;gap:8px}
+#fleetEconomyV145 .v145Modes{gap:8px}
+#fleetEconomyV145 .v145Mode small{margin-top:6px}
+.v135OfferGrid{grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px}
+@media(max-width:700px){
+  #fleetEconomyV145 .v145Modes{grid-template-columns:1fr}
+  #fleetEconomyV145 .v145Mode{text-align:left}
+  #fleetEconomyV145 .v145Stats{gap:8px}
+  .v135OfferGrid{grid-template-columns:1fr}
+  .v30Panel :is(.v30Row,.fleetCard,.projectCard){min-width:0}
+}
+@media(prefers-reduced-motion:reduce){.v30Panel *{animation:none!important;transition:none!important}}
+
+/* V153: an exact trade quantity remains usable with the mobile keyboard. */
+.v153Quantity{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#c9d2d9;font:600 14px/1.5 system-ui}
+.v153Quantity input{width:110px;min-height:44px;box-sizing:border-box;border:1px solid #77828c;border-radius:10px;background:#1b242c;color:#f2eee5;padding:10px;font:600 16px/1.4 system-ui}
+.v153Quantity input:focus-visible{outline:2px solid #e4bf77;outline-offset:2px}

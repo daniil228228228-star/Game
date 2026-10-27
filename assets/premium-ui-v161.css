@@ -1,0 +1,154 @@
+/* Premium UI v161 (2026-10-11 (17)). User, after the iPhone test: «поменяй вот эти плашки, сделай редизайн и сделай чтобы был премиум такой стиль общий».
+ * ONE design language for every overlay element (HUD chips, top cards, toast, action prompt / button, joystick, menu button, compass chip, systems / market panels): deep graphite glass,
+ * a 1 px warm-gold hairline, soft 14-16 px corners, layered soft shadow, one font stack with tabular numerals, an 8 px spacing grid, a gold / mint / amber / steel-blue accent palette.
+ * The file is loaded LAST (after every older layer) and only repaints: backgrounds, borders, shadows, colours, typography, radii. It never changes a box size (no width / height / padding /
+ * margin / font-size on the HUD pieces), so nothing grows over the joystick and the top-stack layout (layoutTopV46) is unaffected.
+ * Backdrop blur: at most 3 layers can be on screen at once (#toast, the one open .v30Panel, #eventBanner); every other piece is flat (86 % opaque graphite). */
+:root{
+  /* surfaces */
+  --pu-panel:rgba(18,22,28,.86);          /* #12161c @ 86 % */
+  --pu-panel-solid:#12161c;
+  --pu-panel-2:#1a2029;
+  --pu-panel-hi:#222a35;
+  /* lines */
+  --pu-line:rgba(232,195,106,.30);        /* the warm-gold hairline */
+  --pu-line-soft:rgba(255,255,255,.08);
+  --pu-rim:inset 0 1px 0 rgba(255,226,160,.20),inset 0 -1px 0 rgba(0,0,0,.35);
+  --pu-shadow:0 1px 2px rgba(0,0,0,.35),0 8px 22px rgba(0,0,0,.30);
+  --pu-shadow-soft:0 1px 2px rgba(0,0,0,.30),0 4px 12px rgba(0,0,0,.24);
+  /* ink */
+  --pu-ink:#f4f1e8;                       /* primary text   (>= 14:1 on the panel) */
+  --pu-ink-2:#b9c2cd;                     /* muted text     (>= 6.5:1) */
+  /* accents */
+  --pu-gold:#e8c36a;                      /* primary / rewards */
+  --pu-gold-hi:#f4d98e;
+  --pu-gold-lo:#c79a3d;
+  --pu-mint:#6fe3b0;                      /* positive */
+  --pu-amber:#f0a94a;                     /* warning */
+  --pu-steel:#8db4e8;                     /* info */
+  --pu-danger:#f08a80;
+  /* shape + rhythm (8 px grid) */
+  --pu-r:14px; --pu-r-lg:16px; --pu-r-sm:10px;
+  --pu-s1:8px; --pu-s2:16px; --pu-s3:24px;
+  --pu-icon:22px;
+  --pu-press:.97;
+  --pu-font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+
+/* ------------------------------------------------------------------ typography: one stack, tabular numerals for money / counters */
+html:root:root body #hud,html:root:root body #hud .stat,html:root:root body #toast,html:root:root body #actionPrompt,html:root:root body #actionBtn,html:root:root body #nextCard,html:root:root body #carryRouteV139,html:root:root body #manualCoachV143,
+html:root:root body #shiftGoalV127,html:root:root body #secondaryObjectiveV36,html:root:root body #contractsCard,html:root:root body #companyChip,html:root:root body #eventBanner,html:root:root body #coachChip,html:root:root body #requiredActionV38,
+html:root:root body #compassDistance,html:root:root body .v30Panel{font-family:var(--pu-font)!important}
+html:root:root body #money,html:root:root body #income,html:root:root body #progress,html:root:root body #planks,html:root:root body #concreteAmt,html:root:root body #metalAmt,html:root:root body #populationAmt,html:root:root body #carriedLogs,
+html:root:root body #compassDistance,html:root:root body .v139Dist,html:root:root body .v127Reward,html:root:root body .v30Panel .price,html:root:root body .v30Btn{font-variant-numeric:tabular-nums lining-nums}
+html:root:root body #hud .stat span{font-weight:700!important;letter-spacing:-.012em}
+html:root:root body #hud .stat{color:var(--pu-ink)!important}
+html:root:root body #income{color:var(--pu-mint)!important;font-weight:650!important}
+
+/* ------------------------------------------------------------------ flat graphite glass: HUD chips + every top card + prompts */
+html:root:root body #hud .stat,html:root:root body #nextCard,html:root:root body #secondaryObjectiveV36,html:root:root body #carryRouteV139,html:root:root body #manualCoachV143,html:root:root body #shiftGoalV127,html:root:root body #contractsCard,
+html:root:root body #companyChip,html:root:root body #coachChip,html:root:root body #requiredActionV38,html:root:root body #actionPrompt,html:root:root body #sideJobV125,html:root:root body #opportunityV128,html:root:root body #toast,html:root:root body #eventBanner{
+  background:var(--pu-panel)!important;
+  border:1px solid var(--pu-line)!important;
+  border-radius:var(--pu-r)!important;
+  box-shadow:var(--pu-shadow),var(--pu-rim)!important;
+  color:var(--pu-ink)!important;
+  -webkit-backdrop-filter:none!important;backdrop-filter:none!important;
+}
+/* the only blurred layers (<= 3 at once): the toast, the event banner and the single open panel (below) */
+html:root:root body #toast,html:root:root body #eventBanner{-webkit-backdrop-filter:blur(10px) saturate(1.1)!important;backdrop-filter:blur(10px) saturate(1.1)!important}
+html:root:root body.v51-perf-low #toast,html:root:root body.v164-perf-low #toast,html:root:root body.v51-perf-low #eventBanner,html:root:root body.v164-perf-low #eventBanner{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+html:root:root body #hud .stat::before{background:linear-gradient(90deg,transparent,rgba(255,226,160,.42),transparent)!important}
+html:root:root body #hud .stat::after{display:none!important}
+/* 3 px accent edge (inside the box: no size change) */
+html:root:root body #shiftGoalV127{box-shadow:var(--pu-shadow),var(--pu-rim),inset 3px 0 0 var(--pu-gold)!important}
+html:root:root body #carryRouteV139{box-shadow:var(--pu-shadow),var(--pu-rim),inset 3px 0 0 var(--pu-mint)!important}
+html:root:root body #manualCoachV143{box-shadow:var(--pu-shadow),var(--pu-rim),inset 3px 0 0 var(--pu-steel)!important}
+html:root:root body #secondaryObjectiveV36{box-shadow:var(--pu-shadow),var(--pu-rim),inset 3px 0 0 var(--pu-steel)!important}
+html:root:root body #eventBanner{box-shadow:var(--pu-shadow),var(--pu-rim),inset 3px 0 0 var(--pu-amber)!important}
+html:root:root body #nextCard{box-shadow:var(--pu-shadow),var(--pu-rim),inset 3px 0 0 var(--pu-gold)!important}
+html:root:root body #toast.v361-important{border-color:rgba(232,195,106,.55)!important;color:var(--pu-gold-hi)!important}
+html:root:root body #toast.v361-error,html:root:root body #toast.v53-save-warning{border-color:rgba(240,169,74,.6)!important;color:#ffd9a0!important}
+html:root:root body #toast{font-weight:600!important;color:var(--pu-ink)!important;text-align:center}
+html:root:root body #toast.v47-soft.show{opacity:.96!important}
+/* card text: title = ink, secondary lines = muted, numbers = gold */
+html:root:root body #carryRouteV139 .v139Line,html:root:root body #shiftGoalV127 .v127Top,html:root:root body #nextCard,html:root:root body #manualCoachV143{color:var(--pu-ink)!important;font-weight:650!important}
+html:root:root body #carryRouteV139 .v139Meta,html:root:root body #shiftGoalV127 .v127Sub,html:root:root body #shiftGoalV127 .v127Text,html:root:root body #secondaryObjectiveV36{color:var(--pu-ink-2)!important}
+html:root:root body #carryRouteV139 .v139Arrow{color:var(--pu-mint)!important}
+html:root:root body #carryRouteV139 .v139Dist,html:root:root body #shiftGoalV127 .v127Reward{color:var(--pu-gold)!important;font-weight:700!important}
+html:root:root body #manualCoachV143.near{border-color:rgba(111,227,176,.5)!important;color:var(--pu-mint)!important}
+/* a thin progress hairline under the cards (their own bars): rounded, mint on graphite */
+html:root:root body #carryRouteV139 .v139Bar,html:root:root body #carryRouteV139 progress,html:root:root body #nextCard .bar,html:root:root body #shiftGoalV127 .v127Steps i{background:rgba(255,255,255,.10)!important;border-radius:3px!important}
+
+/* ------------------------------------------------------------------ icon medallions of the stat chips (22 px, as before) */
+html:root:root body .ui-stat-icon{border-radius:50%!important;color:var(--pu-steel)!important;background:rgba(141,180,232,.12)!important;border:1px solid rgba(141,180,232,.34)!important;box-shadow:none!important}
+html:root:root body #moneyStat .ui-stat-icon{color:var(--pu-gold)!important;background:rgba(232,195,106,.14)!important;border-color:rgba(232,195,106,.46)!important;filter:none!important}
+html:root:root body #hud .stat:has(#planks) .ui-stat-icon{color:var(--pu-amber)!important;background:rgba(240,169,74,.13)!important;border-color:rgba(240,169,74,.42)!important}
+html:root:root body #hud .stat:has(#carriedLogs) .ui-stat-icon{color:var(--pu-mint)!important;background:rgba(111,227,176,.12)!important;border-color:rgba(111,227,176,.38)!important}
+
+/* ------------------------------------------------------------------ buttons: menu, jump, joystick, the big action button */
+html:root:root body #systemsBtn,html:root:root body #topRightBtns #systemsBtn,html:root:root body #topRightBtns .iconBtn,html:root:root body #jumpBtn{
+  background:var(--pu-panel)!important;border:1px solid var(--pu-line)!important;border-radius:var(--pu-r)!important;color:var(--pu-gold)!important;
+  box-shadow:var(--pu-shadow-soft),var(--pu-rim)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;
+}
+html:root:root body #jumpBtn{border-radius:50%!important;color:var(--pu-gold)!important}
+html:root:root body #joyBase{
+  background:radial-gradient(circle at 50% 38%,rgba(44,52,64,.55),rgba(18,22,28,.55) 72%)!important;border:1px solid rgba(232,195,106,.28)!important;
+  box-shadow:var(--pu-shadow-soft),inset 0 1px 0 rgba(255,226,160,.14)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;
+}
+html:root:root body #joyKnob{background:linear-gradient(180deg,#46505f,#242b36)!important;border:1px solid rgba(232,195,106,.55)!important;box-shadow:0 2px 6px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.18)!important}
+html:root:root body #actionBtn{
+  background:linear-gradient(180deg,var(--pu-gold-hi),var(--pu-gold) 48%,var(--pu-gold-lo))!important;border:1px solid rgba(255,236,186,.75)!important;border-radius:var(--pu-r-lg)!important;
+  color:#2a2110!important;font-weight:750!important;letter-spacing:.01em;text-shadow:0 1px 0 rgba(255,255,255,.3);
+  box-shadow:0 4px 0 #7d6025,0 12px 26px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.45)!important;
+}
+html:root:root body #actionBtn:disabled{background:#2b323c!important;color:#c3ccd6!important;border-color:rgba(255,255,255,.14)!important;box-shadow:var(--pu-shadow-soft)!important;text-shadow:none}
+html:root:root body #actionPrompt{color:var(--pu-gold-hi)!important;font-weight:650!important}
+/* press feedback */
+html:root:root body #systemsBtn,html:root:root body #topRightBtns .iconBtn,html:root:root body #jumpBtn,html:root:root body #actionBtn,html:root:root body .v30Btn,html:root:root body .v30Close,html:root:root body .v161-tabs button,html:root:root body #prestigeBtn{
+  transition:transform .12s ease,background .12s ease,border-color .12s ease,box-shadow .12s ease!important;touch-action:manipulation;
+}
+html:root:root body #systemsBtn:active,html:root:root body #topRightBtns .iconBtn:active,html:root:root body #jumpBtn:active,html:root:root body #actionBtn:not(:disabled):active,html:root:root body .v30Btn:not(:disabled):active,html:root:root body .v30Close:active,html:root:root body .v161-tabs button:active{transform:scale(var(--pu-press))!important}
+/* focus */
+html:root:root body #systemsBtn:focus-visible,html:root:root body #jumpBtn:focus-visible,html:root:root body #actionBtn:focus-visible,html:root:root body .v30Btn:focus-visible,html:root:root body .v30Close:focus-visible,html:root:root body .v161-tabs button:focus-visible{
+  outline:2px solid var(--pu-gold)!important;outline-offset:2px!important;box-shadow:none!important}
+
+/* ------------------------------------------------------------------ compass chip ("Стройка · 48м") */
+html:root:root body #compass .compassDistance{
+  background:var(--pu-panel)!important;border:1px solid var(--pu-line)!important;border-radius:var(--pu-r)!important;color:var(--pu-gold-hi)!important;font-weight:700!important;
+  box-shadow:var(--pu-shadow-soft),var(--pu-rim)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;text-shadow:none!important;
+}
+
+/* ------------------------------------------------------------------ systems / market / exchange panels */
+html:root:root body .v30Panel,html:root:root body :is(#systemsOverlay,#metaOverlay,#staffOverlay,#projectsOverlay,#bonusOverlay,#fleetOverlay,#baseOverlay,#tendersOverlay,#operationsOverlay,#cityOverlay) .v30Panel{
+  background:linear-gradient(180deg,#1a2029,#12161c 38%)!important;border:1px solid var(--pu-line)!important;border-radius:var(--pu-r-lg)!important;color:var(--pu-ink)!important;
+  box-shadow:0 2px 4px rgba(0,0,0,.4),0 24px 70px rgba(0,0,0,.55),var(--pu-rim)!important;-webkit-backdrop-filter:blur(12px)!important;backdrop-filter:blur(12px)!important;
+}
+html:root:root body.v51-perf-low .v30Panel,html:root:root body.v164-perf-low .v30Panel{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+html:root:root body #systemsOverlay,html:root:root body #metaOverlay,html:root:root body #staffOverlay,html:root:root body #projectsOverlay,html:root:root body #bonusOverlay,html:root:root body #fleetOverlay,html:root:root body #baseOverlay,html:root:root body #tendersOverlay,
+html:root:root body #operationsOverlay,html:root:root body #cityOverlay,html:root:root body #achOverlay,html:root:root body #hintOverlay{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+html:root:root body .v30Panel>.v30Head,html:root:root body .v30Head{background:linear-gradient(180deg,#1e252f,#171c24)!important;border-bottom:1px solid var(--pu-line)!important;box-shadow:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+html:root:root body .v30Head>strong{color:var(--pu-ink)!important;font-weight:700!important;letter-spacing:-.01em!important}
+html:root:root body .v30Close,html:root:root body #achClose{
+  background:var(--pu-panel-hi)!important;border:1px solid var(--pu-line)!important;border-radius:12px!important;color:var(--pu-gold)!important;font-size:0!important;line-height:0!important;opacity:1!important;
+}
+html:root:root body .v30Close::after,html:root:root body #achClose::after{content:'\00d7';font-size:26px;font-weight:400;line-height:1;color:var(--pu-gold)}
+html:root:root body .v30Section{background:rgba(255,255,255,.035)!important;border:1px solid var(--pu-line-soft)!important;border-radius:var(--pu-r)!important;box-shadow:none!important}
+html:root:root body .v30SectionTitle{color:var(--pu-gold)!important;font-weight:700!important;text-transform:none!important;font-variant-caps:all-small-caps;font-variant-numeric:normal;letter-spacing:.09em!important;font-size:14px!important}
+html:root:root body .v30Panel .sub,html:root:root body .v30Panel .desc,html:root:root body .v30Panel .v30Small,html:root:root body .v30Panel .v30Hint{color:var(--pu-ink-2)!important}
+html:root:root body .v30Panel .v30Row{border-bottom-color:var(--pu-line-soft)!important}
+html:root:root body .v30Panel .v30Btn,html:root:root body .v30Panel button.v30Btn{
+  background:linear-gradient(180deg,#2a323d,#222a34)!important;border:1px solid var(--pu-line-soft)!important;border-radius:12px!important;color:var(--pu-ink)!important;font-weight:650!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)!important}
+html:root:root body .v30Panel .v30Btn.primary{background:linear-gradient(180deg,var(--pu-gold-hi),var(--pu-gold) 50%,var(--pu-gold-lo))!important;border-color:rgba(255,236,186,.7)!important;color:#2a2110!important;font-weight:750!important;box-shadow:0 3px 0 #7d6025,inset 0 1px 0 rgba(255,255,255,.4)!important}
+html:root:root body .v30Panel .v30Btn:disabled{opacity:.55!important;box-shadow:none!important}
+html:root:root body .v119ResourceChoices .v119Selected,html:root:root body .v119AmountChoices .v119Selected{background:rgba(232,195,106,.16)!important;border-color:var(--pu-gold)!important;color:var(--pu-gold-hi)!important}
+html:root:root body .v119ExchangeArrow{color:var(--pu-gold)!important}
+html:root:root body .v119ExchangePreview,html:root:root body .v119FleetCard,html:root:root body .v121ManualSummary{background:rgba(255,255,255,.04)!important;border:1px solid var(--pu-line-soft)!important;border-radius:var(--pu-r)!important;color:var(--pu-ink)!important}
+html:root:root body .v30Panel .good,html:root:root body .v30Panel .ok,html:root:root body .v30Panel .status.ok{color:var(--pu-mint)!important}
+html:root:root body .v161-tabs{background:var(--pu-panel-solid)!important;border:1px solid var(--pu-line-soft)!important;border-radius:var(--pu-r)!important}
+html:root:root body .v161-tabs button[aria-selected=true]{background:linear-gradient(180deg,var(--pu-gold-hi),var(--pu-gold))!important;color:#2a2110!important;border-color:rgba(255,236,186,.7)!important}
+@media(max-width:600px){html:root:root body .v30Panel{border-radius:var(--pu-r-lg)!important}}
+@media(prefers-reduced-motion:reduce){
+  html:root:root body #systemsBtn,html:root:root body #topRightBtns .iconBtn,html:root:root body #jumpBtn,html:root:root body #actionBtn,html:root:root body .v30Btn,html:root:root body .v30Close,html:root:root body .v161-tabs button{transition:none!important}
+  html:root:root body #systemsBtn:active,html:root:root body #jumpBtn:active,html:root:root body #actionBtn:active,html:root:root body .v30Btn:active,html:root:root body .v30Close:active{transform:none!important}
+}

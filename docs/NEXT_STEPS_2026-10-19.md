@@ -1,0 +1,44 @@
+# Что осталось сделать (передача после лимита, 2026-10-19 вечер)
+
+Обновление после `5b249d3` (Codex, раздел (16) CHANGELOG): ниже сохранено исходное задание, часть пунктов уже исправлена Клодом в (15). Повторная проверка нашла подъём плоских клиньев street/cross на 3–5 см из-за сглаживания; маска закреплённых точек исправлена. Все 64 723 точки маршрутов и стыки 1433 дуг теперь совпадают с покрытием в пределах 3 см. Сетевой тест обновлён под новый поворот М1→М2, удалённая прямая М1 не восстановлена. Следом: Safari/iPhone-проверка (15)/(16), рябь/тени, соседние ветви I4, длинная диагональ, очереди/уступание. C3 отложен по просьбе владельца.
+
+Ветка `claude/new-session-v2u5sj`. Прочитай `CLAUDE.md` (раздел «Plan C ...», «Owner rule»), `docs/MASTERPLAN_C_PROGRESS.md` (последние разделы) и верх `CHANGELOG_V161.md`. Последняя собранная владельцу версия — `c1s` (коммит 8427562); дальше шли WIP-коммиты агента по пунктам ниже (`git log`), проверены они НЕ полностью.
+
+## Баги от владельца (тест на iPhone, сборка c1s): `docs/owner-shots-2026-10-19/shot1..5.jpg`
+Слова владельца: «Чекай баги, последняя попытка всё исправить идеально»; «Плохой съезд с магистралей: уровень разный уже на одной дороге, такого быть не должно; зашивай все пробелы, которые игрок видеть не должен, чтобы всё было очень эстетично и красиво».
+
+1. **Рябь/муар на асфальте съездов** (shot1, shot2, shot4): горизонтальные тонкие полосы. Подозрение: z-fighting копланарных слоёв (две поверхности на одной высоте), слишком малая глубинная точность на мобильной GPU (`camera.near` 0.35 / far), polygonOffset / renderOrder слоёв дороги, мелкий тайл текстуры асфальта (mip/анизотропия, `repeat` 1,1).
+2. **Огромные белые бетонные блоки стен** (shot3, shot5): подпорные стенки откосов торчат вертикальными блоками, секции с щелями (видно небо), камера оказывается внутри/за ними. Нужны низкие парапеты нормальной высоты (или настоящие откосы 1:2,5 с травой там, где есть место), общий меш без щелей, цоколь, верхняя кромка; стены в `cameraSolidMeshes`/resolver камеры.
+3. **Тёмные плоские плиты «висят» над травой** (shot1 справа, shot4 справа вверху с пятнистой клеткой) и **бледный «призрачный» пандус** (shot4), длинные светлые полосы без функции (shot2). Найти меш/слой-источник; правило «ничего без причины».
+4. **Скачки уровня на одной дороге** на съездах/въездах с М1, М2, «трубы» I4, клевера I1, поворота М1→М2 и на подъезде к эстакаде: профиль высоты должен быть непрерывным (скачок > ~3 см недопустим), клин съезда плавно вырастает из настила магистрали по высоте и по ширине. Жёсткую проверку добавить в `tests/plan-c-height-unit.test.mjs` / `plan-c-roads.test.mjs`.
+5. **Зашить все пробелы:** щели между краем настила/клина/съезда и откосом/стенкой/землёй, торцы стенок и ограждений, стыки сегментов, пустоты под эстакадой, края ячеек, зазоры полоса/тротуар. Геометрия с нахлёстом (цоколь вниз до земли, перекрытие секций, торцевые заглушки). Инструмент: `tools/probe-gaps-plan-c.mjs` (расширить: копланарные пересечения, просветы между секциями стен).
+
+Проверять: телефонный вид с земли (`node tools/shoot-plan-c-phone.mjs OUT "name:x,z,dx,dy,dz"`, `NIGHT=1`), открыть КАЖДЫЙ кадр, чек-лист (муар, торчащие стены, щели с небом, висящие плиты, ступени тона, скачки уровня, одинокие линии, швы). Данные плана C генерируются (`tools/masterplan/plan-c.mjs`, `plan-C.json`, `compile-plan-c.mjs`; `assets/plan-c-data-v161.js` руками не править; `--check`). План B и OLD_SAVE подпись (51 / -720375465) не менять. SwiftShader не воспроизводит глубинную точность мобильной GPU — сравнивать рендер с увеличенной точностью/сдвигом near-far.
+
+## Остальное по плану
+- Машины на развязках (почти нет), уступание на нерегулируемых перекрёстках (проходят сквозь друг друга), очередь бампер к бамперу (ядро v82, общее с B), пешеходная защита для игрока.
+- Светлая диагональная линия через всю карту (не из слоя plan C, источник не найден).
+- Левоповоротные карманы на I2, остановки/зоны переплетения, FB2 пешеходный мост, тест `roads` нестабилен в общей серии (план B).
+- C3 (здания на местах), погрузочные дворы, заезд автобусов в карманы, пешеходный роутер, iPhone-приёмка, вес (plan-c-data ~4,5 МБ, сборка ~13 МБ).
+- I1 остаётся клевером; I3 заменён поворотом М1→М2 (R 80); I2 — светофорный узел 2+2; I4 — «труба» с разворотным кольцом.
+
+## Отзывы тестера (друг владельца, 25.10 вечером, игра на ноутбуке в Safari, localhost) — геймплей, высокий приоритет
+Скриншоты: `docs/owner-shots-2026-10-19/friend-1.jpg`, `friend-2.jpg`. Общее: «поиграл 3 минутки, на самом деле очень круто». Три правки:
+1. **Стрелка-указатель цели «улетает», а не привязывается к объекту.** На первом скрине жёлтая стрелка «Стройка · 15м» висит над экраном и указывает вверх; когда цель попадает в поле зрения, стрелка должна ПРИВЯЗЫВАТЬСЯ к объекту (стоять над ним, как маркер цели, «Стройка · 15 м / ИДИ К ЦЕЛИ»), а вне поля зрения — быть компасной стрелкой у края экрана. Сейчас непонятно, на что она указывает. Владелец: `currentGuidanceTarget()` / `nextActionableTargetV117()` + compass chip (`feel-v161.js`, `plates-v161.js`), см. CLAUDE.md «Game feel».
+2. **Кнопка действия (`#actionBtn`, «Построить: Лесопилка») часто не срабатывает, хотя игрок стоит в кругу или рядом.** Помогает «потыкать много раз» или выйти и снова войти в круг. Гипотеза: гистерезис/порог `nearestManualTargetV53()` дрожит на границе круга, кнопка появляется, а нажатие уходит в состояние «нет цели» (или цель меняется между `touchstart` и `click`), либо блокировка по ресурсам/стадии без сообщения. Нужно воспроизвести реальным нажатием (CDP touch) на границе пада, поймать мерцание цели, добавить гистерезис (вход R, выход R + 0,5 м) и фиксацию цели на время нажатия; если не хватает ресурсов — показывать причину, а не молча игнорировать.
+3. **Счётчик ресурсов у персонажа.** Не видно, сколько дерева несёт игрок (carry): нужен компактный индикатор переносимых ресурсов над персонажем или у кнопки (иконка + число / вместимость), чтобы было понятно, хватает ли материалов, когда кнопка строить не срабатывает. Уже есть `#carryRouteV139` и stat-карточки в HUD; не плодить новую карточку без нужды (layoutTopV46 STACK), сделать плашку над героем (`plates-v161.js`) или чип у `#actionBtn`.
+Критерии приёмки: тесты `guidance`, `nav-pads`, `hud`, `feel`, `plates`; реальный тап по кнопке на границе пада 50 раз подряд срабатывает 50/50; кадры (мобильный и десктопный вид).
+
+
+## Update 2026-10-26
+Done (see CHANGELOG 2026-10-26): zebras off, bank caps (floating green wedges), closed-solid tapered parapets, lamps on the parapet, deck-paint NDC bias, spur removed, bay lines clipped. Open: iPhone check of the paint bias and the bank caps; roundabout arms n117 / n127 (squared sidewalk ends); I4 finer ramp sampling (profile infeasible at 3 degrees: needs anchor fix); ground zebras redesign; retaining wall panels are still single sheets (DoubleSide).
+
+## Traffic polish (paused, 2026-10-26)
+- Paused by owner priority (road cleanup first). No traffic code changed.
+- Real Chromium runs on branch head f91eca6: `traffic`, `old-save` PASS; `plan-c-navigation`, `plan-c-signals`, `plan-c-traffic-levels`, `plan-c-static-routing` PASS (these four are node/VM tests, no browser).
+- `roads` FAILS only at 3b (stage upgrades 1->5 re-lay 0 road meshes): the first round went 71 -> 87 meshes (new meshes, 0 destroyed); cause not investigated (likely a road-family layer from c1u-c1y, or an expectation to update).
+- Not done: watching traffic in the browser (I1/I2/I4, bus bays, signals, stuck count over 3 min), vehicle orientation/height on decks, night lights, pedestrian yielding, dist/tycoon-v161-c1z.html. iPhone not verified.
+
+## Update 2026-10-26 (6) (c1z, CHANGELOG (6))
+Done: I1 / every motorway merge end (parapet + wall land on the motorway line, no gap), raised-ramp strip closed, broken host edge line + no doubled lines (audit 31), arrows along the lane (audit 32, I2 stop lines on M2), closed retaining walls / fascias, bank colour. Tests passing on head: audit-plan-c, compile --check, plan-c-surfaces / roads / interchanges / kerbs / walk / height-unit / navigation / signals / static-routing / traffic-levels / c1c-geometry, old-save, minimap, roads (3b was a settle-time flake, baseline now 10 polls).
+Open (not done): gore hatching / taper markings (no paved gores exist), median lamps under overpasses (2.0 m clearance), squared ring-sidewalk ends at n117 / n127, I4 finer ramp sampling, grass strip between the M1 abutments (not located), I2 slivers (not seen), iPhone check of everything, traffic polish (paused).
