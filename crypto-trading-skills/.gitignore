@@ -1,0 +1,8 @@
+# downloaded market data and model caches
+research/daily/
+research/yr/
+research/fund/
+research/kl/
+research/now/
+*.csv
+__pycache__/
